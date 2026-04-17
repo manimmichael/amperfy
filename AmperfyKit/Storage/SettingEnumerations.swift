@@ -288,55 +288,20 @@ public enum ThemePreference: Int, CaseIterable, Sendable, Codable {
     }
   }
 
+  // Cassette fork: all ThemePreference cases resolve to Cassette orange (#E87830).
+  // The enum cases remain in Core Data to preserve migrations; users just can't
+  // change the effective accent anymore (see Patch 006 which hides the picker).
   public var asSwiftUIColor: Color {
-    switch self {
-    case .blue:
-      return .blue
-    case .green:
-      return .green
-    case .red:
-      return .red
-    case .yellow:
-      return .yellow
-    case .orange:
-      return .orange
-    case .purple:
-      return .purple
-    }
+    Color(red: 232.0 / 255.0, green: 120.0 / 255.0, blue: 48.0 / 255.0)
   }
 
   public var asColor: UIColor {
-    switch self {
-    case .blue:
-      return .systemBlue
-    case .green:
-      return .systemGreen
-    case .red:
-      return .systemRed
-    case .yellow:
-      return .systemYellow
-    case .orange:
-      return .systemOrange
-    case .purple:
-      return .systemPurple
-    }
+    UIColor(red: 232.0 / 255.0, green: 120.0 / 255.0, blue: 48.0 / 255.0, alpha: 1.0)
   }
 
   public var contrastColor: UIColor {
-    switch self {
-    case .blue:
-      return .white
-    case .green:
-      return .white
-    case .red:
-      return .white
-    case .yellow:
-      return .black
-    case .orange:
-      return .white
-    case .purple:
-      return .white
-    }
+    // Cassette orange is mid-luminance; white reads cleanly on top.
+    .white
   }
 }
 
