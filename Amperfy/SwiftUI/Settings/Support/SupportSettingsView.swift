@@ -55,7 +55,7 @@ struct SupportSettingsView: View {
               appDelegate.eventLogger.info(
                 topic: "Email Info",
                 statusCode: .emailError,
-                message: "Email is not configured in settings app or Amperfy is not able to send an email.",
+                message: "Email is not configured in settings app or Cassette is not able to send an email.",
                 displayPopup: true
               )
             }
@@ -71,7 +71,7 @@ struct SupportSettingsView: View {
       .sheet(isPresented: $isShowingMailView) {
         MailView(
           result: $result,
-          subject: "Amperfy support",
+          subject: "Cassette support",
           messageBody: """
           \nPlease describe your issue.
           \nFeedback is always welcome too.
@@ -83,7 +83,7 @@ struct SupportSettingsView: View {
           attachments: [MailAttachment(
             data: LogData.collectInformation(amperfyData: AmperKit.shared).asJSONData(),
             mimeType: "application/json",
-            fileName: "AmperfyLog.json"
+            fileName: "CassetteLog.json"
           )]
         )
       }

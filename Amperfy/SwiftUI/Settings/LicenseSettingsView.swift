@@ -25,6 +25,14 @@ import SwiftUI
 
 struct LicenseSettingsView: View {
   var licenseText = """
+  Cassette Player iOS
+  Based on Amperfy by Maximilian Bauer.
+  Open source under GPL v3.
+
+  Source: https://github.com/manimmichael/amperfy
+
+  __________________________________
+
   Copyright © 2019-2026 Maximilian Bauer
   All rights reserved.
   GPLv3 Licensed
