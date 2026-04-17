@@ -37,7 +37,8 @@ let defaultWindowActivityType = "amperfy.main"
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
-  static let name = "Amperfy"
+  // Cassette fork: user-visible app name. Matches CFBundleDisplayName in Info.plist.
+  static let name = "Cassette"
   static var version: String {
     (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? ""
   }
@@ -47,7 +48,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   }
 
   /// Task IDs need to be added to the array in Info.list under: <key>BGTaskSchedulerPermittedIdentifiers</key>
-  static let refreshTaskId = "de.familie-zimba.Amperfy.RefreshTask"
+  static let refreshTaskId = "digital.cassette.player.RefreshTask"
 
   static let maxPlayablesDownloadsToAddAtOnceWithoutWarning = 200
 
@@ -271,6 +272,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     configureBackgroundFetch()
     configureNotificationHandling()
     initEventLogger()
+
+    // Cassette fork: cascade Cassette orange (#E87830) across every UIKit
+    // control that honors tintColor. `UIView.appearance().tintColor` in
+    // `setAppTheme` also covers this, but doing it on the window explicitly
+    // at launch catches early splash / login views before setAppTheme runs.
+    let cassetteOrange = UIColor(
+      red: 232.0 / 255.0, green: 120.0 / 255.0, blue: 48.0 / 255.0, alpha: 1.0
+    )
+    window?.tintColor = cassetteOrange
 
     guard let activeAccountInfo = appDelegate.storage.settings.accounts.active else {
       return true
