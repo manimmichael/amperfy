@@ -136,30 +136,9 @@ struct AccountSettingsView: View {
             }
           }
 
-          SettingsSection {
-            SettingsRow(title: "Theme Color") {
-              Menu(settings.themePreference.description) {
-                Button(ThemePreference.blue.description) {
-                  setThemePreference(preference: .blue)
-                }
-                Button(ThemePreference.green.description) {
-                  setThemePreference(preference: .green)
-                }
-                Button(ThemePreference.red.description) {
-                  setThemePreference(preference: .red)
-                }
-                Button(ThemePreference.yellow.description) {
-                  setThemePreference(preference: .yellow)
-                }
-                Button(ThemePreference.orange.description) {
-                  setThemePreference(preference: .orange)
-                }
-                Button(ThemePreference.purple.description) {
-                  setThemePreference(preference: .purple)
-                }
-              }
-            }
-          }
+          // Cassette fork: theme picker removed. The app is always Cassette orange.
+          // `ThemePreference` enum retained for Core Data migration safety; its
+          // `asColor` / `asSwiftUIColor` are hard-coded in SettingEnumerations.swift.
 
           SettingsSection(content: {
             SettingsCheckBoxRow(
