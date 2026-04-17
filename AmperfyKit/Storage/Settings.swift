@@ -340,7 +340,10 @@ public struct AccountSetting: Sendable, Codable {
     set { _isAutoDownloadLatestPodcastEpisodesActive = newValue }
   }
 
-  private var _isAutoDownloadLatestSongsActive: Bool = false
+  // Cassette fork: default to true so newly synced songs auto-download.
+  // This makes Cassette Player a download-first client (the product vision)
+  // instead of streaming-with-optional-cache. Podcast default left as-is.
+  private var _isAutoDownloadLatestSongsActive: Bool = true
   public var isAutoDownloadLatestSongsActive: Bool {
     get { _isAutoDownloadLatestSongsActive }
     set { _isAutoDownloadLatestSongsActive = newValue }
