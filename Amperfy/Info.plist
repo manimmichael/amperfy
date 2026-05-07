@@ -41,9 +41,9 @@
 	<array>
 		<dict>
 			<key>INAlternativeAppName</key>
-			<string>Cassette Music</string>
+			<string>Music</string>
 			<key>INAlternativeAppNamePronunciationHint</key>
-			<string>cassette music</string>
+			<string>music</string>
 		</dict>
 	</array>
 	<key>INIntentsSupported</key>
