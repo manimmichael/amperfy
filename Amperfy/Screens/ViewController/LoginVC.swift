@@ -75,8 +75,8 @@ class LoginVC: UIViewController {
 
   fileprivate lazy var amperfyLabel: UILabel = {
     let label = UILabel()
-    label.text = "Amperfy"
-    label.font = .systemFont(ofSize: 50, weight: .bold)
+    label.text = "Cassette"
+    label.font = UIFont.cassetteDisplay(size: 50, weight: .bold)
     label.textColor = .tintColor
     label.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
       .asColor
@@ -163,6 +163,8 @@ class LoginVC: UIViewController {
     let button = UIButton(configuration: config)
     button.setTitle("API", for: .normal)
     button.preferredBehavioralStyle = .pad
+    button.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
+      .asColor
     return button
   }()
 
@@ -175,6 +177,8 @@ class LoginVC: UIViewController {
     button.accessibilityLabel = "Login"
     button.addTarget(self, action: #selector(Self.loginPressed), for: .touchUpInside)
     button.preferredBehavioralStyle = .pad
+    button.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
+      .asColor
     return button
   }()
 
