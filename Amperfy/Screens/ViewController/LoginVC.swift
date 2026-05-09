@@ -94,7 +94,7 @@ class LoginVC: UIViewController {
   fileprivate lazy var serverUrlTF: UITextField = {
     let textField = UITextField()
     textField.configuteForLogin(image: .serverUrl)
-    textField.placeholder = "https://localhost/ampache"
+    textField.placeholder = "https://your-navidrome.local:4533"
     textField.textContentType = .URL
     textField.keyboardType = .URL
     textField.autocorrectionType = .no
@@ -182,7 +182,37 @@ class LoginVC: UIViewController {
     return button
   }()
 
-  // Close button shown when presented as a sheet/modal
+  // Explanatory subtitle between the app title and the login form.
+  fileprivate lazy var serverDescriptionLabel: UILabel = {
+    let label = UILabel()
+    label.text =
+      "Cassette plays music from your own Navidrome server. Enter its address to get started."
+    label.font = UIFont.cassetteDisplay(size: 16, weight: .regular)
+    label.textColor = .secondaryLabel
+    label.numberOfLines = 0
+    label.textAlignment = .center
+    return label
+  }()
+
+  // Help link shown below the Login button.
+  fileprivate lazy var navidromeHelpButton: UIButton = {
+    var config = UIButton.Configuration.plain()
+    config.baseForegroundColor = .secondaryLabel
+    config.contentInsets = .zero
+    let button = UIButton(configuration: config)
+    button.setTitle("New to Navidrome? Set it up first →", for: .normal)
+    button.titleLabel?.font = UIFont.cassetteDisplay(size: 14, weight: .regular)
+    button.addTarget(self, action: #selector(Self.navidromeHelpPressed), for: .touchUpInside)
+    return button
+  }()
+
+  @IBAction
+  func navidromeHelpPressed() {
+    guard let url = URL(string: "https://www.navidrome.org/docs/installation/") else { return }
+    UIApplication.shared.open(url)
+  }
+
+    // Close button shown when presented as a sheet/modal
   fileprivate lazy var closeButton: UIButton = {
     var config = UIButton.Configuration.prominentGlass()
     config.image = .xmark
@@ -479,13 +509,17 @@ class LoginVC: UIViewController {
 
     amperfyLabel.translatesAutoresizingMaskIntoConstraints = false
     iconView.translatesAutoresizingMaskIntoConstraints = false
+    serverDescriptionLabel.translatesAutoresizingMaskIntoConstraints = false
     formGlassContainer.translatesAutoresizingMaskIntoConstraints = false
     loginGlassContainer.translatesAutoresizingMaskIntoConstraints = false
+    navidromeHelpButton.translatesAutoresizingMaskIntoConstraints = false
     closeButton.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(amperfyLabel)
     view.addSubview(iconView)
+    view.addSubview(amperfyLabel)
+    view.addSubview(serverDescriptionLabel)
     view.addSubview(formGlassContainer)
     view.addSubview(loginGlassContainer)
+    view.addSubview(navidromeHelpButton)
     view.addSubview(closeButton)
 
     formLeadingConstraing = formGlassContainer.leadingAnchor.constraint(
@@ -511,17 +545,39 @@ class LoginVC: UIViewController {
       constant: 0
     ))
     NSLayoutConstraint.activate([
-      amperfyLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 0),
-      amperfyLabel.bottomAnchor.constraint(equalTo: formGlassContainer.topAnchor, constant: -30),
+      // App title
+      amperfyLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      amperfyLabel.bottomAnchor.constraint(
+        equalTo: serverDescriptionLabel.topAnchor,
+        constant: -8
+      ),
       amperfyLabel.heightAnchor.constraint(equalToConstant: 60),
 
-      formGlassContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 0),
-      formGlassContainer.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 0),
+      // Onboarding subtitle — sits between title and form glass
+      serverDescriptionLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      serverDescriptionLabel.leadingAnchor.constraint(
+        greaterThanOrEqualTo: view.leadingAnchor,
+        constant: 24
+      ),
+      serverDescriptionLabel.trailingAnchor.constraint(
+        lessThanOrEqualTo: view.trailingAnchor,
+        constant: -24
+      ),
+      serverDescriptionLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 400),
+      serverDescriptionLabel.bottomAnchor.constraint(
+        equalTo: formGlassContainer.topAnchor,
+        constant: -14
+      ),
+
+      // Login form — nudge center down slightly to balance extra space above
+      formGlassContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      formGlassContainer.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 20),
       formWitdhConstraing!,
       formLeadingConstraing!,
       formTrailingConstraing!,
 
-      loginGlassContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 0),
+      // Login button
+      loginGlassContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
       loginGlassContainer.topAnchor.constraint(
         equalTo: formGlassContainer.bottomAnchor,
         constant: 30
@@ -529,8 +585,16 @@ class LoginVC: UIViewController {
       loginGlassContainer.widthAnchor.constraint(equalToConstant: 140),
       loginGlassContainer.heightAnchor.constraint(equalToConstant: 40),
 
-      iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 0),
-      iconView.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 0),
+      // Navidrome help link below login button
+      navidromeHelpButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      navidromeHelpButton.topAnchor.constraint(
+        equalTo: loginGlassContainer.bottomAnchor,
+        constant: 16
+      ),
+
+      // Background watermark icon
+      iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      iconView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
       iconView.heightAnchor.constraint(equalTo: formGlassContainer.heightAnchor, constant: 40),
 
       // Close button top-right
