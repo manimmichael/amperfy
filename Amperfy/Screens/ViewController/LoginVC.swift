@@ -20,6 +20,7 @@
 //
 
 import AmperfyKit
+import AuthenticationServices
 import UIKit
 
 extension String {
@@ -55,8 +56,233 @@ extension UITextField {
 
 // MARK: - LoginVC
 
+// MARK: - LoginVC
+
 class LoginVC: UIViewController {
   var selectedApiType: BackenApiType = .notDetected
+
+  // cassette Patch 013/014: Cassette account pairing
+  // The "Sign in with Cassette" primary section is shown by default.
+  // The existing manual login form is hidden behind "Use manual setup".
+  private static let cassetteApiBase = "https://cassette.digital"
+  private var webAuthSession: ASWebAuthenticationSession?
+
+  // "Sign in with Cassette" primary button (Patch 013)
+  fileprivate lazy var cassetteSignInButton: UIButton = {
+    var config = UIButton.Configuration.prominentGlass()
+    config.imagePadding = 14
+    let button = UIButton(configuration: config)
+    button.setTitle("Sign in with Cassette", for: .normal)
+    button.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
+      .asColor
+    button.addTarget(self, action: #selector(Self.cassetteSignInPressed), for: .touchUpInside)
+    button.preferredBehavioralStyle = .pad
+    return button
+  }()
+
+  // Onboarding copy label shown above the Cassette sign-in button
+  fileprivate lazy var cassetteOnboardingLabel: UILabel = {
+    let label = UILabel()
+    label.text =
+      "Sit down at your computer with your phone nearby. We'll connect them automatically. " +
+      "Your phone needs to be on the same Wi-Fi as your computer for this to work."
+    label.font = UIFont.cassetteDisplay(size: 15, weight: .regular)
+    label.textColor = .secondaryLabel
+    label.numberOfLines = 0
+    label.textAlignment = .center
+    return label
+  }()
+
+  // Activity indicator while fetching credentials from Cassette
+  fileprivate lazy var cassetteActivityIndicator: UIActivityIndicatorView = {
+    let indicator = UIActivityIndicatorView(style: .medium)
+    indicator.hidesWhenStopped = true
+    return indicator
+  }()
+
+  // "Use manual setup" link — reveals existing form (Patch 013)
+  fileprivate lazy var manualSetupButton: UIButton = {
+    var config = UIButton.Configuration.plain()
+    config.baseForegroundColor = .tertiaryLabel
+    config.contentInsets = .zero
+    let button = UIButton(configuration: config)
+    button.setTitle("Having trouble? Use manual setup →", for: .normal)
+    button.titleLabel?.font = UIFont.cassetteDisplay(size: 13, weight: .regular)
+    button.addTarget(self, action: #selector(Self.manualSetupPressed), for: .touchUpInside)
+    return button
+  }()
+
+  // Container that wraps the Cassette sign-in section (hidden when manual mode active)
+  fileprivate lazy var cassetteSignInContainer: UIView = UIView()
+
+  @IBAction
+  func cassetteSignInPressed() {
+    guard let callbackScheme = URL(string: "cassette://")?.scheme else { return }
+    let redirectURI = "cassette://auth/callback"
+    let authURLString =
+      "\(Self.cassetteApiBase)/auth/player" +
+      "?redirect_uri=\(redirectURI.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" +
+      "&client=cassette-ios"
+    guard let authURL = URL(string: authURLString) else { return }
+
+    cassetteSignInButton.isEnabled = false
+    cassetteActivityIndicator.startAnimating()
+
+    let session = ASWebAuthenticationSession(
+      url: authURL,
+      callbackURLScheme: callbackScheme
+    ) { [weak self] callbackURL, error in
+      guard let self else { return }
+      DispatchQueue.main.async {
+        self.cassetteSignInButton.isEnabled = true
+        self.cassetteActivityIndicator.stopAnimating()
+      }
+      if let error {
+        if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin { return }
+        DispatchQueue.main.async {
+          self.showErrorMsg(message: "Sign-in was cancelled or failed. Try again.")
+        }
+        return
+      }
+      guard
+        let url = callbackURL,
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+        let tokenItem = components.queryItems?.first(where: { $0.name == "token" }),
+        let token = tokenItem.value, !token.isEmpty
+      else {
+        DispatchQueue.main.async {
+          self.showErrorMsg(message: "Couldn't get credentials from Cassette. Try again.")
+        }
+        return
+      }
+      self.fetchAndLoginWithCassetteToken(token)
+    }
+
+    session.presentationContextProvider = self
+    session.prefersEphemeralWebBrowserSession = false
+    webAuthSession = session
+    session.start()
+  }
+
+  /// Patch 014 — fetch /api/player/me and auto-configure Amperfy account.
+  private func fetchAndLoginWithCassetteToken(_ token: String) {
+    guard let url = URL(string: "\(Self.cassetteApiBase)/api/player/me") else { return }
+    var request = URLRequest(url: url)
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.timeoutInterval = 15
+
+    URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+      guard let self else { return }
+
+      if let error {
+        DispatchQueue.main.async {
+          self.showErrorMsg(message: "Couldn't reach Cassette. Check your connection and try again.")
+        }
+        return
+      }
+      guard
+        let httpResponse = response as? HTTPURLResponse,
+        let data,
+        httpResponse.statusCode == 200
+      else {
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let msg: String
+        if code == 404 {
+          msg =
+            "No Cassette Player found on your account. " +
+            "Open Cassette Player on your computer and complete setup first."
+        } else {
+          msg = "Couldn't fetch your Cassette Player info. Try again."
+        }
+        DispatchQueue.main.async { self.showErrorMsg(message: msg) }
+        return
+      }
+
+      guard
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let lanHostname = json["lanHostname"] as? String,
+        let lanPort = json["lanPort"] as? Int,
+        let subsonicUsername = json["subsonicUsername"] as? String,
+        let subsonicPassword = json["subsonicPassword"] as? String
+      else {
+        DispatchQueue.main.async {
+          self.showErrorMsg(message: "Unexpected response from Cassette. Try again.")
+        }
+        return
+      }
+
+      // 3-param init computes passwordHash via SHA-256 internally
+      let serverUrl = "http://\(lanHostname):\(lanPort)"
+      let credentials = LoginCredentials(
+        serverUrl: serverUrl,
+        username: subsonicUsername,
+        password: subsonicPassword,
+        backendApi: .subsonic
+      )
+
+      DispatchQueue.main.async {
+        self.loginWithCredentials(credentials)
+      }
+    }.resume()
+  }
+
+  /// Patch 014 — programmatically authenticate and navigate into the app.
+  /// Mirrors the core of login() but starts from pre-built credentials
+  /// returned by /api/player/me instead of the manual form fields.
+  private func loginWithCredentials(_ credentials: LoginCredentials) {
+    var mutableCredentials = credentials
+    var accountInfo = Account.createInfo(credentials: credentials)
+
+    Task { @MainActor in
+      do {
+        let meta = self.appDelegate.getMeta(accountInfo)
+        let authenticatedApiType = try await meta.backendApi.login(
+          apiType: .subsonic,
+          credentials: mutableCredentials
+        )
+        mutableCredentials.backendApi = authenticatedApiType
+        accountInfo = Account.createInfo(credentials: mutableCredentials)
+        meta.backendApi.selectedApi = authenticatedApiType
+        meta.account.assignInfo(info: accountInfo)
+        self.appDelegate.storage.main.saveContext()
+        self.appDelegate.storage.settings.accounts.login(mutableCredentials)
+        meta.backendApi.provideCredentials(credentials: mutableCredentials)
+
+        self.appDelegate.notificationHandler.post(name: .accountAdded, object: nil, userInfo: nil)
+        self.appDelegate.notificationHandler.post(
+          name: .accountActiveChanged,
+          object: nil,
+          userInfo: nil
+        )
+        AmperfyAppShortcuts.updateAppShortcutParameters()
+
+        let syncVC = AppStoryboard.Main.segueToSync(account: meta.account)
+        if let rootVC = self.presentingViewController {
+          syncVC.modalPresentationStyle = self.modalPresentationStyle
+          rootVC.dismiss(animated: false) {
+            rootVC.present(syncVC, animated: false)
+          }
+        } else {
+          guard let mainScene = AppDelegate.mainSceneDelegate else { return }
+          mainScene.replaceMainRootViewController(vc: syncVC)
+        }
+      } catch {
+        let msg = "Couldn't connect to your Cassette Player. Make sure your phone and computer " +
+          "are on the same Wi-Fi, then try again."
+        self.showErrorMsg(message: msg)
+      }
+    }
+  }
+
+  @IBAction
+  func manualSetupPressed() {
+    cassetteSignInContainer.isHidden = true
+    formGlassContainer.isHidden = false
+    loginGlassContainer.isHidden = false
+    navidromeHelpButton.isHidden = false
+    serverDescriptionLabel.text =
+      "Cassette plays music from your own Navidrome server. Enter its address to get started."
+  }
 
   #if targetEnvironment(macCatalyst)
     static let fontSize: CGFloat = 14
@@ -512,13 +738,49 @@ class LoginVC: UIViewController {
     loginGlassContainer.translatesAutoresizingMaskIntoConstraints = false
     navidromeHelpButton.translatesAutoresizingMaskIntoConstraints = false
     closeButton.translatesAutoresizingMaskIntoConstraints = false
+
+    // cassette Patch 013: Cassette sign-in section
+    cassetteSignInContainer.translatesAutoresizingMaskIntoConstraints = false
+    cassetteOnboardingLabel.translatesAutoresizingMaskIntoConstraints = false
+    cassetteSignInButton.translatesAutoresizingMaskIntoConstraints = false
+    cassetteActivityIndicator.translatesAutoresizingMaskIntoConstraints = false
+    manualSetupButton.translatesAutoresizingMaskIntoConstraints = false
+
+    cassetteSignInContainer.addSubview(cassetteOnboardingLabel)
+    cassetteSignInContainer.addSubview(cassetteSignInButton)
+    cassetteSignInContainer.addSubview(cassetteActivityIndicator)
+    cassetteSignInContainer.addSubview(manualSetupButton)
+    NSLayoutConstraint.activate([
+      cassetteOnboardingLabel.topAnchor.constraint(equalTo: cassetteSignInContainer.topAnchor),
+      cassetteOnboardingLabel.leadingAnchor.constraint(equalTo: cassetteSignInContainer.leadingAnchor),
+      cassetteOnboardingLabel.trailingAnchor.constraint(equalTo: cassetteSignInContainer.trailingAnchor),
+
+      cassetteSignInButton.topAnchor.constraint(equalTo: cassetteOnboardingLabel.bottomAnchor, constant: 24),
+      cassetteSignInButton.centerXAnchor.constraint(equalTo: cassetteSignInContainer.centerXAnchor),
+      cassetteSignInButton.widthAnchor.constraint(equalToConstant: 240),
+      cassetteSignInButton.heightAnchor.constraint(equalToConstant: 48),
+
+      cassetteActivityIndicator.centerXAnchor.constraint(equalTo: cassetteSignInContainer.centerXAnchor),
+      cassetteActivityIndicator.topAnchor.constraint(equalTo: cassetteSignInButton.bottomAnchor, constant: 12),
+
+      manualSetupButton.centerXAnchor.constraint(equalTo: cassetteSignInContainer.centerXAnchor),
+      manualSetupButton.topAnchor.constraint(equalTo: cassetteActivityIndicator.bottomAnchor, constant: 12),
+      manualSetupButton.bottomAnchor.constraint(equalTo: cassetteSignInContainer.bottomAnchor),
+    ])
+
     view.addSubview(iconView)
     view.addSubview(amperfyLabel)
     view.addSubview(serverDescriptionLabel)
+    view.addSubview(cassetteSignInContainer)  // Patch 013: primary sign-in section
     view.addSubview(formGlassContainer)
     view.addSubview(loginGlassContainer)
     view.addSubview(navidromeHelpButton)
     view.addSubview(closeButton)
+
+    // cassette Patch 013: hide manual form behind "Use manual setup" link by default
+    formGlassContainer.isHidden = true
+    loginGlassContainer.isHidden = true
+    navidromeHelpButton.isHidden = true
 
     formLeadingConstraing = formGlassContainer.leadingAnchor.constraint(
       equalTo: view.leadingAnchor,
@@ -589,6 +851,17 @@ class LoginVC: UIViewController {
         equalTo: loginGlassContainer.bottomAnchor,
         constant: 16
       ),
+
+      // cassette Patch 013: Cassette sign-in section — centered at same Y as form
+      cassetteSignInContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      cassetteSignInContainer.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 20),
+      cassetteSignInContainer.leadingAnchor.constraint(
+        greaterThanOrEqualTo: view.leadingAnchor, constant: 32
+      ),
+      cassetteSignInContainer.trailingAnchor.constraint(
+        lessThanOrEqualTo: view.trailingAnchor, constant: -32
+      ),
+      cassetteSignInContainer.widthAnchor.constraint(lessThanOrEqualToConstant: 400),
 
       // Background watermark icon
       iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -662,5 +935,12 @@ class LoginVC: UIViewController {
 
   func updateApiSelectorText() {
     apiSelectorButton.setTitle("\(selectedApiType.selectorDescription)", for: .normal)
+  }
+}
+
+// cassette Patch 013: ASWebAuthenticationSession needs a presentation context
+extension LoginVC: ASWebAuthenticationPresentationContextProviding {
+  func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+    view.window ?? UIWindow()
   }
 }
