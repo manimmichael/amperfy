@@ -182,6 +182,19 @@ class LoginVC: UIViewController {
     return button
   }()
 
+  // Close button shown when presented as a sheet/modal
+  fileprivate lazy var closeButton: UIButton = {
+    var config = UIButton.Configuration.prominentGlass()
+    config.image = .xmark
+    config.imagePadding = 20.0
+    let button = UIButton(configuration: config)
+    button.accessibilityLabel = "Close"
+    button.addTarget(self, action: #selector(Self.closePressed), for: .touchUpInside)
+    button.preferredBehavioralStyle = .pad
+    button.isHidden = true
+    return button
+  }()
+
   // Explanatory subtitle between the app title and the login form.
   fileprivate lazy var serverDescriptionLabel: UILabel = {
     let label = UILabel()
@@ -211,19 +224,6 @@ class LoginVC: UIViewController {
     guard let url = URL(string: "https://www.navidrome.org/docs/installation/") else { return }
     UIApplication.shared.open(url)
   }
-
-    // Close button shown when presented as a sheet/modal
-  fileprivate lazy var closeButton: UIButton = {
-    var config = UIButton.Configuration.prominentGlass()
-    config.image = .xmark
-    config.imagePadding = 20.0
-    let button = UIButton(configuration: config)
-    button.accessibilityLabel = "Close"
-    button.addTarget(self, action: #selector(Self.closePressed), for: .touchUpInside)
-    button.preferredBehavioralStyle = .pad
-    button.isHidden = true
-    return button
-  }()
 
   @IBAction
   func closePressed() {
@@ -486,13 +486,11 @@ class LoginVC: UIViewController {
     updateApiSelectorText()
 
     apiSelectorButton.showsMenuAsPrimaryAction = true
+    // cassette Patch 012: Ampache hidden from picker (self-host-first = Subsonic-only).
+    // BackenApiType.ampache remains in the enum so existing data and upstream merges are unaffected.
     apiSelectorButton.menu = UIMenu(title: "Select API", children: [
       UIAction(title: BackenApiType.notDetected.selectorDescription, handler: { _ in
         self.selectedApiType = .notDetected
-        self.updateApiSelectorText()
-      }),
-      UIAction(title: BackenApiType.ampache.selectorDescription, handler: { _ in
-        self.selectedApiType = .ampache
         self.updateApiSelectorText()
       }),
       UIAction(title: BackenApiType.subsonic.selectorDescription, handler: { _ in
@@ -569,7 +567,7 @@ class LoginVC: UIViewController {
         constant: -14
       ),
 
-      // Login form — nudge center down slightly to balance extra space above
+      // Login form
       formGlassContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
       formGlassContainer.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 20),
       formWitdhConstraing!,
