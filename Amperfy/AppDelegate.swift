@@ -135,6 +135,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   }
 
   func configureDefaultNavigationBarStyle() {
+    // cassette Patch 015: apply Cassette palette (bg, ink, orange, fonts) to
+    // every UIAppearance proxy in one place so individual screens don't have
+    // to special-case nav bar / tab bar / table styling.
+    CassetteTheme.applyGlobalAppearance()
     UINavigationBar.appearance().shadowImage = UIImage()
   }
 
@@ -281,6 +285,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       red: 232.0 / 255.0, green: 120.0 / 255.0, blue: 48.0 / 255.0, alpha: 1.0
     )
     window?.tintColor = cassetteOrange
+    window?.overrideUserInterfaceStyle = .dark
+    window?.backgroundColor = CassetteTheme.UIColors.bg
 
     guard let activeAccountInfo = appDelegate.storage.settings.accounts.active else {
       return true
@@ -384,13 +390,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   }
 
   func setAppAppearanceMode(style: UIUserInterfaceStyle) {
+    // cassette Patch 015: Cassette is a dark-only product. Honour the call
+    // site signature for upstream compatibility but always force `.dark` so
+    // the warm-paper palette never shows through on light-mode devices.
+    let forced: UIUserInterfaceStyle = .dark
     if #available(iOS 13.0, *) {
       UIApplication.shared.connectedScenes
         .forEach {
           if let windowScene = $0 as? UIWindowScene {
             windowScene.windows.forEach { window in
-              window.overrideUserInterfaceStyle = style
-              window.rootViewController?.overrideUserInterfaceStyle = style
+              window.overrideUserInterfaceStyle = forced
+              window.rootViewController?.overrideUserInterfaceStyle = forced
             }
           }
         }
