@@ -94,7 +94,9 @@ class MiniPlayerView: UIView {
     label.textAlignment = .center
     label.backgroundColor = .clear
     label.numberOfLines = 1
-    label.textColor = .label
+    // cassette Patch 015e: track title in display face, artist in mono.
+    label.font = UIFont.cassetteDisplay(size: 14, weight: .semibold)
+    label.textColor = CassetteTheme.UIColors.ink
     return label
   }()
 
@@ -104,7 +106,8 @@ class MiniPlayerView: UIView {
     label.backgroundColor = .clear
     label.textAlignment = .center
     label.numberOfLines = 1
-    label.textColor = .secondaryLabel
+    label.font = UIFont.cassetteMono(size: 11)
+    label.textColor = CassetteTheme.UIColors.ink2
     return label
   }()
 

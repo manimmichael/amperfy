@@ -71,6 +71,9 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
   override func viewDidLoad() {
     super.viewDidLoad()
 
+    // cassette Patch 015e: warm-deep backing under the now-playing artwork.
+    view.backgroundColor = CassetteTheme.UIColors.bg4
+    tableView.backgroundColor = CassetteTheme.UIColors.bg
     tableView.delegate = self
     tableView.dataSource = self
     tableView.dragDelegate = self

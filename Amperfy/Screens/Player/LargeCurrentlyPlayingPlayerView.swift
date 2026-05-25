@@ -171,6 +171,14 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     titleLabel.applyAmperfyStyle()
     albumLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
+    // cassette Patch 015e: Cassette typography on the popup player —
+    // title in big display, album in mid-display, artist in mono.
+    titleLabel.font = UIFont.cassetteDisplay(size: 22, weight: .bold)
+    titleLabel.textColor = CassetteTheme.UIColors.ink
+    albumLabel.font = UIFont.cassetteDisplay(size: 16, weight: .regular)
+    albumLabel.textColor = CassetteTheme.UIColors.ink2
+    artistLabel.font = UIFont.cassetteMono(size: 13)
+    artistLabel.textColor = CassetteTheme.UIColors.ink2
 
     lyricsView = LyricsView()
     lyricsView!.frame = upperContainerView.bounds

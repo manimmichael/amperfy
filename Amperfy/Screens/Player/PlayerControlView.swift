@@ -101,15 +101,25 @@ class PlayerControlView: UIView {
 
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
 
-    playButton.imageView?.tintColor = .label
-    previousButton.tintColor = .label
-    nextButton.tintColor = .label
-    skipBackwardButton.tintColor = .label
-    skipForwardButton.tintColor = .label
-    airplayButton.tintColor = .label
-    playerModeButton.tintColor = .label
-    volumeButton.tintColor = .label
-    optionsButton.imageView?.tintColor = .label
+    // cassette Patch 015e: ink primary on transport/aux controls; the
+    // big play button keeps Cassette orange so the "go" action reads
+    // first. Time labels switch to the mono face for catalog feel.
+    playButton.imageView?.tintColor = CassetteTheme.UIColors.orange
+    previousButton.tintColor = CassetteTheme.UIColors.ink
+    nextButton.tintColor = CassetteTheme.UIColors.ink
+    skipBackwardButton.tintColor = CassetteTheme.UIColors.ink
+    skipForwardButton.tintColor = CassetteTheme.UIColors.ink
+    airplayButton.tintColor = CassetteTheme.UIColors.ink2
+    playerModeButton.tintColor = CassetteTheme.UIColors.ink2
+    volumeButton.tintColor = CassetteTheme.UIColors.ink2
+    optionsButton.imageView?.tintColor = CassetteTheme.UIColors.ink2
+    elapsedTimeLabel.font = UIFont.cassetteMono(size: 12)
+    elapsedTimeLabel.textColor = CassetteTheme.UIColors.ink2
+    remainingTimeLabel.font = UIFont.cassetteMono(size: 12)
+    remainingTimeLabel.textColor = CassetteTheme.UIColors.ink2
+    timeSlider.minimumTrackTintColor = CassetteTheme.UIColors.orange
+    timeSlider.maximumTrackTintColor = CassetteTheme.UIColors.ink4
+    timeSlider.thumbTintColor = CassetteTheme.UIColors.orange
     refreshPlayer()
     playerHandler?.refreshPlayerOptions(
       optionsButton: optionsButton,
