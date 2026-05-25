@@ -33,6 +33,10 @@ class CommonCollectionSectionHeader: UICollectionReusableView {
   func display(title: String?) {
     titleLabel.text = title
     titleLabel.isHidden = (title == nil)
+    // cassette Patch 015: Cassette display face for every section header.
+    // Doing it here rather than in the xib avoids touching IB outlets.
+    titleLabel.font = UIFont.cassetteDisplay(size: 18, weight: .semibold)
+    titleLabel.textColor = CassetteTheme.UIColors.ink
   }
 
   func displayPlayHeader(configuration: PlayShuffleInfoConfiguration) {

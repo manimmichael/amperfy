@@ -69,6 +69,7 @@ final class HomeVC: UICollectionViewController {
     super.viewDidLoad()
     // ensures that the collection view stops placing items under the sidebar
     collectionView.contentInsetAdjustmentBehavior = .scrollableAxes
+    collectionView.backgroundColor = CassetteTheme.UIColors.bg
     title = "Home"
 
     accountNotificationHandler = AccountNotificationHandler(
@@ -437,8 +438,10 @@ final class SectionHeaderView: UICollectionReusableView {
   private let titleLabel: UILabel = {
     let lbl = UILabel()
     lbl.translatesAutoresizingMaskIntoConstraints = false
-    lbl.font = UIFont.preferredFont(forTextStyle: .title3).withWeight(.semibold)
-    lbl.textColor = .label
+    // cassette Patch 015: section headers use Barlow Condensed display
+    // face in warm-paper ink, with a wider tracked uppercase render.
+    lbl.font = UIFont.cassetteDisplay(size: 22, weight: .bold)
+    lbl.textColor = CassetteTheme.UIColors.ink
     return lbl
   }()
 

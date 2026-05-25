@@ -134,6 +134,26 @@ class BasicTableViewController: KeyCommandTableViewController {
     updateSearchResults(for: searchController)
   }
 
+  override func tableView(
+    _ tableView: UITableView,
+    willDisplayHeaderView view: UIView,
+    forSection section: Int
+  ) {
+    // cassette Patch 015: every table section header (Library, Search,
+    // Playlists, etc.) gets the Cassette display face + warm ink colour.
+    // Done at willDisplay so we don't have to override
+    // viewForHeaderInSection in every subclass.
+    if let header = view as? UITableViewHeaderFooterView {
+      var config = header.defaultContentConfiguration()
+      config.text = header.textLabel?.text ?? config.text
+      config.textProperties.font = UIFont.cassetteDisplay(size: 15, weight: .bold)
+      config.textProperties.color = CassetteTheme.UIColors.ink2
+      config.textProperties.transform = .uppercase
+      header.contentConfiguration = config
+      header.contentView.backgroundColor = CassetteTheme.UIColors.bg
+    }
+  }
+
   override func tableView(_ tableView: UITableView, willBeginEditingRowAt indexPath: IndexPath) {
     isSingleCellEditingModeActive = true
   }
