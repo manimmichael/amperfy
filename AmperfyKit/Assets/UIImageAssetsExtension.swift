@@ -431,7 +431,11 @@ extension UIImage {
     artworkType: ArtworkType
   )
     -> UIImage {
-    let resourceName = "\(theme.description)\(artworkType.description)"
+    // cassette Patch 015d: every theme case resolves to Cassette orange,
+    // but the asset names still vary by enum (Blue*, Green*, ...). Pin
+    // every lookup to the Orange* set so missing artwork looks
+    // consistent across the app instead of a random colour per row.
+    let resourceName = "Orange\(artworkType.description)"
     return UIImage(imageLiteralResourceName: resourceName)
   }
 
