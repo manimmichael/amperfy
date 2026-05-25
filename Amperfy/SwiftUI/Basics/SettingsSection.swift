@@ -19,6 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+import AmperfyKit
 import Foundation
 import SwiftUI
 
@@ -37,13 +38,32 @@ struct SettingsSection<Content: View>: View {
     self.header = header
   }
 
+  // cassette Patch 015g: section header in display caps + ink2;
+  // footer in mono ink3 for the "liner notes" feel.
+  private func headerText(_ value: String) -> some View {
+    Text(value.uppercased())
+      .font(.cassetteDisplay(size: 13, weight: .bold))
+      .tracking(0.6)
+      .foregroundColor(CassetteTheme.Colors.ink2)
+  }
+
+  private func footerText(_ value: String) -> some View {
+    Text(value)
+      .font(.cassetteMono(size: 11))
+      .foregroundColor(CassetteTheme.Colors.ink3)
+  }
+
   var body: some View {
     if let footer = footer, let header = header {
-      Section(content: content, header: { Text(header) }, footer: { Text(footer) })
+      Section(
+        content: content,
+        header: { headerText(header) },
+        footer: { footerText(footer) }
+      )
     } else if let header = header {
-      Section(content: content, header: { Text(header) })
+      Section(content: content, header: { headerText(header) })
     } else if let footer = footer {
-      Section(content: content, footer: { Text(footer) })
+      Section(content: content, footer: { footerText(footer) })
     } else {
       Section(content: content)
     }

@@ -19,6 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+import AmperfyKit
 import Foundation
 import SwiftUI
 
@@ -30,9 +31,18 @@ struct SettingsList<Content: View>: View {
   }
 
   var body: some View {
+    // cassette Patch 015g: every settings list adopts the warm Cassette
+    // palette. .scrollContentBackground(.hidden) lets the bg token
+    // show through the system Form chrome on iOS 16+. Tint pins
+    // toggles, navigation chevrons, and section accent colour to
+    // Cassette orange.
     List {
       content()
+        .listRowBackground(CassetteTheme.Colors.bg2)
     }
-    .background(Color.clear)
+    .scrollContentBackground(.hidden)
+    .background(CassetteTheme.Colors.bg)
+    .tint(CassetteTheme.Colors.orange)
+    .foregroundColor(CassetteTheme.Colors.ink)
   }
 }

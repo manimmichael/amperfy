@@ -19,6 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+import AmperfyKit
 import Foundation
 import SwiftUI
 
@@ -47,11 +48,18 @@ struct SettingsRow<Content: View>: View {
     self.splitPercentage = min(max(splitPercentage, 0.0), 1.0)
   }
 
+  // cassette Patch 015g: row title in display semibold, ink primary.
+  private func titleText(_ value: String) -> some View {
+    Text(value)
+      .font(.cassetteDisplay(size: 15, weight: .semibold))
+      .foregroundColor(CassetteTheme.Colors.ink)
+  }
+
   var body: some View {
     if orientation == .horizontal {
       HStack {
         if let title {
-          Text(title)
+          titleText(title)
         }
         Spacer()
         detail()
@@ -59,7 +67,7 @@ struct SettingsRow<Content: View>: View {
     } else {
       VStack(alignment: .leading) {
         if let title {
-          Text(title)
+          titleText(title)
             .padding([.bottom], 2)
         }
         detail()

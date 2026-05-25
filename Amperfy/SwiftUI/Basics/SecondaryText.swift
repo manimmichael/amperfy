@@ -19,6 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+import AmperfyKit
 import Foundation
 
 import SwiftUI
@@ -31,8 +32,11 @@ struct SecondaryText: View {
   }
 
   var body: some View {
+    // cassette Patch 015g: trailing metadata (version, build no.,
+    // disk usage, etc.) reads in the mono catalog face.
     Text(text)
-      .foregroundStyle(Color.secondaryLabel)
+      .font(.cassetteMono(size: 12))
+      .foregroundStyle(CassetteTheme.Colors.ink2)
       .help(text)
   }
 }
