@@ -289,7 +289,7 @@ class LoginVC: UIViewController {
     loginGlassContainer.isHidden = false
     navidromeHelpButton.isHidden = false
     serverDescriptionLabel.text =
-      "Cassette plays music from your own Navidrome server. Enter its address to get started."
+      "Already have a Subsonic-compatible server? Enter its address below to connect manually."
   }
 
   #if targetEnvironment(macCatalyst)
@@ -328,7 +328,7 @@ class LoginVC: UIViewController {
   fileprivate lazy var serverUrlTF: UITextField = {
     let textField = UITextField()
     textField.configuteForLogin(image: .serverUrl)
-    textField.placeholder = "https://your-navidrome.local:4533"
+    textField.placeholder = "https://your-server.local:4533"
     textField.textContentType = .URL
     textField.keyboardType = .URL
     textField.autocorrectionType = .no
@@ -433,7 +433,7 @@ class LoginVC: UIViewController {
   fileprivate lazy var serverDescriptionLabel: UILabel = {
     let label = UILabel()
     label.text =
-      "Cassette plays music from your own Navidrome server. Enter its address to get started."
+      "Sign in with your Cassette account to connect your library."
     label.font = UIFont.cassetteDisplay(size: 16, weight: .regular)
     label.textColor = .secondaryLabel
     label.numberOfLines = 0
@@ -441,13 +441,14 @@ class LoginVC: UIViewController {
     return label
   }()
 
-  // Help link shown below the Login button.
+  // Help link shown below the Login button. Kept around for users running their
+  // own Subsonic-compatible server who skip the hosted Cassette flow entirely.
   fileprivate lazy var navidromeHelpButton: UIButton = {
     var config = UIButton.Configuration.plain()
     config.baseForegroundColor = .secondaryLabel
     config.contentInsets = .zero
     let button = UIButton(configuration: config)
-    button.setTitle("New to Navidrome? Set it up first →", for: .normal)
+    button.setTitle("Need help setting up a server? →", for: .normal)
     button.titleLabel?.font = UIFont.cassetteDisplay(size: 14, weight: .regular)
     button.addTarget(self, action: #selector(Self.navidromeHelpPressed), for: .touchUpInside)
     return button
@@ -455,6 +456,8 @@ class LoginVC: UIViewController {
 
   @IBAction
   func navidromeHelpPressed() {
+    // Cassette dogfoods Navidrome under the hood, so the docs link still
+    // points there for advanced self-hosters routing through manual setup.
     guard let url = URL(string: "https://www.navidrome.org/docs/installation/") else { return }
     UIApplication.shared.open(url)
   }
