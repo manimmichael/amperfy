@@ -105,8 +105,19 @@ class GenericDetailTableHeader: UIView {
     titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
     nameTextField.setContentCompressionResistancePriority(.required, for: .vertical)
     subtitleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-    // Fix attributed text ignores tint
+    // cassette Patch 015f: hero header typography. Title in big
+    // display, subtitle (artist link) in display, info (year, count)
+    // in mono. Subtitle keeps tint colour for the tappable feel.
+    titleLabel.font = UIFont.cassetteDisplay(size: 28, weight: .bold)
+    titleLabel.textColor = CassetteTheme.UIColors.ink
+    nameTextField.font = UIFont.cassetteDisplay(size: 28, weight: .bold)
+    nameTextField.textColor = CassetteTheme.UIColors.ink
+    subtitleLabel.font = UIFont.cassetteDisplay(size: 17, weight: .semibold)
     subtitleLabel.textColor = .tintColor
+    infoLabel.font = UIFont.cassetteMono(size: 12)
+    infoLabel.textColor = CassetteTheme.UIColors.ink2
+    descriptionLabel.font = UIFont.preferredFont(forTextStyle: .body)
+    descriptionLabel.textColor = CassetteTheme.UIColors.ink2
     infoLabel.setContentCompressionResistancePriority(.required, for: .vertical)
     layoutMargins = UIView.defaultMarginTopElement
     if let playShuffleInfoConfig = config?.playShuffleInfoConfig {

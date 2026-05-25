@@ -63,7 +63,7 @@ class GenericTableCell: BasicTableCell {
     infoLabel.text = infoText
     infoLabel.textAlignment = (traitCollection.horizontalSizeClass == .regular) ? .right : .left
     favoriteIconImage.isHidden = !container.isFavorite
-    favoriteIconImage.tintColor = .red
+    favoriteIconImage.tintColor = CassetteTheme.UIColors.amber
 
     if container is Album {
       infoLabelWidthConstraint.constant = 75
@@ -75,6 +75,15 @@ class GenericTableCell: BasicTableCell {
       infoLabelWidthConstraint.constant = 140
     }
     accessoryType = .disclosureIndicator
-    backgroundColor = .systemBackground
+    // cassette Patch 015f: warm bg + Cassette typography on every
+    // generic row (album list, artist list, genre, podcast, etc.).
+    backgroundColor = CassetteTheme.UIColors.bg
+    contentView.backgroundColor = CassetteTheme.UIColors.bg
+    titleLabel.font = UIFont.cassetteDisplay(size: 17, weight: .semibold)
+    titleLabel.textColor = CassetteTheme.UIColors.ink
+    subtitleLabel.font = UIFont.cassetteMono(size: 12)
+    subtitleLabel.textColor = CassetteTheme.UIColors.ink2
+    infoLabel.font = UIFont.cassetteMono(size: 11)
+    infoLabel.textColor = CassetteTheme.UIColors.ink3
   }
 }

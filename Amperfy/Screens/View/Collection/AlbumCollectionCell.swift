@@ -78,6 +78,12 @@ class AlbumCollectionCell: BasicCollectionCell {
     self.rootView = rootView
     titleLabel.text = container.name
     subtitleLabel.text = container.subtitle
+    // cassette Patch 015f: title display, subtitle mono, on warm bg.
+    titleLabel.font = UIFont.cassetteDisplay(size: 15, weight: .semibold)
+    titleLabel.textColor = CassetteTheme.UIColors.ink
+    subtitleLabel.font = UIFont.cassetteMono(size: 11)
+    subtitleLabel.textColor = CassetteTheme.UIColors.ink2
+    contentView.backgroundColor = CassetteTheme.UIColors.bg
     entityImage.display(
       theme: appDelegate.storage.settings.accounts.getSetting(container.account?.info).read
         .themePreference,
