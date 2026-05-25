@@ -171,7 +171,15 @@ class LoginVC: UIViewController {
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.timeoutInterval = 15
 
-    URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+    // Use a dedicated ephemeral session with CassetteAuthPreservingDelegate so that
+    // the Authorization header survives any HTTP redirect Vercel may issue before
+    // the route handler runs. URLSession.shared drops Authorization on redirect.
+    let cassetteSession = URLSession(
+      configuration: .ephemeral,
+      delegate: CassetteAuthPreservingDelegate(),
+      delegateQueue: nil
+    )
+    cassetteSession.dataTask(with: request) { [weak self] data, response, error in
       guard let self else { return }
 
       if let error {
@@ -942,5 +950,26 @@ class LoginVC: UIViewController {
 extension LoginVC: ASWebAuthenticationPresentationContextProviding {
   func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
     view.window ?? UIWindow()
+  }
+}
+
+// cassette Patch 014: Preserve the Authorization header on HTTP redirects.
+// URLSession.shared drops Authorization when following any redirect (standard iOS
+// security behaviour — prevents credential leakage to third-party hosts). Any
+// 301/302 Vercel or a CDN edge emits before the Next.js route handler runs causes
+// the header to vanish. A dedicated session with this delegate re-attaches it.
+private final class CassetteAuthPreservingDelegate: NSObject, URLSessionTaskDelegate {
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse,
+    newRequest: URLRequest,
+    completionHandler: @escaping (URLRequest?) -> Void
+  ) {
+    var req = newRequest
+    if let auth = task.originalRequest?.value(forHTTPHeaderField: "Authorization") {
+      req.setValue(auth, forHTTPHeaderField: "Authorization")
+    }
+    completionHandler(req)
   }
 }
