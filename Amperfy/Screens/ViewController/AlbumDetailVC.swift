@@ -118,7 +118,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
-    detailOperationsView?.kind = "ALBUM"
+    refreshAlbumMetadataLine()
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()
     optionsButton.menu = UIMenu.lazyMenu {
@@ -157,8 +157,24 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       } catch {
         self.appDelegate.eventLogger.report(topic: "Album Sync", error: error)
       }
+      self.refreshAlbumMetadataLine()
       self.detailOperationsView?.refresh()
     }
+  }
+
+  // Patch 026: build the Spotify-style "Type · Year · Duration" metadata
+  // line. Type comes from OpenSubsonic releaseTypes (defaults to "Album"
+  // when the server didn't surface one). Year and duration are skipped
+  // when missing rather than rendered as zeros.
+  private func refreshAlbumMetadataLine() {
+    var parts: [String] = [album.albumType]
+    if album.year > 0 {
+      parts.append("\(album.year)")
+    }
+    if album.duration > 0 {
+      parts.append(album.duration.asDurationShortString)
+    }
+    detailOperationsView?.metadataOverride = parts.joined(separator: " · ")
   }
 
   override func viewDidAppear(_ animated: Bool) {

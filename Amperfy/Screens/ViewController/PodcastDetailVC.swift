@@ -97,7 +97,7 @@ class PodcastDetailVC: SingleFetchedResultsTableViewController<PodcastEpisodeMO>
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
-    detailOperationsView?.kind = "PODCAST"
+    refreshPodcastMetadataLine()
     refreshControl?.addTarget(
       self,
       action: #selector(Self.handleRefresh),
@@ -142,8 +142,19 @@ class PodcastDetailVC: SingleFetchedResultsTableViewController<PodcastEpisodeMO>
       } catch {
         self.appDelegate.eventLogger.report(topic: "Podcast Sync", error: error)
       }
+      self.refreshPodcastMetadataLine()
       self.detailOperationsView?.refresh()
     }
+  }
+
+  // Patch 026: podcast metadata line — "Podcast · 142 episodes". Episode
+  // count comes straight off the synced podcast entity.
+  private func refreshPodcastMetadataLine() {
+    var parts: [String] = ["Podcast"]
+    if podcast.episodeCount > 0 {
+      parts.append("\(podcast.episodeCount) episode\(podcast.episodeCount == 1 ? "" : "s")")
+    }
+    detailOperationsView?.metadataOverride = parts.joined(separator: " · ")
   }
 
   override func viewDidAppear(_ animated: Bool) {

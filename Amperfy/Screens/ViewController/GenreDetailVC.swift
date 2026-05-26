@@ -104,7 +104,7 @@ class GenreDetailVC: MultiSourceTableViewController {
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
-    detailOperationsView?.kind = "GENRE"
+    refreshGenreMetadataLine()
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()
     optionsButton.menu = UIMenu.lazyMenu {
@@ -229,8 +229,21 @@ class GenreDetailVC: MultiSourceTableViewController {
       } catch {
         self.appDelegate.eventLogger.report(topic: "Genre Sync", error: error)
       }
+      self.refreshGenreMetadataLine()
       self.detailOperationsView?.refresh()
     }
+  }
+
+  // Patch 026: genre metadata line — "Genre · 23 artists · 412 songs".
+  private func refreshGenreMetadataLine() {
+    var parts: [String] = ["Genre"]
+    if genre.artistCount > 0 {
+      parts.append("\(genre.artistCount) artist\(genre.artistCount == 1 ? "" : "s")")
+    }
+    if genre.songCount > 0 {
+      parts.append("\(genre.songCount) song\(genre.songCount == 1 ? "" : "s")")
+    }
+    detailOperationsView?.metadataOverride = parts.joined(separator: " · ")
   }
 
   override func viewWillDisappear(_ animated: Bool) {

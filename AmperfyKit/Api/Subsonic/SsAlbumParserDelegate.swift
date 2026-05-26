@@ -29,6 +29,8 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
   var guessedGenre: Genre?
   var parsedAlbums = [Album]()
   private var albumBuffer: Album?
+  private var releaseTypesBuffer = [String]()
+  private var isCompilationBuffer = false
 
   override func parser(
     _ parser: XMLParser,
@@ -60,6 +62,8 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
         guessedGenre = nil
       }
       albumBuffer?.remoteStatus = .available
+      releaseTypesBuffer = []
+      isCompilationBuffer = (attributeDict["isCompilation"] == "true")
 
       if let attributeAlbumtName = attributeDict["name"] {
         albumBuffer?.name = attributeAlbumtName
@@ -125,11 +129,25 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
   ) {
     switch elementName {
     case "album":
+      let derived = Self.deriveAlbumType(
+        releaseTypes: releaseTypesBuffer,
+        isCompilation: isCompilationBuffer
+      )
+      if let derived {
+        albumBuffer?.albumTypeRaw = derived
+      }
+      releaseTypesBuffer = []
+      isCompilationBuffer = false
       parsedCount += 1
       if let album = albumBuffer {
         parsedAlbums.append(album)
       }
       albumBuffer = nil
+    case "releaseTypes":
+      let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty {
+        releaseTypesBuffer.append(trimmed)
+      }
     default:
       break
     }
@@ -140,5 +158,27 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
       namespaceURI: namespaceURI,
       qualifiedName: qName
     )
+  }
+
+  static func deriveAlbumType(releaseTypes: [String], isCompilation: Bool) -> String? {
+    if isCompilation { return "Compilation" }
+    guard let raw = releaseTypes.first else { return nil }
+    return formatReleaseType(raw)
+  }
+
+  static func formatReleaseType(_ raw: String) -> String {
+    switch raw.lowercased() {
+    case "album": return "Album"
+    case "ep": return "EP"
+    case "single": return "Single"
+    case "compilation": return "Compilation"
+    case "live": return "Live"
+    case "soundtrack": return "Soundtrack"
+    case "remix": return "Remix"
+    case "demo": return "Demo"
+    case "mixtape/street": return "Mixtape"
+    case "mixtape": return "Mixtape"
+    default: return raw.prefix(1).uppercased() + raw.dropFirst()
+    }
   }
 }

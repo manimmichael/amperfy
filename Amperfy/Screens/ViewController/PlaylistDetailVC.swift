@@ -180,14 +180,17 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
-    detailOperationsView?.kind = "PLAYLIST"
+    refreshPlaylistMetadataLine()
     refreshControl?.addTarget(
       self,
       action: #selector(Self.handleRefresh),
       for: UIControl.Event.valueChanged
     )
 
-    snapshotDidChange = detailOperationsView?.refresh
+    snapshotDidChange = { [weak self] in
+      self?.refreshPlaylistMetadataLine()
+      self?.detailOperationsView?.refresh()
+    }
 
     containableAtIndexPathCallback = { indexPath in
       self.fetchedResultsController.getWrappedEntity(at: indexPath).playable
@@ -229,9 +232,24 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       } catch {
         self.appDelegate.eventLogger.report(topic: "Playlist Sync", error: error)
       }
+      self.refreshPlaylistMetadataLine()
       self.detailOperationsView?.refresh()
       self.refreshEmptyState()
     }
+  }
+
+  // Patch 026: playlist metadata line. Year doesn't apply for playlists,
+  // so we surface scope: "Playlist · 14 songs · 56m". Counts and
+  // duration are skipped when missing.
+  private func refreshPlaylistMetadataLine() {
+    var parts: [String] = ["Playlist"]
+    if playlist.songCount > 0 {
+      parts.append("\(playlist.songCount) song\(playlist.songCount == 1 ? "" : "s")")
+    }
+    if playlist.duration > 0 {
+      parts.append(playlist.duration.asDurationShortString)
+    }
+    detailOperationsView?.metadataOverride = parts.joined(separator: " · ")
   }
 
   /// cassette Patch 020: Cassette-flavored "Empty playlist" state.

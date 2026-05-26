@@ -29,6 +29,8 @@ extension AlbumMO {
   }
 
   @NSManaged
+  public var albumType: String?
+  @NSManaged
   public var duration: Int64
   @NSManaged
   public var isSongsMetaDataSynced: Bool

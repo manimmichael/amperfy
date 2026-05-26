@@ -63,6 +63,23 @@ public class Album: AbstractLibraryEntity {
     }
   }
 
+  /// Display label for the album release type, e.g. "Album", "EP", "Single", "Compilation".
+  /// Falls back to "Album" when no OpenSubsonic releaseTypes were parsed.
+  public var albumType: String {
+    managedObject.albumType ?? "Album"
+  }
+
+  /// Raw nullable accessor used by the parser to write the parsed value.
+  /// UI should prefer `albumType`, which provides the human-readable fallback.
+  public var albumTypeRaw: String? {
+    get { managedObject.albumType }
+    set {
+      if managedObject.albumType != newValue {
+        managedObject.albumType = newValue
+      }
+    }
+  }
+
   public var duration: Int { Int(managedObject.duration) }
 
   public var remoteDuration: Int {

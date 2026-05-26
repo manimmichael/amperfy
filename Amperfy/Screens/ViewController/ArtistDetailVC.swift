@@ -92,7 +92,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
-    detailOperationsView?.kind = "ARTIST"
+    refreshArtistMetadataLine()
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()
     optionsButton.menu = UIMenu.lazyMenu {
@@ -193,8 +193,23 @@ class ArtistDetailVC: MultiSourceTableViewController {
       } catch {
         self.appDelegate.eventLogger.report(topic: "Artist Sync", error: error)
       }
+      self.refreshArtistMetadataLine()
       self.detailOperationsView?.refresh()
     }
+  }
+
+  // Patch 026: artist metadata line. Year doesn't apply, so we surface
+  // catalog scope instead: "Artist · 12 albums · 187 songs". Counts are
+  // suppressed when missing rather than rendered as zeros.
+  private func refreshArtistMetadataLine() {
+    var parts: [String] = ["Artist"]
+    if artist.albumCount > 0 {
+      parts.append("\(artist.albumCount) album\(artist.albumCount == 1 ? "" : "s")")
+    }
+    if artist.songCount > 0 {
+      parts.append("\(artist.songCount) song\(artist.songCount == 1 ? "" : "s")")
+    }
+    detailOperationsView?.metadataOverride = parts.joined(separator: " · ")
   }
 
   override func viewWillDisappear(_ animated: Bool) {
