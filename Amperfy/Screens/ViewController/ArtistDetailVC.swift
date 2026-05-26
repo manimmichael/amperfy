@@ -92,6 +92,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
+    detailOperationsView?.kind = "ARTIST"
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()
     optionsButton.menu = UIMenu.lazyMenu {

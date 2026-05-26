@@ -97,6 +97,7 @@ class PodcastDetailVC: SingleFetchedResultsTableViewController<PodcastEpisodeMO>
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
+    detailOperationsView?.kind = "PODCAST"
     refreshControl?.addTarget(
       self,
       action: #selector(Self.handleRefresh),

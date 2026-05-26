@@ -180,6 +180,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
+    detailOperationsView?.kind = "PLAYLIST"
     refreshControl?.addTarget(
       self,
       action: #selector(Self.handleRefresh),

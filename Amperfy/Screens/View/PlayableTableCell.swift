@@ -388,6 +388,7 @@ class PlayableTableCell: BasicTableCell {
 
     refreshSubtitleColor()
     refreshCacheAndDuration()
+    refreshCurrentlyPlayingHighlight(playable: playable)
 
     // Update rating display for songs (only if setting is enabled)
     if appDelegate.storage.settings.user.isShowRating, let song = playable.asSong {
@@ -395,6 +396,18 @@ class PlayableTableCell: BasicTableCell {
     } else {
       ratingStackView?.isHidden = true
     }
+  }
+
+  /// cassette Patch 019: highlight the row that's currently playing with a
+  /// faint orange wash. Comparison piggybacks on the player notification
+  /// subscriptions already wired up via `playerPlay/Pause/Stop` (Mac
+  /// Catalyst) and the `refresh()` call sites that fire when the queue
+  /// changes — no new observers needed.
+  private func refreshCurrentlyPlayingHighlight(playable: AbstractPlayable) {
+    let isCurrentlyPlaying = appDelegate.player.currentlyPlaying == playable
+    contentView.backgroundColor = isCurrentlyPlaying ?
+      CassetteTheme.UIColors.orange.withAlphaComponent(0.04) :
+      CassetteTheme.UIColors.bg
   }
 
   private func configureTrackNumberLabel() {

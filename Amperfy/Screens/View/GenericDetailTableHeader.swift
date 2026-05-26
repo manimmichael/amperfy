@@ -60,6 +60,38 @@ class GenericDetailTableHeader: UIView {
   var playShuffleInfoView: LibraryElementDetailTableHeaderView?
   var isEditing = false
 
+  // cassette Patch 019: editorial polish layer for hero detail headers.
+  // Eyebrow label sits above the title and reads "ALBUM" / "ARTIST" /
+  // "PLAYLIST" / "GENRE" / "PODCAST" in mono orange — Cassette's
+  // signature category cue. Gradient layer fades the artist artwork's
+  // bottom edge so the title stays legible against any photo.
+  private let eyebrowLabel = UILabel()
+  private let artistGradient = CAGradientLayer()
+  private var didInstallEyebrow = false
+
+  /// Pass an uppercase tag like "ALBUM" or "ARTIST" before calling
+  /// `prepare(configuration:)` (or right after) to surface the eyebrow.
+  /// Set to nil to hide it. The label installs lazily so callers don't
+  /// have to coordinate timing with awakeFromNib.
+  var kind: String? {
+    didSet {
+      installEyebrowIfNeeded()
+      if let raw = kind, !raw.isEmpty {
+        let attrs: [NSAttributedString.Key: Any] = [
+          .kern: 0.08 * 10, // letter spacing 0.08 of point size
+        ]
+        eyebrowLabel.attributedText = NSAttributedString(
+          string: raw.uppercased(),
+          attributes: attrs
+        )
+        eyebrowLabel.isHidden = false
+      } else {
+        eyebrowLabel.attributedText = nil
+        eyebrowLabel.isHidden = true
+      }
+    }
+  }
+
   static let frameHeightCompact: CGFloat = 400.0
   static let frameHeightRegular: CGFloat = 240.0
   static func frameHeight(traitCollection: UITraitCollection) -> CGFloat {
@@ -134,6 +166,8 @@ class GenericDetailTableHeader: UIView {
     } else {
       descriptionLabel.isHidden = true
     }
+    installEyebrowIfNeeded()
+    configureArtworkPresentation()
     refresh()
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
@@ -141,6 +175,49 @@ class GenericDetailTableHeader: UIView {
         self.applyTraitCollectionChange()
       }
     )
+  }
+
+  private func installEyebrowIfNeeded() {
+    guard !didInstallEyebrow, titleLabel != nil else { return }
+    didInstallEyebrow = true
+    eyebrowLabel.translatesAutoresizingMaskIntoConstraints = false
+    eyebrowLabel.font = UIFont.cassetteMono(size: 10, weight: .medium)
+    eyebrowLabel.textColor = CassetteTheme.UIColors.orange
+    eyebrowLabel.numberOfLines = 1
+    // 0.08 letter spacing applied via attributedText on each set so the
+    // tracking persists when the title text changes.
+    eyebrowLabel.isHidden = true
+
+    guard let titleSuperview = titleLabel.superview else { return }
+    titleSuperview.addSubview(eyebrowLabel)
+    NSLayoutConstraint.activate([
+      eyebrowLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+      eyebrowLabel.trailingAnchor.constraint(lessThanOrEqualTo: titleLabel.trailingAnchor),
+      eyebrowLabel.bottomAnchor.constraint(equalTo: titleLabel.topAnchor, constant: -4),
+    ])
+  }
+
+  private func configureArtworkPresentation() {
+    guard let entityContainer = config?.entityContainer else { return }
+    if entityContainer is Artist {
+      // Circular artist photo + bottom gradient for legibility.
+      entityImage.layer.masksToBounds = true
+      if artistGradient.superlayer == nil {
+        artistGradient.colors = [
+          UIColor.clear.cgColor,
+          UIColor.black.withAlphaComponent(0.35).cgColor,
+        ]
+        artistGradient.locations = [0.6, 1.0]
+        artistGradient.startPoint = CGPoint(x: 0.5, y: 0.0)
+        artistGradient.endPoint = CGPoint(x: 0.5, y: 1.0)
+        entityImage.layer.addSublayer(artistGradient)
+      }
+      artistGradient.isHidden = false
+    } else {
+      // Album / playlist / genre / podcast keep the existing square crop.
+      entityImage.layer.cornerRadius = CornerRadius.small.asCGFloat
+      artistGradient.isHidden = true
+    }
   }
 
   func refresh() {
@@ -186,6 +263,18 @@ class GenericDetailTableHeader: UIView {
     }
 
     playShuffleInfoView?.refresh()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    // Circular crop and gradient frame have to track the artwork's bounds.
+    if config?.entityContainer is Artist {
+      entityImage.layer.cornerRadius = entityImage.bounds.width / 2
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      artistGradient.frame = entityImage.bounds
+      CATransaction.commit()
+    }
   }
 
   func applyTraitCollectionChange() {
