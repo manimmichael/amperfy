@@ -104,66 +104,31 @@ extension PopupPlayerVC {
     button.configuration = config
   }
 
+  /// cassette Patch 029: the popup-player background is now a flat
+  /// `bg4` surface set on the host view in `PopupPlayerVC.viewDidLoad`.
+  /// The blurred album-art layer + `DominantColors`-driven gradient
+  /// (Patches 022/024) produced a persistently blue backdrop that
+  /// clashed with the orange controls; the audit calls for stripping
+  /// the album-art layer entirely. This method is intentionally a
+  /// no-op so the existing `refreshCurrentlyPlayingArtworks` /
+  /// `downloadFinishedSuccessful` call sites stay valid without
+  /// repopulating the backdrop.
   func refreshBackgroundItemArtwork() {
-    var artwork: UIImage?
-    var themePreference: ThemePreference = appDelegate.storage.settings.accounts.activeSetting.read
-      .themePreference
-    if let playableInfo = player.currentlyPlaying, let accountInfo = playableInfo.account?.info {
-      themePreference = appDelegate.storage.settings.accounts.getSetting(accountInfo).read
-        .themePreference
-      artwork = LibraryEntityImage.getImageToDisplayImmediately(
-        libraryEntity: playableInfo,
-        themePreference: themePreference,
-        artworkDisplayPreference: appDelegate.storage.settings.accounts.getSetting(accountInfo).read
-          .artworkDisplayPreference,
-        useCache: true
-      )
-    } else {
-      // cassette Patch 017: nothing playing — pass `name: nil` so the
-      // ghost renderer draws the matching SF Symbol instead of an
-      // empty initial card.
-      switch player.playerMode {
-      case .music:
-        artwork = .getGeneratedArtwork(
-          theme: themePreference,
-          artworkType: .song,
-          name: nil
-        )
-      case .podcast:
-        artwork = .getGeneratedArtwork(
-          theme: themePreference,
-          artworkType: .podcastEpisode,
-          name: nil
-        )
-      }
-    }
-    guard let artwork = artwork else { return }
-    backgroundImage.image = artwork
-    applyGradientBackground()
-  }
-
-  /// cassette Patch 024: drop the `DominantColors` extraction that fed
-  /// the gradient with album-art-extracted hues (the source of the
-  /// blue tint clashing with Cassette orange controls). The blurred
-  /// `backgroundImage` already provides atmospheric tint at the top;
-  /// we just overlay a clear-to-`bg` gradient so the bottom of the
-  /// view (where the controls live) reads as a clean Cassette-warm
-  /// surface.
-  internal func applyGradientBackground() {
+    backgroundImage.image = nil
     backgroundImage.layer.sublayers?
       .filter { $0 is CAGradientLayer }
       .forEach { $0.removeFromSuperlayer() }
-    let gradientLayer = CAGradientLayer()
-    gradientLayer.frame = backgroundImage.bounds
-    gradientLayer.colors = [
-      UIColor.clear.cgColor,
-      CassetteTheme.UIColors.bg.withAlphaComponent(0.45).cgColor,
-      CassetteTheme.UIColors.bg.withAlphaComponent(0.75).cgColor,
-    ]
-    gradientLayer.locations = [0.0, 0.55, 1.0]
-    gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.0)
-    gradientLayer.endPoint = CGPoint(x: 0.5, y: 1.0)
-    backgroundImage.layer.insertSublayer(gradientLayer, at: 0)
+  }
+
+  /// cassette Patch 029: the host view paints a flat `bg4` backdrop in
+  /// `PopupPlayerVC.viewDidLoad`. Patch 024's gradient layer is gone, so
+  /// this method only needs to clear any stale gradient sublayers that
+  /// might have been installed before the migration.
+  func applyGradientBackground() {
+    view.backgroundColor = CassetteTheme.UIColors.bg4
+    view.layer.sublayers?
+      .filter { $0 is CAGradientLayer }
+      .forEach { $0.removeFromSuperlayer() }
   }
 
   @objc

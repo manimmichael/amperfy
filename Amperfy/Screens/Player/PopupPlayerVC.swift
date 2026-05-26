@@ -83,7 +83,14 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
     player.addNotifier(notifier: self)
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
 
-    backgroundImage.setBackgroundBlur(style: .prominent)
+    // cassette Patch 029: the popup-player background is the flat bg4
+    // colour set above. Patches 022/024 layered album art + blur +
+    // gradient over it; the audit traced the persistent blue tint to
+    // that stack and prescribed stripping it entirely. The XIB still
+    // keeps `backgroundImage` so we can revisit a controlled artistic
+    // backdrop later, but for now it sits empty.
+    backgroundImage.image = nil
+    backgroundImage.isHidden = true
 
     controlPlaceholderHeightConstraint.constant = PlayerControlView
       .frameHeight + safetyMarginOnBottom

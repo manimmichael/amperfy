@@ -27,7 +27,6 @@
 		500DA64D2F087307005578C7 /* CarPlayLibraryTabExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500DA64C2F087307005578C7 /* CarPlayLibraryTabExtension.swift */; };
 		500DA64F2F0873DB005578C7 /* CarPlayCachedTabExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500DA64E2F0873DB005578C7 /* CarPlayCachedTabExtension.swift */; };
 		500DA6512F08750A005578C7 /* CarPlayCommonListExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500DA6502F08750A005578C7 /* CarPlayCommonListExtension.swift */; };
-		500E70D22E2FD63900636770 /* DominantColors in Frameworks */ = {isa = PBXBuildFile; productRef = 500E70D12E2FD63900636770 /* DominantColors */; };
 		501944182B78F97F00082D2E /* LargeCurrentlyPlayingPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501944172B78F97F00082D2E /* LargeCurrentlyPlayingPlayerView.swift */; };
 		501944192B78F9B800082D2E /* LargeCurrentlyPlayingPlayerView.xib in Resources */ = {isa = PBXBuildFile; fileRef = 501944162B78F97F00082D2E /* LargeCurrentlyPlayingPlayerView.xib */; };
 		5019441B2B7A049A00082D2E /* PopupPlayer+Visuals.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5019441A2B7A049A00082D2E /* PopupPlayer+Visuals.swift */; };
@@ -1175,7 +1174,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				50699C822ED859B20039BECD /* AudioStreaming in Frameworks */,
-				500E70D22E2FD63900636770 /* DominantColors in Frameworks */,
 				507DFE902B1E7262002BBB1D /* CallbackURLKit in Frameworks */,
 				507DFE552B1E587B002BBB1D /* Alamofire in Frameworks */,
 				5052497D2D10CBED0005EEB0 /* Collections in Frameworks */,
@@ -2233,7 +2231,6 @@
 				507DFE542B1E587B002BBB1D /* Alamofire */,
 				507DFE8F2B1E7262002BBB1D /* CallbackURLKit */,
 				5052497C2D10CBED0005EEB0 /* Collections */,
-				500E70D12E2FD63900636770 /* DominantColors */,
 				50699C812ED859B20039BECD /* AudioStreaming */,
 			);
 			productName = Amperfy;
@@ -2339,7 +2336,6 @@
 				507DFE532B1E587B002BBB1D /* XCRemoteSwiftPackageReference "Alamofire" */,
 				50F40A392C9088B30097FE63 /* XCRemoteSwiftPackageReference "Ifrit" */,
 				505249792D10CBC70005EEB0 /* XCRemoteSwiftPackageReference "swift-collections" */,
-				500E70D02E2FD63900636770 /* XCRemoteSwiftPackageReference "DominantColors" */,
 				50B166A82ED071A100F7A1D6 /* XCRemoteSwiftPackageReference "AudioStreaming" */,
 			);
 			productRefGroup = 508385E521C5965B00C4BB32 /* Products */;
@@ -3380,14 +3376,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		500E70D02E2FD63900636770 /* XCRemoteSwiftPackageReference "DominantColors" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/DenDmitriev/DominantColors";
-			requirement = {
-				kind = exactVersion;
-				version = 1.2.2;
-			};
-		};
 		505249792D10CBC70005EEB0 /* XCRemoteSwiftPackageReference "swift-collections" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/apple/swift-collections.git";
@@ -3463,11 +3451,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		500E70D12E2FD63900636770 /* DominantColors */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 500E70D02E2FD63900636770 /* XCRemoteSwiftPackageReference "DominantColors" */;
-			productName = DominantColors;
-		};
 		502B8A4C2EE0CE40004CA3AD /* AudioStreaming */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 50B166A82ED071A100F7A1D6 /* XCRemoteSwiftPackageReference "AudioStreaming" */;
