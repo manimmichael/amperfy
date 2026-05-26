@@ -31,12 +31,14 @@ class CommonCollectionSectionHeader: UICollectionReusableView {
   private var detailHeader: LibraryElementDetailTableHeaderView?
 
   func display(title: String?) {
-    titleLabel.text = title
+    // cassette Patch 018: unify with the table-section-header pattern in
+    // BasicTableViewController. 13pt bold uppercase ink2 matches iOS
+    // conventions (Settings.app, Music.app sidebar). Uppercase the
+    // text directly here since UILabel doesn't ship a transform option.
+    titleLabel.text = title?.uppercased()
     titleLabel.isHidden = (title == nil)
-    // cassette Patch 015: Cassette display face for every section header.
-    // Doing it here rather than in the xib avoids touching IB outlets.
-    titleLabel.font = UIFont.cassetteDisplay(size: 18, weight: .semibold)
-    titleLabel.textColor = CassetteTheme.UIColors.ink
+    titleLabel.font = UIFont.cassetteDisplay(size: 13, weight: .bold)
+    titleLabel.textColor = CassetteTheme.UIColors.ink2
   }
 
   func displayPlayHeader(configuration: PlayShuffleInfoConfiguration) {

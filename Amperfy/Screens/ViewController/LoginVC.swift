@@ -74,8 +74,15 @@ class LoginVC: UIViewController {
   fileprivate lazy var cassetteSignInButton: UIButton = {
     var config = UIButton.Configuration.prominentGlass()
     config.imagePadding = 14
+    // cassette Patch 018: route the title through attributedTitle so the
+    // Cassette display face survives Configuration's font handling.
+    config.attributedTitle = AttributedString(
+      "Sign in with Cassette",
+      attributes: AttributeContainer([
+        .font: UIFont.cassetteDisplay(size: 17, weight: .semibold),
+      ])
+    )
     let button = UIButton(configuration: config)
-    button.setTitle("Sign in with Cassette", for: .normal)
     button.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
       .asColor
     button.addTarget(self, action: #selector(Self.cassetteSignInPressed), for: .touchUpInside)
@@ -108,9 +115,13 @@ class LoginVC: UIViewController {
     var config = UIButton.Configuration.plain()
     config.baseForegroundColor = CassetteTheme.UIColors.ink3
     config.contentInsets = .zero
+    config.attributedTitle = AttributedString(
+      "Having trouble? Use manual setup →",
+      attributes: AttributeContainer([
+        .font: UIFont.cassetteDisplay(size: 13, weight: .regular),
+      ])
+    )
     let button = UIButton(configuration: config)
-    button.setTitle("Having trouble? Use manual setup →", for: .normal)
-    button.titleLabel?.font = UIFont.cassetteDisplay(size: 13, weight: .regular)
     button.addTarget(self, action: #selector(Self.manualSetupPressed), for: .touchUpInside)
     return button
   }()
@@ -400,8 +411,13 @@ class LoginVC: UIViewController {
 
   fileprivate lazy var apiSelectorButton: UIButton = {
     var config = UIButton.Configuration.glass()
+    config.attributedTitle = AttributedString(
+      "API",
+      attributes: AttributeContainer([
+        .font: UIFont.cassetteDisplay(size: 14, weight: .semibold),
+      ])
+    )
     let button = UIButton(configuration: config)
-    button.setTitle("API", for: .normal)
     button.preferredBehavioralStyle = .pad
     button.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
       .asColor
@@ -412,8 +428,13 @@ class LoginVC: UIViewController {
     var config = UIButton.Configuration.prominentGlass()
     config.image = .login
     config.imagePadding = 20.0
+    config.attributedTitle = AttributedString(
+      "Login",
+      attributes: AttributeContainer([
+        .font: UIFont.cassetteDisplay(size: 17, weight: .semibold),
+      ])
+    )
     let button = UIButton(configuration: config)
-    button.setTitle("Login", for: .normal)
     button.accessibilityLabel = "Login"
     button.addTarget(self, action: #selector(Self.loginPressed), for: .touchUpInside)
     button.preferredBehavioralStyle = .pad
@@ -453,9 +474,13 @@ class LoginVC: UIViewController {
     var config = UIButton.Configuration.plain()
     config.baseForegroundColor = CassetteTheme.UIColors.ink2
     config.contentInsets = .zero
+    config.attributedTitle = AttributedString(
+      "Need help setting up a server? →",
+      attributes: AttributeContainer([
+        .font: UIFont.cassetteDisplay(size: 14, weight: .regular),
+      ])
+    )
     let button = UIButton(configuration: config)
-    button.setTitle("Need help setting up a server? →", for: .normal)
-    button.titleLabel?.font = UIFont.cassetteDisplay(size: 14, weight: .regular)
     button.addTarget(self, action: #selector(Self.navidromeHelpPressed), for: .touchUpInside)
     return button
   }()

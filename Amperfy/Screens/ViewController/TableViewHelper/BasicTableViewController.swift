@@ -146,11 +146,16 @@ class BasicTableViewController: KeyCommandTableViewController {
     if let header = view as? UITableViewHeaderFooterView {
       var config = header.defaultContentConfiguration()
       config.text = header.textLabel?.text ?? config.text
-      config.textProperties.font = UIFont.cassetteDisplay(size: 15, weight: .bold)
+      // cassette Patch 018: 13pt matches iOS section-header conventions
+      // (Settings.app, Music.app sidebar) — the prior 15pt felt heavy
+      // against Cassette display tracking. Drop the explicit bg fill so
+      // the table view's own background shows through, which keeps the
+      // grouped/inset list styles consistent across screens.
+      config.textProperties.font = UIFont.cassetteDisplay(size: 13, weight: .bold)
       config.textProperties.color = CassetteTheme.UIColors.ink2
       config.textProperties.transform = .uppercase
       header.contentConfiguration = config
-      header.contentView.backgroundColor = CassetteTheme.UIColors.bg
+      header.contentView.backgroundColor = .clear
     }
   }
 
