@@ -154,14 +154,17 @@ class LibraryElementDetailTableHeaderView: UIView {
   /// isShuffleOnContextNeccessary: In AlbumsVC the albums are shuffled, keep the order when shuffle button is pressed
   func prepare(configuration: PlayShuffleInfoConfiguration) {
     config = configuration
-    playAllButton.setTitle(config?.customPlayName ?? "Play", for: .normal)
-    playAllButton.layer.cornerRadius = 10.0
-    playShuffledButton.setTitle(
-      configuration.isShuffleOnContextNeccessary ? "Shuffle" : "Random",
-      for: .normal
+    Self.applyCassetteStyle(
+      to: playAllButton,
+      title: config?.customPlayName ?? "Play",
+      systemImage: "play.fill"
     )
-    playShuffledButton.layer.cornerRadius = 10.0
-    playShuffledButton.isHidden = configuration.isShuffleHidden
+    Self.applyCassetteStyle(
+      to: playShuffledButton,
+      title: configuration.isShuffleOnContextNeccessary ? "Shuffle" : "Random",
+      systemImage: "shuffle",
+      isHidden: configuration.isShuffleHidden
+    )
     activate()
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
@@ -169,6 +172,43 @@ class LibraryElementDetailTableHeaderView: UIView {
         self.refresh()
       }
     )
+  }
+
+  /// cassette Patch 022: native iOS 17+ tinted button configuration with
+  /// Cassette typography and tokens. Replaces the system-22pt /
+  /// `secondarySystemFill` look the XIB ships with so Play/Shuffle no
+  /// longer feel like strangers next to the rest of the app's chrome.
+  private static func applyCassetteStyle(
+    to button: UIButton,
+    title: String,
+    systemImage: String,
+    isHidden: Bool = false
+  ) {
+    var config = UIButton.Configuration.tinted()
+    config.image = UIImage(systemName: systemImage)
+    config.imagePadding = 8
+    config.imagePlacement = .leading
+    config.cornerStyle = .medium
+    config.baseForegroundColor = CassetteTheme.UIColors.ink
+    config.baseBackgroundColor = CassetteTheme.UIColors.bg2
+    config.contentInsets = NSDirectionalEdgeInsets(
+      top: 10,
+      leading: 18,
+      bottom: 10,
+      trailing: 18
+    )
+    config.attributedTitle = AttributedString(
+      title,
+      attributes: AttributeContainer([
+        .font: UIFont.cassetteDisplay(size: 17, weight: .semibold),
+      ])
+    )
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+      pointSize: 15,
+      weight: .semibold
+    )
+    button.configuration = config
+    button.isHidden = isHidden
   }
 
   func activate() {
