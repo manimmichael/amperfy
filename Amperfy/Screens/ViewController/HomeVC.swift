@@ -140,8 +140,12 @@ final class HomeVC: UICollectionViewController {
       let sectionLayout = NSCollectionLayoutSection(group: group)
       sectionLayout.orthogonalScrollingBehavior = .continuous
       sectionLayout.interGroupSpacing = 12
+      // cassette Patch 025: drop the section top inset — vertical
+      // rhythm above the carousel now comes from `SectionHeaderView`'s
+      // own internal padding (16pt above title, 8pt below) so we
+      // don't double-count the gap.
       sectionLayout.contentInsets = NSDirectionalEdgeInsets(
-        top: 8,
+        top: 0,
         leading: 16,
         bottom: 24,
         trailing: 16
@@ -485,23 +489,20 @@ final class SectionHeaderView: UICollectionReusableView {
 
   override init(frame: CGRect) {
     super.init(frame: frame)
-    addSubview(titleLabel)
-    addSubview(refreshButton)
-    NSLayoutConstraint.activate([
-      titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-      titleLabel.trailingAnchor.constraint(
-        lessThanOrEqualTo: refreshButton.leadingAnchor,
-        constant: -8
-      ),
-      titleLabel.topAnchor.constraint(equalTo: topAnchor),
-      titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor),
-      refreshButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-      refreshButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-    ])
+    setupSubviews()
   }
 
   required init?(coder: NSCoder) {
     super.init(coder: coder)
+    setupSubviews()
+  }
+
+  /// cassette Patch 025: give the section title room to breathe. The
+  /// XIB previously pinned title flush top-to-bottom; now there's
+  /// 16pt above it (separating it from the previous section's bottom
+  /// inset / nav-bar zone) and 8pt below it (gap to the first cell
+  /// row, replacing the section `contentInsets.top` that was zeroed).
+  private func setupSubviews() {
     addSubview(titleLabel)
     addSubview(refreshButton)
     NSLayoutConstraint.activate([
@@ -510,10 +511,10 @@ final class SectionHeaderView: UICollectionReusableView {
         lessThanOrEqualTo: refreshButton.leadingAnchor,
         constant: -8
       ),
-      titleLabel.topAnchor.constraint(equalTo: topAnchor),
-      titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor),
+      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 16),
+      titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
       refreshButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-      refreshButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+      refreshButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
     ])
   }
 }
