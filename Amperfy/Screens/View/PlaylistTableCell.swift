@@ -39,12 +39,14 @@ class PlaylistTableCell: BasicTableCell {
     super.awakeFromNib()
     // cassette Patch 016: align with PlayableTableCell — display face for the
     // primary name, mono for the metadata row, warm-paper ink throughout.
-    nameLabel.font = UIFont.cassetteDisplay(size: 17, weight: .semibold)
-    nameLabel.textColor = CassetteTheme.UIColors.ink
-    infoLabel.font = UIFont.cassetteMono(size: 12)
-    infoLabel.textColor = CassetteTheme.UIColors.ink2
-    contentView.backgroundColor = CassetteTheme.UIColors.bg
-    backgroundColor = CassetteTheme.UIColors.bg
+    MainActor.assumeIsolated {
+      nameLabel.font = UIFont.cassetteDisplay(size: 17, weight: .semibold)
+      nameLabel.textColor = CassetteTheme.UIColors.ink
+      infoLabel.font = UIFont.cassetteMono(size: 12)
+      infoLabel.textColor = CassetteTheme.UIColors.ink2
+      contentView.backgroundColor = CassetteTheme.UIColors.bg
+      backgroundColor = CassetteTheme.UIColors.bg
+    }
   }
 
   func display(playlist: Playlist, rootView: UITableViewController?) {

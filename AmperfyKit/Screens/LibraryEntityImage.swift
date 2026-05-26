@@ -42,7 +42,8 @@ extension LibraryEntityImage {
     }
     return UIImage.getGeneratedArtwork(
       theme: themePreference,
-      artworkType: libraryEntity.getDefaultArtworkType()
+      artworkType: libraryEntity.getDefaultArtworkType(),
+      name: (libraryEntity as? PlayableContainable)?.name
     )
   }
 }
@@ -140,7 +141,8 @@ public class LibraryEntityImage: RoundedImage {
     }
     return UIImage.getGeneratedArtwork(
       theme: theme,
-      artworkType: backupArtworkType ?? .song
+      artworkType: backupArtworkType ?? .song,
+      name: (entity as? PlayableContainable)?.name
     )
   }
 

@@ -120,16 +120,21 @@ extension PopupPlayerVC {
         useCache: true
       )
     } else {
+      // cassette Patch 017: nothing playing — pass `name: nil` so the
+      // ghost renderer draws the matching SF Symbol instead of an
+      // empty initial card.
       switch player.playerMode {
       case .music:
         artwork = .getGeneratedArtwork(
           theme: themePreference,
-          artworkType: .song
+          artworkType: .song,
+          name: nil
         )
       case .podcast:
         artwork = .getGeneratedArtwork(
           theme: themePreference,
-          artworkType: .podcastEpisode
+          artworkType: .podcastEpisode,
+          name: nil
         )
       }
     }

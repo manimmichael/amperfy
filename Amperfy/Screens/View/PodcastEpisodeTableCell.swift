@@ -56,16 +56,18 @@ class PodcastEpisodeTableCell: BasicTableCell {
     super.awakeFromNib()
     // cassette Patch 016: mirror PlayableTableCell — display face for episode
     // title, mono for the publish-date metadata + remaining-time progress.
-    podcastEpisodeLabel.font = UIFont.cassetteDisplay(size: 16, weight: .semibold)
-    podcastEpisodeLabel.textColor = CassetteTheme.UIColors.ink
-    infoLabel.font = UIFont.cassetteMono(size: 12)
-    infoLabel.textColor = CassetteTheme.UIColors.ink2
-    descriptionLabel.font = UIFont.cassetteMono(size: 12)
-    descriptionLabel.textColor = CassetteTheme.UIColors.ink2
-    playProgressLabel.font = UIFont.cassetteMono(size: 11)
-    playProgressLabel.textColor = CassetteTheme.UIColors.ink2
-    contentView.backgroundColor = CassetteTheme.UIColors.bg
-    backgroundColor = CassetteTheme.UIColors.bg
+    MainActor.assumeIsolated {
+      podcastEpisodeLabel.font = UIFont.cassetteDisplay(size: 16, weight: .semibold)
+      podcastEpisodeLabel.textColor = CassetteTheme.UIColors.ink
+      infoLabel.font = UIFont.cassetteMono(size: 12)
+      infoLabel.textColor = CassetteTheme.UIColors.ink2
+      descriptionLabel.font = UIFont.cassetteMono(size: 12)
+      descriptionLabel.textColor = CassetteTheme.UIColors.ink2
+      playProgressLabel.font = UIFont.cassetteMono(size: 11)
+      playProgressLabel.textColor = CassetteTheme.UIColors.ink2
+      contentView.backgroundColor = CassetteTheme.UIColors.bg
+      backgroundColor = CassetteTheme.UIColors.bg
+    }
   }
 
   func display(episode: PodcastEpisode, rootView: UIViewController) {

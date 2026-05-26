@@ -197,7 +197,8 @@ extension CarPlaySceneDelegate {
         .getGeneratedArtwork(
           theme: getPreference(activeAccountInfo).theme,
           artworkType: item.playableContainable
-            .getArtworkCollection(theme: getPreference(activeAccountInfo).theme).defaultArtworkType
+            .getArtworkCollection(theme: getPreference(activeAccountInfo).theme).defaultArtworkType,
+          name: nil
         )
 
       let element = CPListImageRowItemRowElement(

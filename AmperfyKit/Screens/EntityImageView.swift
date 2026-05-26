@@ -131,7 +131,14 @@ open class EntityImageView: UIView {
         } else {
           singleImage.isHidden = true
           quadImages.forEach {
-            $0.display(image: UIImage.getGeneratedArtwork(theme: theme, artworkType: .song))
+            // cassette Patch 017: transient placeholder while each tile waits
+            // to be assigned its real entity below. `name: nil` falls through
+            // to the SF Symbol ghost rather than rendering a blank initial.
+            $0.display(image: UIImage.getGeneratedArtwork(
+              theme: theme,
+              artworkType: .song,
+              name: nil
+            ))
             $0.isHidden = false
           }
           for (index, entity) in quadEntities.enumerated() {

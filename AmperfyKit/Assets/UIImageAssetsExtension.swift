@@ -426,17 +426,122 @@ extension UIImage {
       UIImage()
   }
 
+  // cassette Patch 017: ghost-initial placeholder renderer.
+  //
+  // The bundled `Orange*` PNG set served Phase 3 — orange-tinted vinyl/note
+  // illustrations on a warm background — but they read as generic "music
+  // app" rather than Cassette. The web app handles this with a ghost-initial
+  // pattern: the entity's first letter, drawn very large in the display
+  // face at ~8% opacity over `bg3`. We mirror that here.
+  //
+  // For entity types that don't carry a meaningful name (genre/radio/podcast
+  // as a category, or any caller that omits `name`), we fall back to the
+  // matching SF Symbol at low opacity so the surface still telegraphs what
+  // it represents.
+  //
+  // Renders are cached on (initial-or-symbol, size, theme) so scrolling
+  // through Home carousels with mixed-missing artwork doesn't re-render on
+  // every cell config.
+
+  private static let ghostArtworkCache: NSCache<NSString, UIImage> = {
+    let cache = NSCache<NSString, UIImage>()
+    cache.countLimit = 64
+    return cache
+  }()
+
   public static func getGeneratedArtwork(
     theme: ThemePreference,
-    artworkType: ArtworkType
+    artworkType: ArtworkType,
+    name: String? = nil,
+    size: CGSize = CGSize(width: 300, height: 300)
   )
     -> UIImage {
-    // cassette Patch 015d: every theme case resolves to Cassette orange,
-    // but the asset names still vary by enum (Blue*, Green*, ...). Pin
-    // every lookup to the Orange* set so missing artwork looks
-    // consistent across the app instead of a random colour per row.
-    let resourceName = "Orange\(artworkType.description)"
-    return UIImage(imageLiteralResourceName: resourceName)
+    let initial = ghostInitial(for: name, artworkType: artworkType)
+    let cacheKey = NSString(string: "\(initial ?? "•")|\(Int(size.width))x\(Int(size.height))")
+    if let cached = ghostArtworkCache.object(forKey: cacheKey) {
+      return cached
+    }
+
+    let renderer = UIGraphicsImageRenderer(size: size)
+    let image = renderer.image { ctx in
+      let cg = ctx.cgContext
+      let rect = CGRect(origin: .zero, size: size)
+      cg.setFillColor(CassetteTheme.UIColors.bg3.cgColor)
+      cg.fill(rect)
+
+      if let initial {
+        let pointSize = size.width * 0.5
+        let font = UIFont.cassetteDisplay(size: pointSize, weight: .bold)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        let attrs: [NSAttributedString.Key: Any] = [
+          .font: font,
+          .foregroundColor: CassetteTheme.UIColors.ink4.withAlphaComponent(0.08),
+          .paragraphStyle: paragraph,
+        ]
+        let textRect = (initial as NSString).boundingRect(
+          with: size,
+          options: [.usesLineFragmentOrigin, .usesFontLeading],
+          attributes: attrs,
+          context: nil
+        )
+        let drawRect = CGRect(
+          x: 0,
+          y: (size.height - textRect.height) / 2,
+          width: size.width,
+          height: textRect.height
+        )
+        (initial as NSString).draw(in: drawRect, withAttributes: attrs)
+      } else {
+        let symbolName = ghostSymbolName(for: artworkType)
+        let pointSize = size.width * 0.28
+        let symbolConfig = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+        if let symbol = UIImage(systemName: symbolName, withConfiguration: symbolConfig) {
+          let tinted = symbol.withTintColor(
+            CassetteTheme.UIColors.ink4.withAlphaComponent(0.1),
+            renderingMode: .alwaysOriginal
+          )
+          let symbolRect = CGRect(
+            x: (size.width - tinted.size.width) / 2,
+            y: (size.height - tinted.size.height) / 2,
+            width: tinted.size.width,
+            height: tinted.size.height
+          )
+          tinted.draw(in: symbolRect)
+        }
+      }
+    }
+
+    ghostArtworkCache.setObject(image, forKey: cacheKey)
+    return image
+  }
+
+  /// Returns the upper-cased first grapheme of a non-empty entity name when
+  /// the artwork type is one we treat as "named" (album/artist/playlist/etc).
+  /// Returns nil for category-style placeholders (genre/radio/podcast) so
+  /// the caller falls through to the SF Symbol path.
+  private static func ghostInitial(for name: String?, artworkType: ArtworkType) -> String? {
+    switch artworkType {
+    case .genre, .radio, .podcast:
+      return nil
+    case .album, .artist, .playlist, .song, .podcastEpisode, .folder:
+      let trimmed = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard let first = trimmed.first else { return nil }
+      return String(first).uppercased()
+    }
+  }
+
+  private static func ghostSymbolName(for artworkType: ArtworkType) -> String {
+    switch artworkType {
+    case .genre: return "music.note.list"
+    case .radio: return "dot.radiowaves.left.and.right"
+    case .podcast: return "mic"
+    case .album: return "square.stack"
+    case .artist: return "music.mic"
+    case .playlist: return "music.note.list"
+    case .folder: return "folder"
+    case .song, .podcastEpisode: return "music.note"
+    }
   }
 
   public static func generateArtwork(
