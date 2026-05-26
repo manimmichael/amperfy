@@ -678,7 +678,7 @@ class SearchVC: BasicTableViewController {
   func updateContentUnavailable() {
     if isSearchActive {
       if artists.isEmpty, albums.isEmpty, playlists.isEmpty, songs.isEmpty {
-        contentUnavailableConfiguration = UIContentUnavailableConfiguration.search()
+        contentUnavailableConfiguration = noSearchResultsConfig
       } else {
         contentUnavailableConfiguration = nil
       }
@@ -687,11 +687,33 @@ class SearchVC: BasicTableViewController {
     }
   }
 
+  /// cassette Patch 020: Cassette-flavored empty states. The renderer
+  /// for `UIContentUnavailableConfiguration` honors the
+  /// `text/secondaryText/imageProperties` overrides we set here, so we
+  /// can keep the native iOS 17+ container while swapping in
+  /// `cassetteDisplay` typography and theme colors.
+  lazy var noSearchResultsConfig: UIContentUnavailableConfiguration = {
+    var config = UIContentUnavailableConfiguration.search()
+    config.text = "No results"
+    config.secondaryText = "Try a different artist, album, or song."
+    config.textProperties.font = UIFont.cassetteDisplay(size: 22, weight: .bold)
+    config.textProperties.color = CassetteTheme.UIColors.ink
+    config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
+    config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
+    config.imageProperties.tintColor = CassetteTheme.UIColors.ink3
+    return config
+  }()
+
   lazy var noSearchHistoryConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.empty()
     config.image = .clock
     config.text = "No Search History"
     config.secondaryText = "Your search history will appear here."
+    config.textProperties.font = UIFont.cassetteDisplay(size: 22, weight: .bold)
+    config.textProperties.color = CassetteTheme.UIColors.ink
+    config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
+    config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
+    config.imageProperties.tintColor = CassetteTheme.UIColors.ink3
     return config
   }()
 }

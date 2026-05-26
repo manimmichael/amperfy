@@ -208,6 +208,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = false
+    refreshEmptyState()
   }
 
   override func viewIsAppearing(_ animated: Bool) {
@@ -229,8 +230,30 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
         self.appDelegate.eventLogger.report(topic: "Playlist Sync", error: error)
       }
       self.detailOperationsView?.refresh()
+      self.refreshEmptyState()
     }
   }
+
+  /// cassette Patch 020: Cassette-flavored "Empty playlist" state.
+  /// Refreshed on appear and after the playlist sync completes.
+  private func refreshEmptyState() {
+    contentUnavailableConfiguration = playlist.songCount == 0
+      ? Self.emptyPlaylistConfig
+      : nil
+  }
+
+  private static let emptyPlaylistConfig: UIContentUnavailableConfiguration = {
+    var config = UIContentUnavailableConfiguration.empty()
+    config.image = UIImage(systemName: "music.note.list")
+    config.text = "Empty playlist"
+    config.secondaryText = "Add songs from any artist or album."
+    config.textProperties.font = UIFont.cassetteDisplay(size: 22, weight: .bold)
+    config.textProperties.color = CassetteTheme.UIColors.ink
+    config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
+    config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
+    config.imageProperties.tintColor = CassetteTheme.UIColors.ink3
+    return config
+  }()
 
   func refreshBarButtons() {
     var edititingBarButton: UIBarButtonItem? = nil
@@ -270,6 +293,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     playlistDetailVC.onDoneCB = {
       self.detailOperationsView?.refresh()
       self.tableView.reloadData()
+      self.refreshEmptyState()
     }
     present(playlistDetailNav, animated: true, completion: nil)
   }

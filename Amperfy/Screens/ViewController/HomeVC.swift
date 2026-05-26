@@ -236,12 +236,35 @@ final class HomeVC: UICollectionViewController {
   private func applySnapshot(animated: Bool = true) {
     var snapshot = NSDiffableDataSourceSnapshot<HomeSection, HomeItem>()
     snapshot.appendSections(sharedHome.orderedVisibleSections)
+    var totalItems = 0
     for section in sharedHome.orderedVisibleSections {
       let items = sharedHome.data[section] ?? []
+      totalItems += items.count
       snapshot.appendItems(items, toSection: section)
     }
     dataSource.apply(snapshot, animatingDifferences: animated)
+    refreshEmptyLibraryState(hasItems: totalItems > 0)
   }
+
+  /// cassette Patch 020: Cassette-flavored "no music yet" empty state on
+  /// the Home tab. Triggered when the library has no playable items
+  /// across all visible sections (the player still shows up either way).
+  private func refreshEmptyLibraryState(hasItems: Bool) {
+    contentUnavailableConfiguration = hasItems ? nil : Self.emptyLibraryConfig
+  }
+
+  private static let emptyLibraryConfig: UIContentUnavailableConfiguration = {
+    var config = UIContentUnavailableConfiguration.empty()
+    config.image = UIImage(systemName: "music.note")
+    config.text = "No music yet"
+    config.secondaryText = "Add tracks to your Cassette Player to see them here."
+    config.textProperties.font = UIFont.cassetteDisplay(size: 22, weight: .bold)
+    config.textProperties.color = CassetteTheme.UIColors.ink
+    config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
+    config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
+    config.imageProperties.tintColor = CassetteTheme.UIColors.ink3
+    return config
+  }()
 
   @objc
   private func refreshOfflineMode() {
