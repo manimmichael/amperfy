@@ -52,6 +52,22 @@ class PodcastEpisodeTableCell: BasicTableCell {
   private var rootView: UIViewController?
   private var playIndicator: PlayIndicator?
 
+  override func awakeFromNib() {
+    super.awakeFromNib()
+    // cassette Patch 016: mirror PlayableTableCell — display face for episode
+    // title, mono for the publish-date metadata + remaining-time progress.
+    podcastEpisodeLabel.font = UIFont.cassetteDisplay(size: 16, weight: .semibold)
+    podcastEpisodeLabel.textColor = CassetteTheme.UIColors.ink
+    infoLabel.font = UIFont.cassetteMono(size: 12)
+    infoLabel.textColor = CassetteTheme.UIColors.ink2
+    descriptionLabel.font = UIFont.cassetteMono(size: 12)
+    descriptionLabel.textColor = CassetteTheme.UIColors.ink2
+    playProgressLabel.font = UIFont.cassetteMono(size: 11)
+    playProgressLabel.textColor = CassetteTheme.UIColors.ink2
+    contentView.backgroundColor = CassetteTheme.UIColors.bg
+    backgroundColor = CassetteTheme.UIColors.bg
+  }
+
   func display(episode: PodcastEpisode, rootView: UIViewController) {
     if playIndicator == nil {
       playIndicator = PlayIndicator(rootViewTypeName: rootView.typeName)
@@ -107,12 +123,12 @@ class PodcastEpisodeTableCell: BasicTableCell {
     playProgressLabel.text = progressText
     if episode.isCached {
       cacheIconImage.isHidden = false
-      playProgressLabel.textColor = .secondaryLabelColor
+      playProgressLabel.textColor = CassetteTheme.UIColors.ink2
     } else {
       cacheIconImage.isHidden = true
-      playProgressLabel.textColor = .secondaryLabelColor
+      playProgressLabel.textColor = CassetteTheme.UIColors.ink2
     }
-    backgroundColor = .systemBackground
+    backgroundColor = CassetteTheme.UIColors.bg
   }
 
   override func prepareForReuse() {

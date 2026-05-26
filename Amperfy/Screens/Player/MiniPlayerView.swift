@@ -156,36 +156,38 @@ class MiniPlayerView: UIView {
 
   fileprivate lazy var elapsedTimeLabel: UILabel = {
     let label = UILabel(frame: .zero)
-    label.textColor = .secondaryLabel
-    label.font = .systemFont(ofSize: 12.0)
+    label.textColor = CassetteTheme.UIColors.ink2
+    label.font = UIFont.cassetteMono(size: 12)
     return label
   }()
 
   fileprivate lazy var remainingTimeLabel: UILabel = {
     let label = UILabel(frame: .zero)
     label.textAlignment = .right
-    label.textColor = .secondaryLabel
-    label.font = .systemFont(ofSize: 12.0)
+    label.textColor = CassetteTheme.UIColors.ink2
+    label.font = UIFont.cassetteMono(size: 12)
     return label
   }()
 
   fileprivate lazy var liveLabel: UILabel = {
     let label = UILabel(frame: .zero)
     label.text = "LIVE"
-    label.font = .systemFont(ofSize: 12.0)
+    label.font = UIFont.cassetteMono(size: 12, weight: .medium)
+    label.textColor = CassetteTheme.UIColors.orange
     label.textAlignment = .center
     return label
   }()
 
   fileprivate lazy var audioInfoLabel: UILabel = {
     let label = UILabel(frame: .zero)
-    label.font = .systemFont(ofSize: 12.0)
+    label.font = UIFont.cassetteMono(size: 12)
+    label.textColor = CassetteTheme.UIColors.ink2
     return label
   }()
 
   fileprivate lazy var playTypeIcon: UIImageView = {
     let imageView = UIImageView(frame: .zero)
-    imageView.tintColor = .secondaryLabel
+    imageView.tintColor = CassetteTheme.UIColors.ink2
     return imageView
   }()
 
@@ -196,7 +198,7 @@ class MiniPlayerView: UIView {
         .withRenderingMode(.alwaysTemplate),
       for: .normal
     )
-    button.imageView?.tintColor = .label
+    button.imageView?.tintColor = CassetteTheme.UIColors.ink
     button.showsMenuAsPrimaryAction = true
     return button
   }()
@@ -209,7 +211,7 @@ class MiniPlayerView: UIView {
           .SymbolConfiguration(pointSize: PlayerUIHandler.playButtonImagePointSize)
       )
     let button = UIButton(configuration: config)
-    button.tintColor = .label
+    button.tintColor = CassetteTheme.UIColors.ink
     button.addTarget(self, action: #selector(Self.playButtonPushed), for: .touchUpInside)
     return button
   }()
@@ -224,7 +226,7 @@ class MiniPlayerView: UIView {
     var config = UIButton.Configuration.plain()
     config.image = .backwardFill.withConfiguration(UIImage.SymbolConfiguration(scale: .large))
     let button = UIButton(configuration: config)
-    button.tintColor = .label
+    button.tintColor = CassetteTheme.UIColors.ink
     button.addTarget(self, action: #selector(Self.previousButtonPushed), for: .touchUpInside)
     return button
   }()
@@ -238,7 +240,7 @@ class MiniPlayerView: UIView {
     var config = UIButton.Configuration.plain()
     config.image = .forwardFill.withConfiguration(UIImage.SymbolConfiguration(scale: .large))
     let button = UIButton(configuration: config)
-    button.tintColor = .label
+    button.tintColor = CassetteTheme.UIColors.ink
     button.addTarget(self, action: #selector(Self.nextButtonPushed), for: .touchUpInside)
     return button
   }()
@@ -290,7 +292,7 @@ class MiniPlayerView: UIView {
           .SymbolConfiguration(pointSize: PlayerUIHandler.bigButtonImagePointSize)
       )
     let button = UIButton(configuration: config)
-    button.tintColor = .label
+    button.tintColor = CassetteTheme.UIColors.ink
     button.addTarget(self, action: #selector(Self.lyricsPressed), for: .touchUpInside)
     return button
   }()
@@ -316,7 +318,7 @@ class MiniPlayerView: UIView {
           .SymbolConfiguration(pointSize: PlayerUIHandler.bigButtonImagePointSize)
       )
     let button = UIButton(configuration: config)
-    button.tintColor = .label
+    button.tintColor = CassetteTheme.UIColors.ink
     button.addTarget(self, action: #selector(Self.playlistPressed), for: .touchUpInside)
     return button
   }()
@@ -342,7 +344,7 @@ class MiniPlayerView: UIView {
           .SymbolConfiguration(pointSize: PlayerUIHandler.bigButtonImagePointSize)
       )
     let button = UIButton(configuration: config)
-    button.tintColor = .label
+    button.tintColor = CassetteTheme.UIColors.ink
     button.addTarget(self, action: #selector(Self.airplayButtonPushed), for: .touchUpInside)
     return button
   }()
@@ -366,7 +368,7 @@ class MiniPlayerView: UIView {
           .SymbolConfiguration(pointSize: PlayerUIHandler.bigButtonImagePointSize)
       )
     let button = UIButton(configuration: config)
-    button.tintColor = .label
+    button.tintColor = CassetteTheme.UIColors.ink
     button.addTarget(self, action: #selector(Self.volumeButtonPushed), for: .touchUpInside)
     return button
   }()
@@ -719,12 +721,15 @@ class MiniPlayerView: UIView {
   }
 
   public func refreshForTraitChange(horizontalSizeClass: UIUserInterfaceSizeClass) {
+    // cassette Patch 016: keep the Barlow Condensed display face on the
+    // marquee track title and DM Mono on the artist subtitle across trait
+    // changes; size scales with horizontal class.
     if horizontalSizeClass == .regular {
-      titleLabel.font = .systemFont(ofSize: 8.0)
-      subtitleLabel.font = .systemFont(ofSize: 15.0)
+      titleLabel.font = UIFont.cassetteDisplay(size: 14, weight: .semibold)
+      subtitleLabel.font = UIFont.cassetteMono(size: 12)
     } else {
-      titleLabel.font = .systemFont(ofSize: 11.0)
-      subtitleLabel.font = .systemFont(ofSize: 13.0)
+      titleLabel.font = UIFont.cassetteDisplay(size: 14, weight: .semibold)
+      subtitleLabel.font = UIFont.cassetteMono(size: 11)
     }
   }
 
@@ -847,13 +852,10 @@ class MiniPlayerView: UIView {
   }
 
   func refreshPlayer() {
-    if traitCollection.userInterfaceStyle == .dark {
-      titleLabel.textColor = .white
-      subtitleLabel.textColor = .lightGray
-    } else {
-      titleLabel.textColor = .black
-      subtitleLabel.textColor = .darkGray
-    }
+    // cassette Patch 016: hold the Cassette ink tokens regardless of the
+    // system's reported userInterfaceStyle (the app is forced dark anyway).
+    titleLabel.textColor = CassetteTheme.UIColors.ink
+    subtitleLabel.textColor = CassetteTheme.UIColors.ink2
     playerHandler?.refreshCurrentlyPlayingInfo(
       artworkImage: artworkImage,
       titleLabel: titleLabel,

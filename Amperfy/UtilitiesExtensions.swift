@@ -61,18 +61,24 @@ extension Color {
   static let darkText = Color(UIColor.darkText)
   static let placeholderText = Color(UIColor.placeholderText)
 
+  // cassette Patch 016: redirect the SwiftUI bridge constants for system
+  // foreground/background colors to the Cassette palette. SwiftUI views
+  // throughout the project consume these names directly (Color.label,
+  // Color.systemBackground, etc.); rebinding them here lets every Form/List
+  // surface inherit the warm ink/bg tokens without per-call edits.
+
   // MARK: - Label Colors
 
-  static let label = Color(UIColor.label)
-  static let secondaryLabel = Color(UIColor.secondaryLabel)
-  static let tertiaryLabel = Color(UIColor.tertiaryLabel)
-  static let quaternaryLabel = Color(UIColor.quaternaryLabel)
+  static let label = CassetteTheme.Colors.ink
+  static let secondaryLabel = CassetteTheme.Colors.ink2
+  static let tertiaryLabel = CassetteTheme.Colors.ink3
+  static let quaternaryLabel = CassetteTheme.Colors.ink4
 
   // MARK: - Background Colors
 
-  static let systemBackground = Color(UIColor.systemBackground)
-  static let secondarySystemBackground = Color(UIColor.secondarySystemBackground)
-  static let tertiarySystemBackground = Color(UIColor.tertiarySystemBackground)
+  static let systemBackground = CassetteTheme.Colors.bg
+  static let secondarySystemBackground = CassetteTheme.Colors.bg2
+  static let tertiarySystemBackground = CassetteTheme.Colors.bg3
 
   // MARK: - Fill Colors
 
@@ -83,9 +89,9 @@ extension Color {
 
   // MARK: - Grouped Background Colors
 
-  static let systemGroupedBackground = Color(UIColor.systemGroupedBackground)
-  static let secondarySystemGroupedBackground = Color(UIColor.secondarySystemGroupedBackground)
-  static let tertiarySystemGroupedBackground = Color(UIColor.tertiarySystemGroupedBackground)
+  static let systemGroupedBackground = CassetteTheme.Colors.bg
+  static let secondarySystemGroupedBackground = CassetteTheme.Colors.bg2
+  static let tertiarySystemGroupedBackground = CassetteTheme.Colors.bg3
 
   // MARK: - Gray Colors
 
@@ -128,21 +134,26 @@ extension View {
 }
 
 extension UIColor {
-  static let slideOverBackgroundColor: UIColor = .systemBackground.withAlphaComponent(0.5)
-  static let hoveredBackgroundColor: UIColor = .systemGray2.withAlphaComponent(0.2)
+  // cassette Patch 016: warm overlay tokens for popup-player slide-overs
+  // and hover states, replacing the iOS system surface colours.
+  static let slideOverBackgroundColor: UIColor = CassetteTheme.UIColors.bg
+    .withAlphaComponent(0.5)
+  static let hoveredBackgroundColor: UIColor = CassetteTheme.UIColors.bg2
+    .withAlphaComponent(0.4)
 }
 
 extension UIButton.Configuration {
   static func player(isSelected: Bool) -> UIButton.Configuration {
     var config = UIButton.Configuration.tinted()
     if isSelected {
-      config.background.strokeColor = .label
+      config.background.strokeColor = CassetteTheme.UIColors.ink
       config.background.strokeWidth = 1.0
       config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
     }
     config.buttonSize = .small
-    config.baseForegroundColor = !isSelected ? .label : .systemBackground
-    config.baseBackgroundColor = !isSelected ? .clear : .label
+    config.baseForegroundColor = !isSelected ? CassetteTheme.UIColors.ink : CassetteTheme.UIColors
+      .bg
+    config.baseBackgroundColor = !isSelected ? .clear : CassetteTheme.UIColors.ink
     config.cornerStyle = .medium
     return config
   }

@@ -169,7 +169,7 @@ final class HomeVC: UICollectionViewController {
   // MARK: - CollectionView Setup
 
   private func configureCollectionView() {
-    collectionView.backgroundColor = .systemBackground
+    collectionView.backgroundColor = CassetteTheme.UIColors.bg
     collectionView.register(
       UINib(nibName: AlbumCollectionCell.typeName, bundle: .main),
       forCellWithReuseIdentifier: AlbumCollectionCell.typeName

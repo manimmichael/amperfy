@@ -59,6 +59,16 @@ class DirectoryTableCell: BasicTableCell {
     }
   }
 
+  override func awakeFromNib() {
+    super.awakeFromNib()
+    // cassette Patch 016: directory rows pick up the same display-face name
+    // treatment as the rest of the library, anchored on the warm bg token.
+    infoLabel.font = UIFont.cassetteDisplay(size: 16, weight: .semibold)
+    infoLabel.textColor = CassetteTheme.UIColors.ink
+    contentView.backgroundColor = CassetteTheme.UIColors.bg
+    backgroundColor = CassetteTheme.UIColors.bg
+  }
+
   func display(folder: MusicFolder) {
     self.folder = folder
     directory = nil
@@ -100,6 +110,6 @@ class DirectoryTableCell: BasicTableCell {
       iconImage.isHidden = false
     }
     accessoryType = .disclosureIndicator
-    backgroundColor = .systemBackground
+    backgroundColor = CassetteTheme.UIColors.bg
   }
 }

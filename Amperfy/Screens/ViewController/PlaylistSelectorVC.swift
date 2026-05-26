@@ -103,7 +103,7 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
     tableView.estimatedSectionFooterHeight = 0.0
     tableView.sectionHeaderHeight = 0.0
     tableView.estimatedSectionHeaderHeight = 0.0
-    tableView.backgroundColor = .backgroundColor
+    tableView.backgroundColor = CassetteTheme.UIColors.bg
 
     tableView.tableHeaderView = UIView(frame: CGRect(
       x: 0,
@@ -307,7 +307,7 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
       img.tintColor = isMarked ? appDelegate.storage.settings.accounts
         .getSetting(playlist.account?.info).read
         .themePreference
-        .asColor : .secondaryLabelColor
+        .asColor : CassetteTheme.UIColors.ink2
       cell.accessoryView = img
     } else {
       cell.accessoryView = nil

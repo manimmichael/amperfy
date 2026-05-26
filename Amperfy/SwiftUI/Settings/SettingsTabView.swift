@@ -38,15 +38,15 @@ struct SettingsTabView: View {
           }
           .foregroundStyle(
             selectedMenu == menuElement
-              ? Color.systemBackground
-              : Color.label
+              ? CassetteTheme.Colors.bg
+              : CassetteTheme.Colors.ink
           )
           .padding(8)
           .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(
           selectedMenu == menuElement
-            ? Color.accentColor
+            ? CassetteTheme.Colors.orange
             : Color.clear
         )
         .cornerRadius(8)

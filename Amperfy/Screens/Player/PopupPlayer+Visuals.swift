@@ -57,7 +57,7 @@ extension PopupPlayerVC {
   func refreshOptionButton(button: UIButton, rootView: UIViewController?) {
     var config = UIButton.Configuration.playerRound()
     config.image = .ellipsis
-    config.baseForegroundColor = .label
+    config.baseForegroundColor = CassetteTheme.UIColors.ink
     button.isEnabled = true
     button.configuration = config
 
@@ -81,22 +81,22 @@ extension PopupPlayerVC {
          playableInfo.isSong {
         config.image = playableInfo.isFavorite ? .heartFill : .heartEmpty
         config.baseForegroundColor = appDelegate.storage.settings.user
-          .isOnlineMode ? .redHeart : .label
+          .isOnlineMode ? CassetteTheme.UIColors.amber : CassetteTheme.UIColors.ink
         button.isEnabled = appDelegate.storage.settings.user.isOnlineMode
       } else if let playableInfo = player.currentlyPlaying,
                 let radio = playableInfo.asRadio {
         config.image = .followLink
-        config.baseForegroundColor = .label
+        config.baseForegroundColor = CassetteTheme.UIColors.ink
         button.isEnabled = radio.siteURL != nil
       } else {
         config.image = .heartEmpty
-        config.baseForegroundColor = .redHeart
+        config.baseForegroundColor = CassetteTheme.UIColors.amber
         button.isEnabled = false
       }
     case .podcast:
       config.image = .info
       config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .large)
-      config.baseForegroundColor = .label
+      config.baseForegroundColor = CassetteTheme.UIColors.ink
       button.isEnabled = true
     }
     if #available(iOS 17.0, *) {
@@ -135,9 +135,11 @@ extension PopupPlayerVC {
     }
     guard let artwork = artwork else { return }
     backgroundImage.image = artwork
+    // cassette Patch 016: fall back to bg4 (deepest cassette surface) instead
+    // of `.systemBackground` so the now-playing gradient never blooms light.
     artworkGradientColors = (try? artwork.dominantColors(max: 2)) ?? [
       themePreference.asColor,
-      UIColor.systemBackground,
+      CassetteTheme.UIColors.bg4,
     ]
     applyGradientBackground()
   }

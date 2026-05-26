@@ -281,7 +281,7 @@ class PlayableTableCell: BasicTableCell {
     #else
       singleTapGestureRecognizer.isEnabled = (displayMode == .normal)
     #endif
-    backgroundColor = .systemBackground
+    backgroundColor = CassetteTheme.UIColors.bg
     refresh()
   }
 
@@ -353,7 +353,7 @@ class PlayableTableCell: BasicTableCell {
       img.tintColor = isMarked ? appDelegate.storage.settings.accounts
         .getSetting(playable.account?.info).read
         .themePreference
-        .asColor : .secondaryLabelColor
+        .asColor : CassetteTheme.UIColors.ink2
       accessoryView = img
     } else if displayMode == .add {
       let img = UIImageView(image: isMarked ? .checkmark : .plusCircle)
@@ -363,21 +363,21 @@ class PlayableTableCell: BasicTableCell {
       accessoryView = img
     } else if displayMode == .reorder || playerIndexCb != nil {
       let img = UIImageView(image: .bars)
-      img.tintColor = .labelColor
+      img.tintColor = CassetteTheme.UIColors.ink
       accessoryView = img
     } else if let download = download {
       if download.error != nil {
         let img = UIImageView(image: .exclamation)
-        img.tintColor = .labelColor
+        img.tintColor = CassetteTheme.UIColors.ink
         accessoryView = img
       } else if download.isFinishedSuccessfully {
         let img = UIImageView(image: .check)
-        img.tintColor = .labelColor
+        img.tintColor = CassetteTheme.UIColors.ink
         accessoryView = img
       } else if download.isDownloading {
         let spinner = UIActivityIndicatorView(style: .medium)
         spinner.startAnimating()
-        spinner.tintColor = .labelColor
+        spinner.tintColor = CassetteTheme.UIColors.ink
         accessoryView = spinner
       } else {
         accessoryView = nil
@@ -405,7 +405,8 @@ class PlayableTableCell: BasicTableCell {
   func refreshCacheAndDuration() {
     guard let playable = playable else { return }
     favoriteIconImage.isHidden = !playable.isFavorite
-    favoriteIconImage.tintColor = .red
+    // cassette Patch 016: align favourite tint with GenericTableCell (amber).
+    favoriteIconImage.tintColor = CassetteTheme.UIColors.amber
 
     let isDurationVisible = !playable.isRadio &&
       (
@@ -424,7 +425,7 @@ class PlayableTableCell: BasicTableCell {
     optionsButton.isHidden = !isDisplayOptionButton
     if isDisplayOptionButton {
       optionsButton.showsMenuAsPrimaryAction = true
-      optionsButton.imageView?.tintColor = .label
+      optionsButton.imageView?.tintColor = CassetteTheme.UIColors.ink
       if let rootView = rootView {
         let playContext = playContextCb != nil ? { self.playContextCb?(self) } : nil
         let playIndex = playerIndexCb != nil ? { self.playerIndexCb?(self) } : nil
@@ -486,13 +487,13 @@ class PlayableTableCell: BasicTableCell {
 
   private func refreshSubtitleColor() {
     if playerIndexCb != nil {
-      cacheIconImage.tintColor = UIColor.labelColor
-      artistLabel.textColor = UIColor.labelColor
-      durationLabel.textColor = UIColor.labelColor
+      cacheIconImage.tintColor = CassetteTheme.UIColors.ink
+      artistLabel.textColor = CassetteTheme.UIColors.ink
+      durationLabel.textColor = CassetteTheme.UIColors.ink
     } else {
-      cacheIconImage.tintColor = UIColor.secondaryLabelColor
-      artistLabel.textColor = UIColor.secondaryLabelColor
-      durationLabel.textColor = UIColor.secondaryLabelColor
+      cacheIconImage.tintColor = CassetteTheme.UIColors.ink2
+      artistLabel.textColor = CassetteTheme.UIColors.ink2
+      durationLabel.textColor = CassetteTheme.UIColors.ink2
     }
   }
 
@@ -586,8 +587,8 @@ class PlayableTableCell: BasicTableCell {
         optionsButton.imageView?.tintColor = appDelegate.storage.settings.accounts
           .getSetting(playable?.account?.info).read.themePreference.asColor
         backgroundColor = (rootView is PopupPlayerVC) ?
-          .secondarySystemGroupedBackground.withAlphaComponent(0.2) :
-          .secondarySystemGroupedBackground
+          CassetteTheme.UIColors.bg2.withAlphaComponent(0.2) :
+          CassetteTheme.UIColors.bg2
       } else {
         playOverArtworkButton.isHidden = true
         playOverNumberButton.isHidden = true
@@ -597,7 +598,7 @@ class PlayableTableCell: BasicTableCell {
         configurePlayIndicator(playable: playable)
         deleteButton.isHidden = true
         refreshSubtitleColor()
-        optionsButton.imageView?.tintColor = .label
+        optionsButton.imageView?.tintColor = CassetteTheme.UIColors.ink
         backgroundColor = .clear
       }
     }

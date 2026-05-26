@@ -335,12 +335,11 @@ extension UIColor {
     UIColor(displayP3Red: 241 / 255, green: 194 / 255, blue: 66 / 255, alpha: 1.0)
   }
 
+  // cassette Patch 016: redirect the legacy *Color helpers to the Cassette
+  // tokens defined in CassetteTheme. These helpers are referenced in dozens
+  // of places, so this single redirection sweeps the rest of the surface.
   public static var labelColor: UIColor {
-    if #available(iOS 13.0, *) {
-      return UIColor.label
-    } else {
-      return UIColor.black
-    }
+    CassetteTheme.UIColors.ink
   }
 
   public static var redHeart: UIColor {
@@ -348,27 +347,15 @@ extension UIColor {
   }
 
   public static var fillColor: UIColor {
-    if #available(iOS 13.0, *) {
-      return UIColor.systemFill
-    } else {
-      return UIColor(displayP3Red: 217 / 255, green: 214 / 255, blue: 209 / 255, alpha: 1.0)
-    }
+    CassetteTheme.UIColors.bg2
   }
 
   public static var secondaryLabelColor: UIColor {
-    if #available(iOS 13.0, *) {
-      return UIColor.secondaryLabel
-    } else {
-      return UIColor.systemGray
-    }
+    CassetteTheme.UIColors.ink2
   }
 
   public static var backgroundColor: UIColor {
-    if #available(iOS 13.0, *) {
-      return UIColor.systemBackground
-    } else {
-      return UIColor.white
-    }
+    CassetteTheme.UIColors.bg
   }
 }
 

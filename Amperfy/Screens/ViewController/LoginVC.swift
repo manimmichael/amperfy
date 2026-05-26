@@ -34,15 +34,18 @@ extension UITextField {
     clipsToBounds = true
     layer.cornerRadius = 5
     layer.borderWidth = CGFloat(0.5)
-    layer.borderColor = UIColor.label.cgColor
+    layer.borderColor = CassetteTheme.UIColors.ink4.cgColor
 
     borderStyle = .roundedRect
-    font = .systemFont(ofSize: LoginVC.fontSize)
+    // cassette Patch 016: login form picks up the Cassette display face for
+    // input text, falling back to mono on the URL field via the call site.
+    font = UIFont.cassetteDisplay(size: LoginVC.fontSize, weight: .regular)
+    textColor = CassetteTheme.UIColors.ink
 
     let imageView = UIImageView(frame: CGRect(x: 5, y: 0, width: 25, height: 25))
     imageView.contentMode = .scaleAspectFit
     imageView.image = image.withRenderingMode(.alwaysTemplate)
-    imageView.tintColor = .label
+    imageView.tintColor = CassetteTheme.UIColors.ink2
 
     let leftContainerView = UIView(frame: CGRect(x: 0, y: 0, width: 35, height: 25))
     leftContainerView.addSubview(imageView)
@@ -87,7 +90,7 @@ class LoginVC: UIViewController {
       "Sit down at your computer with your phone nearby. We'll connect them automatically. " +
       "Your phone needs to be on the same Wi-Fi as your computer for this to work."
     label.font = UIFont.cassetteDisplay(size: 15, weight: .regular)
-    label.textColor = .secondaryLabel
+    label.textColor = CassetteTheme.UIColors.ink2
     label.numberOfLines = 0
     label.textAlignment = .center
     return label
@@ -103,7 +106,7 @@ class LoginVC: UIViewController {
   // "Use manual setup" link — reveals existing form (Patch 013)
   fileprivate lazy var manualSetupButton: UIButton = {
     var config = UIButton.Configuration.plain()
-    config.baseForegroundColor = .tertiaryLabel
+    config.baseForegroundColor = CassetteTheme.UIColors.ink3
     config.contentInsets = .zero
     let button = UIButton(configuration: config)
     button.setTitle("Having trouble? Use manual setup →", for: .normal)
@@ -320,14 +323,17 @@ class LoginVC: UIViewController {
   fileprivate lazy var apiLabel: UILabel = {
     let label = UILabel()
     label.text = "API:"
-    label.font = .systemFont(ofSize: Self.fontSize)
-    label.textColor = .hardLabelColor
+    label.font = UIFont.cassetteDisplay(size: Self.fontSize, weight: .semibold)
+    label.textColor = CassetteTheme.UIColors.ink
     return label
   }()
 
   fileprivate lazy var serverUrlTF: UITextField = {
     let textField = UITextField()
     textField.configuteForLogin(image: .serverUrl)
+    // cassette Patch 016: URLs read better in mono so the local-domain hint
+    // doesn't get tracked into a display face.
+    textField.font = UIFont.cassetteMono(size: 14)
     textField.placeholder = "https://your-server.local:4533"
     textField.textContentType = .URL
     textField.keyboardType = .URL
@@ -435,7 +441,7 @@ class LoginVC: UIViewController {
     label.text =
       "Sign in with your Cassette account to connect your library."
     label.font = UIFont.cassetteDisplay(size: 16, weight: .regular)
-    label.textColor = .secondaryLabel
+    label.textColor = CassetteTheme.UIColors.ink2
     label.numberOfLines = 0
     label.textAlignment = .center
     return label
@@ -445,7 +451,7 @@ class LoginVC: UIViewController {
   // own Subsonic-compatible server who skip the hosted Cassette flow entirely.
   fileprivate lazy var navidromeHelpButton: UIButton = {
     var config = UIButton.Configuration.plain()
-    config.baseForegroundColor = .secondaryLabel
+    config.baseForegroundColor = CassetteTheme.UIColors.ink2
     config.contentInsets = .zero
     let button = UIButton(configuration: config)
     button.setTitle("Need help setting up a server? →", for: .normal)
@@ -740,7 +746,7 @@ class LoginVC: UIViewController {
       }),
     ])
 
-    view.backgroundColor = .systemBackground
+    view.backgroundColor = CassetteTheme.UIColors.bg
 
     amperfyLabel.translatesAutoresizingMaskIntoConstraints = false
     iconView.translatesAutoresizingMaskIntoConstraints = false

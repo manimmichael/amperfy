@@ -35,6 +35,18 @@ class PlaylistTableCell: BasicTableCell {
   private var playlist: Playlist?
   private var rootView: UITableViewController?
 
+  override func awakeFromNib() {
+    super.awakeFromNib()
+    // cassette Patch 016: align with PlayableTableCell — display face for the
+    // primary name, mono for the metadata row, warm-paper ink throughout.
+    nameLabel.font = UIFont.cassetteDisplay(size: 17, weight: .semibold)
+    nameLabel.textColor = CassetteTheme.UIColors.ink
+    infoLabel.font = UIFont.cassetteMono(size: 12)
+    infoLabel.textColor = CassetteTheme.UIColors.ink2
+    contentView.backgroundColor = CassetteTheme.UIColors.bg
+    backgroundColor = CassetteTheme.UIColors.bg
+  }
+
   func display(playlist: Playlist, rootView: UITableViewController?) {
     self.playlist = playlist
     self.rootView = rootView
@@ -50,6 +62,6 @@ class PlaylistTableCell: BasicTableCell {
     )
     infoLabel.textAlignment = (traitCollection.horizontalSizeClass == .regular) ? .right : .left
     accessoryType = .disclosureIndicator
-    backgroundColor = .systemBackground
+    backgroundColor = CassetteTheme.UIColors.bg
   }
 }

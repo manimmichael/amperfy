@@ -190,8 +190,10 @@ class PlayerUIHandler: NSObject {
     case .miniPlayeriOS, .miniPlayerMac:
       repeatButton.configuration?.image = image?
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
-      repeatButton.tintColor = isSelected ? .tintColor : .secondaryLabel
-      repeatButton.backgroundColor = isSelected ? .tintColor.withAlphaComponent(0.2) : .clear
+      repeatButton.tintColor = isSelected ? CassetteTheme.UIColors.orange : CassetteTheme.UIColors
+        .ink2
+      repeatButton.backgroundColor = isSelected ?
+        CassetteTheme.UIColors.orange.withAlphaComponent(0.2) : .clear
     case .popupPlayer:
       var config = UIButton.Configuration.player(isSelected: isSelected)
       config.image = image
@@ -205,8 +207,10 @@ class PlayerUIHandler: NSObject {
     case .miniPlayeriOS, .miniPlayerMac:
       shuffleButton.configuration?.image = .shuffle
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
-      shuffleButton.tintColor = player.isShuffle ? .tintColor : .secondaryLabel
-      shuffleButton.backgroundColor = player.isShuffle ? .tintColor.withAlphaComponent(0.2) : .clear
+      shuffleButton.tintColor = player
+        .isShuffle ? CassetteTheme.UIColors.orange : CassetteTheme.UIColors.ink2
+      shuffleButton.backgroundColor = player
+        .isShuffle ? CassetteTheme.UIColors.orange.withAlphaComponent(0.2) : .clear
     case .popupPlayer:
       var config = UIButton.Configuration.player(isSelected: player.isShuffle)
       config.image = .shuffle
@@ -221,7 +225,8 @@ class PlayerUIHandler: NSObject {
 
     switch style {
     case .miniPlayeriOS, .miniPlayerMac:
-      displayPlaylistButton.tintColor = isSelected ? .tintColor : .label
+      displayPlaylistButton.tintColor = isSelected ? CassetteTheme.UIColors.orange : CassetteTheme
+        .UIColors.ink
     case .popupPlayer:
       var config = UIButton.Configuration.player(isSelected: isSelected)
       config.image = .playlistDisplayStyle
@@ -235,7 +240,8 @@ class PlayerUIHandler: NSObject {
 
     switch style {
     case .miniPlayeriOS, .miniPlayerMac:
-      displayLyricsButton.tintColor = isSelected ? .tintColor : .label
+      displayLyricsButton.tintColor = isSelected ? CassetteTheme.UIColors.orange : CassetteTheme
+        .UIColors.ink
     case .popupPlayer:
       break
     }
@@ -528,6 +534,6 @@ class PlayerUIHandler: NSObject {
     audioInfoLabel
       .text = (displayBitrateInKbps > 0) ? "\(formatText) \(displayBitrateInKbps) kbps" :
       "\(formatText)"
-    playTypeIcon.tintColor = .labelColor
+    playTypeIcon.tintColor = CassetteTheme.UIColors.ink2
   }
 }

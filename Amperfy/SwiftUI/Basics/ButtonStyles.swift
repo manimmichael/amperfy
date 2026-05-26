@@ -19,6 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+import AmperfyKit
 import SwiftUI
 
 // MARK: - DefaultButtonStyle
@@ -26,9 +27,12 @@ import SwiftUI
 struct DefaultButtonStyle: ButtonStyle {
   func makeBody(configuration: Self.Configuration) -> some View {
     configuration.label
-      .foregroundColor(.systemBackground)
+      .foregroundColor(CassetteTheme.Colors.bg)
       .padding([.top, .bottom], 8)
-      .background(configuration.isPressed ? Color.blue.opacity(0.75) : Color.blue)
+      .background(
+        configuration.isPressed
+          ? CassetteTheme.Colors.orange.opacity(0.75) : CassetteTheme.Colors.orange
+      )
       .cornerRadius(15.0)
       .contentShape(Rectangle())
   }
@@ -39,7 +43,7 @@ struct DefaultButtonStyle: ButtonStyle {
 struct ErrorButtonStyle: ButtonStyle {
   func makeBody(configuration: Self.Configuration) -> some View {
     configuration.label
-      .foregroundColor(.systemBackground)
+      .foregroundColor(CassetteTheme.Colors.bg)
       .padding([.top, .bottom], 8)
       .background(configuration.isPressed ? Color.error.opacity(0.75) : Color.error)
       .cornerRadius(15.0)
