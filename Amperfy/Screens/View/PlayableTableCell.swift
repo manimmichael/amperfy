@@ -83,6 +83,26 @@ class PlayableTableCell: BasicTableCell {
   private var ratingStackView: UIStackView?
   private var ratingStarViews: [UIImageView] = []
 
+  /// cassette Patch 028: orange `waveform` SF Symbol shown in the
+  /// leading column when this row is currently playing. Replaces both
+  /// the muddy `orange.withAlphaComponent(0.04)` row-fill (Patch 019)
+  /// and the small VYPlayIndicator overlay so there is a single, clear
+  /// "this is the active row" signal.
+  private lazy var playingSymbolView: UIImageView = {
+    let imageView = UIImageView(
+      image: UIImage(
+        systemName: "waveform",
+        withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+      )
+    )
+    imageView.tintColor = CassetteTheme.UIColors.orange
+    imageView.contentMode = .center
+    imageView.translatesAutoresizingMaskIntoConstraints = false
+    imageView.isHidden = true
+    return imageView
+  }()
+  private var didInstallPlayingSymbol = false
+
   static let rowHeight: CGFloat = 48 + margin.bottom + margin.top
   private static let touchAnimation = 0.4
 
@@ -210,6 +230,7 @@ class PlayableTableCell: BasicTableCell {
 
   func resetForReuse() {
     playIndicator?.reset()
+    hidePlayingSymbol()
     deleteButton.isHidden = true
     playOverArtworkButton.isHidden = true
     playOverNumberButton.isHidden = true
@@ -315,21 +336,68 @@ class PlayableTableCell: BasicTableCell {
   }
 
   private func configurePlayIndicator(playable: AbstractPlayable?) {
+    // cassette Patch 028: route the "currently playing" cue through a
+    // static SF Symbol. The legacy VYPlayIndicator dependency is left
+    // installed (PlayIndicator.swift still wraps it) so future polish
+    // can swap in an animated treatment without re-introducing the
+    // hidden lifecycle bugs of the old overlay.
+    playIndicator?.reset()
+
     guard let playable = playable else {
-      playIndicator?.reset()
+      hidePlayingSymbol()
+      return
+    }
+
+    let isCurrentlyPlaying = appDelegate.player.currentlyPlaying == playable
+    guard isCurrentlyPlaying else {
+      hidePlayingSymbol()
       return
     }
 
     if isDislayAlbumTrackNumberStyle {
-      playIndicator?.display(playable: playable, rootView: trackNumberLabel)
+      showPlayingSymbol(over: trackNumberLabel, replacingTrackNumber: true)
     } else {
-      if playerIndexCb == nil {
-        playIndicator?.display(playable: playable, rootView: entityImage, isOnImage: true)
-      } else {
-        // don't show play indicator on PopupPlayer
-        playIndicator?.reset()
-      }
+      showPlayingSymbol(over: entityImage, replacingTrackNumber: false)
     }
+  }
+
+  private func installPlayingSymbolIfNeeded() {
+    guard !didInstallPlayingSymbol else { return }
+    didInstallPlayingSymbol = true
+    contentView.addSubview(playingSymbolView)
+    NSLayoutConstraint.activate([
+      playingSymbolView.widthAnchor.constraint(equalToConstant: 24),
+      playingSymbolView.heightAnchor.constraint(equalToConstant: 24),
+    ])
+  }
+
+  private var playingSymbolCenterX: NSLayoutConstraint?
+  private var playingSymbolCenterY: NSLayoutConstraint?
+
+  private func showPlayingSymbol(over anchor: UIView, replacingTrackNumber: Bool) {
+    installPlayingSymbolIfNeeded()
+    playingSymbolCenterX?.isActive = false
+    playingSymbolCenterY?.isActive = false
+    playingSymbolCenterX = playingSymbolView.centerXAnchor
+      .constraint(equalTo: anchor.centerXAnchor)
+    playingSymbolCenterY = playingSymbolView.centerYAnchor
+      .constraint(equalTo: anchor.centerYAnchor)
+    playingSymbolCenterX?.isActive = true
+    playingSymbolCenterY?.isActive = true
+    playingSymbolView.isHidden = false
+    contentView.bringSubviewToFront(playingSymbolView)
+    if replacingTrackNumber {
+      trackNumberLabel.alpha = 0
+    } else {
+      trackNumberLabel.alpha = 1
+    }
+  }
+
+  private func hidePlayingSymbol() {
+    if didInstallPlayingSymbol {
+      playingSymbolView.isHidden = true
+    }
+    trackNumberLabel.alpha = 1
   }
 
   func refresh() {
@@ -388,7 +456,6 @@ class PlayableTableCell: BasicTableCell {
 
     refreshSubtitleColor()
     refreshCacheAndDuration()
-    refreshCurrentlyPlayingHighlight(playable: playable)
 
     // Update rating display for songs (only if setting is enabled)
     if appDelegate.storage.settings.user.isShowRating, let song = playable.asSong {
@@ -396,18 +463,6 @@ class PlayableTableCell: BasicTableCell {
     } else {
       ratingStackView?.isHidden = true
     }
-  }
-
-  /// cassette Patch 019: highlight the row that's currently playing with a
-  /// faint orange wash. Comparison piggybacks on the player notification
-  /// subscriptions already wired up via `playerPlay/Pause/Stop` (Mac
-  /// Catalyst) and the `refresh()` call sites that fire when the queue
-  /// changes — no new observers needed.
-  private func refreshCurrentlyPlayingHighlight(playable: AbstractPlayable) {
-    let isCurrentlyPlaying = appDelegate.player.currentlyPlaying == playable
-    contentView.backgroundColor = isCurrentlyPlaying ?
-      CassetteTheme.UIColors.orange.withAlphaComponent(0.04) :
-      CassetteTheme.UIColors.bg
   }
 
   private func configureTrackNumberLabel() {
