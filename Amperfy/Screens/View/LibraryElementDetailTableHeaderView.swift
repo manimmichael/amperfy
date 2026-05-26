@@ -174,10 +174,11 @@ class LibraryElementDetailTableHeaderView: UIView {
     )
   }
 
-  /// cassette Patch 022: native iOS 17+ tinted button configuration with
-  /// Cassette typography and tokens. Replaces the system-22pt /
-  /// `secondarySystemFill` look the XIB ships with so Play/Shuffle no
-  /// longer feel like strangers next to the rest of the app's chrome.
+  /// cassette Patch 027: drop the Barlow Condensed override Patch 022
+  /// applied. UIButton.Configuration.tinted() is tuned for SF Pro Text;
+  /// forcing cassetteDisplay into it (kerning, line-height, ascent slack)
+  /// produced the "invented" feel the audit flagged. Cassette identity
+  /// here is carried by the orange tint + bg2 base colour, not the type.
   private static func applyCassetteStyle(
     to button: UIButton,
     title: String,
@@ -186,23 +187,18 @@ class LibraryElementDetailTableHeaderView: UIView {
   ) {
     var config = UIButton.Configuration.tinted()
     config.image = UIImage(systemName: systemImage)
-    config.imagePadding = 8
+    config.imagePadding = 6
     config.imagePlacement = .leading
     config.cornerStyle = .medium
     config.baseForegroundColor = CassetteTheme.UIColors.ink
     config.baseBackgroundColor = CassetteTheme.UIColors.bg2
     config.contentInsets = NSDirectionalEdgeInsets(
-      top: 10,
-      leading: 18,
-      bottom: 10,
-      trailing: 18
+      top: 8,
+      leading: 16,
+      bottom: 8,
+      trailing: 16
     )
-    config.attributedTitle = AttributedString(
-      title,
-      attributes: AttributeContainer([
-        .font: UIFont.cassetteDisplay(size: 17, weight: .semibold),
-      ])
-    )
+    config.title = title
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
       pointSize: 15,
       weight: .semibold

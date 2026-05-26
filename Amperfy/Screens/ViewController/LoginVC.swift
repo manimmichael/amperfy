@@ -74,14 +74,12 @@ class LoginVC: UIViewController {
   fileprivate lazy var cassetteSignInButton: UIButton = {
     var config = UIButton.Configuration.prominentGlass()
     config.imagePadding = 14
-    // cassette Patch 018: route the title through attributedTitle so the
-    // Cassette display face survives Configuration's font handling.
-    config.attributedTitle = AttributedString(
-      "Sign in with Cassette",
-      attributes: AttributeContainer([
-        .font: UIFont.cassetteDisplay(size: 17, weight: .semibold),
-      ])
-    )
+    // cassette Patch 027: drop the cassetteDisplay attributedTitle Patch
+    // 018 introduced. UIButton.Configuration.prominentGlass is tuned for
+    // SF Pro Text; injecting Barlow Condensed produced the "invented"
+    // feel the audit flagged. Cassette identity here is carried by the
+    // orange tint, not the type face.
+    config.title = "Sign in with Cassette"
     let button = UIButton(configuration: config)
     button.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
       .asColor
@@ -411,12 +409,8 @@ class LoginVC: UIViewController {
 
   fileprivate lazy var apiSelectorButton: UIButton = {
     var config = UIButton.Configuration.glass()
-    config.attributedTitle = AttributedString(
-      "API",
-      attributes: AttributeContainer([
-        .font: UIFont.cassetteDisplay(size: 14, weight: .semibold),
-      ])
-    )
+    // Patch 027: plain title — see cassetteSignInButton for rationale.
+    config.title = "API"
     let button = UIButton(configuration: config)
     button.preferredBehavioralStyle = .pad
     button.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
@@ -428,12 +422,8 @@ class LoginVC: UIViewController {
     var config = UIButton.Configuration.prominentGlass()
     config.image = .login
     config.imagePadding = 20.0
-    config.attributedTitle = AttributedString(
-      "Login",
-      attributes: AttributeContainer([
-        .font: UIFont.cassetteDisplay(size: 17, weight: .semibold),
-      ])
-    )
+    // Patch 027: plain title — see cassetteSignInButton for rationale.
+    config.title = "Login"
     let button = UIButton(configuration: config)
     button.accessibilityLabel = "Login"
     button.addTarget(self, action: #selector(Self.loginPressed), for: .touchUpInside)
