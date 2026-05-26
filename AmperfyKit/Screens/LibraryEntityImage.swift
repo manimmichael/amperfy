@@ -36,7 +36,16 @@ extension LibraryEntityImage {
     ) {
       if useCache, let cachedImg = Self.cache.object(forKey: artworkImagePath as NSString) {
         return cachedImg
-      } else if let directlyLoadedImage = UIImage(named: artworkImagePath) {
+      } else if let directlyLoadedImage = UIImage(contentsOfFile: artworkImagePath) {
+        // cassette Patch 023: load from filesystem only.
+        // `Artwork.imagePath` always returns absolute filesystem paths
+        // for `CustomImage` entries; `UIImage(named:)` would also search
+        // the asset catalog, leaving a latent path for the legacy
+        // `Blue*`/`Orange*` vinyl imagesets to leak through the
+        // placeholder pipeline if a path string ever collided with an
+        // asset name. `UIImage(contentsOfFile:)` returns nil for
+        // missing files so the fallback to the ghost-initial renderer
+        // still kicks in.
         return directlyLoadedImage
       }
     }
