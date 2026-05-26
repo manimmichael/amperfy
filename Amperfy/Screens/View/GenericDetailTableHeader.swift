@@ -190,10 +190,18 @@ class GenericDetailTableHeader: UIView {
 
     guard let titleSuperview = titleLabel.superview else { return }
     titleSuperview.addSubview(eyebrowLabel)
+    // cassette Patch 021: anchor eyebrow's last baseline relative to the
+    // title's first baseline so the visual gap is independent of the
+    // title font's ascender slack. cassetteDisplay 28 .bold has ~22pt
+    // cap height, so a -22 offset yields ~5pt of clear space between
+    // the eyebrow letters and the top of the title cap-line.
     NSLayoutConstraint.activate([
       eyebrowLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
       eyebrowLabel.trailingAnchor.constraint(lessThanOrEqualTo: titleLabel.trailingAnchor),
-      eyebrowLabel.bottomAnchor.constraint(equalTo: titleLabel.topAnchor, constant: -4),
+      eyebrowLabel.lastBaselineAnchor.constraint(
+        equalTo: titleLabel.firstBaselineAnchor,
+        constant: -22
+      ),
     ])
   }
 
