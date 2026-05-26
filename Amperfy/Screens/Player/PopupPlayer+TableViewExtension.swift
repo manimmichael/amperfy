@@ -180,7 +180,12 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
         rootView: self,
         playerIndexCb: convertCellViewToPlayerIndex
       )
+      // cassette Patch 024: queue rows over the popup player's gradient
+      // backdrop. Clearing both the cell and its content view stops
+      // the `bg` solid that `PlayableTableCell.refresh()` paints from
+      // showing as a flat dark rectangle on top of the gradient.
       cell.backgroundColor = UIColor.clear
+      cell.contentView.backgroundColor = UIColor.clear
       cell.maskCell(fromTop: 0.0)
       return cell
     case .currentlyPlaying:

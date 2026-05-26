@@ -20,7 +20,6 @@
 //
 
 import AmperfyKit
-import DominantColors
 import UIKit
 
 extension PopupPlayerVC {
@@ -140,26 +139,28 @@ extension PopupPlayerVC {
     }
     guard let artwork = artwork else { return }
     backgroundImage.image = artwork
-    // cassette Patch 016: fall back to bg4 (deepest cassette surface) instead
-    // of `.systemBackground` so the now-playing gradient never blooms light.
-    artworkGradientColors = (try? artwork.dominantColors(max: 2)) ?? [
-      themePreference.asColor,
-      CassetteTheme.UIColors.bg4,
-    ]
     applyGradientBackground()
   }
 
+  /// cassette Patch 024: drop the `DominantColors` extraction that fed
+  /// the gradient with album-art-extracted hues (the source of the
+  /// blue tint clashing with Cassette orange controls). The blurred
+  /// `backgroundImage` already provides atmospheric tint at the top;
+  /// we just overlay a clear-to-`bg` gradient so the bottom of the
+  /// view (where the controls live) reads as a clean Cassette-warm
+  /// surface.
   internal func applyGradientBackground() {
-    let colors = artworkGradientColors.compactMap { $0.cgColor }
-    // remove existing gradient layer
-    backgroundImage.layer.sublayers?.forEach { layer in
-      if layer is CAGradientLayer {
-        layer.removeFromSuperlayer()
-      }
-    }
+    backgroundImage.layer.sublayers?
+      .filter { $0 is CAGradientLayer }
+      .forEach { $0.removeFromSuperlayer() }
     let gradientLayer = CAGradientLayer()
     gradientLayer.frame = backgroundImage.bounds
-    gradientLayer.colors = colors
+    gradientLayer.colors = [
+      UIColor.clear.cgColor,
+      CassetteTheme.UIColors.bg.withAlphaComponent(0.45).cgColor,
+      CassetteTheme.UIColors.bg.withAlphaComponent(0.75).cgColor,
+    ]
+    gradientLayer.locations = [0.0, 0.55, 1.0]
     gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.0)
     gradientLayer.endPoint = CGPoint(x: 0.5, y: 1.0)
     backgroundImage.layer.insertSublayer(gradientLayer, at: 0)

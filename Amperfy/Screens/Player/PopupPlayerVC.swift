@@ -40,7 +40,6 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
   @IBOutlet
   weak var controlPlaceholderHeightConstraint: NSLayoutConstraint!
   private let safetyMarginOnBottom = 20.0
-  internal var artworkGradientColors = [UIColor]()
 
   lazy var tableViewKeyCommandsController = TableViewKeyCommandsController(
     tableView: tableView,
