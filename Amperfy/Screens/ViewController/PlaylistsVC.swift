@@ -482,7 +482,10 @@ private final class LikedSongsHeaderRowView: UIControl {
     let iv = UIImageView()
     iv.translatesAutoresizingMaskIntoConstraints = false
     iv.image = UIImage(systemName: "heart.fill")
-    iv.tintColor = CassetteTheme.UIColors.orange
+    // cassette Patch 049 (Phase D): Liked Songs heart drops to ink. Hearts
+    // across the app (row favorites, popup player) all share ink as the
+    // single "favorite" affordance; filled vs outline carries the state.
+    iv.tintColor = CassetteTheme.UIColors.ink
     iv.contentMode = .scaleAspectFit
     return iv
   }()

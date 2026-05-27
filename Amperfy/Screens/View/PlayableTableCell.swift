@@ -475,7 +475,10 @@ class PlayableTableCell: BasicTableCell {
     guard let playable = playable else { return }
     favoriteIconImage.isHidden = !playable.isFavorite
     // cassette Patch 016: align favourite tint with GenericTableCell (amber).
-    favoriteIconImage.tintColor = CassetteTheme.UIColors.amber
+    // cassette Patch 049 (Phase D): favorite icon drops from amber to ink.
+    // Hearts across the app share the same tint; filled vs outline carries
+    // the state (here the icon is hidden when not favorited).
+    favoriteIconImage.tintColor = CassetteTheme.UIColors.ink
 
     let isDurationVisible = !playable.isRadio &&
       (
