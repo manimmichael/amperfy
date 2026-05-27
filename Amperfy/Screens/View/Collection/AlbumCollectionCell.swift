@@ -39,6 +39,19 @@ class AlbumCollectionCell: BasicCollectionCell {
   private var rootFlowLayout: UICollectionViewDelegateFlowLayout?
   private var itemWidth: CGFloat?
 
+  // cassette Patch 043: play overlay split. Tap on the artwork
+  // body still navigates (handled by the collection view's
+  // didSelectItemAt); tap on this 40pt circular orange button fires
+  // the closure so HomeVC can start playback for the container.
+  private static let playOverlayDiameter: CGFloat = 40.0
+  private var playOverlay: UIButton?
+
+  /// cassette Patch 043: HomeVC sets this in its cellProvider so
+  /// tapping the overlay starts playback for the cell's container.
+  /// Cleared in `prepareForReuse` so the closure doesn't outlive
+  /// the bound container.
+  var onPlayTapped: (() -> Void)?
+
   func display(
     container: PlayableContainable,
     rootView: UICollectionViewController,
@@ -92,8 +105,14 @@ class AlbumCollectionCell: BasicCollectionCell {
       container: container,
       cornerRadius: .big
     )
+    setupPlayOverlayIfNeeded()
     updateArtworkImageConstraint(indexPath: initialIndexPath)
     layoutIfNeeded()
+  }
+
+  override func prepareForReuse() {
+    super.prepareForReuse()
+    onPlayTapped = nil
   }
 
   override func layoutSubviews() {
@@ -101,6 +120,38 @@ class AlbumCollectionCell: BasicCollectionCell {
       updateArtworkImageConstraint(indexPath: indexPath)
     }
     super.layoutSubviews()
+  }
+
+  /// cassette Patch 043: lazily install a 40pt circular orange
+  /// `play.fill` button anchored 8pt inside the artwork's bottom-
+  /// right corner. Idempotent — safe to call from every `apply(...)`.
+  private func setupPlayOverlayIfNeeded() {
+    guard playOverlay == nil else { return }
+    var config = UIButton.Configuration.filled()
+    config.baseBackgroundColor = CassetteTheme.UIColors.orange
+    config.baseForegroundColor = CassetteTheme.UIColors.ink
+    config.cornerStyle = .capsule
+    config.image = UIImage(systemName: "play.fill")?
+      .withConfiguration(UIImage.SymbolConfiguration(pointSize: 16, weight: .bold))
+    config.contentInsets = NSDirectionalEdgeInsets(
+      top: 0, leading: 0, bottom: 0, trailing: 0
+    )
+    let button = UIButton(configuration: config)
+    button.translatesAutoresizingMaskIntoConstraints = false
+    button.accessibilityLabel = "Play"
+    button.layer.shadowColor = UIColor.black.cgColor
+    button.layer.shadowOpacity = 0.25
+    button.layer.shadowRadius = 4
+    button.layer.shadowOffset = CGSize(width: 0, height: 2)
+    button.addAction(UIAction { [weak self] _ in self?.onPlayTapped?() }, for: .touchUpInside)
+    contentView.addSubview(button)
+    NSLayoutConstraint.activate([
+      button.widthAnchor.constraint(equalToConstant: Self.playOverlayDiameter),
+      button.heightAnchor.constraint(equalToConstant: Self.playOverlayDiameter),
+      button.trailingAnchor.constraint(equalTo: entityImage.trailingAnchor, constant: -8),
+      button.bottomAnchor.constraint(equalTo: entityImage.bottomAnchor, constant: -8),
+    ])
+    playOverlay = button
   }
 
   func updateArtworkImageConstraint(indexPath: IndexPath) {

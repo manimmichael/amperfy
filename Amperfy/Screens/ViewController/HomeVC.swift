@@ -215,7 +215,7 @@ final class HomeVC: UICollectionViewController {
     dataSource = UICollectionViewDiffableDataSource<
       HomeSection,
       HomeItem
-    >(collectionView: collectionView) { collectionView, indexPath, item in
+    >(collectionView: collectionView) { [unowned self] collectionView, indexPath, item in
       // cassette Patch 038: dispatch on the item's concrete type so
       // the Artists shelf gets the circular cell while other shelves
       // keep the standard square album-card.
@@ -225,18 +225,37 @@ final class HomeVC: UICollectionViewController {
           for: indexPath
         ) as! ArtistCircleCollectionCell
         cell.display(artist: artist)
+        // cassette Patch 043: tap-vs-play split. Body tap still
+        // navigates to detail via didSelectItemAt; the overlay
+        // starts playback for the artist's playable contents.
+        cell.onPlayTapped = { [weak self] in
+          guard let self else { return }
+          self.appDelegate.player.play(
+            context: PlayContext(containable: artist)
+          )
+        }
         return cell
       }
       let cell = collectionView.dequeueReusableCell(
         withReuseIdentifier: AlbumCollectionCell.typeName,
         for: indexPath
       ) as! AlbumCollectionCell
+      let containable = item.playableContainable
       cell.display(
-        container: item.playableContainable,
+        container: containable,
         rootView: self,
         itemWidth: Self.itemWidth,
         initialIndexPath: indexPath
       )
+      // cassette Patch 043: same tap-vs-play split as the artist
+      // cell — overlay tap fires `player.play` for whatever
+      // container this card represents (album, playlist, podcast).
+      cell.onPlayTapped = { [weak self] in
+        guard let self else { return }
+        self.appDelegate.player.play(
+          context: PlayContext(containable: containable)
+        )
+      }
       return cell
     }
 
