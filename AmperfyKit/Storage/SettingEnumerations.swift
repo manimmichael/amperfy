@@ -288,20 +288,25 @@ public enum ThemePreference: Int, CaseIterable, Sendable, Codable {
     }
   }
 
-  // Cassette fork: all ThemePreference cases resolve to Cassette orange (#E87830).
-  // The enum cases remain in Core Data to preserve migrations; users just can't
-  // change the effective accent anymore (see Patch 006 which hides the picker).
+  // cassette Patch 046 (Phase A): the "theme color" now resolves to ink, not
+  // orange. Orange (#E87830) is reserved for three call sites only — the
+  // popup time scrubber, the mini time scrubber, and the currently-playing
+  // list waveform — each of which references `CassetteTheme.UIColors.orange`
+  // directly. Every other consumer of `asColor` / `asSwiftUIColor` (profile
+  // glyph, login chrome, sync progress, selection checkmarks, equalizer,
+  // PlayIndicator, etc.) gets ink as a side effect and reads as neutral.
+  // The enum cases remain in Core Data to preserve migrations.
   public var asSwiftUIColor: Color {
-    Color(red: 232.0 / 255.0, green: 120.0 / 255.0, blue: 48.0 / 255.0)
+    CassetteTheme.Colors.ink
   }
 
   public var asColor: UIColor {
-    UIColor(red: 232.0 / 255.0, green: 120.0 / 255.0, blue: 48.0 / 255.0, alpha: 1.0)
+    CassetteTheme.UIColors.ink
   }
 
   public var contrastColor: UIColor {
-    // Cassette orange is mid-luminance; white reads cleanly on top.
-    .white
+    // Ink is a warm off-white (#EDE4D0). bg (#1C1914) reads cleanly behind it.
+    CassetteTheme.UIColors.bg
   }
 }
 

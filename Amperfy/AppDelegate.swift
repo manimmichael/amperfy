@@ -277,14 +277,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     configureNotificationHandling()
     initEventLogger()
 
-    // Cassette fork: cascade Cassette orange (#E87830) across every UIKit
-    // control that honors tintColor. `UIView.appearance().tintColor` in
-    // `setAppTheme` also covers this, but doing it on the window explicitly
-    // at launch catches early splash / login views before setAppTheme runs.
-    let cassetteOrange = UIColor(
-      red: 232.0 / 255.0, green: 120.0 / 255.0, blue: 48.0 / 255.0, alpha: 1.0
-    )
-    window?.tintColor = cassetteOrange
+    // cassette Patch 046 (Phase A): default tint cascade is ink, not orange.
+    // Orange survives only on three pinned surfaces (popup + mini scrubbers,
+    // currently-playing waveform); every other control that honors tintColor
+    // — nav back chevrons, edit buttons, refresh spinners, switches, etc. —
+    // inherits ink via the window + UIView.appearance() cascade.
+    window?.tintColor = CassetteTheme.UIColors.ink
     window?.overrideUserInterfaceStyle = .dark
     window?.backgroundColor = CassetteTheme.UIColors.bg
 

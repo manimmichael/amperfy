@@ -120,6 +120,15 @@ class MiniPlayerView: UIView {
   fileprivate lazy var timeSlider: SeekableTimeSlider = {
     let slider = SeekableTimeSlider(frame: .zero)
     slider.preferredBehavioralStyle = .pad
+    // cassette Patch 046: pin the scrubber orange explicitly. After Phase A
+    // moves the global tint cascade to ink, sliders that previously inherited
+    // `window.tintColor` would silently turn ink. The mini scrubber is one of
+    // the three permitted orange exceptions (popup scrubber, mini scrubber,
+    // currently-playing waveform), so set the track + thumb colors locally
+    // and use ink4 for the unfilled track to match the popup player.
+    slider.minimumTrackTintColor = CassetteTheme.UIColors.orange
+    slider.maximumTrackTintColor = CassetteTheme.UIColors.ink4
+    slider.thumbTintColor = CassetteTheme.UIColors.orange
     return slider
   }()
 

@@ -101,9 +101,11 @@ public enum CassetteTheme {
       .font: UIFont.cassetteDisplay(size: 34, weight: .bold),
       .foregroundColor: UIColors.ink,
     ]
+    // cassette Patch 046 (Phase A): back button title drops to ink2 (was orange).
+    // The chevron itself follows the global nav tintColor, also moved to ink.
     let backItem = UIBarButtonItemAppearance()
     backItem.normal.titleTextAttributes = [
-      .foregroundColor: UIColors.orange,
+      .foregroundColor: UIColors.ink2,
       .font: UIFont.cassette(.rowTitle),
     ]
     nav.buttonAppearance = backItem
@@ -112,8 +114,13 @@ public enum CassetteTheme {
     UINavigationBar.appearance().standardAppearance = nav
     UINavigationBar.appearance().scrollEdgeAppearance = nav
     UINavigationBar.appearance().compactAppearance = nav
-    UINavigationBar.appearance().tintColor = UIColors.orange
+    UINavigationBar.appearance().tintColor = UIColors.ink
 
+    // cassette Patch 046 (Phase A): tab bar selected icon + label drop to ink
+    // (was orange). Differentiation between selected/unselected is now ink
+    // (selected) vs ink3 (unselected) plus the existing bold/semibold label
+    // weight contrast at lines below. Phase H will layer filled-vs-outline
+    // icon swapping on top for the final structural cue.
     let tab = UITabBarAppearance()
     tab.configureWithOpaqueBackground()
     tab.backgroundColor = UIColors.bg2
@@ -124,9 +131,9 @@ public enum CassetteTheme {
       .foregroundColor: UIColors.ink3,
       .font: UIFont.cassetteDisplay(size: 10, weight: .semibold),
     ]
-    tabItem.selected.iconColor = UIColors.orange
+    tabItem.selected.iconColor = UIColors.ink
     tabItem.selected.titleTextAttributes = [
-      .foregroundColor: UIColors.orange,
+      .foregroundColor: UIColors.ink,
       .font: UIFont.cassetteDisplay(size: 10, weight: .bold),
     ]
     tab.stackedLayoutAppearance = tabItem
@@ -134,7 +141,7 @@ public enum CassetteTheme {
     tab.compactInlineLayoutAppearance = tabItem
     UITabBar.appearance().standardAppearance = tab
     UITabBar.appearance().scrollEdgeAppearance = tab
-    UITabBar.appearance().tintColor = UIColors.orange
+    UITabBar.appearance().tintColor = UIColors.ink
     UITabBar.appearance().unselectedItemTintColor = UIColors.ink3
 
     UITableView.appearance().backgroundColor = UIColors.bg
@@ -158,10 +165,13 @@ public enum CassetteTheme {
     UISegmentedControl.appearance().selectedSegmentTintColor = UIColors.orange
     UISegmentedControl.appearance().backgroundColor = UIColors.bg2
 
+    // cassette Patch 046 (Phase A): toolbar + search bar tint drop to ink/ink2.
+    // The orange cursor + ring on search bars was loud and competed with the
+    // mini-player scrubber visible at the bottom of the same screen.
     UIToolbar.appearance().barTintColor = UIColors.bg2
-    UIToolbar.appearance().tintColor = UIColors.orange
+    UIToolbar.appearance().tintColor = UIColors.ink
 
-    UISearchBar.appearance().tintColor = UIColors.orange
+    UISearchBar.appearance().tintColor = UIColors.ink2
     UISearchBar.appearance().barTintColor = UIColors.bg2
   }
 }
