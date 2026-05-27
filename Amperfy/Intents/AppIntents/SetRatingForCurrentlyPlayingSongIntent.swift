@@ -52,21 +52,20 @@ struct SetRatingForCurrentlyPlayingSongResultView: View {
   var body: some View {
     VStack {
       if rating == 0 {
+        // cassette Patch 054 (Phase I): Siri-shortcut rating result chrome
+        // pins to ink explicitly. The prior `themePreference.asSwiftUIColor`
+        // expression resolves to ink post-Patch 046, but the indirection
+        // through per-account ThemePreference added noise on an intent
+        // hot path.
         AmperfyImage.starSlash.asImage
           .font(intentResultViewHeaderImageFont)
-          .foregroundStyle(
-            appDelegate.storage.settings.accounts.activeSetting.read.themePreference
-              .asSwiftUIColor
-          )
+          .foregroundStyle(CassetteTheme.Colors.ink)
       } else {
         HStack {
           ForEach(0 ..< rating, id: \.self) { _ in
             AmperfyImage.starFill.asImage
               .font(intentResultViewHeaderImageFont)
-              .foregroundStyle(
-                appDelegate.storage.settings.accounts.activeSetting.read
-                  .themePreference.asSwiftUIColor
-              )
+              .foregroundStyle(CassetteTheme.Colors.ink)
           }
         }
       }

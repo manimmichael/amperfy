@@ -1,5 +1,5 @@
 {
-  "originHash" : "b991d97ee0d2d501ee311a73addd4185dcdd2a0296d6ca54c17904e56754859b",
+  "originHash" : "69b90b242bd62ba48d989576449590558d60ce9ce38709d41e9ee898615f1a4f",
   "pins" : [
     {
       "identity" : "alamofire",
@@ -98,15 +98,6 @@
       "state" : {
         "revision" : "842020eabcebe410e698c68545d6597b2d232e51",
         "version" : "0.1.2"
-      }
-    },
-    {
-      "identity" : "vyplayindicator",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/obrhoff/VYPlayIndicator",
-      "state" : {
-        "revision" : "3d84d6ecd3bd95dd5e50177beea4c2ca3d53f9bc",
-        "version" : "1.5.4"
       }
     }
   ],

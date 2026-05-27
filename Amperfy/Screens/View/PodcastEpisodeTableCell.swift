@@ -50,7 +50,9 @@ class PodcastEpisodeTableCell: BasicTableCell {
 
   private var episode: PodcastEpisode?
   private var rootView: UIViewController?
-  private var playIndicator: PlayIndicator?
+  // cassette Patch 054 (Phase I): PlayIndicator overlay deleted. Currently-
+  // playing episode is indicated by `configurePlayEpisodeButton` clearing
+  // the play button image and disabling it (see below); no extra overlay.
 
   override func awakeFromNib() {
     super.awakeFromNib()
@@ -73,9 +75,6 @@ class PodcastEpisodeTableCell: BasicTableCell {
   }
 
   func display(episode: PodcastEpisode, rootView: UIViewController) {
-    if playIndicator == nil {
-      playIndicator = PlayIndicator(rootViewTypeName: rootView.typeName)
-    }
     self.episode = episode
     self.rootView = rootView
     optionsButton.showsMenuAsPrimaryAction = true
@@ -89,16 +88,10 @@ class PodcastEpisodeTableCell: BasicTableCell {
 
   func refresh() {
     guard let episode = episode else { return }
+    // cassette Patch 054 (Phase I): PlayIndicator overlay deleted.
+    // `configurePlayEpisodeButton` handles the playing/available/disabled
+    // states directly; no overlay registration is required.
     configurePlayEpisodeButton()
-    playIndicator?.display(playable: episode, rootView: playEpisodeButton)
-    playIndicator?.willDisplayIndicatorCB = { [weak self] () in
-      guard let self = self else { return }
-      configurePlayEpisodeButton()
-    }
-    playIndicator?.willHideIndicatorCB = { [weak self] () in
-      guard let self = self else { return }
-      configurePlayEpisodeButton()
-    }
     podcastEpisodeLabel.text = episode.title
     entityImage.display(
       theme: appDelegate.storage.settings.accounts.getSetting(episode.account?.info).read
@@ -137,7 +130,8 @@ class PodcastEpisodeTableCell: BasicTableCell {
 
   override func prepareForReuse() {
     super.prepareForReuse()
-    playIndicator?.reset()
+    // cassette Patch 054 (Phase I): PlayIndicator overlay deleted; nothing
+    // to reset between reuses beyond what super already handles.
   }
 
   private func configurePlayEpisodeButton() {

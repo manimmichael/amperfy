@@ -294,7 +294,7 @@ public enum ThemePreference: Int, CaseIterable, Sendable, Codable {
   // list waveform — each of which references `CassetteTheme.UIColors.orange`
   // directly. Every other consumer of `asColor` / `asSwiftUIColor` (profile
   // glyph, login chrome, sync progress, selection checkmarks, equalizer,
-  // PlayIndicator, etc.) gets ink as a side effect and reads as neutral.
+  // equalizer, etc.) gets ink as a side effect and reads as neutral.
   // The enum cases remain in Core Data to preserve migrations.
   public var asSwiftUIColor: Color {
     CassetteTheme.Colors.ink

@@ -80,14 +80,14 @@ class PlayableTableCell: BasicTableCell {
   @IBOutlet
   weak var playOverNumberButton: UIButton!
 
-  private var ratingStackView: UIStackView?
-  private var ratingStarViews: [UIImageView] = []
-
   /// cassette Patch 028: orange `waveform` SF Symbol shown in the
   /// leading column when this row is currently playing. Replaces both
   /// the muddy `orange.withAlphaComponent(0.04)` row-fill (Patch 019)
-  /// and the small VYPlayIndicator overlay so there is a single, clear
-  /// "this is the active row" signal.
+  /// and the legacy small VYPlayIndicator overlay (deleted in Patch 054)
+  /// so there is a single, clear "this is the active row" signal.
+  /// This `playingSymbolView` is one of the three permitted orange
+  /// surfaces post-Phase 5.2; the other two are the mini + popup
+  /// time scrubbers.
   private lazy var playingSymbolView: UIImageView = {
     let imageView = UIImageView(
       image: UIImage(
@@ -112,7 +112,6 @@ class PlayableTableCell: BasicTableCell {
   private var playable: AbstractPlayable?
   private var download: Download?
   private var rootView: UIViewController?
-  private var playIndicator: PlayIndicator?
   private var isDislayAlbumTrackNumberStyle: Bool = false
   private var displayMode: DisplayMode = .normal
   #if targetEnvironment(macCatalyst) // ok
@@ -177,69 +176,23 @@ class PlayableTableCell: BasicTableCell {
       trackNumberLabel.textColor = CassetteTheme.UIColors.ink3
       contentView.backgroundColor = CassetteTheme.UIColors.bg
       backgroundColor = CassetteTheme.UIColors.bg
-      setupRatingStars()
       resetForReuse()
     }
   }
 
-  private func setupRatingStars() {
-    let stackView = UIStackView()
-    stackView.axis = .horizontal
-    stackView.spacing = -2 // Negative spacing to put stars closer together
-    stackView.alignment = .center
-    stackView.distribution = .fill
-    stackView.translatesAutoresizingMaskIntoConstraints = false
-
-    // Create 5 star image views
-    for _ in 0 ..< 5 {
-      let starView = UIImageView()
-      starView.contentMode = .scaleAspectFit
-      starView.translatesAutoresizingMaskIntoConstraints = false
-      starView.image = .starEmpty
-      starView.tintColor = UIColor(red: 0.882, green: 0.686, blue: 0.255, alpha: 1.0) // #e1af41
-      let starSize: CGFloat = 10
-      NSLayoutConstraint.activate([
-        starView.widthAnchor.constraint(equalToConstant: starSize),
-        starView.heightAnchor.constraint(equalToConstant: starSize),
-      ])
-      ratingStarViews.append(starView)
-      stackView.addArrangedSubview(starView)
-    }
-
-    contentView.addSubview(stackView)
-
-    NSLayoutConstraint.activate([
-      stackView.trailingAnchor.constraint(equalTo: optionsButton.trailingAnchor, constant: -4),
-      stackView.topAnchor.constraint(equalTo: optionsButton.bottomAnchor, constant: -8),
-    ])
-
-    ratingStackView = stackView
-  }
-
-  private func updateRatingDisplay(rating: Int) {
-    // Show the LAST N stars (right-aligned) instead of first N
-    // This keeps stars right-justified regardless of rating
-    let startIndex = 5 - rating
-    for (index, starView) in ratingStarViews.enumerated() {
-      starView.isHidden = index < startIndex
-      starView.image = .starFill
-    }
-
-    // Only show rating if song has a rating > 0
-    ratingStackView?.isHidden = (rating == 0)
-  }
+  // cassette Patch 054 (Phase I): rating stars removed from list rows.
+  // `setupRatingStars`, `updateRatingDisplay`, `ratingStackView`, and
+  // `ratingStarViews` deleted; row geometry is now driven entirely by
+  // title + artist + duration + favorite icon. The rating data model
+  // is preserved (`SongMO.rating` and the `isShowRating` user setting
+  // still exist; the EntityPreviewVC context-menu rating action
+  // remains the read/write surface for now).
 
   func resetForReuse() {
-    playIndicator?.reset()
     hidePlayingSymbol()
     deleteButton.isHidden = true
     playOverArtworkButton.isHidden = true
     playOverNumberButton.isHidden = true
-    ratingStackView?.isHidden = true
-    // Reset all stars for next use
-    for starView in ratingStarViews {
-      starView.isHidden = false
-    }
   }
 
   override func prepareForReuse() {
@@ -282,10 +235,6 @@ class PlayableTableCell: BasicTableCell {
     download: Download? = nil,
     isMarked: Bool = false
   ) {
-    if playIndicator?.rootViewTypeName != rootView.typeName {
-      playIndicator = PlayIndicator(rootViewTypeName: rootView.typeName)
-    }
-
     self.playable = playable
     self.displayMode = displayMode
     self.playContextCb = playContextCb
@@ -314,20 +263,10 @@ class PlayableTableCell: BasicTableCell {
     switch newStyle {
     case .trackNumber:
       configureTrackNumberLabel()
-      playIndicator?.willDisplayIndicatorCB = { [weak self] () in
-        guard let self = self else { return }
-        trackNumberLabel.text = ""
-      }
-      playIndicator?.willHideIndicatorCB = { [weak self] () in
-        guard let self = self else { return }
-        configureTrackNumberLabel()
-      }
       trackNumberLabel.isHidden = false
       entityImage.isHidden = true
       titleContainerLeadingConstraint.constant = 10 + 21 + 16 // heart + track lable width + offset
     case .artwork:
-      playIndicator?.willDisplayIndicatorCB = nil
-      playIndicator?.willHideIndicatorCB = nil
       trackNumberLabel.isHidden = true
       entityImage.isHidden = false
       titleContainerLeadingConstraint.constant = 10 + 48 + 8 // heart + artwork width + offset
@@ -337,13 +276,13 @@ class PlayableTableCell: BasicTableCell {
   }
 
   private func configurePlayIndicator(playable: AbstractPlayable?) {
-    // cassette Patch 028: route the "currently playing" cue through a
-    // static SF Symbol. The legacy VYPlayIndicator dependency is left
-    // installed (PlayIndicator.swift still wraps it) so future polish
-    // can swap in an animated treatment without re-introducing the
-    // hidden lifecycle bugs of the old overlay.
-    playIndicator?.reset()
-
+    // cassette Patch 028 + 054: the "currently playing" row cue is a
+    // static `waveform` SF Symbol shown over the artwork (or the track
+    // number column when applicable). The legacy VYPlayIndicator-based
+    // overlay was removed in Patch 054 along with its
+    // willDisplayIndicatorCB / willHideIndicatorCB hooks; the static
+    // symbol's visibility is toggled directly via showPlayingSymbol /
+    // hidePlayingSymbol below.
     guard let playable = playable else {
       hidePlayingSymbol()
       return
@@ -458,13 +397,9 @@ class PlayableTableCell: BasicTableCell {
 
     refreshSubtitleColor()
     refreshCacheAndDuration()
-
-    // Update rating display for songs (only if setting is enabled)
-    if appDelegate.storage.settings.user.isShowRating, let song = playable.asSong {
-      updateRatingDisplay(rating: song.rating)
-    } else {
-      ratingStackView?.isHidden = true
-    }
+    // cassette Patch 054 (Phase I): rating stars removed from rows. See
+    // resetForReuse for full rationale; the user's `isShowRating`
+    // preference no longer controls per-row display (data model intact).
   }
 
   private func configureTrackNumberLabel() {
@@ -590,7 +525,10 @@ class PlayableTableCell: BasicTableCell {
   }
 
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-    playIndicator?.applyStyle()
+    // cassette Patch 054 (Phase I): PlayIndicator deleted; nothing to restyle
+    // on trait collection changes (waveform symbol's tint is locked to
+    // orange and the symbol configuration is static).
+    super.traitCollectionDidChange(previousTraitCollection)
   }
 
   #if targetEnvironment(macCatalyst) // ok
