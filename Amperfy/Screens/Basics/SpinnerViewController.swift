@@ -19,6 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+import AmperfyKit
 import Foundation
 import UIKit
 
@@ -29,8 +30,12 @@ class SpinnerViewController: UIViewController {
   override func loadView() {
     view = UIView()
 
+    // cassette Patch 033: drop UIColor.quaternarySystemFill (the iOS
+    // dark-mode fill which composites to a cool blue-grey on top of the
+    // warm Cassette palette). Use bg2 so the spinner overlay sits on the
+    // same neutral grey family as the rest of the chrome.
     if #available(iOS 13.0, *) {
-      view.backgroundColor = UIColor.quaternarySystemFill
+      view.backgroundColor = CassetteTheme.UIColors.bg2
       spinner.color = UIColor.placeholderText
     } else {
       view.backgroundColor = UIColor(white: 0.9, alpha: 1.0)

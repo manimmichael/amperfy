@@ -40,7 +40,10 @@ class MiniPlayerView: UIView {
 
   fileprivate lazy var artworkOverlay: UIView = {
     let view = UIView()
-    view.backgroundColor = .black.withAlphaComponent(0.4)
+    // cassette Patch 033: drop pure black at 40% (which reads as a hard
+    // grey on the mini-player's warm chrome). Use bg4 at 60% so the
+    // overlay tints toward the Cassette neutral palette.
+    view.backgroundColor = CassetteTheme.UIColors.bg4.withAlphaComponent(0.6)
     view.isHidden = true
 
     let imageView = UIImageView()

@@ -166,9 +166,12 @@ class GenericDetailTableHeader: UIView {
       // Circular artist photo + bottom gradient for legibility.
       entityImage.layer.masksToBounds = true
       if artistGradient.superlayer == nil {
+        // cassette Patch 033: replace pure black at 35% (cool grey wash)
+        // with bg4 at 50% so the artist photo's bottom edge fades into
+        // the same neutral grey family as the rest of the chrome.
         artistGradient.colors = [
           UIColor.clear.cgColor,
-          UIColor.black.withAlphaComponent(0.35).cgColor,
+          CassetteTheme.UIColors.bg4.withAlphaComponent(0.5).cgColor,
         ]
         artistGradient.locations = [0.6, 1.0]
         artistGradient.startPoint = CGPoint(x: 0.5, y: 0.0)

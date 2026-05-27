@@ -78,6 +78,11 @@ class QueueVC: UIViewController {
     tableView.dropDelegate = self
     tableView.dragInteractionEnabled = true
 
+    // cassette Patch 033: drop the .prominent system-material blur on
+    // queue section headers. The blur was reading as a cooler-toned grey
+    // because it composited iOS-system materials over the warm Cassette
+    // chrome. Use opaque bg4 so the section headers stay in the same
+    // neutral grey family as the rest of the queue.
     if let sectionView = ViewCreator<ContextQueuePrevSectionHeader>
       .createFromNib(withinFixedFrame: CGRect(
         x: 0,
@@ -85,8 +90,7 @@ class QueueVC: UIViewController {
         width: view.bounds.size.width,
         height: ContextQueuePrevSectionHeader.frameHeight
       )) {
-      sectionView.setBackgroundBlur(style: .prominent)
-      sectionView.backgroundColor = .clear
+      sectionView.backgroundColor = CassetteTheme.UIColors.bg4
       // Workaround for an OS bug, where the cell is suddenly rendered above the section header after reorder
       sectionView.layer.zPosition = scrollbarZPosition - 1
       contextPrevQueueSectionHeader = sectionView
@@ -99,8 +103,7 @@ class QueueVC: UIViewController {
         width: view.bounds.size.width,
         height: UserQueueSectionHeader.frameHeight
       )) {
-      sectionView.setBackgroundBlur(style: .prominent)
-      sectionView.backgroundColor = .clear
+      sectionView.backgroundColor = CassetteTheme.UIColors.bg4
       sectionView.layer.zPosition = scrollbarZPosition - 1
       userQueueSectionHeader = sectionView
       userQueueSectionHeader?.display(name: "Next from Queue", buttonPressAction: clearUserQueue)
@@ -112,8 +115,7 @@ class QueueVC: UIViewController {
         width: view.bounds.size.width,
         height: ContextQueueNextSectionHeader.frameHeight
       )) {
-      sectionView.setBackgroundBlur(style: .prominent)
-      sectionView.backgroundColor = .clear
+      sectionView.backgroundColor = CassetteTheme.UIColors.bg4
       sectionView.layer.zPosition = scrollbarZPosition - 1
       contextNextQueueSectionHeader = sectionView
     }
