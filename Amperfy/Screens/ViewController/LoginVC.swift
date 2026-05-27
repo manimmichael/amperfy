@@ -82,8 +82,12 @@ class LoginVC: UIViewController {
     // orange tint, not the type face.
     config.title = "Sign in with Cassette"
     let button = UIButton(configuration: config)
-    button.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
-      .asColor
+    // cassette Patch 052 (Phase G): login buttons pin to ink explicitly.
+    // Patch 046 already flipped ThemePreference.asColor to ink so this is
+    // defense-in-depth; removing the indirection makes the brand restraint
+    // intent clear at the call site (the wordmark + typography carry the
+    // identity, not the button tint).
+    button.tintColor = CassetteTheme.UIColors.ink
     button.addTarget(self, action: #selector(Self.cassetteSignInPressed), for: .touchUpInside)
     button.preferredBehavioralStyle = .pad
     return button
@@ -315,8 +319,9 @@ class LoginVC: UIViewController {
     let imageView = UIImageView()
     imageView.contentMode = .scaleAspectFit
     imageView.image = .appIconTemplate
-    imageView.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
-      .asColor
+    // cassette Patch 052 (Phase G): app icon glyph drops to ink2 (quiet
+    // secondary). Wordmark below carries the primary identity.
+    imageView.tintColor = CassetteTheme.UIColors.ink2
     return imageView
   }()
 
@@ -324,9 +329,11 @@ class LoginVC: UIViewController {
     let label = UILabel()
     label.text = "Cassette"
     label.font = UIFont.cassetteDisplay(size: 50, weight: .bold)
-    label.textColor = .tintColor
-    label.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
-      .asColor
+    // cassette Patch 052 (Phase G): wordmark pins to ink explicitly. The
+    // 50pt Barlow Condensed Bold typography carries the Cassette identity;
+    // color is intentionally neutral so the typography reads as the brand
+    // signal, not the color.
+    label.textColor = CassetteTheme.UIColors.ink
     return label
   }()
 
@@ -415,8 +422,8 @@ class LoginVC: UIViewController {
     config.title = "API"
     let button = UIButton(configuration: config)
     button.preferredBehavioralStyle = .pad
-    button.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
-      .asColor
+    // cassette Patch 052 (Phase G): see cassetteSignInButton for rationale.
+    button.tintColor = CassetteTheme.UIColors.ink
     return button
   }()
 
@@ -430,8 +437,8 @@ class LoginVC: UIViewController {
     button.accessibilityLabel = "Login"
     button.addTarget(self, action: #selector(Self.loginPressed), for: .touchUpInside)
     button.preferredBehavioralStyle = .pad
-    button.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read.themePreference
-      .asColor
+    // cassette Patch 052 (Phase G): see cassetteSignInButton for rationale.
+    button.tintColor = CassetteTheme.UIColors.ink
     return button
   }()
 
@@ -636,9 +643,11 @@ class LoginVC: UIViewController {
     let container = UIVisualEffectView()
     let glassEffect = UIGlassEffect(style: .regular)
     glassEffect.isInteractive = false
-    glassEffect.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read
-      .themePreference.asColor
-      .withAlphaComponent(0.1)
+    // cassette Patch 052 (Phase G): form glass wash drops to ink4 at 8%.
+    // Was orange at 10%; the warm ink4 tone preserves the elevated-surface
+    // feel without the brand-accent overtone.
+    glassEffect.tintColor = CassetteTheme.UIColors.ink4
+      .withAlphaComponent(0.08)
     container.effect = glassEffect
     container.cornerConfiguration = .corners(radius: 20)
     mainContainerView.translatesAutoresizingMaskIntoConstraints = false
@@ -935,9 +944,9 @@ class LoginVC: UIViewController {
   override func viewWillLayoutSubviews() {
     let glassEffect = UIGlassEffect(style: .regular)
     glassEffect.isInteractive = false
-    glassEffect.tintColor = appDelegate.storage.settings.accounts.getSetting(nil).read
-      .themePreference.asColor
-      .withAlphaComponent(0.1)
+    // cassette Patch 052 (Phase G): see formGlassContainer rationale.
+    glassEffect.tintColor = CassetteTheme.UIColors.ink4
+      .withAlphaComponent(0.08)
     formGlassContainer.effect = glassEffect
 
     if formGlassContainer.frame.width < 600 {

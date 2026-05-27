@@ -290,10 +290,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       return true
     }
 
-    setAppTheme(
-      color: storage.settings.accounts.getSetting(activeAccountInfo).read.themePreference
-        .asColor
-    )
+    // cassette Patch 052 (Phase G): pin to ink explicitly. See switchAccount
+    // for rationale; ThemePreference.asColor already resolves to ink post-
+    // Patch 046 but the indirection added noise to the launch path.
+    setAppTheme(color: CassetteTheme.UIColors.ink)
 
     guard AmperKit.shared.storage.settings.app.isLibrarySynced else {
       return true
@@ -364,10 +364,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     let account = appDelegate.storage.main.library.getAccount(info: accountInfo)
 
     closeAllButActiveMainTabs()
-    setAppTheme(
-      color: appDelegate.storage.settings.accounts.getSetting(accountInfo)
-        .read.themePreference.asColor
-    )
+    // cassette Patch 052 (Phase G): pin to ink explicitly on account switch.
+    // ThemePreference.asColor resolves to ink post-Patch 046; pinning here
+    // removes the per-account lookup on a one-shot transition path.
+    setAppTheme(color: CassetteTheme.UIColors.ink)
     applyAppThemeToAlreadyLoadedViews()
     AmperfyAppShortcuts.updateAppShortcutParameters()
     guard let mainScene = AppDelegate.mainSceneDelegate else { return }

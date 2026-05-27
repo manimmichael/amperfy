@@ -37,8 +37,12 @@ struct AccountSettingsView: View {
   var settings: Settings
 
   func setThemePreference(preference: ThemePreference) {
+    // cassette Patch 052 (Phase G): theme color pins to ink explicitly. The
+    // ThemePreference enum is retained for Core Data migration safety but
+    // all cases resolve to ink (SettingEnumerations.asColor); doing this
+    // explicitly removes the indirection.
     settings.themePreference = preference
-    appDelegate.setAppTheme(color: preference.asColor)
+    appDelegate.setAppTheme(color: CassetteTheme.UIColors.ink)
     appDelegate.applyAppThemeToAlreadyLoadedViews()
   }
 
@@ -92,11 +96,8 @@ struct AccountSettingsView: View {
     if let newActiveAccountInfo = appDelegate.storage.settings.accounts.active {
       let newActiveAccount = appDelegate.storage.main.library.getAccount(info: newActiveAccountInfo)
       appDelegate.closeAllButActiveMainTabs()
-      appDelegate
-        .setAppTheme(
-          color: appDelegate.storage.settings.accounts.getSetting(newActiveAccountInfo)
-            .read.themePreference.asColor
-        )
+      // cassette Patch 052 (Phase G): see setThemePreference rationale.
+      appDelegate.setAppTheme(color: CassetteTheme.UIColors.ink)
       appDelegate.applyAppThemeToAlreadyLoadedViews()
       guard let mainScene = AppDelegate.mainSceneDelegate else { return }
       mainScene
@@ -136,9 +137,11 @@ struct AccountSettingsView: View {
             }
           }
 
-          // Cassette fork: theme picker removed. The app is always Cassette orange.
-          // `ThemePreference` enum retained for Core Data migration safety; its
-          // `asColor` / `asSwiftUIColor` are hard-coded in SettingEnumerations.swift.
+          // Cassette fork: theme picker removed. Post-Patch 046 (Phase A) the
+          // app uses ink as the default tint cascade; orange is reserved for
+          // the two scrubbers + currently-playing waveform only. The
+          // `ThemePreference` enum is retained for Core Data migration
+          // safety; all cases resolve to ink via SettingEnumerations.asColor.
 
           SettingsSection(content: {
             SettingsCheckBoxRow(
