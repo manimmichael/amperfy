@@ -188,12 +188,15 @@ class PlayerUIHandler: NSObject {
 
     switch style {
     case .miniPlayeriOS, .miniPlayerMac:
+      // cassette Patch 047 (Phase B): port popup `.player(isSelected:)`
+      // semantics to the mini player toggles. Selected = ink-filled pill
+      // with the symbol painted in `bg`; unselected = ink-tinted symbol
+      // on a clear background. Replaces the prior orange tint + 20%
+      // orange wash so the mini chrome reads neutral.
       repeatButton.configuration?.image = image?
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
-      repeatButton.tintColor = isSelected ? CassetteTheme.UIColors.orange : CassetteTheme.UIColors
-        .ink2
-      repeatButton.backgroundColor = isSelected ?
-        CassetteTheme.UIColors.orange.withAlphaComponent(0.2) : .clear
+      repeatButton.tintColor = isSelected ? CassetteTheme.UIColors.bg : CassetteTheme.UIColors.ink
+      repeatButton.backgroundColor = isSelected ? CassetteTheme.UIColors.ink : .clear
     case .popupPlayer:
       var config = UIButton.Configuration.player(isSelected: isSelected)
       config.image = image
@@ -205,12 +208,12 @@ class PlayerUIHandler: NSObject {
   func refreshShuffleButton(shuffleButton: UIButton) {
     switch style {
     case .miniPlayeriOS, .miniPlayerMac:
+      // cassette Patch 047 (Phase B): see refreshRepeatButton rationale.
       shuffleButton.configuration?.image = .shuffle
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
-      shuffleButton.tintColor = player
-        .isShuffle ? CassetteTheme.UIColors.orange : CassetteTheme.UIColors.ink2
-      shuffleButton.backgroundColor = player
-        .isShuffle ? CassetteTheme.UIColors.orange.withAlphaComponent(0.2) : .clear
+      shuffleButton.tintColor = player.isShuffle ? CassetteTheme.UIColors.bg : CassetteTheme
+        .UIColors.ink
+      shuffleButton.backgroundColor = player.isShuffle ? CassetteTheme.UIColors.ink : .clear
     case .popupPlayer:
       var config = UIButton.Configuration.player(isSelected: player.isShuffle)
       config.image = .shuffle
@@ -225,8 +228,11 @@ class PlayerUIHandler: NSObject {
 
     switch style {
     case .miniPlayeriOS, .miniPlayerMac:
-      displayPlaylistButton.tintColor = isSelected ? CassetteTheme.UIColors.orange : CassetteTheme
+      // cassette Patch 047 (Phase B): selected = ink fill + bg glyph; unselected
+      // = ink glyph on clear. Matches refreshRepeatButton / refreshShuffleButton.
+      displayPlaylistButton.tintColor = isSelected ? CassetteTheme.UIColors.bg : CassetteTheme
         .UIColors.ink
+      displayPlaylistButton.backgroundColor = isSelected ? CassetteTheme.UIColors.ink : .clear
     case .popupPlayer:
       var config = UIButton.Configuration.player(isSelected: isSelected)
       config.image = .playlistDisplayStyle
@@ -240,8 +246,10 @@ class PlayerUIHandler: NSObject {
 
     switch style {
     case .miniPlayeriOS, .miniPlayerMac:
-      displayLyricsButton.tintColor = isSelected ? CassetteTheme.UIColors.orange : CassetteTheme
+      // cassette Patch 047 (Phase B): see refreshDisplayPlaylistButton.
+      displayLyricsButton.tintColor = isSelected ? CassetteTheme.UIColors.bg : CassetteTheme
         .UIColors.ink
+      displayLyricsButton.backgroundColor = isSelected ? CassetteTheme.UIColors.ink : .clear
     case .popupPlayer:
       break
     }

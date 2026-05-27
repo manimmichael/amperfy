@@ -101,10 +101,21 @@ class PlayerControlView: UIView {
 
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
 
-    // cassette Patch 015e: ink primary on transport/aux controls; the
-    // big play button keeps Cassette orange so the "go" action reads
-    // first. Time labels switch to the mono face for catalog feel.
-    playButton.imageView?.tintColor = CassetteTheme.UIColors.orange
+    // cassette Patch 047 (Phase B): popup play button drops orange tint and
+    // takes a filled capsule treatment (bg3 fill + ink glyph). The "go"
+    // affordance now comes from the filled disc shape rather than color —
+    // orange is reserved for the scrubber + waveform only. Symbol point
+    // size drops 45 -> 32 so the glyph reads as foreground content inside
+    // the capsule rather than the entire button. The stack's fillEqually
+    // distribution keeps width consistent with siblings.
+    var playConfig = UIButton.Configuration.filled()
+    playConfig.baseBackgroundColor = CassetteTheme.UIColors.bg3
+    playConfig.baseForegroundColor = CassetteTheme.UIColors.ink
+    playConfig.cornerStyle = .capsule
+    playConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+      pointSize: 32, weight: .bold
+    )
+    playButton.configuration = playConfig
     previousButton.tintColor = CassetteTheme.UIColors.ink
     nextButton.tintColor = CassetteTheme.UIColors.ink
     skipBackwardButton.tintColor = CassetteTheme.UIColors.ink

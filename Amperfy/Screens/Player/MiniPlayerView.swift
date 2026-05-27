@@ -188,7 +188,10 @@ class MiniPlayerView: UIView {
     let label = UILabel(frame: .zero)
     label.text = "LIVE"
     label.font = UIFont.cassette(.metadata)
-    label.textColor = CassetteTheme.UIColors.orange
+    // cassette Patch 047 (Phase B): LIVE indicator drops to ink2. Orange is
+    // reserved for the time scrubber sitting immediately behind this label;
+    // doubling up made the label compete with the playback affordance.
+    label.textColor = CassetteTheme.UIColors.ink2
     label.textAlignment = .center
     return label
   }()
