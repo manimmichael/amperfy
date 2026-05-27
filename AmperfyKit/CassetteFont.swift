@@ -126,3 +126,70 @@ extension Font {
       .weight(weight.swiftUIWeight)
   }
 }
+
+// MARK: - CassetteTextStyle (Phase 4.3 typography scale)
+
+/// Canonical typography scale for the Cassette iOS fork. Eight semantic
+/// roles map onto the existing Display (Barlow Condensed) / Mono (DM Mono)
+/// helpers, plus a system-font `.body` for SwiftUI lists and other places
+/// where SF Pro Text reads better than a condensed display face.
+///
+/// Caption is held at 12pt (regular mono) — differentiated from `.metadata`
+/// (medium mono, 12pt) by weight only, not size. The 12pt floor is a Cassette
+/// product decision; iOS HIG would allow 11pt here but we don't.
+public enum CassetteTextStyle {
+  case heroTitle    // Barlow Condensed Bold, 28pt
+  case sectionTitle // Barlow Condensed Bold, 22pt
+  case rowTitle     // Barlow Condensed Semibold, 16pt
+  case miniTitle    // Barlow Condensed Semibold, 14pt
+  case sectionLabel // Barlow Condensed Bold, 13pt (callers uppercase as needed)
+  case metadata     // DM Mono Medium, 12pt
+  case caption      // DM Mono Regular, 12pt
+  case body         // SF Pro Text Regular, 15pt (system font, not Cassette Display)
+}
+
+extension UIFont {
+  public static func cassette(_ style: CassetteTextStyle) -> UIFont {
+    switch style {
+    case .heroTitle:
+      return .cassetteDisplay(size: 28, weight: .bold)
+    case .sectionTitle:
+      return .cassetteDisplay(size: 22, weight: .bold)
+    case .rowTitle:
+      return .cassetteDisplay(size: 16, weight: .semibold)
+    case .miniTitle:
+      return .cassetteDisplay(size: 14, weight: .semibold)
+    case .sectionLabel:
+      return .cassetteDisplay(size: 13, weight: .bold)
+    case .metadata:
+      return .cassetteMono(size: 12, weight: .medium)
+    case .caption:
+      return .cassetteMono(size: 12, weight: .regular)
+    case .body:
+      return .systemFont(ofSize: 15, weight: .regular)
+    }
+  }
+}
+
+extension Font {
+  public static func cassette(_ style: CassetteTextStyle) -> Font {
+    switch style {
+    case .heroTitle:
+      return .cassetteDisplay(size: 28, weight: .bold)
+    case .sectionTitle:
+      return .cassetteDisplay(size: 22, weight: .bold)
+    case .rowTitle:
+      return .cassetteDisplay(size: 16, weight: .semibold)
+    case .miniTitle:
+      return .cassetteDisplay(size: 14, weight: .semibold)
+    case .sectionLabel:
+      return .cassetteDisplay(size: 13, weight: .bold)
+    case .metadata:
+      return .cassetteMono(size: 12, weight: .medium)
+    case .caption:
+      return .cassetteMono(size: 12, weight: .regular)
+    case .body:
+      return .system(size: 15, weight: .regular)
+    }
+  }
+}
