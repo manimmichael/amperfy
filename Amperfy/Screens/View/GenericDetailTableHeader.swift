@@ -75,7 +75,10 @@ class GenericDetailTableHeader: UIView {
     didSet { refresh() }
   }
 
-  static let frameHeightCompact: CGFloat = 400.0
+  // cassette Patch 034 (3C): bump compact-width header by 24pt to absorb
+  // the new top breathing room added in prepare() without compressing
+  // the artwork. iPad/Mac (regular) keeps the existing rhythm.
+  static let frameHeightCompact: CGFloat = 424.0
   static let frameHeightRegular: CGFloat = 240.0
   static func frameHeight(traitCollection: UITraitCollection) -> CGFloat {
     if traitCollection.horizontalSizeClass == .compact {
@@ -135,7 +138,17 @@ class GenericDetailTableHeader: UIView {
     descriptionLabel.font = UIFont.preferredFont(forTextStyle: .body)
     descriptionLabel.textColor = CassetteTheme.UIColors.ink2
     infoLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-    layoutMargins = UIView.defaultMarginTopElement
+    // cassette Patch 034 (3C): the outer wrapper anchors via topMargin in
+    // the XIB, so a 24pt top margin here gives the artwork breathing room
+    // below the navigation bar (Apple Music's album-detail rhythm). The
+    // legacy defaultMarginTopElement set top=0 which packed the artwork
+    // hard against the nav bar.
+    layoutMargins = UIEdgeInsets(
+      top: 24.0,
+      left: UIView.defaultMarginX,
+      bottom: 0.0,
+      right: UIView.defaultMarginX
+    )
     if let playShuffleInfoConfig = config?.playShuffleInfoConfig {
       playShuffleInfoView = ViewCreator<LibraryElementDetailTableHeaderView>.createFromNib()
       playShuffleInfoPlaceholderStack.addArrangedSubview(playShuffleInfoView!)

@@ -79,8 +79,12 @@ extension PopupPlayerVC {
       if let playableInfo = player.currentlyPlaying,
          playableInfo.isSong {
         config.image = playableInfo.isFavorite ? .heartFill : .heartEmpty
-        config.baseForegroundColor = appDelegate.storage.settings.user
-          .isOnlineMode ? CassetteTheme.UIColors.amber : CassetteTheme.UIColors.ink
+        // cassette Patch 034: drop amber from the heart — too much amber/
+        // orange sat in the immediate vicinity of other orange affordances.
+        // White (warm-paper ink) reads cleanly as a standalone affordance,
+        // and the active/inactive state is already conveyed by the fill/
+        // empty SF Symbol toggle.
+        config.baseForegroundColor = CassetteTheme.UIColors.ink
         button.isEnabled = appDelegate.storage.settings.user.isOnlineMode
       } else if let playableInfo = player.currentlyPlaying,
                 let radio = playableInfo.asRadio {
@@ -89,7 +93,7 @@ extension PopupPlayerVC {
         button.isEnabled = radio.siteURL != nil
       } else {
         config.image = .heartEmpty
-        config.baseForegroundColor = CassetteTheme.UIColors.amber
+        config.baseForegroundColor = CassetteTheme.UIColors.ink
         button.isEnabled = false
       }
     case .podcast:

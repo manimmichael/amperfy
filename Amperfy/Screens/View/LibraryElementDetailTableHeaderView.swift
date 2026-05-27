@@ -174,24 +174,26 @@ class LibraryElementDetailTableHeaderView: UIView {
     )
   }
 
-  /// cassette Patch 027: drop the Barlow Condensed override Patch 022
-  /// applied. UIButton.Configuration.tinted() is tuned for SF Pro Text;
-  /// forcing cassetteDisplay into it (kerning, line-height, ascent slack)
-  /// produced the "invented" feel the audit flagged. Cassette identity
-  /// here is carried by the orange tint + bg2 base colour, not the type.
+  /// cassette Patch 034 (3B, Option A): switch from .tinted() to
+  /// .borderedTinted(). Borderedtinted gives a slightly more defined
+  /// edge that reads more like Apple Music's primary action buttons
+  /// while staying native. Keep contentInsets / imagePadding / SF
+  /// Symbol point size unchanged from Patch 027 — only the surface
+  /// treatment changes. Drop the explicit baseBackgroundColor so iOS
+  /// can paint the bordered-tinted default (a subtle tint of the
+  /// foreground color) rather than the prior bg2 grey.
   private static func applyCassetteStyle(
     to button: UIButton,
     title: String,
     systemImage: String,
     isHidden: Bool = false
   ) {
-    var config = UIButton.Configuration.tinted()
+    var config = UIButton.Configuration.borderedTinted()
     config.image = UIImage(systemName: systemImage)
     config.imagePadding = 6
     config.imagePlacement = .leading
     config.cornerStyle = .medium
     config.baseForegroundColor = CassetteTheme.UIColors.ink
-    config.baseBackgroundColor = CassetteTheme.UIColors.bg2
     config.contentInsets = NSDirectionalEdgeInsets(
       top: 8,
       leading: 16,
