@@ -58,8 +58,21 @@ class CommonScreenOperations {
 // MARK: - UIViewController
 
 extension UIViewController {
-  private func createUserButtonMenu() -> UIMenu {
+  /// cassette Patch 035: optional `extraLeadingMenuElements` lets a
+  /// host VC (today: HomeVC) prepend screen-specific entries (e.g.
+  /// "Edit Home") above the account picker without polluting the
+  /// other tabs that share this menu.
+  private func createUserButtonMenu(
+    extraLeadingMenuElements: [UIMenuElement] = []
+  )
+    -> UIMenu {
     var accountActions = [UIMenuElement]()
+
+    if !extraLeadingMenuElements.isEmpty {
+      let extras = UIMenu(options: [.displayInline], children: extraLeadingMenuElements)
+      accountActions.append(extras)
+    }
+
     for accountInfo in appDelegate.storage.settings.accounts.allAccounts {
       let isActiveAccount = (accountInfo == appDelegate.storage.settings.accounts.active)
       let action = UIAction(
@@ -123,7 +136,8 @@ extension UIViewController {
   public func setupUserNavButton(
     currentAccount: Account,
     userButton: inout UIButton?,
-    userBarButtonItem: inout UIBarButtonItem?
+    userBarButtonItem: inout UIBarButtonItem?,
+    extraLeadingMenuElements: [UIMenuElement] = []
   ) {
     let image = UIImage.userCircle(withConfiguration: UIImage.SymbolConfiguration(
       pointSize: 24,
@@ -143,7 +157,7 @@ extension UIViewController {
     #else
       button.frame = CGRect(x: 0, y: 0, width: 40, height: 40)
     #endif
-    button.menu = createUserButtonMenu()
+    button.menu = createUserButtonMenu(extraLeadingMenuElements: extraLeadingMenuElements)
     button.showsMenuAsPrimaryAction = true
     userButton = button
 

@@ -33,12 +33,28 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   case randomArtists
   case randomGenres
   case randomSongs
+  // cassette Patch 035: three-shelf IA. New cases appended so the
+  // raw-Int ordinals of the legacy cases stay stable — any persisted
+  // `accountSettings.homeSections` data continues to Codable-decode.
+  // Only `editableSections` is surfaced to the editor going forward.
+  case resume
+  case yourPlaylists
+  case recentlyAdded
 
-  static let defaultValue: [HomeSection] = [
-    .randomAlbums,
-    .recentlyPlayedAlbums,
-    .lastTimePlayedPlaylists,
-    .newestAlbums,
+  public static let defaultValue: [HomeSection] = [
+    .resume,
+    .yourPlaylists,
+    .recentlyAdded,
+  ]
+
+  /// cassette Patch 035: the sections the home-editor UI is allowed
+  /// to surface. Keeps legacy enum cases reachable for Codable
+  /// backwards-compat without letting users resurrect the old
+  /// random/podcast/radio carousels.
+  public static let editableSections: [HomeSection] = [
+    .resume,
+    .yourPlaylists,
+    .recentlyAdded,
   ]
 
   public var title: String {
@@ -53,6 +69,9 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .randomArtists: return "Random Artists"
     case .randomGenres: return "Random Genres"
     case .randomSongs: return "Random Songs"
+    case .resume: return "Resume"
+    case .yourPlaylists: return "Your Playlists"
+    case .recentlyAdded: return "Recently Added"
     }
   }
 
@@ -72,6 +91,9 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .randomArtists: return true
     case .randomGenres: return true
     case .randomSongs: return true
+    case .resume: return false
+    case .yourPlaylists: return false
+    case .recentlyAdded: return false
     }
   }
 }

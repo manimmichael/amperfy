@@ -41,6 +41,10 @@ struct HomeItem: Hashable, @unchecked Sendable {
 
 // MARK: - HomeManager
 
+/// cassette Patch 035: rewritten to drive the three-shelf Cassette
+/// home IA (Resume / Your Playlists / Recently Added). Legacy
+/// random/podcast/radio carousels are no longer materialised here —
+/// see `HomeSection.editableSections` for the user-visible surface.
 @MainActor
 class HomeManager: NSObject {
   public static let sectionMaxItemCount = 20
@@ -53,344 +57,267 @@ class HomeManager: NSObject {
   private let storage: PersistentStorage
   private let getMeta: (_ accountInfo: AccountInfo) -> MetaManager
   private let eventLogger: EventLogger
+  private let player: PlayerFacade
 
   var isOfflineMode: Bool {
     storage.settings.user.isOfflineMode
   }
 
-  private var albumsRecentlyPlayedFetchController: AlbumFetchedResultsController?
-  private var albumsNewestFetchController: AlbumFetchedResultsController?
-  private var playlistsLastTimePlayedFetchController: PlaylistFetchedResultsController?
-  private var podcastEpisodesFetchedController: PodcastEpisodesReleaseDateFetchedResultsController?
-  private var podcastsFetchedController: PodcastFetchedResultsController?
-  private var radiosFetchedController: RadiosFetchedResultsController?
+  // Resume shelf merges these two fetch controllers' results by
+  // `lastPlayedDate` desc, then optionally prepends the player's
+  // currently-playing album so the first card always reflects the
+  // live queue.
+  private var albumsRecentFetch: AlbumFetchedResultsController?
+  private var playlistsLastPlayedFetch: PlaylistFetchedResultsController?
+
+  private var playlistsLastChangedFetch: PlaylistFetchedResultsController?
+  private var albumsNewestFetch: AlbumFetchedResultsController?
 
   init(
     account: Account,
     storage: PersistentStorage,
     getMeta: @escaping (_ accountInfo: AccountInfo) -> MetaManager,
-    eventLogger: EventLogger
+    eventLogger: EventLogger,
+    player: PlayerFacade
   ) {
     self.account = account
     self.storage = storage
     self.getMeta = getMeta
     self.eventLogger = eventLogger
-    self.orderedVisibleSections = storage.settings.accounts
-      .getSetting(account.info).read.homeSections
+    self.player = player
+    // cassette Patch 035: the three shelves are fixed. Legacy
+    // `accountSettings.homeSections` is left on disk untouched so a
+    // future rollback or re-introduction of editable shelves can
+    // still decode it, but it no longer influences what renders.
+    self.orderedVisibleSections = HomeSection.defaultValue
+    super.init()
+    // Recompute Resume whenever playback transitions so the first
+    // card reflects the live queue (or vanishes when the user stops
+    // and the recency list still wants the next item).
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handlePlayerChanged),
+      name: .playerPlay,
+      object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handlePlayerChanged),
+      name: .playerPause,
+      object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handlePlayerChanged),
+      name: .playerStop,
+      object: nil
+    )
+  }
+
+  deinit {
+    NotificationCenter.default.removeObserver(self)
   }
 
   func createFetchController() {
-    if orderedVisibleSections.contains(where: { $0 == .recentlyPlayedAlbums }) {
-      albumsRecentlyPlayedFetchController = AlbumFetchedResultsController(
-        coreDataCompanion: storage.main, account: account,
-        sortType: .recent,
-        isGroupedInAlphabeticSections: false,
-        fetchLimit: Self.sectionMaxItemCount
-      )
-      albumsRecentlyPlayedFetchController?.delegate = self
-      albumsRecentlyPlayedFetchController?.search(
-        searchText: "",
-        onlyCached: isOfflineMode,
-        displayFilter: .recent
-      )
-      updateAlbumsRecentlyPlayed()
-    } else {
-      albumsRecentlyPlayedFetchController?.delegate = nil
-      albumsRecentlyPlayedFetchController = nil
-    }
+    albumsRecentFetch = AlbumFetchedResultsController(
+      coreDataCompanion: storage.main, account: account,
+      sortType: .recent,
+      isGroupedInAlphabeticSections: false,
+      fetchLimit: Self.sectionMaxItemCount
+    )
+    albumsRecentFetch?.delegate = self
+    albumsRecentFetch?.search(
+      searchText: "",
+      onlyCached: isOfflineMode,
+      displayFilter: .recent
+    )
 
-    if orderedVisibleSections.contains(where: { $0 == .newestAlbums }) {
-      albumsNewestFetchController = AlbumFetchedResultsController(
-        coreDataCompanion: storage.main, account: account,
-        sortType: .newest,
-        isGroupedInAlphabeticSections: false,
-        fetchLimit: Self.sectionMaxItemCount
-      )
-      albumsNewestFetchController?.delegate = self
-      albumsNewestFetchController?.search(
-        searchText: "",
-        onlyCached: isOfflineMode,
-        displayFilter: .newest
-      )
-      updateAlbumsNewest()
-    } else {
-      albumsNewestFetchController?.delegate = nil
-      albumsNewestFetchController = nil
-    }
+    playlistsLastPlayedFetch = PlaylistFetchedResultsController(
+      coreDataCompanion: storage.main, account: account,
+      sortType: .lastPlayed,
+      isGroupedInAlphabeticSections: false,
+      fetchLimit: Self.sectionMaxItemCount
+    )
+    playlistsLastPlayedFetch?.delegate = self
+    playlistsLastPlayedFetch?.search(
+      searchText: "",
+      playlistSearchCategory: isOfflineMode ? .cached : .all
+    )
 
-    if orderedVisibleSections.contains(where: { $0 == .randomAlbums }) {
-      Task { @MainActor in
-        await updateRandomAlbums(isOfflineMode: isOfflineMode)
-      }
-    }
-    if orderedVisibleSections.contains(where: { $0 == .randomArtists }) {
-      Task { @MainActor in
-        await updateRandomArtists(isOfflineMode: isOfflineMode)
-      }
-    }
-    if orderedVisibleSections.contains(where: { $0 == .randomGenres }) {
-      Task { @MainActor in
-        await updateRandomGenres()
-      }
-    }
-    if orderedVisibleSections.contains(where: { $0 == .randomSongs }) {
-      Task { @MainActor in
-        await updateRandomSongs(isOfflineMode: isOfflineMode)
-      }
-    }
+    playlistsLastChangedFetch = PlaylistFetchedResultsController(
+      coreDataCompanion: storage.main, account: account,
+      sortType: .lastChanged,
+      isGroupedInAlphabeticSections: false,
+      fetchLimit: Self.sectionMaxItemCount
+    )
+    playlistsLastChangedFetch?.delegate = self
+    playlistsLastChangedFetch?.search(
+      searchText: "",
+      playlistSearchCategory: isOfflineMode ? .cached : .userOnly
+    )
 
-    if orderedVisibleSections.contains(where: { $0 == .lastTimePlayedPlaylists }) {
-      playlistsLastTimePlayedFetchController = PlaylistFetchedResultsController(
-        coreDataCompanion: storage.main, account: account,
-        sortType: .lastPlayed,
-        isGroupedInAlphabeticSections: false,
-        fetchLimit: Self.sectionMaxItemCount
-      )
-      playlistsLastTimePlayedFetchController?.delegate = self
-      playlistsLastTimePlayedFetchController?.search(
-        searchText: "",
-        playlistSearchCategory: isOfflineMode ? .cached : .all
-      )
-      updatePlaylistsLastTimePlayed()
-    } else {
-      playlistsLastTimePlayedFetchController?.delegate = nil
-      playlistsLastTimePlayedFetchController = nil
-    }
+    albumsNewestFetch = AlbumFetchedResultsController(
+      coreDataCompanion: storage.main, account: account,
+      sortType: .newest,
+      isGroupedInAlphabeticSections: false,
+      fetchLimit: Self.sectionMaxItemCount
+    )
+    albumsNewestFetch?.delegate = self
+    albumsNewestFetch?.search(
+      searchText: "",
+      onlyCached: isOfflineMode,
+      displayFilter: .newest
+    )
 
-    if orderedVisibleSections.contains(where: { $0 == .newestPodcastEpisodes }) {
-      podcastEpisodesFetchedController = PodcastEpisodesReleaseDateFetchedResultsController(
-        coreDataCompanion: storage.main, account: account,
-        isGroupedInAlphabeticSections: false,
-        fetchLimit: Self.sectionMaxItemCount
-      )
-      podcastEpisodesFetchedController?.delegate = self
-      podcastEpisodesFetchedController?.search(searchText: "", onlyCachedSongs: isOfflineMode)
-      updatePodcastEpisodesNewest()
-    } else {
-      podcastEpisodesFetchedController?.delegate = nil
-      podcastEpisodesFetchedController = nil
-    }
-
-    if orderedVisibleSections.contains(where: { $0 == .podcasts }) {
-      podcastsFetchedController = PodcastFetchedResultsController(
-        coreDataCompanion: storage.main, account: account,
-        isGroupedInAlphabeticSections: false
-      )
-      podcastsFetchedController?.delegate = self
-      podcastsFetchedController?.search(searchText: "", onlyCached: isOfflineMode)
-      updatePodcasts()
-    } else {
-      podcastsFetchedController?.delegate = nil
-      podcastsFetchedController = nil
-    }
-
-    if orderedVisibleSections.contains(where: { $0 == .radios }) {
-      radiosFetchedController = RadiosFetchedResultsController(
-        coreDataCompanion: storage.main, account: account,
-        isGroupedInAlphabeticSections: true
-      )
-      radiosFetchedController?.delegate = self
-      radiosFetchedController?.fetch()
-      updateRadios()
-    } else {
-      radiosFetchedController?.delegate = nil
-      radiosFetchedController = nil
-    }
+    updateResume()
+    updateYourPlaylists()
+    updateRecentlyAdded()
   }
 
   func updateFromRemote() {
     guard storage.settings.user.isOnlineMode else { return }
-    if orderedVisibleSections.contains(where: { $0 == .newestAlbums }) {
-      Task { @MainActor in
-        do {
-          try await AutoDownloadLibrarySyncer(
-            storage: self.storage,
-            account: self.account,
-            librarySyncer: self.getMeta(self.account.info).librarySyncer,
-            playableDownloadManager: self.getMeta(self.account.info)
-              .playableDownloadManager
-          )
-          .syncNewestLibraryElements(offset: 0, count: Self.sectionMaxItemCount)
-        } catch {
-          self.eventLogger.report(topic: "Newest Albums Sync", error: error)
-        }
-      }
-    }
-    if orderedVisibleSections.contains(where: { $0 == .recentlyPlayedAlbums }) {
-      Task { @MainActor in
-        do {
-          try await self.getMeta(self.account.info).librarySyncer
-            .syncRecentAlbums(
-              offset: 0,
-              count: Self.sectionMaxItemCount
-            )
-        } catch {
-          self.eventLogger.report(topic: "Recent Albums Sync", error: error)
-        }
-      }
-    }
-    if orderedVisibleSections.contains(where: { $0 == .lastTimePlayedPlaylists }) {
-      Task { @MainActor in do {
-        try await self.getMeta(self.account.info).librarySyncer
-          .syncDownPlaylistsWithoutSongs()
-      } catch {
-        self.eventLogger.report(topic: "Playlists Sync", error: error)
-      }}
-    }
-    if orderedVisibleSections.contains(where: { $0 == .newestPodcastEpisodes }) {
-      Task { @MainActor in do {
-        let _ = try await AutoDownloadLibrarySyncer(
+    Task { @MainActor in
+      do {
+        try await AutoDownloadLibrarySyncer(
           storage: self.storage,
           account: self.account,
           librarySyncer: self.getMeta(self.account.info).librarySyncer,
           playableDownloadManager: self.getMeta(self.account.info)
             .playableDownloadManager
         )
-        .syncNewestPodcastEpisodes()
+        .syncNewestLibraryElements(offset: 0, count: Self.sectionMaxItemCount)
       } catch {
-        self.eventLogger.report(topic: "Podcasts Sync", error: error)
-      }}
+        self.eventLogger.report(topic: "Recently Added Sync", error: error)
+      }
     }
-    if orderedVisibleSections.contains(where: { $0 == .radios }) {
-      Task { @MainActor in
-        do {
-          try await self.getMeta(self.account.info).librarySyncer
-            .syncRadios()
-        } catch {
-          self.eventLogger.report(topic: "Radios Sync", error: error)
-        }
+    Task { @MainActor in
+      do {
+        try await self.getMeta(self.account.info).librarySyncer
+          .syncRecentAlbums(
+            offset: 0,
+            count: Self.sectionMaxItemCount
+          )
+      } catch {
+        self.eventLogger.report(topic: "Resume Sync", error: error)
+      }
+    }
+    Task { @MainActor in
+      do {
+        try await self.getMeta(self.account.info).librarySyncer
+          .syncDownPlaylistsWithoutSongs()
+      } catch {
+        self.eventLogger.report(topic: "Playlists Sync", error: error)
       }
     }
   }
 
-  func updateAlbumsRecentlyPlayed() {
-    if let albums = albumsRecentlyPlayedFetchController?.fetchedObjects as? [AlbumMO] {
-      data[.recentlyPlayedAlbums] = albums.prefix(Self.sectionMaxItemCount)
-        .compactMap { Album(managedObject: $0) }.compactMap {
-          HomeItem(playableContainable: $0)
-        }
-      applySnapshotCB?()
-    }
-  }
+  // MARK: - Shelf builders
 
-  func updateAlbumsNewest() {
-    if let albums = albumsNewestFetchController?.fetchedObjects as? [AlbumMO] {
-      data[.newestAlbums] = albums.prefix(Self.sectionMaxItemCount)
-        .compactMap { Album(managedObject: $0) }.compactMap {
-          HomeItem(playableContainable: $0)
-        }
-      applySnapshotCB?()
+  /// Merge recent albums and recently-played playlists by
+  /// `lastPlayedDate` desc, prepend the player's currently-playing
+  /// album so the first card reflects the live queue, and cap.
+  func updateResume() {
+    var albums: [Album] = []
+    if let albumMOs = albumsRecentFetch?.fetchedObjects as? [AlbumMO] {
+      albums = albumMOs.prefix(Self.sectionMaxItemCount)
+        .compactMap { Album(managedObject: $0) }
     }
-  }
 
-  func updateRandomAlbums(isOfflineMode: Bool) async {
-    let randomAlbums = storage.main.library.getRandomAlbums(
-      for: account,
-      count: Self.sectionMaxItemCount,
-      onlyCached: isOfflineMode
-    )
-    data[.randomAlbums] = randomAlbums.compactMap {
+    var playlists: [Playlist] = []
+    if let playlistMOs = playlistsLastPlayedFetch?.fetchedObjects as? [PlaylistMO] {
+      playlists = playlistMOs.prefix(Self.sectionMaxItemCount)
+        .compactMap { Playlist(library: storage.main.library, managedObject: $0) }
+    }
+
+    var entries: [(date: Date, container: PlayableContainable, id: String)] = []
+    let distantPast = Date.distantPast
+    for album in albums {
+      let date = album.lastTimePlayed ?? distantPast
+      entries.append((date, album, "album-\(album.id)"))
+    }
+    for playlist in playlists {
+      let date = playlist.lastTimePlayed ?? distantPast
+      entries.append((date, playlist, "playlist-\(playlist.id)"))
+    }
+    entries.sort { $0.date > $1.date }
+
+    var merged: [PlayableContainable] = []
+    var seenIDs = Set<String>()
+    for entry in entries where entry.date > distantPast {
+      if seenIDs.insert(entry.id).inserted {
+        merged.append(entry.container)
+      }
+    }
+
+    // Prepend live queue's album if not already in the top slot.
+    if let song = player.currentlyPlaying?.asSong,
+       let liveAlbum = song.album {
+      let liveID = "album-\(liveAlbum.id)"
+      if merged.first.map({ container -> Bool in
+        if let albumContainer = container as? Album {
+          return "album-\(albumContainer.id)" == liveID
+        }
+        return false
+      }) != true {
+        // Drop any later occurrence so the live album only appears once.
+        merged.removeAll { container in
+          (container as? Album).map { "album-\($0.id)" == liveID } ?? false
+        }
+        merged.insert(liveAlbum, at: 0)
+      }
+    }
+
+    data[.resume] = merged.prefix(Self.sectionMaxItemCount).map {
       HomeItem(playableContainable: $0)
     }
     applySnapshotCB?()
   }
 
-  func updateRandomArtists(isOfflineMode: Bool) async {
-    let randomArtists = storage.main.library.getRandomArtists(
-      for: account,
-      count: Self.sectionMaxItemCount,
-      onlyCached: isOfflineMode
-    )
-    data[.randomArtists] = randomArtists.compactMap {
-      HomeItem(playableContainable: $0)
+  func updateYourPlaylists() {
+    guard let playlistMOs = playlistsLastChangedFetch?.fetchedObjects as? [PlaylistMO] else {
+      data[.yourPlaylists] = []
+      applySnapshotCB?()
+      return
     }
+    data[.yourPlaylists] = playlistMOs.prefix(Self.sectionMaxItemCount)
+      .compactMap { Playlist(library: storage.main.library, managedObject: $0) }
+      .map { HomeItem(playableContainable: $0) }
     applySnapshotCB?()
   }
 
-  func updateRandomGenres() async {
-    let randomGenres = storage.main.library.getRandomGenres(
-      for: account,
-      count: Self.sectionMaxItemCount
-    )
-    data[.randomGenres] = randomGenres.compactMap {
-      HomeItem(playableContainable: $0)
+  func updateRecentlyAdded() {
+    guard let albumMOs = albumsNewestFetch?.fetchedObjects as? [AlbumMO] else {
+      data[.recentlyAdded] = []
+      applySnapshotCB?()
+      return
     }
+    data[.recentlyAdded] = albumMOs.prefix(Self.sectionMaxItemCount)
+      .compactMap { Album(managedObject: $0) }
+      .map { HomeItem(playableContainable: $0) }
     applySnapshotCB?()
   }
 
-  func updateRandomSongs(isOfflineMode: Bool) async {
-    let randomSongs = storage.main.library.getRandomSongs(
-      for: account,
-      count: Self.sectionMaxItemCount,
-      onlyCached: isOfflineMode
-    )
-    data[.randomSongs] = randomSongs.compactMap {
-      HomeItem(playableContainable: $0)
-    }
-    applySnapshotCB?()
-  }
+  // MARK: - Player observer
 
-  func updatePlaylistsLastTimePlayed() {
-    if let playlists = playlistsLastTimePlayedFetchController?.fetchedObjects as? [PlaylistMO] {
-      data[.lastTimePlayedPlaylists] = playlists.prefix(Self.sectionMaxItemCount)
-        .compactMap { Playlist(
-          library: storage.main.library,
-          managedObject: $0
-        ) }.compactMap {
-          HomeItem(playableContainable: $0)
-        }
-      applySnapshotCB?()
-    }
-  }
-
-  func updatePodcastEpisodesNewest() {
-    if let podcastEpisodes = podcastEpisodesFetchedController?
-      .fetchedObjects as? [PodcastEpisodeMO] {
-      data[.newestPodcastEpisodes] = podcastEpisodes.prefix(Self.sectionMaxItemCount)
-        .compactMap { PodcastEpisode(managedObject: $0) }.compactMap {
-          HomeItem(playableContainable: $0)
-        }
-      applySnapshotCB?()
-    }
-  }
-
-  func updatePodcasts() {
-    if let podcasts = podcastsFetchedController?.fetchedObjects as? [PodcastMO] {
-      data[.podcasts] = podcasts.prefix(Self.sectionMaxItemCount)
-        .compactMap { Podcast(managedObject: $0) }.compactMap {
-          HomeItem(playableContainable: $0)
-        }
-      applySnapshotCB?()
-    }
-  }
-
-  func updateRadios() {
-    if let radios = radiosFetchedController?.fetchedObjects as? [RadioMO] {
-      data[.radios] = radios.prefix(Self.sectionMaxItemCount)
-        .compactMap { Radio(managedObject: $0) }.compactMap {
-          HomeItem(playableContainable: $0)
-        }
-      applySnapshotCB?()
+  @objc
+  private func handlePlayerChanged() {
+    Task { @MainActor in
+      updateResume()
     }
   }
 }
 
 extension HomeManager: @preconcurrency NSFetchedResultsControllerDelegate {
   func controllerDidChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
-    // fetch controller is created on Main thread -> Runtime Error if this function call is not on Main thread
+    // fetch controllers are created on Main thread -> Runtime Error if this function call is not on Main thread
     MainActor.assumeIsolated {
-      if controller == albumsRecentlyPlayedFetchController?.fetchResultsController {
-        updateAlbumsRecentlyPlayed()
-      } else if controller == albumsNewestFetchController?.fetchResultsController {
-        updateAlbumsNewest()
-      } else if controller == playlistsLastTimePlayedFetchController?.fetchResultsController {
-        updatePlaylistsLastTimePlayed()
-      } else if controller == podcastEpisodesFetchedController?.fetchResultsController {
-        updatePodcastEpisodesNewest()
-      } else if controller == podcastsFetchedController?.fetchResultsController {
-        updatePodcasts()
-      } else if controller == radiosFetchedController?.fetchResultsController {
-        updateRadios()
+      if controller == albumsRecentFetch?.fetchResultsController
+        || controller == playlistsLastPlayedFetch?.fetchResultsController {
+        updateResume()
+      } else if controller == playlistsLastChangedFetch?.fetchResultsController {
+        updateYourPlaylists()
+      } else if controller == albumsNewestFetch?.fetchResultsController {
+        updateRecentlyAdded()
       }
     }
   }

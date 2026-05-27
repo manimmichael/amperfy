@@ -97,28 +97,11 @@ extension CarPlaySceneDelegate {
             .pushTemplate(detailListTemplate, animated: true)
           completion()
         }
-      } else if isRandomSection {
-        Task { @MainActor in
-          switch section {
-          case .randomAlbums:
-            await sharedHome.updateRandomAlbums(isOfflineMode: isOfflineMode)
-          case .randomArtists:
-            await sharedHome.updateRandomArtists(isOfflineMode: isOfflineMode)
-          case .randomGenres:
-            await sharedHome.updateRandomGenres()
-          case .randomSongs:
-            await sharedHome.updateRandomSongs(isOfflineMode: isOfflineMode)
-          case .lastTimePlayedPlaylists, .newestAlbums, .newestPodcastEpisodes, .podcasts, .radios,
-               .recentlyPlayedAlbums:
-            // do nothing
-            break
-          }
-          if section.isRandomSection {
-            row.elements = createHomeRowImageElements(section: section, isDetail: true)
-          }
-          completion()
-        }
       } else {
+        // cassette Patch 035: random/podcast/radio shelves are no
+        // longer materialised by HomeManager, so CarPlay never has
+        // a refresh action to dispatch — the three Cassette shelves
+        // are all deterministic.
         completion()
       }
     }

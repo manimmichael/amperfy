@@ -137,7 +137,8 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
             account: activeAccount,
             storage: appDelegate.storage,
             getMeta: appDelegate.getMeta,
-            eventLogger: appDelegate.eventLogger
+            eventLogger: appDelegate.eventLogger,
+            player: appDelegate.player
           )
           sharedHome?.applySnapshotCB = { [weak self] in
             guard let self else { return }

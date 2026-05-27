@@ -49,7 +49,8 @@ final class HomeVC: UICollectionViewController {
       account: account,
       storage: appDelegate.storage,
       getMeta: appDelegate.getMeta,
-      eventLogger: appDelegate.eventLogger
+      eventLogger: appDelegate.eventLogger,
+      player: appDelegate.player
     )
     let layout = HomeVC.createLayout()
     super.init(collectionViewLayout: layout)
@@ -81,17 +82,16 @@ final class HomeVC: UICollectionViewController {
       setupUserNavButton(
         currentAccount: account,
         userButton: &userButton,
-        userBarButtonItem: &userBarButtonItem
+        userBarButtonItem: &userBarButtonItem,
+        extraLeadingMenuElements: makeHomeMenuExtras()
       )
     }
 
     navigationController?.navigationBar.prefersLargeTitles = true
-    navigationItem.rightBarButtonItem = UIBarButtonItem(
-      title: "Edit",
-      style: .plain,
-      target: self,
-      action: #selector(editSectionsTapped)
-    )
+    // cassette Patch 035: the top-right Edit button is removed; the
+    // "Edit Home" action lives in the account-button menu now (see
+    // `setupUserNavButton` call above), and only the three Cassette
+    // shelves remain visible/editable.
     configureCollectionView()
     configureDataSource()
     sharedHome.createFetchController()
@@ -205,34 +205,23 @@ final class HomeVC: UICollectionViewController {
       return cell
     }
 
-    dataSource.supplementaryViewProvider = { collectionView, kind, indexPath in
+    dataSource.supplementaryViewProvider = { [weak self] collectionView, kind, indexPath in
       guard kind == UICollectionView.elementKindSectionHeader,
             let header = collectionView.dequeueReusableSupplementaryView(
               ofKind: kind,
               withReuseIdentifier: SectionHeaderView.reuseID,
               for: indexPath
             ) as? SectionHeaderView,
-            let section = self.sharedHome.orderedVisibleSections.element(at: indexPath.section)
+            let snapshotSection = self?.dataSource.snapshot().sectionIdentifiers
+              .element(at: indexPath.section)
       else {
         return nil
       }
-      header.title = section.title
-      if section == .randomAlbums {
-        header.showsRefreshButton = true
-        header.setRefreshHandler { [weak self] in self?.refreshRandomAlbumsSection() }
-      } else if section == .randomArtists {
-        header.showsRefreshButton = true
-        header.setRefreshHandler { [weak self] in self?.refreshRandomArtistsSection() }
-      } else if section == .randomGenres {
-        header.showsRefreshButton = true
-        header.setRefreshHandler { [weak self] in self?.refreshRandomGenresSection() }
-      } else if section == .randomSongs {
-        header.showsRefreshButton = true
-        header.setRefreshHandler { [weak self] in self?.refreshRandomSongsSection() }
-      } else {
-        header.showsRefreshButton = false
-        header.setRefreshHandler(nil)
-      }
+      header.title = snapshotSection.title
+      // cassette Patch 035: every shelf is deterministic now; no
+      // refresh button surfaces on any header.
+      header.showsRefreshButton = false
+      header.setRefreshHandler(nil)
       return header
     }
   }
@@ -276,13 +265,25 @@ final class HomeVC: UICollectionViewController {
     sharedHome.createFetchController()
   }
 
-  @objc
-  private func editSectionsTapped() {
-    presentSectionEditor()
+  /// cassette Patch 035: builds the screen-specific entries that
+  /// get prepended to the account-button menu on the Home tab.
+  /// Today: only "Edit Home." Other tabs pass no extras and see
+  /// the unmodified account menu.
+  private func makeHomeMenuExtras() -> [UIMenuElement] {
+    let editHome = UIAction(
+      title: "Edit Home",
+      image: UIImage(systemName: "slider.horizontal.3"),
+      handler: { [weak self] _ in
+        self?.presentSectionEditor()
+      }
+    )
+    return [editHome]
   }
 
-  private func presentSectionEditor() {
-    // Build a simple editor using a temporary UIViewController with a table view
+  /// cassette Patch 035: wired from the account-button menu's
+  /// "Edit Home" entry. The legacy `editSectionsTapped` `@objc`
+  /// wrapper went away with the top-right bar button.
+  func presentSectionEditor() {
     let editor = HomeEditorVC(current: sharedHome.orderedVisibleSections) { [weak self] newOrder in
       guard let self else { return }
       sharedHome.orderedVisibleSections = newOrder
@@ -301,34 +302,6 @@ final class HomeVC: UICollectionViewController {
     present(nav, animated: true)
   }
 
-  @objc
-  func refreshRandomAlbumsSection() {
-    Task { @MainActor in
-      await sharedHome.updateRandomAlbums(isOfflineMode: sharedHome.isOfflineMode)
-    }
-  }
-
-  @objc
-  func refreshRandomArtistsSection() {
-    Task { @MainActor in
-      await sharedHome.updateRandomArtists(isOfflineMode: sharedHome.isOfflineMode)
-    }
-  }
-
-  @objc
-  func refreshRandomGenresSection() {
-    Task { @MainActor in
-      await sharedHome.updateRandomGenres()
-    }
-  }
-
-  @objc
-  func refreshRandomSongsSection() {
-    Task { @MainActor in
-      await sharedHome.updateRandomSongs(isOfflineMode: sharedHome.isOfflineMode)
-    }
-  }
-
   // MARK: - Selection Handling
 
   override func collectionView(
@@ -337,6 +310,21 @@ final class HomeVC: UICollectionViewController {
   ) {
     guard let playableContainer = dataSource.itemIdentifier(for: indexPath)?.playableContainable
     else { return }
+
+    // cassette Patch 035: first card of the Resume shelf is a
+    // "resume from where you left off" button when there's a live
+    // queue. Tap → resume playback at the saved position; the mini
+    // player updates and the user can tap into the popup from there.
+    // Subsequent Resume cards behave like any other card (navigate
+    // to detail).
+    if let snapshotSection = dataSource.snapshot().sectionIdentifiers
+      .element(at: indexPath.section),
+      snapshotSection == .resume,
+      indexPath.item == 0,
+      appDelegate.player.currentlyPlaying != nil {
+      appDelegate.player.play()
+      return
+    }
 
     if let album = playableContainer as? Album {
       navigationController?.pushViewController(
