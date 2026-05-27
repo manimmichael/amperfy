@@ -41,6 +41,10 @@ class PodcastDetailVC: SingleFetchedResultsTableViewController<PodcastEpisodeMO>
   }
 
   override func viewDidLoad() {
+    // cassette Patch 037: see ArtistDetailVC for context — pin
+    // inline title before super so the parent's large title
+    // doesn't flash through the push transition.
+    navigationItem.largeTitleDisplayMode = .never
     super.viewDidLoad()
 
     #if !targetEnvironment(macCatalyst)

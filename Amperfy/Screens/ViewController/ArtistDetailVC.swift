@@ -43,6 +43,11 @@ class ArtistDetailVC: MultiSourceTableViewController {
   }
 
   override func viewDidLoad() {
+    // cassette Patch 037: pin inline title for this VC before super
+    // runs so the nav bar collapses the parent's large title in the
+    // first frame of the push transition — otherwise "Artists"
+    // briefly renders behind the detail title.
+    navigationItem.largeTitleDisplayMode = .never
     super.viewDidLoad()
     appDelegate.userStatistics.visited(.artistDetail)
 
