@@ -150,7 +150,12 @@ public enum CassetteTheme {
 
     UICollectionView.appearance().backgroundColor = UIColors.bg
 
-    UISwitch.appearance().onTintColor = UIColors.orange
+    // cassette Patch 050 (Phase E): switches + segmented controls move from
+    // orange to ink. UISwitch ON state reads as the warm off-white pill;
+    // segmented control selected segment is ink-filled with bg-tinted text
+    // (the existing typography attrs already use bg for selected labels,
+    // which now reads correctly on the ink fill).
+    UISwitch.appearance().onTintColor = UIColors.ink
 
     let segmentNormal: [NSAttributedString.Key: Any] = [
       .foregroundColor: UIColors.ink2,
@@ -162,7 +167,7 @@ public enum CassetteTheme {
     ]
     UISegmentedControl.appearance().setTitleTextAttributes(segmentNormal, for: .normal)
     UISegmentedControl.appearance().setTitleTextAttributes(segmentSelected, for: .selected)
-    UISegmentedControl.appearance().selectedSegmentTintColor = UIColors.orange
+    UISegmentedControl.appearance().selectedSegmentTintColor = UIColors.ink
     UISegmentedControl.appearance().backgroundColor = UIColors.bg2
 
     // cassette Patch 046 (Phase A): toolbar + search bar tint drop to ink/ink2.

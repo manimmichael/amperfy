@@ -108,11 +108,17 @@ struct EqualizerSettingsView: View {
                 .multilineTextAlignment(.trailing)
             }
 
+            // cassette Patch 050 (Phase E): EQ slider tint + gradient drop
+            // to ink2 / ink3. The orange was visually loud against the
+            // settings list bg2 surface and competed with the global
+            // restraint principles. (After Patch 046 the asColor expression
+            // already resolves to ink, but using ink2 / ink3 explicitly
+            // here gives the slider a quieter, more "settings" feel.)
             EqualizerView(
               sliderLabels: $sliderLabel,
               sliderValues: $eqSettingGains,
-              sliderTintColor: Color(settings.themePreference.asColor),
-              gradientColors: [Color(settings.themePreference.asColor), .clear]
+              sliderTintColor: CassetteTheme.Colors.ink2,
+              gradientColors: [CassetteTheme.Colors.ink3, .clear]
             )
 
             SettingsButtonRow(title: "Save") {

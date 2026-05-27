@@ -31,18 +31,17 @@ struct SettingsList<Content: View>: View {
   }
 
   var body: some View {
-    // cassette Patch 015g: every settings list adopts the warm Cassette
-    // palette. .scrollContentBackground(.hidden) lets the bg token
-    // show through the system Form chrome on iOS 16+. Tint pins
-    // toggles, navigation chevrons, and section accent colour to
-    // Cassette orange.
+    // cassette Patch 050 (Phase E): drop the orange tint from settings
+    // lists. Toggles, chevrons, and section accents now use ink. Settings
+    // should read as neutral chrome, not a brand showcase. Background +
+    // row treatment unchanged from Patch 015g.
     List {
       content()
         .listRowBackground(CassetteTheme.Colors.bg2)
     }
     .scrollContentBackground(.hidden)
     .background(CassetteTheme.Colors.bg)
-    .tint(CassetteTheme.Colors.orange)
+    .tint(CassetteTheme.Colors.ink)
     .foregroundColor(CassetteTheme.Colors.ink)
   }
 }

@@ -25,13 +25,16 @@ import SwiftUI
 // MARK: - DefaultButtonStyle
 
 struct DefaultButtonStyle: ButtonStyle {
+  // cassette Patch 050 (Phase E): primary SwiftUI buttons drop the orange
+  // background. Filled ink reads as the primary action; pressed state uses
+  // ink2 instead of an orange opacity wedge.
   func makeBody(configuration: Self.Configuration) -> some View {
     configuration.label
       .foregroundColor(CassetteTheme.Colors.bg)
       .padding([.top, .bottom], 8)
       .background(
         configuration.isPressed
-          ? CassetteTheme.Colors.orange.opacity(0.75) : CassetteTheme.Colors.orange
+          ? CassetteTheme.Colors.ink2 : CassetteTheme.Colors.ink
       )
       .cornerRadius(15.0)
       .contentShape(Rectangle())

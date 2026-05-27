@@ -36,17 +36,18 @@ struct SettingsTabView: View {
             Image(uiImage: menuElement.icon.withRenderingMode(.alwaysTemplate))
             Text(menuElement.displayName)
           }
-          .foregroundStyle(
-            selectedMenu == menuElement
-              ? CassetteTheme.Colors.bg
-              : CassetteTheme.Colors.ink
-          )
+          // cassette Patch 050 (Phase E): drop the orange pill behind the
+          // selected sidebar row. Selected = bg3 fill + ink text (was orange
+          // fill + bg text). Consistent with the rest of the settings
+          // palette and reads as quiet structural selection rather than a
+          // brand accent.
+          .foregroundStyle(CassetteTheme.Colors.ink)
           .padding(8)
           .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(
           selectedMenu == menuElement
-            ? CassetteTheme.Colors.orange
+            ? CassetteTheme.Colors.bg3
             : Color.clear
         )
         .cornerRadius(8)
