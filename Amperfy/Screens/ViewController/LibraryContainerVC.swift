@@ -1,0 +1,235 @@
+//
+//  LibraryContainerVC.swift
+//  Amperfy
+//
+//  Created by Cassette Patch 039.
+//  Copyright (c) 2026 Cassette. All rights reserved.
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
+
+import AmperfyKit
+import UIKit
+
+/// cassette Patch 039: Library tab redesign. Replaces `LibraryVC`'s
+/// intermediate category list. Opens directly to the user's last-
+/// surfaced category, hosts a nav-bar dropdown for switching, and
+/// inherits each category VC's native `UISearchController` so the
+/// pull-down search keeps working in place.
+///
+/// `LibraryVC` is intentionally kept on disk — `pushLibraryCategory`
+/// and other deep-link flows still rely on `segueToLibrary`.
+@MainActor
+final class LibraryContainerVC: UIViewController {
+  // MARK: - Dropdown surface
+
+  /// The seven categories that surface in the dropdown. Mirrors the
+  /// shipping iOS information architecture; favorites / newest /
+  /// recent / directories / downloads are deliberately excluded per
+  /// spec (still reachable via the existing tab sub-items and the
+  /// Mac sidebar's `LibraryNavigatorConfigurator`).
+  private static let dropdownCategories: [LibraryDisplayType] = [
+    .artists,
+    .albums,
+    .songs,
+    .playlists,
+    .genres,
+    .podcasts,
+    .radios,
+  ]
+
+  // MARK: - State
+
+  private let account: Account
+  private var currentCategory: LibraryDisplayType
+  private var embeddedChild: UIViewController?
+
+  private var titleButton: UIButton?
+  private var userButton: UIButton?
+  private var userBarButtonItem: UIBarButtonItem?
+  private var accountNotificationHandler: AccountNotificationHandler?
+
+  // MARK: - Init
+
+  init(account: Account) {
+    self.account = account
+    let appDelegate = (UIApplication.shared.delegate as! AppDelegate)
+    let persisted = appDelegate.storage.settings.accounts
+      .getSetting(account.info).read.lastLibraryCategory
+    // Defensive fallback: if a stale persisted enum case isn't in
+    // our dropdown allow-list (e.g. user previously deep-linked
+    // into Downloads and we then renamed cases), reset to Artists.
+    if Self.dropdownCategories.contains(persisted) {
+      self.currentCategory = persisted
+    } else {
+      self.currentCategory = .artists
+    }
+    super.init(nibName: nil, bundle: nil)
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  // MARK: - Lifecycle
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    view.backgroundColor = CassetteTheme.UIColors.bg
+    // The dropdown lives in `titleView`; we never want the navbar
+    // to inflate to large-title height because the embedded VCs
+    // are doing their own scroll-driven UI underneath us.
+    navigationItem.largeTitleDisplayMode = .never
+
+    setupTitleButton()
+
+    accountNotificationHandler = AccountNotificationHandler(
+      storage: appDelegate.storage,
+      notificationHandler: appDelegate.notificationHandler
+    )
+    accountNotificationHandler?.registerCallbackForActiveAccountChange { [weak self] _ in
+      guard let self else { return }
+      setupUserNavButton(
+        currentAccount: account,
+        userButton: &userButton,
+        userBarButtonItem: &userBarButtonItem
+      )
+    }
+    setupUserNavButton(
+      currentAccount: account,
+      userButton: &userButton,
+      userBarButtonItem: &userBarButtonItem
+    )
+
+    embedChild(category: currentCategory)
+  }
+
+  override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    // Override the child's own viewWillAppear which flips this on;
+    // dropdown lives in titleView so large-title mode would just
+    // squash our content under a doubled-up bar.
+    navigationController?.navigationBar.prefersLargeTitles = false
+  }
+
+  // MARK: - Title button + dropdown
+
+  private func setupTitleButton() {
+    let button = UIButton(type: .system)
+    button.showsMenuAsPrimaryAction = true
+    button.menu = makeCategoryMenu()
+    applyTitleButtonAppearance(button: button, label: currentCategory.displayName)
+    titleButton = button
+    navigationItem.titleView = button
+  }
+
+  private func applyTitleButtonAppearance(button: UIButton, label: String) {
+    var config = UIButton.Configuration.plain()
+    config.title = label
+    config.image = UIImage(systemName: "chevron.down")
+    config.imagePlacement = .trailing
+    config.imagePadding = 6
+    config.baseForegroundColor = CassetteTheme.UIColors.ink
+    config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+    button.configuration = config
+    button.titleLabel?.font = UIFont.cassette(.sectionTitle)
+    button.tintColor = CassetteTheme.UIColors.ink
+    // Force the button to size itself so the chevron sits next to
+    // the title rather than centered awkwardly.
+    button.sizeToFit()
+  }
+
+  private func makeCategoryMenu() -> UIMenu {
+    let actions = Self.dropdownCategories.map { type -> UIAction in
+      UIAction(
+        title: type.displayName,
+        image: type.image,
+        state: type == currentCategory ? .on : .off,
+        handler: { [weak self] _ in
+          self?.switchCategory(type)
+        }
+      )
+    }
+    return UIMenu(title: "Library", children: actions)
+  }
+
+  // MARK: - Child embedding
+
+  private func embedChild(category: LibraryDisplayType) {
+    let child = category.controller(
+      account: account,
+      settings: appDelegate.storage.settings
+    )
+    // Force `viewDidLoad` on the child so its search controller and
+    // right-bar buttons exist before we copy them through. Each
+    // shipping category VC sets up `navigationItem.searchController`
+    // in `viewDidLoad` (see `configureSearchController` in
+    // `BasicTableViewController`).
+    addChild(child)
+    child.view.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(child.view)
+    NSLayoutConstraint.activate([
+      child.view.topAnchor.constraint(equalTo: view.topAnchor),
+      child.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      child.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      child.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+    ])
+    child.didMove(toParent: self)
+    embeddedChild = child
+
+    // Copy nav-bar surface up to the container. We never display
+    // the child's own navigation bar — the container owns the bar.
+    navigationItem.searchController = child.navigationItem.searchController
+    navigationItem.hidesSearchBarWhenScrolling = true
+    navigationItem.rightBarButtonItems = child.navigationItem.rightBarButtonItems
+    definesPresentationContext = true
+  }
+
+  private func unembedCurrentChild() {
+    guard let child = embeddedChild else { return }
+    child.willMove(toParent: nil)
+    child.view.removeFromSuperview()
+    child.removeFromParent()
+    embeddedChild = nil
+    navigationItem.searchController = nil
+    navigationItem.rightBarButtonItems = nil
+  }
+
+  // MARK: - Category switching
+
+  private func switchCategory(_ type: LibraryDisplayType) {
+    guard type != currentCategory else { return }
+    currentCategory = type
+
+    if let accountInfo = appDelegate.storage.settings.accounts.active {
+      appDelegate.storage.settings.accounts.updateSetting(accountInfo) { accountSettings in
+        accountSettings.lastLibraryCategory = type
+      }
+    }
+
+    unembedCurrentChild()
+    embedChild(category: type)
+
+    if let titleButton {
+      applyTitleButtonAppearance(button: titleButton, label: type.displayName)
+      // Rebuild menu so the new selection's `.on` state reflects
+      // immediately on next open.
+      titleButton.menu = makeCategoryMenu()
+    }
+  }
+}
+
+extension LibraryContainerVC {
+  override var sceneTitle: String? { "Library" }
+}

@@ -328,6 +328,17 @@ public struct AccountSetting: Sendable, Codable {
     set { _homeSections = newValue }
   }
 
+  // cassette Patch 039: sticky memory for the Library tab's last
+  // surfaced category. Mirrors the `_homeSections` Codable pattern —
+  // private backing var with a default that survives both fresh
+  // installs and decode failures on legacy AccountSetting payloads
+  // (Codable auto-synthesis fills in missing keys with the default).
+  private var _lastLibraryCategory: LibraryDisplayType = .artists
+  public var lastLibraryCategory: LibraryDisplayType {
+    get { _lastLibraryCategory }
+    set { _lastLibraryCategory = newValue }
+  }
+
   private var _initialSyncCompletionStatus: SyncCompletionStatus = .defaultValue
   public var initialSyncCompletionStatus: SyncCompletionStatus {
     get { _initialSyncCompletionStatus }

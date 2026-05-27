@@ -26,8 +26,14 @@ import UIKit
 
 // MARK: - LibraryDisplayType
 
+// cassette Patch 039: Codable conformance added so AccountSetting
+// can persist a `lastLibraryCategory: LibraryDisplayType` directly.
+// Raw-value Int encoding is forward-compatible with new cases
+// because LibraryDisplayType(rawValue:) returns nil for unknown
+// values — `AccountSetting` then falls back to `.artists` via the
+// stored-property default.
 @MainActor
-public enum LibraryDisplayType: Int, CaseIterable, Sendable {
+public enum LibraryDisplayType: Int, CaseIterable, Sendable, Codable {
   case artists = 0
   case albums = 1
   case songs = 2

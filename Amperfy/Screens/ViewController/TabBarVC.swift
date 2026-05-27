@@ -107,7 +107,11 @@ class TabBarVC: UITabBarController {
       identifier: "Tabs.Library",
       children: libraryTabs
     ) { tab in
-      AppStoryboard.Main.segueToLibrary(account: self.account)
+      // cassette Patch 039: route the Library tab root to the new
+      // dropdown container instead of the legacy intermediate
+      // category list. LibraryVC stays reachable via direct
+      // `segueToLibrary` callers (pushLibraryCategory, Mac sidebar).
+      AppStoryboard.Main.segueToLibraryContainer(account: self.account)
     }
     libraryGroup!.managingNavigationController = UINavigationController()
     libraryGroup!.allowsReordering = true

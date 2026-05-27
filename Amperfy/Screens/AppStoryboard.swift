@@ -106,6 +106,13 @@ enum AppStoryboard: String {
     collectionViewLayout: .verticalLayout,
     account: account
   ) }
+  /// cassette Patch 039: new Library-tab entry point. Replaces
+  /// `segueToLibrary` at the root of the iPhone tab-bar's Library
+  /// group. Deep-link / programmatic flows that explicitly want
+  /// the legacy LibraryVC still use `segueToLibrary`.
+  func segueToLibraryContainer(account: Account) -> UIViewController {
+    LibraryContainerVC(account: account)
+  }
   func segueToSearch(account: Account) -> SearchVC { SearchVC(account: account) }
   func segueToSettings() -> SettingsHostVC { SettingsHostVC(isForOwnWindow: false) }
   func segueToDownloads(account: Account) -> UIViewController { DownloadsVC(account: account) }
