@@ -74,7 +74,9 @@ class ArtistDetailVC: MultiSourceTableViewController {
     tableView.estimatedSectionFooterHeight = 0.0
     tableView.backgroundColor = .backgroundColor
 
-    configureSearchController(placeholder: "Albums and Songs", scopeButtonTitles: ["All", "Cached"])
+    // cassette Patch 045: in-view search removed from artist detail.
+    // Library category lists keep their search controllers; the
+    // detail view shows the artist's full top-songs + albums set.
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
       infoCB: {
         "\(self.artist.albumCount) Album\(self.artist.albumCount == 1 ? "" : "s") \(CommonString.oneMiddleDot) \(self.artist.songCount) Song\(self.artist.songCount == 1 ? "" : "s")"
@@ -387,20 +389,9 @@ class ArtistDetailVC: MultiSourceTableViewController {
     }
   }
 
-  override func updateSearchResults(for searchController: UISearchController) {
-    guard let searchText = searchController.searchBar.text else { return }
-    if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 0 {
-      albumsFetchedResultsController.search(searchText: searchText, onlyCached: false)
-      songsFetchedResultsController.search(searchText: searchText, onlyCachedSongs: false)
-    } else if searchController.searchBar.selectedScopeButtonIndex == 1 {
-      albumsFetchedResultsController.search(searchText: searchText, onlyCached: true)
-      songsFetchedResultsController.search(searchText: searchText, onlyCachedSongs: true)
-    } else {
-      albumsFetchedResultsController.showAllResults()
-      songsFetchedResultsController.showAllResults()
-    }
-    tableView.reloadData()
-  }
+  // cassette Patch 045: `updateSearchResults` override removed
+  // alongside the search controller; the base no-op runs in its
+  // place when a parent view fires `updateSearchResults(for:)`.
 
   override func controller(
     _ controller: NSFetchedResultsController<NSFetchRequestResult>,

@@ -333,11 +333,11 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     return cell
   }
 
-  override func updateSearchResults(for searchController: UISearchController) {
-    fetchedResultsController
-      .search(onlyCachedSongs: appDelegate.storage.settings.user.isOfflineMode)
-    tableView.reloadData()
-  }
+  // cassette Patch 045: vestigial `updateSearchResults` override
+  // removed. PlaylistDetailVC never installed a search controller,
+  // so this override only ran when ancestral lifecycle hooks
+  // (e.g. BasicTableViewController.viewIsAppearing) called through.
+  // The base no-op covers that path.
 
   @objc
   func handleRefresh(refreshControl: UIRefreshControl) {

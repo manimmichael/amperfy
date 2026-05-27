@@ -89,10 +89,9 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     singleFetchedResultsController?.delegate = self
     singleFetchedResultsController?.fetch()
 
-    configureSearchController(
-      placeholder: "Search in \"Album\"",
-      scopeButtonTitles: ["All", "Cached"]
-    )
+    // cassette Patch 045: in-view search removed from album detail.
+    // Library / Songs / Playlists category lists keep search; the
+    // detail view presents a fixed track list instead.
     tableView.register(nibName: PlayableTableCell.typeName)
     tableView.rowHeight = PlayableTableCell.rowHeight
     // Catalyst also need an estimate to calculate the correct height before scrolling
@@ -226,11 +225,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     return cell
   }
 
-  override func updateSearchResults(for searchController: UISearchController) {
-    fetchedResultsController.search(
-      searchText: searchController.searchBar.text ?? "",
-      onlyCachedSongs: searchController.searchBar.selectedScopeButtonIndex == 1
-    )
-    tableView.reloadData()
-  }
+  // cassette Patch 045: `updateSearchResults` override removed
+  // alongside the search controller. The base no-op
+  // `BasicTableViewController.updateSearchResults` runs harmlessly
+  // when scrolled-into-view callbacks fire.
 }
