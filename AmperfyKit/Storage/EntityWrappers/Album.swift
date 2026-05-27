@@ -236,10 +236,22 @@ extension Album: PlayableContainable {
     guard let context = managedObject.managedObjectContext else {
       throw BackendError.persistentSaveFailed
     }
+    // cassette Patch 040: optimistic toggle with rollback. Same
+    // pattern as AbstractPlayable.remoteToggleFavorite — flip
+    // eagerly so the heart in EntityPreviewVC / album header feels
+    // instant, then restore the prior value if the server call
+    // fails so the UI ends up in sync with the server.
+    let originalValue = isFavorite
     isFavorite.toggle()
     let library = LibraryStorage(context: context)
     library.saveContext()
-    try await syncer.setFavorite(album: self, isFavorite: isFavorite)
+    do {
+      try await syncer.setFavorite(album: self, isFavorite: isFavorite)
+    } catch {
+      isFavorite = originalValue
+      library.saveContext()
+      throw error
+    }
   }
 
   @MainActor

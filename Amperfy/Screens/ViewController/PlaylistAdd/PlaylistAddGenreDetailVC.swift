@@ -103,7 +103,12 @@ class PlaylistAddGenreDetailVC: MultiSourceTableViewController, PlaylistVCAddabl
           .playableDownloadManager
       )
     } catch {
-      self.appDelegate.eventLogger.report(topic: "Genre Sync", error: error)
+      // cassette Patch 040: detail-appear background sync.
+      self.appDelegate.eventLogger.report(
+        topic: "Genre Sync",
+        error: error,
+        isBackground: true
+      )
     }}
   }
 

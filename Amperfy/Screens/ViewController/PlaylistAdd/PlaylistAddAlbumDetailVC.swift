@@ -102,7 +102,12 @@ class PlaylistAddAlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<
           .playableDownloadManager
       )
     } catch {
-      self.appDelegate.eventLogger.report(topic: "Album Sync", error: error)
+      // cassette Patch 040: detail-appear background sync.
+      self.appDelegate.eventLogger.report(
+        topic: "Album Sync",
+        error: error,
+        isBackground: true
+      )
     }}
   }
 

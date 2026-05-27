@@ -107,7 +107,12 @@ class PlaylistAddSongsVC: SingleFetchedResultsTableViewController<SongMO>, Playl
           try await self.appDelegate.getMeta(account.info).librarySyncer
             .syncFavoriteLibraryElements()
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Favorite Songs Sync", error: error)
+          // cassette Patch 040: tab-appear background sync.
+          self.appDelegate.eventLogger.report(
+            topic: "Favorite Songs Sync",
+            error: error,
+            isBackground: true
+          )
         }
         self.updateSearchResults(for: self.searchController)
       }

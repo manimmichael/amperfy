@@ -177,7 +177,12 @@ class GenreDetailVC: MultiSourceTableViewController {
                 .playableDownloadManager
             )
           } catch {
-            self.appDelegate.eventLogger.report(topic: "Artist Sync", error: error)
+            // cassette Patch 040: swipe-prefetch background sync.
+            self.appDelegate.eventLogger.report(
+              topic: "Artist Sync",
+              error: error,
+              isBackground: true
+            )
           }
           completionHandler(SwipeActionContext(containable: artist))
         }
@@ -195,7 +200,11 @@ class GenreDetailVC: MultiSourceTableViewController {
                 .playableDownloadManager
             )
           } catch {
-            self.appDelegate.eventLogger.report(topic: "Album Sync", error: error)
+            self.appDelegate.eventLogger.report(
+              topic: "Album Sync",
+              error: error,
+              isBackground: true
+            )
           }
           completionHandler(SwipeActionContext(containable: album))
         }
@@ -231,7 +240,12 @@ class GenreDetailVC: MultiSourceTableViewController {
             .playableDownloadManager
         )
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Genre Sync", error: error)
+        // cassette Patch 040: detail-appear background sync.
+        self.appDelegate.eventLogger.report(
+          topic: "Genre Sync",
+          error: error,
+          isBackground: true
+        )
       }
       self.refreshGenreMetadataLine()
       self.detailOperationsView?.refresh()

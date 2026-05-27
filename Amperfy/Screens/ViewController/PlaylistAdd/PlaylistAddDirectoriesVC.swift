@@ -90,7 +90,12 @@ class PlaylistAddDirectoriesVC: MultiSourceTableViewController, PlaylistVCAddabl
       try await self.appDelegate.getMeta(account.info).librarySyncer
         .sync(directory: directory)
     } catch {
-      self.appDelegate.eventLogger.report(topic: "Directories Sync", error: error)
+      // cassette Patch 040: detail-appear background sync.
+      self.appDelegate.eventLogger.report(
+        topic: "Directories Sync",
+        error: error,
+        isBackground: true
+      )
     }}
   }
 

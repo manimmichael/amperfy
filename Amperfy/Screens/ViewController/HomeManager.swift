@@ -214,7 +214,12 @@ class HomeManager: NSObject {
         )
         .syncNewestLibraryElements(offset: 0, count: Self.sectionMaxItemCount)
       } catch {
-        self.eventLogger.report(topic: "Recently Added Sync", error: error)
+        // cassette Patch 040: Home tab background sync — silenced.
+        self.eventLogger.report(
+          topic: "Recently Added Sync",
+          error: error,
+          isBackground: true
+        )
       }
     }
     Task { @MainActor in
@@ -225,7 +230,11 @@ class HomeManager: NSObject {
             count: Self.sectionMaxItemCount
           )
       } catch {
-        self.eventLogger.report(topic: "Resume Sync", error: error)
+        self.eventLogger.report(
+          topic: "Resume Sync",
+          error: error,
+          isBackground: true
+        )
       }
     }
     Task { @MainActor in
@@ -233,7 +242,11 @@ class HomeManager: NSObject {
         try await self.getMeta(self.account.info).librarySyncer
           .syncDownPlaylistsWithoutSongs()
       } catch {
-        self.eventLogger.report(topic: "Playlists Sync", error: error)
+        self.eventLogger.report(
+          topic: "Playlists Sync",
+          error: error,
+          isBackground: true
+        )
       }
     }
   }

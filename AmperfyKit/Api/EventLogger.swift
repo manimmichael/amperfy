@@ -159,23 +159,54 @@ public class EventLogger {
     )
   }
 
-  public func report(topic: String, error: Error, displayPopup: Bool = true) {
+  /// cassette Patch 040: `isBackground` lets callers mark errors as
+  /// originating from background work (tab-appear sync, scroll
+  /// prefetch, autodownload) so they're persisted + os_log'd but
+  /// never surface as a user-facing banner. Default stays `false`
+  /// to preserve every existing call site's behavior.
+  public func report(
+    topic: String,
+    error: Error,
+    displayPopup: Bool = true,
+    isBackground: Bool = false
+  ) {
     if let apiError = error as? ResponseError {
-      return report(topic: topic, error: apiError, displayPopup: displayPopup)
+      return report(
+        topic: topic,
+        error: apiError,
+        displayPopup: displayPopup,
+        isBackground: isBackground
+      )
     }
+    let shouldDisplay = displayPopup && !isBackground
+    // cassette Patch 040: replace raw NSURLErrorDomain
+    // localizedDescription with brand-voice copy for the banner.
+    // The unfriendly text ("URLSessionTask failed with error...")
+    // still goes into detailMessage so tap → NotificationDetailVC
+    // surfaces the real error for debugging.
+    let raw = error.localizedDescription
+    let popupCopy: String = {
+      guard Self.isNetworkConnectivityError(error) else { return raw }
+      return Self.friendlyNetworkCopy(forTopic: topic)
+    }()
     saveAndDisplay(
       topic: topic,
       logType: .error,
       errorType: .commonError,
       statusCode: 0,
-      logMessage: topic + ": " + error.localizedDescription,
-      displayPopup: displayPopup,
-      popupMessage: error.localizedDescription,
-      detailMessage: error.localizedDescription
+      logMessage: topic + ": " + raw,
+      displayPopup: shouldDisplay,
+      popupMessage: popupCopy,
+      detailMessage: raw
     )
   }
 
-  public func report(topic: String, error: ResponseError, displayPopup: Bool) {
+  public func report(
+    topic: String,
+    error: ResponseError,
+    displayPopup: Bool,
+    isBackground: Bool = false
+  ) {
     var alertMessage = ""
     if error.statusCode > 0 {
       alertMessage += "Status code: \(error.statusCode)\n"
@@ -189,16 +220,40 @@ public class EventLogger {
     let isInfoError = error.type == .resource
     detailMessage += "\n\nError Content:\n" + error.asInfo(topic: topic).asJSONString()
 
+    let shouldDisplay = displayPopup && !isBackground
     saveAndDisplay(
       topic: topic,
       logType: isInfoError ? .info : .apiError,
       errorType: isInfoError ? .info : .connectionError,
       statusCode: error.statusCode,
       logMessage: error.message,
-      displayPopup: displayPopup,
+      displayPopup: shouldDisplay,
       popupMessage: alertMessage,
       detailMessage: detailMessage
     )
+  }
+
+  // MARK: - cassette Patch 040: brand-voice helpers
+
+  /// True when `error` is a transient connectivity / availability
+  /// failure against the user's Cassette Player (`NSURLErrorDomain`
+  /// or matching CFNetwork code). These are the cases where the
+  /// raw "URLSessionTask failed..." text is useless to the user
+  /// and gets replaced with brand voice.
+  private static func isNetworkConnectivityError(_ error: Error) -> Bool {
+    let nsError = error as NSError
+    if nsError.domain == NSURLErrorDomain { return true }
+    if nsError.domain == (kCFErrorDomainCFNetwork as String) { return true }
+    return false
+  }
+
+  private static func friendlyNetworkCopy(forTopic topic: String) -> String {
+    switch topic {
+    case "Toggle Favorite":
+      return "Couldn't update your favorite. Try again in a moment."
+    default:
+      return "We couldn't reach your Cassette Player. Try again in a moment."
+    }
   }
 
   private func saveAndDisplay(

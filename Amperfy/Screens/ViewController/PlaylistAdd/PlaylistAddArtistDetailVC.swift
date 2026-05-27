@@ -92,7 +92,12 @@ class PlaylistAddArtistDetailVC: MultiSourceTableViewController, PlaylistVCAddab
           .playableDownloadManager
       )
     } catch {
-      self.appDelegate.eventLogger.report(topic: "Artist Sync", error: error)
+      // cassette Patch 040: detail-appear background sync.
+      self.appDelegate.eventLogger.report(
+        topic: "Artist Sync",
+        error: error,
+        isBackground: true
+      )
     }}
   }
 

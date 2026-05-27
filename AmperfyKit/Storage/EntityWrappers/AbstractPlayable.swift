@@ -462,10 +462,23 @@ extension AbstractPlayable: PlayableContainable {
     guard let context = song.managedObject.managedObjectContext else {
       throw BackendError.persistentSaveFailed
     }
+    // cassette Patch 040: optimistic toggle with rollback. We flip
+    // + saveContext eagerly so the heart in PopupPlayerVC / cell
+    // refreshes feel instant, but if the network call fails we
+    // restore the prior value (and persist that restore) so the
+    // displayed state matches the server. Existing cell.refresh()
+    // callers pick up the rolled-back value naturally.
+    let originalValue = isFavorite
     isFavorite.toggle()
     let library = LibraryStorage(context: context)
     library.saveContext()
-    try await syncer.setFavorite(song: song, isFavorite: isFavorite)
+    do {
+      try await syncer.setFavorite(song: song, isFavorite: isFavorite)
+    } catch {
+      isFavorite = originalValue
+      library.saveContext()
+      throw error
+    }
   }
 
   public var isDownloadAvailable: Bool {

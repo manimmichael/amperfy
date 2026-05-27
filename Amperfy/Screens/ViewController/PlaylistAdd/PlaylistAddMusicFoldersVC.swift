@@ -71,7 +71,12 @@ class PlaylistAddMusicFoldersVC: SingleFetchedResultsTableViewController<MusicFo
     Task { @MainActor in do {
       try await self.appDelegate.getMeta(account.info).librarySyncer.syncMusicFolders()
     } catch {
-      self.appDelegate.eventLogger.report(topic: "Music Folders Sync", error: error)
+      // cassette Patch 040: tab-appear background sync.
+      self.appDelegate.eventLogger.report(
+        topic: "Music Folders Sync",
+        error: error,
+        isBackground: true
+      )
     }}
   }
 

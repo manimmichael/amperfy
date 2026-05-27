@@ -1126,7 +1126,12 @@ extension CarPlaySceneDelegate: CPInterfaceControllerDelegate {
           try await self.appDelegate.getMeta(activeAccountInfo).librarySyncer
             .syncDownPlaylistsWithoutSongs()
         } catch {
-          self.appDelegate.eventLogger.report(topic: "CarPlay: Playlists Sync", error: error)
+          // cassette Patch 040: CarPlay browse-appear background sync.
+          self.appDelegate.eventLogger.report(
+            topic: "CarPlay: Playlists Sync",
+            error: error,
+            isBackground: true
+          )
         }}
         if playlistFetchController == nil { createPlaylistFetchController() }
         playlistTab.updateSections(createPlaylistsSections())
@@ -1275,7 +1280,11 @@ extension CarPlaySceneDelegate: CPInterfaceControllerDelegate {
               count: AmperKit.newestElementsFetchCount
             )
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Recent Albums Sync", error: error)
+          self.appDelegate.eventLogger.report(
+            topic: "Recent Albums Sync",
+            error: error,
+            isBackground: true
+          )
         }}
         if albumsRecentFetchController == nil { createAlbumsRecentFetchController() }
         albumsRecentSection.updateSections(createAlbumItems(
@@ -1315,7 +1324,11 @@ extension CarPlaySceneDelegate: CPInterfaceControllerDelegate {
               .playableDownloadManager
           )
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Playlist Sync", error: error)
+          self.appDelegate.eventLogger.report(
+            topic: "Playlist Sync",
+            error: error,
+            isBackground: true
+          )
         }}
         playlistDetailSection?
           .updateSections(
@@ -1332,7 +1345,11 @@ extension CarPlaySceneDelegate: CPInterfaceControllerDelegate {
               .playableDownloadManager
           )
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Podcast Sync", error: error)
+          self.appDelegate.eventLogger.report(
+            topic: "Podcast Sync",
+            error: error,
+            isBackground: true
+          )
         }}
         podcastDetailSection?
           .updateSections(

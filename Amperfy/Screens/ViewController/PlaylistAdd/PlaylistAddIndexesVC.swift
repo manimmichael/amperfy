@@ -75,7 +75,12 @@ class PlaylistAddIndexesVC: SingleFetchedResultsTableViewController<DirectoryMO>
       try await self.appDelegate.getMeta(account.info).librarySyncer
         .syncIndexes(musicFolder: musicFolder)
     } catch {
-      self.appDelegate.eventLogger.report(topic: "Indexes Sync", error: error)
+      // cassette Patch 040: tab-appear background sync.
+      self.appDelegate.eventLogger.report(
+        topic: "Indexes Sync",
+        error: error,
+        isBackground: true
+      )
     }}
   }
 

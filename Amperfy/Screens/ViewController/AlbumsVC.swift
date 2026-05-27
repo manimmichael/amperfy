@@ -231,7 +231,12 @@ class AlbumsVC: SingleSnapshotFetchedResultsTableViewController<AlbumMO> {
               .playableDownloadManager
           )
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Album Sync", error: error)
+          // cassette Patch 040: swipe-prefetch background sync.
+          self.appDelegate.eventLogger.report(
+            topic: "Album Sync",
+            error: error,
+            isBackground: true
+          )
         }
         completionHandler(SwipeActionContext(containable: album))
       }

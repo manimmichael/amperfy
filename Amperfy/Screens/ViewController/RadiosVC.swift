@@ -141,7 +141,12 @@ class RadiosVC: SingleFetchedResultsTableViewController<RadioMO> {
       do {
         try await self.appDelegate.getMeta(self.account.info).librarySyncer.syncRadios()
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Radios Sync", error: error)
+        // cassette Patch 040: tab-appear background sync.
+        self.appDelegate.eventLogger.report(
+          topic: "Radios Sync",
+          error: error,
+          isBackground: true
+        )
       }
       self.detailHeaderView?.refresh()
       self.updateSearchResults(for: self.searchController)
@@ -218,7 +223,12 @@ class RadiosVC: SingleFetchedResultsTableViewController<RadioMO> {
       do {
         try await self.appDelegate.getMeta(self.account.info).librarySyncer.syncRadios()
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Radios Sync", error: error)
+        // cassette Patch 040: pull-to-refresh sync — silent.
+        self.appDelegate.eventLogger.report(
+          topic: "Radios Sync",
+          error: error,
+          isBackground: true
+        )
       }
       self.detailHeaderView?.refresh()
       self.updateSearchResults(for: self.searchController)

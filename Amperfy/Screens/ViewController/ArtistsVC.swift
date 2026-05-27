@@ -203,7 +203,12 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
               .playableDownloadManager
           )
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Artist Sync", error: error)
+          // cassette Patch 040: swipe-prefetch background sync.
+          self.appDelegate.eventLogger.report(
+            topic: "Artist Sync",
+            error: error,
+            isBackground: true
+          )
         }
         completionHandler(SwipeActionContext(containable: artist))
       }
@@ -311,7 +316,11 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
           try await self.appDelegate.getMeta(self.account.info).librarySyncer
             .syncFavoriteLibraryElements()
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Favorite Artists Sync", error: error)
+          self.appDelegate.eventLogger.report(
+            topic: "Favorite Artists Sync",
+            error: error,
+            isBackground: true
+          )
         }
         self.updateSearchResults(for: self.searchController)
       }
@@ -522,7 +531,11 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
         )
         .syncNewestLibraryElements()
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Artists Newest Elements Sync", error: error)
+        self.appDelegate.eventLogger.report(
+          topic: "Artists Newest Elements Sync",
+          error: error,
+          isBackground: true
+        )
       }
       self.refreshControl?.endRefreshing()
     }

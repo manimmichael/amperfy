@@ -25,15 +25,15 @@ import UIKit
 
 // MARK: - AmperfyBannerColors
 
+/// cassette Patch 040: every banner style now resolves to the same
+/// muted Cassette `bg2` background. Banners stay tappable for the
+/// full error detail; we don't need bright colour-coding to telegraph
+/// severity since the user mostly hits these for transient network
+/// failures, where a calm cream-on-brown surface reads better than
+/// red/green/blue alerts.
 class AmperfyBannerColors: BannerColorsProtocol {
   internal func color(for style: BannerStyle) -> UIColor {
-    switch style {
-    case .danger: return .red
-    case .info: return .defaultBlue
-    case .customView: return .defaultBlue
-    case .success: return .green
-    case .warning: return .yellow
-    }
+    CassetteTheme.UIColors.bg2
   }
 }
 

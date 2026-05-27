@@ -282,7 +282,12 @@ class SearchVC: BasicTableViewController {
               .playableDownloadManager
           )
         } catch {
-          self.appDelegate.eventLogger.report(topic: "History Sync", error: error)
+          // cassette Patch 040: swipe-prefetch background sync.
+          self.appDelegate.eventLogger.report(
+            topic: "History Sync",
+            error: error,
+            isBackground: true
+          )
         }
         completionHandler(SwipeActionContext(containable: container))
       }
@@ -297,7 +302,11 @@ class SearchVC: BasicTableViewController {
               .playableDownloadManager
           )
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Playlist Sync", error: error)
+          self.appDelegate.eventLogger.report(
+            topic: "Playlist Sync",
+            error: error,
+            isBackground: true
+          )
         }
         completionHandler(SwipeActionContext(containable: playlist))
       }
@@ -312,7 +321,11 @@ class SearchVC: BasicTableViewController {
               .playableDownloadManager
           )
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Artist Sync", error: error)
+          self.appDelegate.eventLogger.report(
+            topic: "Artist Sync",
+            error: error,
+            isBackground: true
+          )
         }
         completionHandler(SwipeActionContext(containable: artist))
       }
@@ -327,7 +340,11 @@ class SearchVC: BasicTableViewController {
               .playableDownloadManager
           )
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Album Sync", error: error)
+          self.appDelegate.eventLogger.report(
+            topic: "Album Sync",
+            error: error,
+            isBackground: true
+          )
         }
         completionHandler(SwipeActionContext(containable: album))
       }

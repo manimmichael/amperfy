@@ -126,9 +126,23 @@ extension AppDelegate: AlertDisplayable {
     let banner = FloatingNotificationBanner(
       title: title,
       subtitle: subtitle,
+      titleFont: UIFont.cassette(.miniTitle),
+      titleColor: CassetteTheme.UIColors.ink,
+      subtitleFont: UIFont.cassette(.body),
+      subtitleColor: CassetteTheme.UIColors.ink,
       style: BannerStyle.from(logType: style),
       colors: AmperfyBannerColors()
     )
+
+    // cassette Patch 040: paint a 1pt ink4 hairline on the banner's
+    // root layer. NotificationBannerSwift's contentView is internal,
+    // but its backgroundColor is forwarded from the banner so the
+    // banner.layer border draws on top of the painted surface and
+    // reads as a true frame around the banner.
+    banner.layer.borderColor = CassetteTheme.UIColors.ink4.cgColor
+    banner.layer.borderWidth = 1.0
+    // 4-second auto-dismiss; tap or swipe-up still dismiss instantly.
+    banner.duration = 4
 
     banner.onTap = {
       guard let topView = Self.topViewController(),

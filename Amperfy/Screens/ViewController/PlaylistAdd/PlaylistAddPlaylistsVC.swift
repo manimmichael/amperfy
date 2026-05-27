@@ -129,7 +129,12 @@ class PlaylistAddPlaylistsVC: SingleSnapshotFetchedResultsTableViewController<Pl
       try await self.appDelegate.getMeta(account.info).librarySyncer
         .syncDownPlaylistsWithoutSongs()
     } catch {
-      self.appDelegate.eventLogger.report(topic: "Playlists Sync", error: error)
+      // cassette Patch 040: tab-appear background sync.
+      self.appDelegate.eventLogger.report(
+        topic: "Playlists Sync",
+        error: error,
+        isBackground: true
+      )
     }}
   }
 

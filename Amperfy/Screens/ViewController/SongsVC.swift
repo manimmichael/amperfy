@@ -211,7 +211,12 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
           try await self.appDelegate.getMeta(self.account.info).librarySyncer
             .syncFavoriteLibraryElements()
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Favorite Songs Sync", error: error)
+          // cassette Patch 040: tab-appear background sync.
+          self.appDelegate.eventLogger.report(
+            topic: "Favorite Songs Sync",
+            error: error,
+            isBackground: true
+          )
         }
         self.detailHeaderView?.refresh()
         self.updateSearchResults(for: self.searchController)
@@ -520,7 +525,11 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
         )
         .syncNewestLibraryElements()
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Songs Newest Elements Sync", error: error)
+        self.appDelegate.eventLogger.report(
+          topic: "Songs Newest Elements Sync",
+          error: error,
+          isBackground: true
+        )
       }
       detailHeaderView?.refresh()
       self.refreshControl?.endRefreshing()

@@ -136,7 +136,12 @@ class ArtistDetailVC: MultiSourceTableViewController {
               .playableDownloadManager
           )
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Album Sync", error: error)
+          // cassette Patch 040: tap-prefetch background sync.
+          self.appDelegate.eventLogger.report(
+            topic: "Album Sync",
+            error: error,
+            isBackground: true
+          )
         }}
         return PlayContext(containable: album)
       case LibraryElement.Song.rawValue:
@@ -162,7 +167,11 @@ class ArtistDetailVC: MultiSourceTableViewController {
                 .playableDownloadManager
             )
           } catch {
-            self.appDelegate.eventLogger.report(topic: "Album Sync", error: error)
+            self.appDelegate.eventLogger.report(
+              topic: "Album Sync",
+              error: error,
+              isBackground: true
+            )
           }
           completionHandler(SwipeActionContext(containable: album))
         }
@@ -196,7 +205,12 @@ class ArtistDetailVC: MultiSourceTableViewController {
             .playableDownloadManager
         )
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Artist Sync", error: error)
+        // cassette Patch 040: detail-appear background sync.
+        self.appDelegate.eventLogger.report(
+          topic: "Artist Sync",
+          error: error,
+          isBackground: true
+        )
       }
       self.refreshArtistMetadataLine()
       self.detailOperationsView?.refresh()

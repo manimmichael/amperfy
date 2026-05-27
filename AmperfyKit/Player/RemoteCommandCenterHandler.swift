@@ -182,6 +182,12 @@ public class RemoteCommandCenterHandler {
         self.remoteCommandCenter.likeCommand.isActive = currentItem.isFavorite
         return .success
       }
+      // cassette Patch 040: roll the lock-screen heart back to its
+      // prior state if the server call fails. AbstractPlayable.remote
+      // ToggleFavorite already rolls the model back; this revert
+      // keeps the MPRemoteCommandCenter `isActive` in sync with the
+      // model so the lock-screen UI doesn't lie either.
+      let previousActive = command.isNegative
       self.remoteCommandCenter.likeCommand.isActive = !command.isNegative
       Task { @MainActor in
         do {
@@ -190,6 +196,7 @@ public class RemoteCommandCenterHandler {
             try await currentItem.remoteToggleFavorite(syncer: librarySyncer)
           }
         } catch {
+          self.remoteCommandCenter.likeCommand.isActive = previousActive
           self.eventLogger.report(topic: "Toggle Favorite", error: error)
         }
       }

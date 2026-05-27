@@ -144,7 +144,12 @@ class PodcastDetailVC: SingleFetchedResultsTableViewController<PodcastEpisodeMO>
             .playableDownloadManager
         )
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Podcast Sync", error: error)
+        // cassette Patch 040: detail-appear background sync.
+        self.appDelegate.eventLogger.report(
+          topic: "Podcast Sync",
+          error: error,
+          isBackground: true
+        )
       }
       self.refreshPodcastMetadataLine()
       self.detailOperationsView?.refresh()
@@ -197,7 +202,12 @@ class PodcastDetailVC: SingleFetchedResultsTableViewController<PodcastEpisodeMO>
         try await self.appDelegate.getMeta(self.account.info).librarySyncer
           .sync(podcast: self.podcast)
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Podcast Sync", error: error)
+        // cassette Patch 040: pull-to-refresh sync — silent.
+        self.appDelegate.eventLogger.report(
+          topic: "Podcast Sync",
+          error: error,
+          isBackground: true
+        )
       }
       self.detailOperationsView?.refresh()
       self.tableView.visibleCells.forEach { ($0 as! PodcastEpisodeTableCell).refresh() }

@@ -119,7 +119,12 @@ class DirectoriesVC: MultiSourceTableViewController {
                 .playableDownloadManager
             )
           } catch {
-            self.appDelegate.eventLogger.report(topic: "Directory Sync", error: error)
+            // cassette Patch 040: tap-prefetch background sync.
+            self.appDelegate.eventLogger.report(
+              topic: "Directory Sync",
+              error: error,
+              isBackground: true
+            )
           }
           self.refreshHeaderView()
         }
@@ -148,7 +153,11 @@ class DirectoriesVC: MultiSourceTableViewController {
                 .playableDownloadManager
             )
           } catch {
-            self.appDelegate.eventLogger.report(topic: "Directory Sync", error: error)
+            self.appDelegate.eventLogger.report(
+              topic: "Directory Sync",
+              error: error,
+              isBackground: true
+            )
           }
           completionHandler(SwipeActionContext(containable: subdirectory))
           self.refreshHeaderView()
@@ -217,7 +226,12 @@ class DirectoriesVC: MultiSourceTableViewController {
         try await self.appDelegate.getMeta(self.account.info).librarySyncer
           .sync(directory: directory)
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Directories Sync", error: error)
+        // cassette Patch 040: detail-appear background sync.
+        self.appDelegate.eventLogger.report(
+          topic: "Directories Sync",
+          error: error,
+          isBackground: true
+        )
       }
       self.refreshHeaderView()
     }

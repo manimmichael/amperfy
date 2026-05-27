@@ -99,7 +99,12 @@ class PodcastsVC: MultiSourceTableViewController {
                 .playableDownloadManager
             )
           } catch {
-            self.appDelegate.eventLogger.report(topic: "Podcasts Sync", error: error)
+            // cassette Patch 040: swipe-prefetch background sync.
+            self.appDelegate.eventLogger.report(
+              topic: "Podcasts Sync",
+              error: error,
+              isBackground: true
+            )
           }
           completionHandler(SwipeActionContext(containable: podcast))
         }
@@ -201,7 +206,12 @@ class PodcastsVC: MultiSourceTableViewController {
         )
         .syncNewestPodcastEpisodes()
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Podcasts Sync", error: error)
+        // cassette Patch 040: tab-appear background sync.
+        self.appDelegate.eventLogger.report(
+          topic: "Podcasts Sync",
+          error: error,
+          isBackground: true
+        )
       }}
     }
   }

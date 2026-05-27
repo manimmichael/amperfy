@@ -228,7 +228,12 @@ class AlbumsCommonVCInteractions {
           )
           .syncNewestLibraryElements(offset: offset, count: count)
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Newest Albums Sync", error: error)
+          // cassette Patch 040: tab-appear / pagination background sync.
+          self.appDelegate.eventLogger.report(
+            topic: "Newest Albums Sync",
+            error: error,
+            isBackground: true
+          )
         }
         self.updateSearchResultsCB?()
       }
@@ -241,7 +246,11 @@ class AlbumsCommonVCInteractions {
               count: count
             )
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Recent Albums Sync", error: error)
+          self.appDelegate.eventLogger.report(
+            topic: "Recent Albums Sync",
+            error: error,
+            isBackground: true
+          )
         }
         self.updateSearchResultsCB?()
       }
@@ -251,7 +260,11 @@ class AlbumsCommonVCInteractions {
           try await self.appDelegate.getMeta(self.account.info).librarySyncer
             .syncFavoriteLibraryElements()
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Favorite Albums Sync", error: error)
+          self.appDelegate.eventLogger.report(
+            topic: "Favorite Albums Sync",
+            error: error,
+            isBackground: true
+          )
         }
         self.updateSearchResultsCB?()
       }
@@ -587,7 +600,11 @@ class AlbumsCommonVCInteractions {
           .syncNewestLibraryElements()
         }
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Albums Newest Elements Sync", error: error)
+        self.appDelegate.eventLogger.report(
+          topic: "Albums Newest Elements Sync",
+          error: error,
+          isBackground: true
+        )
       }
       self.endRefreshCB?()
     }

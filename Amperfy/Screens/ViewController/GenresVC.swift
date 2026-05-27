@@ -88,7 +88,12 @@ class GenresVC: SingleFetchedResultsTableViewController<GenreMO> {
               .playableDownloadManager
           )
         } catch {
-          self.appDelegate.eventLogger.report(topic: "Genre Sync", error: error)
+          // cassette Patch 040: swipe-prefetch background sync.
+          self.appDelegate.eventLogger.report(
+            topic: "Genre Sync",
+            error: error,
+            isBackground: true
+          )
         }
         completionHandler(SwipeActionContext(containable: genre))
       }
@@ -176,7 +181,11 @@ class GenresVC: SingleFetchedResultsTableViewController<GenreMO> {
         )
         .syncNewestLibraryElements()
       } catch {
-        self.appDelegate.eventLogger.report(topic: "Genres Newest Elements Sync", error: error)
+        self.appDelegate.eventLogger.report(
+          topic: "Genres Newest Elements Sync",
+          error: error,
+          isBackground: true
+        )
       }
       self.refreshControl?.endRefreshing()
     }
