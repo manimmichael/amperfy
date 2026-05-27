@@ -265,7 +265,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     config.image = UIImage(systemName: "music.note.list")
     config.text = "Empty playlist"
     config.secondaryText = "Add songs from any artist or album."
-    config.textProperties.font = UIFont.cassetteDisplay(size: 22, weight: .bold)
+    config.textProperties.font = UIFont.cassette(.sectionTitle)
     config.textProperties.color = CassetteTheme.UIColors.ink
     config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
     config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2

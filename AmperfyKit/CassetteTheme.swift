@@ -104,7 +104,7 @@ public enum CassetteTheme {
     let backItem = UIBarButtonItemAppearance()
     backItem.normal.titleTextAttributes = [
       .foregroundColor: UIColors.orange,
-      .font: UIFont.cassetteDisplay(size: 16, weight: .semibold),
+      .font: UIFont.cassette(.rowTitle),
     ]
     nav.buttonAppearance = backItem
     nav.backButtonAppearance = backItem
@@ -147,11 +147,11 @@ public enum CassetteTheme {
 
     let segmentNormal: [NSAttributedString.Key: Any] = [
       .foregroundColor: UIColors.ink2,
-      .font: UIFont.cassetteMono(size: 12, weight: .medium),
+      .font: UIFont.cassette(.metadata),
     ]
     let segmentSelected: [NSAttributedString.Key: Any] = [
       .foregroundColor: UIColors.bg,
-      .font: UIFont.cassetteMono(size: 12, weight: .medium),
+      .font: UIFont.cassette(.metadata),
     ]
     UISegmentedControl.appearance().setTitleTextAttributes(segmentNormal, for: .normal)
     UISegmentedControl.appearance().setTitleTextAttributes(segmentSelected, for: .selected)

@@ -37,9 +37,10 @@ extension UITextField {
     layer.borderColor = CassetteTheme.UIColors.ink4.cgColor
 
     borderStyle = .roundedRect
-    // cassette Patch 016: login form picks up the Cassette display face for
-    // input text, falling back to mono on the URL field via the call site.
-    font = UIFont.cassetteDisplay(size: LoginVC.fontSize, weight: .regular)
+    // cassette Patch 032: login form input reads in SF Pro Text 15pt
+    // (.body) — system font is more legible at form-field sizes than
+    // the condensed display face. URL field overrides at the call site.
+    font = UIFont.cassette(.body)
     textColor = CassetteTheme.UIColors.ink
 
     let imageView = UIImageView(frame: CGRect(x: 5, y: 0, width: 25, height: 25))
@@ -94,7 +95,7 @@ class LoginVC: UIViewController {
     label.text =
       "Sit down at your computer with your phone nearby. We'll connect them automatically. " +
       "Your phone needs to be on the same Wi-Fi as your computer for this to work."
-    label.font = UIFont.cassetteDisplay(size: 15, weight: .regular)
+    label.font = UIFont.cassette(.body)
     label.textColor = CassetteTheme.UIColors.ink2
     label.numberOfLines = 0
     label.textAlignment = .center
@@ -116,7 +117,7 @@ class LoginVC: UIViewController {
     config.attributedTitle = AttributedString(
       "Having trouble? Use manual setup →",
       attributes: AttributeContainer([
-        .font: UIFont.cassetteDisplay(size: 13, weight: .regular),
+        .font: UIFont.cassette(.caption),
       ])
     )
     let button = UIButton(configuration: config)
@@ -340,9 +341,10 @@ class LoginVC: UIViewController {
   fileprivate lazy var serverUrlTF: UITextField = {
     let textField = UITextField()
     textField.configuteForLogin(image: .serverUrl)
-    // cassette Patch 016: URLs read better in mono so the local-domain hint
-    // doesn't get tracked into a display face.
-    textField.font = UIFont.cassetteMono(size: 14)
+    // cassette Patch 032: URLs use system body (SF Pro Text 15pt) per the
+    // audit migration. Configuteforlogin already set Cassette body; this
+    // override stays for the URL field's specific input semantics.
+    textField.font = UIFont.cassette(.body)
     textField.placeholder = "https://your-server.local:4533"
     textField.textContentType = .URL
     textField.keyboardType = .URL
@@ -451,7 +453,7 @@ class LoginVC: UIViewController {
     let label = UILabel()
     label.text =
       "Sign in with your Cassette account to connect your library."
-    label.font = UIFont.cassetteDisplay(size: 16, weight: .regular)
+    label.font = UIFont.cassette(.body)
     label.textColor = CassetteTheme.UIColors.ink2
     label.numberOfLines = 0
     label.textAlignment = .center
@@ -467,7 +469,7 @@ class LoginVC: UIViewController {
     config.attributedTitle = AttributedString(
       "Need help setting up a server? →",
       attributes: AttributeContainer([
-        .font: UIFont.cassetteDisplay(size: 14, weight: .regular),
+        .font: UIFont.cassette(.caption),
       ])
     )
     let button = UIButton(configuration: config)

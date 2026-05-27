@@ -75,15 +75,17 @@ class GenericTableCell: BasicTableCell {
       infoLabelWidthConstraint.constant = 140
     }
     accessoryType = .disclosureIndicator
-    // cassette Patch 015f: warm bg + Cassette typography on every
-    // generic row (album list, artist list, genre, podcast, etc.).
+    // cassette Patch 032: route through the canonical scale. Title drops
+    // 17pt -> 16pt rowTitle to match track and other library rows.
+    // Subtitle is metadata (12pt medium mono); the trailing info column
+    // is caption (12pt regular mono) — same size, lighter weight.
     backgroundColor = CassetteTheme.UIColors.bg
     contentView.backgroundColor = CassetteTheme.UIColors.bg
-    titleLabel.font = UIFont.cassetteDisplay(size: 17, weight: .semibold)
+    titleLabel.font = UIFont.cassette(.rowTitle)
     titleLabel.textColor = CassetteTheme.UIColors.ink
-    subtitleLabel.font = UIFont.cassetteMono(size: 12)
+    subtitleLabel.font = UIFont.cassette(.metadata)
     subtitleLabel.textColor = CassetteTheme.UIColors.ink2
-    infoLabel.font = UIFont.cassetteMono(size: 11)
+    infoLabel.font = UIFont.cassette(.caption)
     infoLabel.textColor = CassetteTheme.UIColors.ink3
   }
 }

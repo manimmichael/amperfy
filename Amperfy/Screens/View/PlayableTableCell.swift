@@ -164,15 +164,16 @@ class PlayableTableCell: BasicTableCell {
       playOverArtworkButton.layer.cornerRadius = CornerRadius.small.asCGFloat
       selectionStyle = .none
       downloadProgress.isHidden = true
-      // cassette Patch 015f: track row typography. Title in display
-      // face, artist in mono, duration mono right-aligned.
-      titleLabel.font = UIFont.cassetteDisplay(size: 16, weight: .semibold)
+      // cassette Patch 032: route through the canonical scale.
+      // Title is rowTitle (16pt semibold display); artist/duration/track
+      // number all collapse onto metadata (12pt medium mono).
+      titleLabel.font = UIFont.cassette(.rowTitle)
       titleLabel.textColor = CassetteTheme.UIColors.ink
-      artistLabel.font = UIFont.cassetteMono(size: 12)
+      artistLabel.font = UIFont.cassette(.metadata)
       artistLabel.textColor = CassetteTheme.UIColors.ink2
-      durationLabel.font = UIFont.cassetteMono(size: 12)
+      durationLabel.font = UIFont.cassette(.metadata)
       durationLabel.textColor = CassetteTheme.UIColors.ink2
-      trackNumberLabel.font = UIFont.cassetteMono(size: 12)
+      trackNumberLabel.font = UIFont.cassette(.metadata)
       trackNumberLabel.textColor = CassetteTheme.UIColors.ink3
       contentView.backgroundColor = CassetteTheme.UIColors.bg
       backgroundColor = CassetteTheme.UIColors.bg

@@ -54,16 +54,18 @@ class PodcastEpisodeTableCell: BasicTableCell {
 
   override func awakeFromNib() {
     super.awakeFromNib()
-    // cassette Patch 016: mirror PlayableTableCell — display face for episode
-    // title, mono for the publish-date metadata + remaining-time progress.
+    // cassette Patch 032: route through the canonical scale. Title is
+    // rowTitle (16pt semibold display); info + description are metadata
+    // (12pt medium mono); play progress is caption (12pt regular mono,
+    // bumped from 11pt for the 12pt mono floor).
     MainActor.assumeIsolated {
-      podcastEpisodeLabel.font = UIFont.cassetteDisplay(size: 16, weight: .semibold)
+      podcastEpisodeLabel.font = UIFont.cassette(.rowTitle)
       podcastEpisodeLabel.textColor = CassetteTheme.UIColors.ink
-      infoLabel.font = UIFont.cassetteMono(size: 12)
+      infoLabel.font = UIFont.cassette(.metadata)
       infoLabel.textColor = CassetteTheme.UIColors.ink2
-      descriptionLabel.font = UIFont.cassetteMono(size: 12)
+      descriptionLabel.font = UIFont.cassette(.metadata)
       descriptionLabel.textColor = CassetteTheme.UIColors.ink2
-      playProgressLabel.font = UIFont.cassetteMono(size: 11)
+      playProgressLabel.font = UIFont.cassette(.caption)
       playProgressLabel.textColor = CassetteTheme.UIColors.ink2
       contentView.backgroundColor = CassetteTheme.UIColors.bg
       backgroundColor = CassetteTheme.UIColors.bg

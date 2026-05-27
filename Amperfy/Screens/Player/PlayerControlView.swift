@@ -113,9 +113,9 @@ class PlayerControlView: UIView {
     playerModeButton.tintColor = CassetteTheme.UIColors.ink2
     volumeButton.tintColor = CassetteTheme.UIColors.ink2
     optionsButton.imageView?.tintColor = CassetteTheme.UIColors.ink2
-    elapsedTimeLabel.font = UIFont.cassetteMono(size: 12)
+    elapsedTimeLabel.font = UIFont.cassette(.metadata)
     elapsedTimeLabel.textColor = CassetteTheme.UIColors.ink2
-    remainingTimeLabel.font = UIFont.cassetteMono(size: 12)
+    remainingTimeLabel.font = UIFont.cassette(.metadata)
     remainingTimeLabel.textColor = CassetteTheme.UIColors.ink2
     timeSlider.minimumTrackTintColor = CassetteTheme.UIColors.orange
     timeSlider.maximumTrackTintColor = CassetteTheme.UIColors.ink4

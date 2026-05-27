@@ -94,8 +94,11 @@ class MiniPlayerView: UIView {
     label.textAlignment = .center
     label.backgroundColor = .clear
     label.numberOfLines = 1
-    // cassette Patch 015e: track title in display face, artist in mono.
-    label.font = UIFont.cassetteDisplay(size: 14, weight: .semibold)
+    // cassette Patch 032: route mini-player typography through the
+    // canonical scale. Title is miniTitle (14pt semibold display);
+    // subtitle bumps 11pt -> 12pt regular mono (caption) to honor the
+    // 12pt floor.
+    label.font = UIFont.cassette(.miniTitle)
     label.textColor = CassetteTheme.UIColors.ink
     return label
   }()
@@ -106,7 +109,7 @@ class MiniPlayerView: UIView {
     label.backgroundColor = .clear
     label.textAlignment = .center
     label.numberOfLines = 1
-    label.font = UIFont.cassetteMono(size: 11)
+    label.font = UIFont.cassette(.caption)
     label.textColor = CassetteTheme.UIColors.ink2
     return label
   }()
@@ -157,7 +160,7 @@ class MiniPlayerView: UIView {
   fileprivate lazy var elapsedTimeLabel: UILabel = {
     let label = UILabel(frame: .zero)
     label.textColor = CassetteTheme.UIColors.ink2
-    label.font = UIFont.cassetteMono(size: 12)
+    label.font = UIFont.cassette(.metadata)
     return label
   }()
 
@@ -165,14 +168,14 @@ class MiniPlayerView: UIView {
     let label = UILabel(frame: .zero)
     label.textAlignment = .right
     label.textColor = CassetteTheme.UIColors.ink2
-    label.font = UIFont.cassetteMono(size: 12)
+    label.font = UIFont.cassette(.metadata)
     return label
   }()
 
   fileprivate lazy var liveLabel: UILabel = {
     let label = UILabel(frame: .zero)
     label.text = "LIVE"
-    label.font = UIFont.cassetteMono(size: 12, weight: .medium)
+    label.font = UIFont.cassette(.metadata)
     label.textColor = CassetteTheme.UIColors.orange
     label.textAlignment = .center
     return label
@@ -180,7 +183,7 @@ class MiniPlayerView: UIView {
 
   fileprivate lazy var audioInfoLabel: UILabel = {
     let label = UILabel(frame: .zero)
-    label.font = UIFont.cassetteMono(size: 12)
+    label.font = UIFont.cassette(.metadata)
     label.textColor = CassetteTheme.UIColors.ink2
     return label
   }()
@@ -721,15 +724,16 @@ class MiniPlayerView: UIView {
   }
 
   public func refreshForTraitChange(horizontalSizeClass: UIUserInterfaceSizeClass) {
-    // cassette Patch 016: keep the Barlow Condensed display face on the
-    // marquee track title and DM Mono on the artist subtitle across trait
-    // changes; size scales with horizontal class.
+    // cassette Patch 032: marquee title stays miniTitle (14pt) across
+    // size classes; subtitle is metadata at .regular (12pt mono) and
+    // caption at .compact (12pt mono regular) — both honor the 12pt
+    // floor and differ only by weight.
     if horizontalSizeClass == .regular {
-      titleLabel.font = UIFont.cassetteDisplay(size: 14, weight: .semibold)
-      subtitleLabel.font = UIFont.cassetteMono(size: 12)
+      titleLabel.font = UIFont.cassette(.miniTitle)
+      subtitleLabel.font = UIFont.cassette(.metadata)
     } else {
-      titleLabel.font = UIFont.cassetteDisplay(size: 14, weight: .semibold)
-      subtitleLabel.font = UIFont.cassetteMono(size: 11)
+      titleLabel.font = UIFont.cassette(.miniTitle)
+      subtitleLabel.font = UIFont.cassette(.caption)
     }
   }
 

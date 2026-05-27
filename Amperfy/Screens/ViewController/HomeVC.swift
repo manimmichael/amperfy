@@ -262,7 +262,7 @@ final class HomeVC: UICollectionViewController {
     config.image = UIImage(systemName: "music.note")
     config.text = "No music yet"
     config.secondaryText = "Add tracks to your Cassette Player to see them here."
-    config.textProperties.font = UIFont.cassetteDisplay(size: 22, weight: .bold)
+    config.textProperties.font = UIFont.cassette(.sectionTitle)
     config.textProperties.color = CassetteTheme.UIColors.ink
     config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
     config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
@@ -465,9 +465,10 @@ final class SectionHeaderView: UICollectionReusableView {
   private let titleLabel: UILabel = {
     let lbl = UILabel()
     lbl.translatesAutoresizingMaskIntoConstraints = false
-    // cassette Patch 015: section headers use Barlow Condensed display
-    // face in warm-paper ink, with a wider tracked uppercase render.
-    lbl.font = UIFont.cassetteDisplay(size: 22, weight: .bold)
+    // cassette Patch 032: section title routes through .sectionTitle
+    // (22pt bold display) — consistent with empty-state titles and other
+    // section headings.
+    lbl.font = UIFont.cassette(.sectionTitle)
     lbl.textColor = CassetteTheme.UIColors.ink
     return lbl
   }()

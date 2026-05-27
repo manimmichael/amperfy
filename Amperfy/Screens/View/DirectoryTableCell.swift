@@ -61,10 +61,10 @@ class DirectoryTableCell: BasicTableCell {
 
   override func awakeFromNib() {
     super.awakeFromNib()
-    // cassette Patch 016: directory rows pick up the same display-face name
-    // treatment as the rest of the library, anchored on the warm bg token.
+    // cassette Patch 032: route through the canonical scale —
+    // rowTitle (16pt semibold display) on warm bg.
     MainActor.assumeIsolated {
-      infoLabel.font = UIFont.cassetteDisplay(size: 16, weight: .semibold)
+      infoLabel.font = UIFont.cassette(.rowTitle)
       infoLabel.textColor = CassetteTheme.UIColors.ink
       contentView.backgroundColor = CassetteTheme.UIColors.bg
       backgroundColor = CassetteTheme.UIColors.bg

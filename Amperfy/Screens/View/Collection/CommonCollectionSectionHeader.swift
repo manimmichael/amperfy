@@ -37,7 +37,7 @@ class CommonCollectionSectionHeader: UICollectionReusableView {
     // text directly here since UILabel doesn't ship a transform option.
     titleLabel.text = title?.uppercased()
     titleLabel.isHidden = (title == nil)
-    titleLabel.font = UIFont.cassetteDisplay(size: 13, weight: .bold)
+    titleLabel.font = UIFont.cassette(.sectionLabel)
     titleLabel.textColor = CassetteTheme.UIColors.ink2
   }
 

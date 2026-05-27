@@ -48,10 +48,11 @@ struct SettingsRow<Content: View>: View {
     self.splitPercentage = min(max(splitPercentage, 0.0), 1.0)
   }
 
-  // cassette Patch 015g: row title in display semibold, ink primary.
+  // cassette Patch 032: SwiftUI list rows read native in SF Pro Text 15pt,
+  // not Cassette Display. Per audit, this is the .body token (system font).
   private func titleText(_ value: String) -> some View {
     Text(value)
-      .font(.cassetteDisplay(size: 15, weight: .semibold))
+      .font(.cassette(.body))
       .foregroundColor(CassetteTheme.Colors.ink)
   }
 

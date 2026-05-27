@@ -120,18 +120,17 @@ class GenericDetailTableHeader: UIView {
     titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
     nameTextField.setContentCompressionResistancePriority(.required, for: .vertical)
     subtitleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-    // cassette Patch 015f: hero header typography. Title in big
-    // display, subtitle (artist link) in display, info (year, count)
-    // in mono. Subtitle keeps tint colour for the tappable feel.
-    titleLabel.font = UIFont.cassetteDisplay(size: 28, weight: .bold)
+    // cassette Patch 032: route hero header through the canonical scale.
+    // Title and editable name use heroTitle (28pt bold display); subtitle
+    // (artist link) drops 17pt -> 16pt rowTitle for consistency with row
+    // titles elsewhere; info line is 12pt medium mono (.metadata).
+    titleLabel.font = UIFont.cassette(.heroTitle)
     titleLabel.textColor = CassetteTheme.UIColors.ink
-    nameTextField.font = UIFont.cassetteDisplay(size: 28, weight: .bold)
+    nameTextField.font = UIFont.cassette(.heroTitle)
     nameTextField.textColor = CassetteTheme.UIColors.ink
-    subtitleLabel.font = UIFont.cassetteDisplay(size: 17, weight: .semibold)
+    subtitleLabel.font = UIFont.cassette(.rowTitle)
     subtitleLabel.textColor = .tintColor
-    // Patch 026: bump the info line to 13pt mono regular to match the
-    // audit-recommended Spotify-style metadata cue ("Album · 2024 · 23m").
-    infoLabel.font = UIFont.cassetteMono(size: 13, weight: .regular)
+    infoLabel.font = UIFont.cassette(.metadata)
     infoLabel.textColor = CassetteTheme.UIColors.ink2
     descriptionLabel.font = UIFont.preferredFont(forTextStyle: .body)
     descriptionLabel.textColor = CassetteTheme.UIColors.ink2

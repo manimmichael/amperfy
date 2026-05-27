@@ -37,12 +37,13 @@ class PlaylistTableCell: BasicTableCell {
 
   override func awakeFromNib() {
     super.awakeFromNib()
-    // cassette Patch 016: align with PlayableTableCell — display face for the
-    // primary name, mono for the metadata row, warm-paper ink throughout.
+    // cassette Patch 032: route through the canonical scale. Name drops
+    // 17pt -> 16pt rowTitle to match track / generic / album-grid rows;
+    // info line stays 12pt mono but now flows through .metadata.
     MainActor.assumeIsolated {
-      nameLabel.font = UIFont.cassetteDisplay(size: 17, weight: .semibold)
+      nameLabel.font = UIFont.cassette(.rowTitle)
       nameLabel.textColor = CassetteTheme.UIColors.ink
-      infoLabel.font = UIFont.cassetteMono(size: 12)
+      infoLabel.font = UIFont.cassette(.metadata)
       infoLabel.textColor = CassetteTheme.UIColors.ink2
       contentView.backgroundColor = CassetteTheme.UIColors.bg
       backgroundColor = CassetteTheme.UIColors.bg

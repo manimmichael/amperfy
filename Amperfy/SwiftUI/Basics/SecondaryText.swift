@@ -32,10 +32,9 @@ struct SecondaryText: View {
   }
 
   var body: some View {
-    // cassette Patch 015g: trailing metadata (version, build no.,
-    // disk usage, etc.) reads in the mono catalog face.
+    // cassette Patch 032: trailing metadata reads in 12pt medium mono.
     Text(text)
-      .font(.cassetteMono(size: 12))
+      .font(.cassette(.metadata))
       .foregroundStyle(CassetteTheme.Colors.ink2)
       .help(text)
   }

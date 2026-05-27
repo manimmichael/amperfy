@@ -38,18 +38,19 @@ struct SettingsSection<Content: View>: View {
     self.header = header
   }
 
-  // cassette Patch 015g: section header in display caps + ink2;
-  // footer in mono ink3 for the "liner notes" feel.
+  // cassette Patch 032: section header is sectionLabel (13pt bold display,
+  // uppercased here); footer bumps 11pt -> 12pt regular mono (caption) for
+  // the 12pt floor.
   private func headerText(_ value: String) -> some View {
     Text(value.uppercased())
-      .font(.cassetteDisplay(size: 13, weight: .bold))
+      .font(.cassette(.sectionLabel))
       .tracking(0.6)
       .foregroundColor(CassetteTheme.Colors.ink2)
   }
 
   private func footerText(_ value: String) -> some View {
     Text(value)
-      .font(.cassetteMono(size: 11))
+      .font(.cassette(.caption))
       .foregroundColor(CassetteTheme.Colors.ink3)
   }
 

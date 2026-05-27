@@ -78,10 +78,12 @@ class AlbumCollectionCell: BasicCollectionCell {
     self.rootView = rootView
     titleLabel.text = container.name
     subtitleLabel.text = container.subtitle
-    // cassette Patch 015f: title display, subtitle mono, on warm bg.
-    titleLabel.font = UIFont.cassetteDisplay(size: 15, weight: .semibold)
+    // cassette Patch 032: route through the canonical scale. Title bumps
+    // 15pt -> 16pt rowTitle to align with the rest of the row hierarchy;
+    // subtitle bumps 11pt -> 12pt caption (the user's 12pt mono floor).
+    titleLabel.font = UIFont.cassette(.rowTitle)
     titleLabel.textColor = CassetteTheme.UIColors.ink
-    subtitleLabel.font = UIFont.cassetteMono(size: 11)
+    subtitleLabel.font = UIFont.cassette(.caption)
     subtitleLabel.textColor = CassetteTheme.UIColors.ink2
     contentView.backgroundColor = CassetteTheme.UIColors.bg
     entityImage.display(

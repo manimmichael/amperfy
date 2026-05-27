@@ -696,7 +696,7 @@ class SearchVC: BasicTableViewController {
     var config = UIContentUnavailableConfiguration.search()
     config.text = "No results"
     config.secondaryText = "Try a different artist, album, or song."
-    config.textProperties.font = UIFont.cassetteDisplay(size: 22, weight: .bold)
+    config.textProperties.font = UIFont.cassette(.sectionTitle)
     config.textProperties.color = CassetteTheme.UIColors.ink
     config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
     config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
@@ -709,7 +709,7 @@ class SearchVC: BasicTableViewController {
     config.image = .clock
     config.text = "No Search History"
     config.secondaryText = "Your search history will appear here."
-    config.textProperties.font = UIFont.cassetteDisplay(size: 22, weight: .bold)
+    config.textProperties.font = UIFont.cassette(.sectionTitle)
     config.textProperties.color = CassetteTheme.UIColors.ink
     config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
     config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
