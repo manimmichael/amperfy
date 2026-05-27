@@ -45,12 +45,18 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   // compat; surfaced in defaultValue/editableSections between
   // resume and yourPlaylists.
   case recentlyPlayedArtists
+  // cassette Patch 042: heterogeneous "Recent" shelf merging recently-
+  // played albums, playlists, artists, and freshly-added albums into
+  // one row sorted by interaction date. Appended (ordinal 14) so
+  // legacy `accountSettings.homeSections` Codable payloads keep
+  // decoding; .resume left in the enum but no longer rendered.
+  case recent
 
   public static let defaultValue: [HomeSection] = [
-    .resume,
-    .recentlyPlayedArtists,
+    .recent,
     .yourPlaylists,
     .recentlyAdded,
+    .recentlyPlayedArtists,
   ]
 
   /// cassette Patch 035: the sections the home-editor UI is allowed
@@ -58,10 +64,10 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   /// backwards-compat without letting users resurrect the old
   /// random/podcast/radio carousels.
   public static let editableSections: [HomeSection] = [
-    .resume,
-    .recentlyPlayedArtists,
+    .recent,
     .yourPlaylists,
     .recentlyAdded,
+    .recentlyPlayedArtists,
   ]
 
   public var title: String {
@@ -77,9 +83,13 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .randomGenres: return "Random Genres"
     case .randomSongs: return "Random Songs"
     case .resume: return "Resume"
-    case .yourPlaylists: return "Your Playlists"
-    case .recentlyAdded: return "Recently Added"
+    // cassette Patch 042: shelf retitle. Enum case names stay so
+    // Codable decoding of legacy AccountSetting payloads doesn't
+    // break; only the user-facing title changes.
+    case .yourPlaylists: return "Playlists"
+    case .recentlyAdded: return "Albums"
     case .recentlyPlayedArtists: return "Artists"
+    case .recent: return "Recent"
     }
   }
 
@@ -103,6 +113,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .yourPlaylists: return false
     case .recentlyAdded: return false
     case .recentlyPlayedArtists: return false
+    case .recent: return false
     }
   }
 }

@@ -257,7 +257,27 @@ final class HomeVC: UICollectionViewController {
       // refresh button surfaces on any header.
       header.showsRefreshButton = false
       header.setRefreshHandler(nil)
+      // cassette Patch 042: header tap navigates Playlists / Albums /
+      // Artists into the matching Library category. Recent stays
+      // presentational (handler nil → chevron hides).
+      header.tapHandler = self?.tapHandler(for: snapshotSection)
       return header
+    }
+  }
+
+  /// cassette Patch 042: returns the handler that fires when the
+  /// shelf header is tapped, or nil if the header is presentational.
+  private func tapHandler(for section: HomeSection) -> (() -> Void)? {
+    let category: LibraryDisplayType
+    switch section {
+    case .yourPlaylists: category = .playlists
+    case .recentlyAdded: category = .albums
+    case .recentlyPlayedArtists: category = .artists
+    default: return nil
+    }
+    return { [weak self] in
+      AppDelegate.mainWindowHostVC?.switchToLibrary(category: category)
+      _ = self
     }
   }
 
@@ -355,21 +375,11 @@ final class HomeVC: UICollectionViewController {
     guard let playableContainer = dataSource.itemIdentifier(for: indexPath)?.playableContainable
     else { return }
 
-    // cassette Patch 035: first card of the Resume shelf is a
-    // "resume from where you left off" button when there's a live
-    // queue. Tap → resume playback at the saved position; the mini
-    // player updates and the user can tap into the popup from there.
-    // Subsequent Resume cards behave like any other card (navigate
-    // to detail).
-    if let snapshotSection = dataSource.snapshot().sectionIdentifiers
-      .element(at: indexPath.section),
-      snapshotSection == .resume,
-      indexPath.item == 0,
-      appDelegate.player.currentlyPlaying != nil {
-      appDelegate.player.play()
-      return
-    }
-
+    // cassette Patch 042: every Home card navigates to detail. The
+    // bottom-right play overlay (Patch 043) is the dedicated
+    // play affordance, and the mini player still resumes the live
+    // queue. The legacy "Resume[0] tap = play" branch is gone with
+    // the Resume shelf itself.
     if let album = playableContainer as? Album {
       navigationController?.pushViewController(
         AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
@@ -505,6 +515,30 @@ final class SectionHeaderView: UICollectionReusableView {
     return lbl
   }()
 
+  // cassette Patch 042: chevron-right indicator that surfaces only
+  // when the header has a `tapHandler` (Playlists / Albums / Artists
+  // navigate to the matching Library category). Hidden on Recent so
+  // it stays a presentational shelf.
+  private let chevronImageView: UIImageView = {
+    let iv = UIImageView()
+    iv.translatesAutoresizingMaskIntoConstraints = false
+    iv.image = UIImage(systemName: "chevron.right")
+    iv.tintColor = CassetteTheme.UIColors.ink2
+    iv.contentMode = .scaleAspectFit
+    iv.isHidden = true
+    return iv
+  }()
+
+  // cassette Patch 042: invisible UIControl spans title + chevron so
+  // the entire trailing region is tappable, matching the Apple Music
+  // / Files-style "tap whole header to see all" affordance.
+  private lazy var tapButton: UIControl = {
+    let ctl = UIControl()
+    ctl.translatesAutoresizingMaskIntoConstraints = false
+    ctl.addAction(UIAction { [weak self] _ in self?.tapHandler?() }, for: .touchUpInside)
+    return ctl
+  }()
+
   var showsRefreshButton: Bool {
     get { !refreshButton.isHidden }
     set { refreshButton.isHidden = !newValue }
@@ -516,8 +550,24 @@ final class SectionHeaderView: UICollectionReusableView {
     refreshButton.addAction(UIAction { _ in handler() }, for: .touchUpInside)
   }
 
+  /// cassette Patch 042: per-shelf navigation hook. When non-nil,
+  /// the chevron indicator surfaces, the header becomes a hit
+  /// target, and tapping fires the handler (e.g. switch the Library
+  /// tab to .albums).
+  var tapHandler: (() -> Void)? {
+    didSet {
+      let isTappable = tapHandler != nil
+      chevronImageView.isHidden = !isTappable
+      tapButton.isUserInteractionEnabled = isTappable
+      tapButton.accessibilityTraits = isTappable ? .button : []
+    }
+  }
+
   var title: String? {
-    didSet { titleLabel.text = title }
+    didSet {
+      titleLabel.text = title
+      tapButton.accessibilityLabel = title
+    }
   }
 
   override init(frame: CGRect) {
@@ -530,25 +580,57 @@ final class SectionHeaderView: UICollectionReusableView {
     setupSubviews()
   }
 
+  override func prepareForReuse() {
+    super.prepareForReuse()
+    tapHandler = nil
+    setRefreshHandler(nil)
+    showsRefreshButton = false
+  }
+
   /// cassette Patch 025: give the section title room to breathe. The
   /// XIB previously pinned title flush top-to-bottom; now there's
   /// 16pt above it (separating it from the previous section's bottom
   /// inset / nav-bar zone) and 8pt below it (gap to the first cell
   /// row, replacing the section `contentInsets.top` that was zeroed).
+  ///
+  /// cassette Patch 042: also hosts the optional chevron and the
+  /// transparent tap target.
   private func setupSubviews() {
     addSubview(titleLabel)
+    addSubview(chevronImageView)
     addSubview(refreshButton)
+    addSubview(tapButton)
     NSLayoutConstraint.activate([
       titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
       titleLabel.trailingAnchor.constraint(
-        lessThanOrEqualTo: refreshButton.leadingAnchor,
-        constant: -8
+        lessThanOrEqualTo: chevronImageView.leadingAnchor,
+        constant: -6
       ),
       titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 16),
       titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+
+      chevronImageView.trailingAnchor.constraint(
+        lessThanOrEqualTo: refreshButton.leadingAnchor,
+        constant: -8
+      ),
+      chevronImageView.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+      chevronImageView.widthAnchor.constraint(equalToConstant: 12),
+      chevronImageView.heightAnchor.constraint(equalToConstant: 16),
+
       refreshButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
       refreshButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+
+      tapButton.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+      tapButton.topAnchor.constraint(equalTo: titleLabel.topAnchor),
+      tapButton.bottomAnchor.constraint(equalTo: titleLabel.bottomAnchor),
+      tapButton.trailingAnchor.constraint(
+        equalTo: chevronImageView.trailingAnchor,
+        constant: 8
+      ),
     ])
+    // Default to non-tappable; supplementaryViewProvider sets a
+    // handler per-shelf which flips this back on.
+    tapButton.isUserInteractionEnabled = false
   }
 }
 

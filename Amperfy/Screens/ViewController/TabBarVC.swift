@@ -280,6 +280,21 @@ extension TabBarVC: MainSceneHostingViewController {
     push(vc: vc)
   }
 
+  /// cassette Patch 042: deep-link from Home shelf headers into a
+  /// specific Library category. Pops any pushed detail views off
+  /// the Library nav stack, asks the root LibraryContainerVC to
+  /// switch its dropdown, and selects the Library tab so the user
+  /// lands on the requested category in one tap.
+  public func switchToLibrary(category: LibraryDisplayType) {
+    guard let libraryGroup else { return }
+    let nav = libraryGroup.managingNavigationController
+    nav?.popToRootViewController(animated: false)
+    if let container = nav?.viewControllers.first as? LibraryContainerVC {
+      container.showCategory(category)
+    }
+    selectedTab = libraryGroup
+  }
+
   func pushTabCategory(tabCategory: TabNavigatorItem) {
     switch tabCategory {
     case .home:

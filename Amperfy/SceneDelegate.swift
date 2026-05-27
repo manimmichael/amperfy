@@ -30,6 +30,12 @@ protocol MainSceneHostingViewController {
   func pushNavLibrary(vc: UIViewController)
   func pushLibraryCategory(vc: UIViewController)
   func pushTabCategory(tabCategory: TabNavigatorItem)
+  // cassette Patch 042: deep-link into a specific Library tab
+  // category from outside the Library hierarchy (e.g. Home shelf
+  // header tap). Implementations switch to the Library tab,
+  // unwind any pushed children, and tell the LibraryContainerVC
+  // to surface the requested category.
+  func switchToLibrary(category: LibraryDisplayType)
   func displaySearch()
 
   func visualizePopupPlayer(

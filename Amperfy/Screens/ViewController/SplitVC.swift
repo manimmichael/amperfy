@@ -173,6 +173,16 @@ extension SplitVC: MainSceneHostingViewController {
     setViewController(embeddInNavigation(vc: vc), for: .secondary)
   }
 
+  /// cassette Patch 042: Mac-Catalyst counterpart to
+  /// `TabBarVC.switchToLibrary(category:)`. Reuses the existing
+  /// secondary-pane embedding flow with the requested category's
+  /// own root controller — there's no LibraryContainerVC dropdown
+  /// in the Mac sidebar layout, so we open the category VC directly.
+  public func switchToLibrary(category: LibraryDisplayType) {
+    let vc = category.controller(account: account, settings: appDelegate.storage.settings)
+    setViewController(embeddInNavigation(vc: vc), for: .secondary)
+  }
+
   func pushTabCategory(tabCategory: TabNavigatorItem) {
     let vc = tabCategory.getController(account: account)
     setViewController(embeddInNavigation(vc: vc), for: .secondary)

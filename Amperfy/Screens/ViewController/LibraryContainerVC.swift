@@ -208,6 +208,15 @@ final class LibraryContainerVC: UIViewController {
 
   // MARK: - Category switching
 
+  /// cassette Patch 042: external entry point for deep-linking into
+  /// a specific Library category (e.g. tapping the Albums shelf
+  /// header on Home). Mirrors the private `switchCategory(_:)` but
+  /// guards against unknown enum cases the dropdown doesn't surface.
+  public func showCategory(_ type: LibraryDisplayType) {
+    guard Self.dropdownCategories.contains(type) else { return }
+    switchCategory(type)
+  }
+
   private func switchCategory(_ type: LibraryDisplayType) {
     guard type != currentCategory else { return }
     currentCategory = type
