@@ -27,7 +27,10 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
   override var sceneTitle: String? {
     switch displayFilter {
     case .all, .newest, .recent: "Songs"
-    case .favorites: "Favorite Songs"
+    // cassette Patch 044: rename to match the virtual-playlist
+    // entry in PlaylistsVC. The displayFilter / sort / sync paths
+    // stay intact — only the user-facing label changes.
+    case .favorites: "Liked Songs"
     }
   }
 
@@ -135,7 +138,10 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
     case .newest, .recent:
       break
     case .favorites:
-      filterTitle = "Favorite Songs"
+      // cassette Patch 044: matches `sceneTitle` for the favorites
+      // filter; surfaces in the nav-bar large title, the search
+      // placeholder, the play-context name, and the download menu.
+      filterTitle = "Liked Songs"
       isIndexTitelsHidden = false
       if account.apiType.asServerApiType != .ampache {
         change(sortType: appDelegate.storage.settings.user.favoriteSongSortSetting)
