@@ -418,17 +418,18 @@ class PlayableTableCell: BasicTableCell {
     configurePlayIndicator(playable: playable)
 
     if displayMode == .selection {
+      // cassette Patch 051 (Phase F): selection checkmark drops the per-
+      // account theme tint (orange / now-ink) for explicit ink (marked) /
+      // ink3 (unmarked). Removes the indirection through ThemePreference
+      // and makes the contrast intent obvious at the call site.
       let img = UIImageView(image: isMarked ? .checkmark : .circle)
-      img.tintColor = isMarked ? appDelegate.storage.settings.accounts
-        .getSetting(playable.account?.info).read
-        .themePreference
-        .asColor : CassetteTheme.UIColors.ink2
+      img.tintColor = isMarked ? CassetteTheme.UIColors.ink : CassetteTheme.UIColors.ink3
       accessoryView = img
     } else if displayMode == .add {
+      // cassette Patch 051 (Phase F): add-mode glyph uses ink (marked) /
+      // ink3 (unmarked, the plus). See .selection rationale above.
       let img = UIImageView(image: isMarked ? .checkmark : .plusCircle)
-      img.tintColor = appDelegate.storage.settings.accounts.getSetting(playable.account?.info).read
-        .themePreference
-        .asColor
+      img.tintColor = isMarked ? CassetteTheme.UIColors.ink : CassetteTheme.UIColors.ink3
       accessoryView = img
     } else if displayMode == .reorder || playerIndexCb != nil {
       let img = UIImageView(image: .bars)
@@ -640,11 +641,13 @@ class PlayableTableCell: BasicTableCell {
             buttonImg = UIImage.play
           }
           if isDislayAlbumTrackNumberStyle {
+            // cassette Patch 051 (Phase F): Mac play-over-track-number tint
+            // pins to ink explicitly (was themePreference.asColor, which
+            // resolves to ink post-Patch 046 but the indirection was
+            // misleading on a per-row hot path).
             trackNumberLabel.isHidden = true
             playOverNumberButton.isHidden = false
-            playOverNumberButton.imageView?.tintColor = appDelegate.storage.settings.accounts
-              .getSetting(playable?.account?.info).read.themePreference
-              .asColor
+            playOverNumberButton.imageView?.tintColor = CassetteTheme.UIColors.ink
             playOverNumberButton.setImage(buttonImg, for: UIControl.State.normal)
             playOverArtworkButton.isHidden = true
           } else {
@@ -654,10 +657,12 @@ class PlayableTableCell: BasicTableCell {
             playOverNumberButton.isHidden = true
           }
         }
-        cacheIconImage.tintColor = appDelegate.storage.settings.accounts
-          .getSetting(playable?.account?.info).read.themePreference.asColor
-        optionsButton.imageView?.tintColor = appDelegate.storage.settings.accounts
-          .getSetting(playable?.account?.info).read.themePreference.asColor
+        // cassette Patch 051 (Phase F): Mac current-row cache + options
+        // icons pin to ink2 explicitly. Quiet secondary affordances on the
+        // active row; ink (used by the play overlay above) is reserved for
+        // the primary playback action.
+        cacheIconImage.tintColor = CassetteTheme.UIColors.ink2
+        optionsButton.imageView?.tintColor = CassetteTheme.UIColors.ink2
         backgroundColor = (rootView is PopupPlayerVC) ?
           CassetteTheme.UIColors.bg2.withAlphaComponent(0.2) :
           CassetteTheme.UIColors.bg2

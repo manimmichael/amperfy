@@ -58,8 +58,10 @@ final class ArtistCircleCollectionCell: BasicCollectionCell {
   // navigates via the collection view's didSelectItemAt; this
   // overlay fires `onPlayTapped` so HomeVC can start playback.
   private lazy var playOverlay: UIButton = {
+    // cassette Patch 051 (Phase F): see AlbumCollectionCell for rationale.
+    // Bg3 disc + ink glyph; orange retired from home overlays.
     var config = UIButton.Configuration.filled()
-    config.baseBackgroundColor = CassetteTheme.UIColors.orange
+    config.baseBackgroundColor = CassetteTheme.UIColors.bg3
     config.baseForegroundColor = CassetteTheme.UIColors.ink
     config.cornerStyle = .capsule
     config.image = UIImage(systemName: "play.fill")?

@@ -127,8 +127,14 @@ class AlbumCollectionCell: BasicCollectionCell {
   /// right corner. Idempotent — safe to call from every `apply(...)`.
   private func setupPlayOverlayIfNeeded() {
     guard playOverlay == nil else { return }
+    // cassette Patch 051 (Phase F): play overlay drops the orange fill in
+    // favor of a bg3 disc with an ink glyph. Shadow + capsule shape carry
+    // the "tap to play" affordance; orange is reserved for the scrubber +
+    // waveform exceptions. If the bg3 disc lacks contrast on bright
+    // artwork during device review, swap to ink4 here or add a 1pt ink4
+    // border (no geometry change needed).
     var config = UIButton.Configuration.filled()
-    config.baseBackgroundColor = CassetteTheme.UIColors.orange
+    config.baseBackgroundColor = CassetteTheme.UIColors.bg3
     config.baseForegroundColor = CassetteTheme.UIColors.ink
     config.cornerStyle = .capsule
     config.image = UIImage(systemName: "play.fill")?

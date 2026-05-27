@@ -302,12 +302,12 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
     cell.display(playlist: playlist, rootView: nil)
 
     if selectMode == .multi {
+      // cassette Patch 051 (Phase F): selection checkmark pins to ink
+      // (marked) / ink3 (unmarked). Matches PlayableTableCell selection
+      // treatment; removes per-account ThemePreference indirection.
       let isMarked = (selectedPlaylits[playlist] != nil)
       let img = UIImageView(image: isMarked ? .checkmark : .circle)
-      img.tintColor = isMarked ? appDelegate.storage.settings.accounts
-        .getSetting(playlist.account?.info).read
-        .themePreference
-        .asColor : CassetteTheme.UIColors.ink2
+      img.tintColor = isMarked ? CassetteTheme.UIColors.ink : CassetteTheme.UIColors.ink3
       cell.accessoryView = img
     } else {
       cell.accessoryView = nil
