@@ -33,6 +33,12 @@ final class HomeVC: UICollectionViewController {
   private let log = OSLog(subsystem: "Amperfy", category: "HomeVC")
 
   private static let itemWidth: CGFloat = 160.0
+  // cassette Patch 038: Artists shelf uses a narrower group so we
+  // can fit more circular avatars on screen at a glance. Height is
+  // estimated to accommodate the 96pt image + ~28pt of two-line
+  // metadata-font name underneath.
+  private static let artistGroupWidth: CGFloat = 110.0
+  private static let artistGroupHeight: CGFloat = 150.0
 
   private var userButton: UIButton?
   private var userBarButtonItem: UIBarButtonItem?
@@ -119,22 +125,34 @@ final class HomeVC: UICollectionViewController {
   // MARK: - Layout
 
   private static func createLayout() -> UICollectionViewCompositionalLayout {
-    let layout = UICollectionViewCompositionalLayout { sectionIndex, _ in
-      guard let _ = HomeSection(rawValue: sectionIndex) else { return nil }
+    // cassette Patch 038: section-aware layout. Captures the
+    // section enum from the snapshot so the Artists shelf can swap
+    // to a tighter ~110pt-wide group sized for the circular
+    // ArtistCircleCollectionCell, while other shelves keep the
+    // existing 160pt × 210pt rhythm.
+    let layout = UICollectionViewCompositionalLayout { sectionIndex, environment in
+      guard let section = HomeSection(rawValue: sectionIndex) else { return nil }
 
-      // Item: square image with title below -> estimate height accommodates label
       let itemSize = NSCollectionLayoutSize(
         widthDimension: .fractionalWidth(1.0),
         heightDimension: .fractionalHeight(1.0)
       )
       let item = NSCollectionLayoutItem(layoutSize: itemSize)
 
-      // Group: fixed width to show large image; height estimated to fit image + label
-      // We'll use a vertical group containing the cell's content; the cell itself handles layout.
-      let groupSize = NSCollectionLayoutSize(
-        widthDimension: .absolute(itemWidth),
-        heightDimension: .estimated(210)
-      )
+      let groupSize: NSCollectionLayoutSize
+      switch section {
+      case .recentlyPlayedArtists:
+        groupSize = NSCollectionLayoutSize(
+          widthDimension: .absolute(artistGroupWidth),
+          heightDimension: .estimated(artistGroupHeight)
+        )
+      default:
+        groupSize = NSCollectionLayoutSize(
+          widthDimension: .absolute(itemWidth),
+          heightDimension: .estimated(210)
+        )
+      }
+      _ = environment
       let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
 
       let sectionLayout = NSCollectionLayoutSection(group: group)
@@ -178,6 +196,12 @@ final class HomeVC: UICollectionViewController {
       UINib(nibName: AlbumCollectionCell.typeName, bundle: .main),
       forCellWithReuseIdentifier: AlbumCollectionCell.typeName
     )
+    // cassette Patch 038: ArtistCircleCollectionCell is purely
+    // programmatic — register the class directly instead of a XIB.
+    collectionView.register(
+      ArtistCircleCollectionCell.self,
+      forCellWithReuseIdentifier: ArtistCircleCollectionCell.typeName
+    )
     collectionView.register(
       SectionHeaderView.self,
       forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
@@ -192,6 +216,17 @@ final class HomeVC: UICollectionViewController {
       HomeSection,
       HomeItem
     >(collectionView: collectionView) { collectionView, indexPath, item in
+      // cassette Patch 038: dispatch on the item's concrete type so
+      // the Artists shelf gets the circular cell while other shelves
+      // keep the standard square album-card.
+      if let artist = item.playableContainable as? Artist {
+        let cell = collectionView.dequeueReusableCell(
+          withReuseIdentifier: ArtistCircleCollectionCell.typeName,
+          for: indexPath
+        ) as! ArtistCircleCollectionCell
+        cell.display(artist: artist)
+        return cell
+      }
       let cell = collectionView.dequeueReusableCell(
         withReuseIdentifier: AlbumCollectionCell.typeName,
         for: indexPath

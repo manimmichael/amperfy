@@ -165,4 +165,28 @@ extension SongMO: CoreDataIdentifyable {
     ]
     return fetchRequest
   }
+
+  // cassette Patch 038: most-recently-played songs first.
+  // ArtistMO.lastPlayedDate isn't updated per-song-play in Amperfy
+  // (only per-artist-context play), so the Artists shelf walks this
+  // sorted song list and dedupes by song.artist. Bounded by
+  // fetchLimit at the controller level so we don't pull the whole
+  // library into memory.
+  static var lastPlayedDateSortedFetchRequest: NSFetchRequest<SongMO> {
+    let fetchRequest: NSFetchRequest<SongMO> = SongMO.fetchRequest()
+    fetchRequest.sortDescriptors = [
+      NSSortDescriptor(key: #keyPath(SongMO.lastPlayedDate), ascending: false),
+      NSSortDescriptor(
+        key: Self.identifierKeyString,
+        ascending: true,
+        selector: #selector(NSString.localizedStandardCompare)
+      ),
+      NSSortDescriptor(
+        key: "id",
+        ascending: true,
+        selector: #selector(NSString.localizedStandardCompare)
+      ),
+    ]
+    return fetchRequest
+  }
 }

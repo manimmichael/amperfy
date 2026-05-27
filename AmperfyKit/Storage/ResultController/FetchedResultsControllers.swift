@@ -111,6 +111,10 @@ public enum SongElementSortType: Int, Sendable, Codable {
   case addedDate = 2
   case duration = 3
   case starredDate = 4
+  // cassette Patch 038: feeds the Home "Artists" shelf via
+  // SongsFetchedResultsController + a bounded fetchLimit. New case
+  // appended to keep existing Codable persistence stable.
+  case lastPlayedDate = 5
 
   public static let defaultValue: SongElementSortType = .name
   public static let defaultValueForFavorite: SongElementSortType = .starredDate
@@ -127,6 +131,8 @@ public enum SongElementSortType: Int, Sendable, Codable {
       return .durationSong
     case .starredDate:
       return .none
+    case .lastPlayedDate:
+      return .none
     }
   }
 
@@ -141,6 +147,8 @@ public enum SongElementSortType: Int, Sendable, Codable {
     case .duration:
       return true
     case .starredDate:
+      return false
+    case .lastPlayedDate:
       return false
     }
   }
@@ -749,6 +757,10 @@ public class SongsFetchedResultsController: CachedFetchedResultsController<SongM
       fetchRequest = SongMO.durationSortedFetchRequest
     case .starredDate:
       fetchRequest = SongMO.starredDateSortedFetchRequest
+    case .lastPlayedDate:
+      // cassette Patch 038: feeds the Home Artists shelf; see
+      // SongMO.lastPlayedDateSortedFetchRequest.
+      fetchRequest = SongMO.lastPlayedDateSortedFetchRequest
     }
     fetchRequest.fetchLimit = fetchLimit ?? 0
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [

@@ -40,9 +40,15 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   case resume
   case yourPlaylists
   case recentlyAdded
+  // cassette Patch 038: fourth shelf — artists ordered by recent
+  // song play activity. Appended (ordinal 13) for Codable backwards-
+  // compat; surfaced in defaultValue/editableSections between
+  // resume and yourPlaylists.
+  case recentlyPlayedArtists
 
   public static let defaultValue: [HomeSection] = [
     .resume,
+    .recentlyPlayedArtists,
     .yourPlaylists,
     .recentlyAdded,
   ]
@@ -53,6 +59,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   /// random/podcast/radio carousels.
   public static let editableSections: [HomeSection] = [
     .resume,
+    .recentlyPlayedArtists,
     .yourPlaylists,
     .recentlyAdded,
   ]
@@ -72,6 +79,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .resume: return "Resume"
     case .yourPlaylists: return "Your Playlists"
     case .recentlyAdded: return "Recently Added"
+    case .recentlyPlayedArtists: return "Artists"
     }
   }
 
@@ -94,6 +102,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .resume: return false
     case .yourPlaylists: return false
     case .recentlyAdded: return false
+    case .recentlyPlayedArtists: return false
     }
   }
 }

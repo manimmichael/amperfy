@@ -195,6 +195,10 @@ class PlaylistAddSongsVC: SingleFetchedResultsTableViewController<SongMO>, Playl
       return 0.0
     case .starredDate:
       return 0.0
+    case .lastPlayedDate:
+      // cassette Patch 038: not surfaced in playlist-add UI today;
+      // future-proof to flat list with no section headers.
+      return 0.0
     }
   }
 
@@ -218,6 +222,8 @@ class PlaylistAddSongsVC: SingleFetchedResultsTableViewController<SongMO>, Playl
     case .duration:
       return nil
     case .starredDate:
+      return nil
+    case .lastPlayedDate:
       return nil
     }
   }

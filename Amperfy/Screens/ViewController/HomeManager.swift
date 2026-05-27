@@ -73,6 +73,17 @@ class HomeManager: NSObject {
   private var playlistsLastChangedFetch: PlaylistFetchedResultsController?
   private var albumsNewestFetch: AlbumFetchedResultsController?
 
+  // cassette Patch 038: Artists shelf. ArtistMO.lastPlayedDate
+  // isn't bumped per song-play, so we fetch the most-recently-played
+  // songs and dedupe by song.artist. fetchLimit caps Core Data round-
+  // trip cost; we keep it generous (100) so a heavy rotation of
+  // ~10 songs each across many artists still surfaces 15 unique
+  // artists.
+  private static let recentArtistsSongFetchLimit = 100
+  private static let recentArtistsCap = 15
+  private static let recentArtistsMinUnique = 3
+  private var recentArtistsSongFetch: SongsFetchedResultsController?
+
   init(
     account: Account,
     storage: PersistentStorage,
@@ -169,9 +180,25 @@ class HomeManager: NSObject {
       displayFilter: .newest
     )
 
+    // cassette Patch 038: feeds the Artists shelf. Reuses the
+    // shared SongsFetchedResultsController so we inherit the
+    // per-account / exclude-server-deleted predicates and the
+    // `keepAllResultsUpdated = false` CPU-load mitigation. The
+    // .lastPlayedDate sort case was added in the same patch.
+    recentArtistsSongFetch = SongsFetchedResultsController(
+      coreDataCompanion: storage.main,
+      account: account,
+      sortType: .lastPlayedDate,
+      isGroupedInAlphabeticSections: false,
+      fetchLimit: Self.recentArtistsSongFetchLimit
+    )
+    recentArtistsSongFetch?.delegate = self
+    recentArtistsSongFetch?.fetch()
+
     updateResume()
     updateYourPlaylists()
     updateRecentlyAdded()
+    updateRecentArtists()
   }
 
   func updateFromRemote() {
@@ -297,12 +324,47 @@ class HomeManager: NSObject {
     applySnapshotCB?()
   }
 
+  /// Walk the most-recently-played songs in order and dedupe by
+  /// artist. If fewer than `recentArtistsMinUnique` distinct artists
+  /// have play history, surface an empty list — HomeVC's
+  /// applySnapshot filter then hides the whole shelf.
+  func updateRecentArtists() {
+    guard let songMOs = recentArtistsSongFetch?.fetchedObjects as? [SongMO] else {
+      data[.recentlyPlayedArtists] = []
+      applySnapshotCB?()
+      return
+    }
+    var seenArtistIDs = Set<String>()
+    var orderedArtists: [Artist] = []
+    for songMO in songMOs {
+      let song = Song(managedObject: songMO)
+      guard song.lastTimePlayed != nil, let artist = song.artist else { continue }
+      if seenArtistIDs.insert(artist.id).inserted {
+        orderedArtists.append(artist)
+        if orderedArtists.count >= Self.recentArtistsCap { break }
+      }
+    }
+    if orderedArtists.count < Self.recentArtistsMinUnique {
+      data[.recentlyPlayedArtists] = []
+    } else {
+      data[.recentlyPlayedArtists] = orderedArtists.map {
+        HomeItem(playableContainable: $0)
+      }
+    }
+    applySnapshotCB?()
+  }
+
   // MARK: - Player observer
 
   @objc
   private func handlePlayerChanged() {
     Task { @MainActor in
       updateResume()
+      // cassette Patch 038: lastPlayedDate updates land on the SongMO
+      // before our fetched results controller fires its delegate, so
+      // recompute the Artists shelf here too — keeps the recency
+      // ordering live as the user advances through tracks.
+      updateRecentArtists()
     }
   }
 }
@@ -318,6 +380,8 @@ extension HomeManager: @preconcurrency NSFetchedResultsControllerDelegate {
         updateYourPlaylists()
       } else if controller == albumsNewestFetch?.fetchResultsController {
         updateRecentlyAdded()
+      } else if controller == recentArtistsSongFetch?.fetchResultsController {
+        updateRecentArtists()
       }
     }
   }

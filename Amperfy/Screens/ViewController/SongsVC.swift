@@ -246,6 +246,11 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
       return 0.0
     case .starredDate:
       return 0.0
+    case .lastPlayedDate:
+      // cassette Patch 038: this sort case only feeds the Home
+      // Artists shelf today and isn't surfaced in SongsVC; if it
+      // ever is, no section headers are wanted (pure recency list).
+      return 0.0
     }
   }
 
@@ -269,6 +274,8 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
     case .duration:
       return nil
     case .starredDate:
+      return nil
+    case .lastPlayedDate:
       return nil
     }
   }
