@@ -226,14 +226,20 @@ final class HomeVC: UICollectionViewController {
     }
   }
 
+  /// cassette Patch 036: per-shelf hide-when-empty. We iterate the
+  /// configured order but only append sections with content, so
+  /// headers vanish for empty shelves (Resume, Your Playlists,
+  /// Recently Added all hide independently). The full-screen empty
+  /// state still kicks in when every shelf is empty.
   private func applySnapshot(animated: Bool = true) {
     var snapshot = NSDiffableDataSourceSnapshot<HomeSection, HomeItem>()
-    snapshot.appendSections(sharedHome.orderedVisibleSections)
     var totalItems = 0
     for section in sharedHome.orderedVisibleSections {
       let items = sharedHome.data[section] ?? []
-      totalItems += items.count
+      guard !items.isEmpty else { continue }
+      snapshot.appendSections([section])
       snapshot.appendItems(items, toSection: section)
+      totalItems += items.count
     }
     dataSource.apply(snapshot, animatingDifferences: animated)
     refreshEmptyLibraryState(hasItems: totalItems > 0)
@@ -246,11 +252,14 @@ final class HomeVC: UICollectionViewController {
     contentUnavailableConfiguration = hasItems ? nil : Self.emptyLibraryConfig
   }
 
+  /// cassette Patch 036: copy updated for the three-shelf IA — only
+  /// shows when Resume, Your Playlists, and Recently Added are all
+  /// empty (fresh install, no library, no listening history).
   private static let emptyLibraryConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.empty()
     config.image = UIImage(systemName: "music.note")
-    config.text = "No music yet"
-    config.secondaryText = "Add tracks to your Cassette Player to see them here."
+    config.text = "Add music to your Cassette Player to start listening"
+    config.secondaryText = "Once your Cassette Player syncs tracks, they'll show up here."
     config.textProperties.font = UIFont.cassette(.sectionTitle)
     config.textProperties.color = CassetteTheme.UIColors.ink
     config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)

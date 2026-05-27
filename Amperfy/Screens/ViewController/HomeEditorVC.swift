@@ -28,12 +28,18 @@ final class HomeEditorVC: UITableViewController {
   private let onDone: ([HomeSection]) -> ()
 
   init(current: [HomeSection], onDone: @escaping ([HomeSection]) -> ()) {
-    self.sections = current
+    // cassette Patch 036: restrict the editor's universe to the
+    // three Cassette shelves. Legacy enum cases stay reachable for
+    // Codable decoding but are never offered as toggle targets, so
+    // the Random/Podcast/Radio carousels can't be resurrected from
+    // here.
+    let editable = HomeSection.editableSections
+    self.sections = current.filter(editable.contains) +
+      editable.filter { !current.contains($0) }
     self.onDone = onDone
     var vis: [HomeSection: Bool] = [:]
-    // Default all known sections to hidden=false, then mark visible ones
-    for s in HomeSection.allCases { vis[s] = false }
-    for s in current { vis[s] = true }
+    for s in editable { vis[s] = false }
+    for s in current where editable.contains(s) { vis[s] = true }
     self.visibility = vis
     super.init(style: .insetGrouped)
   }
@@ -74,7 +80,7 @@ final class HomeEditorVC: UITableViewController {
     if section == 0 {
       return sections.filter { visibility[$0] == true }.count
     } else {
-      return HomeSection.allCases.filter { visibility[$0] != true }.count
+      return HomeSection.editableSections.filter { visibility[$0] != true }.count
     }
   }
 
@@ -82,7 +88,7 @@ final class HomeEditorVC: UITableViewController {
     if indexPath.section == 0 {
       return sections.filter { visibility[$0] == true }[indexPath.row]
     } else {
-      return HomeSection.allCases.filter { visibility[$0] != true }[indexPath.row]
+      return HomeSection.editableSections.filter { visibility[$0] != true }[indexPath.row]
     }
   }
 
@@ -108,7 +114,7 @@ final class HomeEditorVC: UITableViewController {
     to destinationIndexPath: IndexPath
   ) {
     var visible = sections.filter { visibility[$0] == true }
-    var hidden = HomeSection.allCases.filter { visibility[$0] != true }
+    var hidden = HomeSection.editableSections.filter { visibility[$0] != true }
 
     // same as select
     if sourceIndexPath.section != destinationIndexPath.section {
@@ -166,7 +172,7 @@ final class HomeEditorVC: UITableViewController {
 
   func updateSections() {
     let visible = sections.filter { visibility[$0] == true }
-    let hidden = HomeSection.allCases.filter { visibility[$0] != true }
+    let hidden = HomeSection.editableSections.filter { visibility[$0] != true }
     sections = visible + hidden
   }
 }
