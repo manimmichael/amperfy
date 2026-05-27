@@ -173,6 +173,12 @@ public enum CassetteTheme {
 
     UISearchBar.appearance().tintColor = UIColors.ink2
     UISearchBar.appearance().barTintColor = UIColors.bg2
+
+    // cassette Patch 048 (Phase C): pull-to-refresh spinner inherits the
+    // global tintColor in iOS 26, which is now ink. Pin to ink2 explicitly
+    // so it reads as a quiet secondary affordance rather than competing
+    // with primary content.
+    UIRefreshControl.appearance().tintColor = UIColors.ink2
   }
 }
 

@@ -132,7 +132,12 @@ class GenericDetailTableHeader: UIView {
     nameTextField.font = UIFont.cassette(.heroTitle)
     nameTextField.textColor = CassetteTheme.UIColors.ink
     subtitleLabel.font = UIFont.cassette(.rowTitle)
-    subtitleLabel.textColor = .tintColor
+    // cassette Patch 048 (Phase C): detail subtitle (artist name) was painted
+    // with `.tintColor` (orange) to suggest "tappable link" affordance.
+    // Inspection shows the label is not actually tappable
+    // (`userInteractionEnabled=NO` in XIB, no gesture recognizer), so the
+    // color was decorative only. Drop to ink2 for quiet secondary metadata.
+    subtitleLabel.textColor = CassetteTheme.UIColors.ink2
     infoLabel.font = UIFont.cassette(.metadata)
     infoLabel.textColor = CassetteTheme.UIColors.ink2
     descriptionLabel.font = UIFont.preferredFont(forTextStyle: .body)

@@ -139,12 +139,16 @@ extension UIViewController {
     userBarButtonItem: inout UIBarButtonItem?,
     extraLeadingMenuElements: [UIMenuElement] = []
   ) {
+    // cassette Patch 048 (Phase C): profile glyph pins to ink explicitly.
+    // Patch 046 already flipped `themePreference.asColor` to ink so the prior
+    // expression resolves to the same value, but pinning directly removes the
+    // indirection (and the implicit dependency on per-account settings) for
+    // this high-visibility nav button.
     let image = UIImage.userCircle(withConfiguration: UIImage.SymbolConfiguration(
       pointSize: 24,
       weight: .regular
     )).withTintColor(
-      appDelegate.storage.settings.accounts.getSetting(currentAccount.info).read
-        .themePreference.asColor,
+      CassetteTheme.UIColors.ink,
       renderingMode: .alwaysTemplate
     )
 

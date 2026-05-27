@@ -518,6 +518,11 @@ final class SectionHeaderView: UICollectionReusableView {
     let btn = UIButton(type: .system)
     btn.translatesAutoresizingMaskIntoConstraints = false
     btn.setImage(UIImage.refresh, for: .normal)
+    // cassette Patch 048 (Phase C): refresh button in shelf headers pins
+    // to ink2 explicitly. Previously inherited the window tint (orange);
+    // now reads as a quiet secondary action consistent with the chevron
+    // glyph on the other shelf headers.
+    btn.tintColor = CassetteTheme.UIColors.ink2
     btn.isHidden = true
     btn.accessibilityLabel = "Refresh Randoms"
     return btn
