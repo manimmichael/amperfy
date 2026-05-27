@@ -81,6 +81,28 @@ enum TabNavigatorItem: Int, Hashable, CaseIterable {
     }
   }
 
+  // cassette Patch 053 (Phase H): paired outline icon for inactive tab state.
+  // Tab bar selection is now carried structurally: outline (inactive) vs
+  // filled (selected). Color is no longer the differentiator. Search has no
+  // outline/filled SF Symbol variant so it reuses the same glyph; tab bar
+  // selected text weight (semibold -> bold, set in CassetteTheme) carries
+  // the cue for that tab.
+  @MainActor
+  var outlineIcon: UIImage {
+    switch self {
+    case .home: return .homeOutline
+    case .search: return .search
+    }
+  }
+
+  @MainActor
+  var selectedIcon: UIImage {
+    switch self {
+    case .home: return .home
+    case .search: return .search
+    }
+  }
+
   @MainActor
   func getController(account: Account) -> UIViewController {
     switch self {

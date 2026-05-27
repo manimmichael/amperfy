@@ -121,6 +121,30 @@ public enum LibraryDisplayType: Int, CaseIterable, Sendable, Codable {
       return UIImage.radio
     }
   }
+
+  // cassette Patch 053 (Phase H): outline counterpart for tab bar selection
+  // state. Most LibraryDisplayType icons are already outline-only SF Symbols
+  // or custom assets (square.stack, music.note, music.mic, dot.radiowaves,
+  // music.note.list, podcast asset, album_newest/_recent assets), so they
+  // serve as their own outlineImage. The ones with a real fill/outline
+  // pair flip: heart.fill -> heart, folder.fill -> folder, guitars.fill ->
+  // guitars, arrow.down.circle -> arrow.down.circle. Tab bar selected
+  // tabs use `image` (filled where it exists), inactive use `outlineImage`.
+  public var outlineImage: UIImage {
+    switch self {
+    case .favoriteSongs, .favoriteAlbums, .favoriteArtists:
+      return UIImage.heartOutline
+    case .directories:
+      return UIImage.folderOutline
+    case .genres:
+      return UIImage.guitarsOutline
+    case .downloads:
+      return UIImage.downloadOutline
+    case .artists, .albums, .songs, .playlists, .podcasts,
+         .newestAlbums, .recentAlbums, .radios:
+      return image
+    }
+  }
 }
 
 // MARK: - LibraryDisplaySettings

@@ -183,6 +183,10 @@ public struct AmperfyImage: Sendable {
   public static let heartFill = Self("heart.fill")
   public static let heartSlash = Self("heart.slash")
   public static let home = Self("house.fill")
+  // cassette Patch 053 (Phase H): outline pair for the home tab. Filled
+  // = currently selected, outline = inactive. Carries the selection cue
+  // structurally instead of relying on color.
+  public static let homeOutline = Self("house")
   public static let info = Self("info.circle")
   public static let isSelected = Self("checkmark.circle.fill")
   public static let leftRightPlay = Self("play.rectangle.on.rectangle")
@@ -192,6 +196,8 @@ public struct AmperfyImage: Sendable {
   public static let miniPlayer = Self("play.rectangle.on.rectangle")
   public static let minus = Self("minus")
   public static let musicLibrary = Self("music.note.square.stack.fill")
+  // cassette Patch 053 (Phase H): outline pair for the library tab group.
+  public static let musicLibraryOutline = Self("music.note.square.stack")
   public static let musicalNotes = Self("music.note")
   public static let offlineMode = Self("network.slash")
   public static let onlineMode = Self("network")
@@ -328,6 +334,17 @@ extension UIImage {
   public static let heartFill = UIImage.create(systemName: AmperfyImage.heartFill.systemName)
   public static let heartSlash = UIImage.create(systemName: AmperfyImage.heartSlash.systemName)
   public static let home = UIImage.create(systemName: AmperfyImage.home.systemName)
+  // cassette Patch 053 (Phase H): outline counterpart for tab bar selection.
+  public static let homeOutline = UIImage.create(systemName: AmperfyImage.homeOutline.systemName)
+  // cassette Patch 053 (Phase H): outline counterparts for the LibraryDisplayType
+  // categories that have a real SF Symbol fill/outline pair. Library categories
+  // whose icon is outline-only (square.stack, music.note, music.mic, etc.)
+  // or a custom asset (podcast, album_newest/_recent) reuse the existing
+  // image as their outline form.
+  public static let heartOutline = UIImage.create(systemName: "heart")
+  public static let folderOutline = UIImage.create(systemName: "folder")
+  public static let guitarsOutline = UIImage.create(systemName: "guitars")
+  public static let downloadOutline = UIImage.create(systemName: "arrow.down.circle")
   public static let info = UIImage.create(systemName: AmperfyImage.info.systemName)
   public static let isSelected = UIImage.create(systemName: AmperfyImage.isSelected.systemName)
   public static let listBullet = UIImage.create(systemName: AmperfyImage.listBullet.systemName)
@@ -336,6 +353,9 @@ extension UIImage {
   public static let miniPlayer = UIImage.create(systemName: AmperfyImage.miniPlayer.systemName)
   public static let minus = UIImage.create(systemName: AmperfyImage.minus.systemName)
   public static let musicLibrary = UIImage.create(systemName: AmperfyImage.musicLibrary.systemName)
+  // cassette Patch 053 (Phase H): outline counterpart for tab bar selection.
+  public static let musicLibraryOutline = UIImage
+    .create(systemName: AmperfyImage.musicLibraryOutline.systemName)
   public static let musicalNotes = UIImage.create(systemName: AmperfyImage.musicalNotes.systemName)
   public static let pause = UIImage.create(systemName: AmperfyImage.pause.systemName)
   public static let pauseMenu = UIImage.create(systemName: AmperfyImage.pauseMenu.systemName)

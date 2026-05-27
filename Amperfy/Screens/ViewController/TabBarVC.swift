@@ -55,9 +55,15 @@ class TabBarVC: UITabBarController {
     searchTab!.automaticallyActivatesSearch = true
     fixTabs.append(searchTab!)
 
+    // cassette Patch 053 (Phase H): tabs start with the outline icon. The
+    // filled icon is swapped in for the currently-selected tab by the
+    // `tabBarController(_:didSelectTab:previousTab:)` delegate callback
+    // below, plus the initial `applySelectedTabIcon` after `selectedTab`
+    // is set in `viewIsAppearing`. Selection cue is structural
+    // (outline/filled) rather than chromatic.
     homeTab = UITab(
       title: TabNavigatorItem.home.title,
-      image: TabNavigatorItem.home.icon,
+      image: TabNavigatorItem.home.outlineIcon,
       identifier: "Tabs.\(TabNavigatorItem.home.title)"
     ) { _ in
       UINavigationController(
@@ -74,7 +80,7 @@ class TabBarVC: UITabBarController {
       .compactMap { item in
         let tab = UITab(
           title: item.displayName,
-          image: item.image,
+          image: item.outlineImage,
           identifier: "Tabs.\(item.displayName)"
         ) { tab in
           item.controller(account: self.account, settings: self.appDelegate.storage.settings)
@@ -90,7 +96,7 @@ class TabBarVC: UITabBarController {
       .compactMap { item in
         let tab = UITab(
           title: item.displayName,
-          image: item.image,
+          image: item.outlineImage,
           identifier: "Tabs.\(item.displayName)"
         ) { tab in
           item.controller(account: self.account, settings: self.appDelegate.storage.settings)
@@ -103,7 +109,7 @@ class TabBarVC: UITabBarController {
 
     libraryGroup = UITabGroup(
       title: "Library",
-      image: .musicLibrary,
+      image: .musicLibraryOutline,
       identifier: "Tabs.Library",
       children: libraryTabs
     ) { tab in
@@ -217,7 +223,47 @@ class TabBarVC: UITabBarController {
     super.viewIsAppearing(animated)
     refresh()
     selectedTab = homeTab
+    // cassette Patch 053 (Phase H): the initial selection in viewIsAppearing
+    // does not fire `tabBarController(_:didSelectTab:previousTab:)`, so we
+    // sync the filled-vs-outline icon swap manually for first paint.
+    applySelectedTabIcon(selected: selectedTab)
     welcomePopupPresenter.displayInfoPopupsIfNeeded()
+  }
+
+  // cassette Patch 053 (Phase H): swap the selected tab's image to its
+  // filled variant and reset every other root tab to its outline variant.
+  // This is the structural selection cue that replaces the prior color-
+  // only differentiation (selected glyph was orange-tinted; now selected =
+  // filled SF Symbol, inactive = outline). For LibraryDisplayType items
+  // without a filled SF Symbol pair (artists, songs, playlists, etc.),
+  // `image` and `outlineImage` are identical so the only selection cue is
+  // the existing label weight bump (semibold -> bold) set in CassetteTheme.
+  private func applySelectedTabIcon(selected: UITab?) {
+    if let homeTab {
+      homeTab
+        .image = (homeTab === selected) ? TabNavigatorItem.home.selectedIcon : TabNavigatorItem
+        .home
+        .outlineIcon
+    }
+    if let libraryGroup {
+      // The library group itself is selectable as the "Library" entry.
+      libraryGroup.image = (libraryGroup === selected) ? .musicLibrary : .musicLibraryOutline
+      // When a descendant library category is the selected tab, also flip
+      // that tab's icon to filled and reset its siblings to outline.
+      for child in libraryGroup.children {
+        guard let item = LibraryDisplayType.createByDisplayName(name: child.title) else { continue }
+        child.image = (child === selected) ? item.image : item.outlineImage
+      }
+    }
+    if let searchTab {
+      // Search has no filled/outline SF Symbol pair; weight bump on the
+      // selected label (set in CassetteTheme.applyGlobalAppearance) is the
+      // structural cue for that tab.
+      searchTab
+        .image = (searchTab === selected) ? TabNavigatorItem.search.selectedIcon : TabNavigatorItem
+        .search
+        .outlineIcon
+    }
   }
 
   @objc
@@ -250,6 +296,18 @@ class TabBarVC: UITabBarController {
 // MARK: UITabBarControllerDelegate
 
 extension TabBarVC: UITabBarControllerDelegate {
+  // cassette Patch 053 (Phase H): iOS 18+ tab selection callback. Fires
+  // after the user taps any root tab or any descendant in a UITabGroup;
+  // we use it to swap the structural filled/outline icon for the newly
+  // selected tab and reset its siblings.
+  func tabBarController(
+    _ tabBarController: UITabBarController,
+    didSelectTab selectedTab: UITab,
+    previousTab: UITab?
+  ) {
+    applySelectedTabIcon(selected: selectedTab)
+  }
+
   func tabBarControllerDidEndEditing(_ tabBarController: UITabBarController) {
     var visibleItems = [LibraryDisplayType]()
     guard let libraryGroup else { return }
