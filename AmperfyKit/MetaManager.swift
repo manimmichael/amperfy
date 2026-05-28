@@ -277,6 +277,7 @@ public class MetaManager {
 
   public func startManagerAfterSync(player: PlayerFacade) {
     os_log("Start background manager after sync", log: self.log, type: .info)
+    duplicateEntitiesResolver.start()
     playableDownloadManager.start()
     artworkDownloadManager.start()
     backgroundLibrarySyncer.start()
