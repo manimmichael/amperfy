@@ -118,13 +118,10 @@ struct AccountSettingsView: View {
     ZStack {
       SettingsList {
         if let activeAccountInfo = settings.activeAccountInfo {
+          // cassette polish Part 6: server URL, transcoding, scrobble, Auto
+          // Cache, backend/API-version rows, and Manage Server URLs are hidden.
+          // Pairing owns the connection; protocol details don't surface here.
           SettingsSection {
-            SettingsRow(title: "URL", orientation: .vertical, splitPercentage: splitPercentage) {
-              SecondaryText(
-                appDelegate.storage.settings.accounts.getSetting(settings.activeAccountInfo).read
-                  .loginCredentials?.displayServerUrl ?? ""
-              )
-            }
             SettingsRow(
               title: "Username",
               orientation: .vertical,
@@ -134,66 +131,6 @@ struct AccountSettingsView: View {
                 appDelegate.storage.settings.accounts.getSetting(settings.activeAccountInfo).read
                   .loginCredentials?.username ?? ""
               )
-            }
-          }
-
-          // Cassette fork: theme picker removed. Post-Patch 046 (Phase A) the
-          // app uses ink as the default tint cascade; orange is reserved for
-          // the two scrubbers + currently-playing waveform only. The
-          // `ThemePreference` enum is retained for Core Data migration
-          // safety; all cases resolve to ink via SettingEnumerations.asColor.
-
-          SettingsSection(content: {
-            SettingsCheckBoxRow(
-              title: "Newest Songs",
-              isOn: $settings.isAutoCacheLatestSongs
-            )
-            SettingsCheckBoxRow(
-              title: "Newest Podcast Episodes",
-              isOn: $settings.isAutoCacheLatestPodcastEpisodes
-            )
-          }, header: "Auto Cache")
-
-          SettingsSection(
-            content: {
-              SettingsCheckBoxRow(
-                title: "Scrobble streamed Songs",
-                isOn: $settings.isScrobbleStreamedItems
-              )
-            },
-            footer: "Enable to scrobble all streamed songs, even if the server already marks them as played."
-          )
-
-          SettingsSection {
-            SettingsRow(title: "Backend API", splitPercentage: splitPercentage) {
-              Text(
-                appDelegate.storage.settings.accounts.getSetting(settings.activeAccountInfo).read
-                  .loginCredentials?
-                  .backendApi.description ?? ""
-              )
-              .foregroundColor(.secondary)
-              .help(
-                appDelegate.storage.settings.accounts.getSetting(settings.activeAccountInfo).read
-                  .loginCredentials?
-                  .backendApi.description ?? ""
-              )
-            }
-
-            SettingsRow(title: "Server API Version", splitPercentage: splitPercentage) {
-              Text(appDelegate.getMeta(activeAccountInfo).backendApi.serverApiVersion)
-                .foregroundColor(.secondary)
-                .help(appDelegate.getMeta(activeAccountInfo).backendApi.serverApiVersion)
-            }
-            SettingsRow(title: "Client API Version", splitPercentage: splitPercentage) {
-              Text(appDelegate.getMeta(activeAccountInfo).backendApi.clientApiVersion)
-                .foregroundColor(.secondary)
-                .help(appDelegate.getMeta(activeAccountInfo).backendApi.clientApiVersion)
-            }
-          }
-
-          SettingsSection {
-            NavigationLink(destination: ServerURLsSettingsView()) {
-              Text("Manage Server URLs")
             }
           }
 

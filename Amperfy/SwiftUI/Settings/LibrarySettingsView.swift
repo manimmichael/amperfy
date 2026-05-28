@@ -161,110 +161,19 @@ struct LibrarySettingsView: View {
           SettingsRow(title: "Podcast Episodes") {
             SecondaryText(podcastEpisodeCount.description)
           }
-          SettingsRow(title: "Initial Sync") {
-            SecondaryText(
-              appDelegate.storage.settings.accounts.getSetting(settings.activeAccountInfo).read
-                .initialSyncCompletionStatus.description
-            )
-          }
         })
 
-        let progressTitle = "Progress"
-
+        // cassette polish Part 6: Initial Sync status, Background song sync
+        // progress, Cache Size Limit, Download all, and Delete cache are
+        // hidden. The simple "Complete Cache Size" storage display stays
+        // (becomes the iTunes-style on-phone view in a later layer).
         SettingsSection(content: {
-          SettingsRow(title: progressTitle) {
-            SecondaryText(autoSyncProgressText)
-          }
-        }, header: "Background song sync")
-
-        SettingsSection(content: {
-          let changeHandler: ([String], [String]) -> () = { oldCacheString, newCacheString in
-            if newCacheString[1] == "" {
-              settings.cacheSizeLimit = 0
-              cacheSelection = ["0", " MB"]
-            }
-            if let cacheInByte = (newCacheString[0] + newCacheString[1]).asByteCount {
-              settings.cacheSizeLimit = cacheInByte
-            }
-          }
-
           SettingsRow(title: "Cached Songs") { SecondaryText(cachedSongCount.description) }
           SettingsRow(title: "Cached Podcast Episodes") {
             SecondaryText(cachedPodcastEpisodesCount.description)
           }
           SettingsRow(title: "Complete Cache Size") {
             SecondaryText(completeCacheSize.description)
-          }
-
-          #if targetEnvironment(macCatalyst) // ok
-            // We can not present the picker in wheel style on macOS. It is not supported.
-            // Instead, we use a menu style picker without a navigation link.
-            MultiPickerView(
-              data: [("Cache Size Limit", byteValues), ("", [" MB", " GB"])],
-              selection: $cacheSelection
-            )
-            .onChange(of: cacheSelection, changeHandler)
-          #else
-            NavigationLink {
-              MultiPickerView(
-                data: [("Size", byteValues), (" Bytes", [" MB", " GB"])],
-                selection: $cacheSelection
-              )
-              .navigationTitle("Cache Size Limit")
-            } label: {
-              SettingsRow(title: "Cache Size Limit") {
-                SecondaryText(cacheSizeLimit.description)
-              }
-            }
-            .onChange(of: cacheSelection, changeHandler)
-          #endif
-
-          if let activeAccountInfo = settings.activeAccountInfo {
-            SettingsButtonRow(title: "Download all songs in library") {
-              isShowDownloadSongsAlert = true
-            }
-            .alert(isPresented: $isShowDownloadSongsAlert) {
-              Alert(
-                title: Text("Download all songs in library"),
-                message: Text(
-                  "This will add all uncached songs in your library to the download queue. This may use a lot of data and storage. Continue?"
-                ),
-                primaryButton: .default(Text("OK")) {
-                  let account = appDelegate.storage.main.library
-                    .getAccount(info: activeAccountInfo)
-                  let allSongsToDownload = appDelegate.storage.main.library
-                    .getSongsForCompleteLibraryDownload(for: account)
-                  appDelegate.getMeta(account.info).playableDownloadManager
-                    .download(objects: allSongsToDownload)
-                },
-                secondaryButton: .cancel()
-              )
-            }
-
-            SettingsButtonRow(
-              title: "Delete downloaded songs and podcast episodes",
-              actionType: .destructive
-            ) {
-              isShowDeleteCacheAlert = true
-            }.alert(isPresented: $isShowDeleteCacheAlert) {
-              Alert(
-                title: Text("Delete Cache"),
-                message: Text(
-                  "Are you sure you want to delete this account’s downloaded songs and podcast episodes?"
-                ),
-                primaryButton: .destructive(Text("Delete")) {
-                  appDelegate.player.stop()
-                  let account = appDelegate.storage.main.library
-                    .getAccount(info: activeAccountInfo)
-                  appDelegate.getMeta(account.info).playableDownloadManager.stop()
-                  appDelegate.storage.main.library
-                    .deletePlayableCachePaths(for: account)
-                  appDelegate.storage.main.library.saveContext()
-                  fileManager.deletePlayableCache(accountInfo: account.info)
-                  appDelegate.getMeta(account.info).playableDownloadManager.start()
-                }, secondaryButton: .cancel()
-              )
-            }
           }
         }, header: "Cache")
       }

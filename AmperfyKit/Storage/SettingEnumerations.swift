@@ -125,7 +125,10 @@ public enum StreamingFormatPreference: Int, CaseIterable, Sendable, Codable {
   case raw = 1
   case serverConfig = 2 // omit the format to let the server decide which codec should be used
 
-  public static let defaultValue: StreamingFormatPreference = .mp3
+  // cassette polish Part 6: Cassette plays files as-is — no transcoding by
+  // default. The transcoding UI is hidden, so this default is what new/unset
+  // installs use (existing users keep their persisted JSON value).
+  public static let defaultValue: StreamingFormatPreference = .raw
 
   public var shortInfo: String {
     switch self {
@@ -317,7 +320,8 @@ public enum CacheTranscodingFormatPreference: Int, CaseIterable, Sendable, Codab
   case mp3 = 1
   case serverConfig = 2 // omit the format to let the server decide which codec should be used
 
-  public static let defaultValue: CacheTranscodingFormatPreference = .mp3
+  // cassette polish Part 6: cache files as-is by default (play-as-is intent).
+  public static let defaultValue: CacheTranscodingFormatPreference = .raw
 
   public var description: String {
     switch self {

@@ -28,6 +28,12 @@ struct SettingsView: View {
   @EnvironmentObject
   private var settings: Settings
 
+  // cassette polish Part 6: Server Mode toggle. UI only this pass — the
+  // behavioral consequence (exposing non-downloaded music) is later-layer
+  // work. Backed by UserDefaults key `cassetteServerModeEnabled`, default off.
+  @AppStorage("cassetteServerModeEnabled")
+  private var isServerModeEnabled = false
+
   func screenLockPreventionOffPressed() {
     settings.screenLockPreventionPreference = .never
     UIDevice.current.isBatteryMonitoringEnabled = false
@@ -91,6 +97,17 @@ struct SettingsView: View {
           }
         }
 
+        SettingsSection(
+          content: {
+            SettingsCheckBoxRow(title: "Server Mode", isOn: $isServerModeEnabled)
+            if let url = URL(string: "https://cassette.digital/help/server-mode") {
+              Link("Learn about Server Mode", destination: url)
+            }
+          },
+          footer: "Stream music from your Cassette Player when you're home.",
+          header: "Server Mode"
+        )
+
         #if !targetEnvironment(macCatalyst) // ok
           SettingsSection {
             navigationLink(.account)
@@ -105,7 +122,8 @@ struct SettingsView: View {
           SettingsSection {
             navigationLink(.support)
             navigationLink(.license)
-            navigationLink(.xcallback)
+            // cassette polish Part 6: X-Callback-URL Documentation hidden
+            // (developer/protocol chrome).
 
             #if DEBUG
               navigationLink(.developer)
