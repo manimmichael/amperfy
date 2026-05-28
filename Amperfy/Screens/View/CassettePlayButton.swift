@@ -27,6 +27,10 @@ import UIKit
 final class CassettePlayButton: UIControl {
   static let diameter: CGFloat = 68.0
 
+  /// cassette Polish 2 (D1): the diameter is now per-instance so the detail
+  /// action bar can use a smaller 56pt disc while the default stays 68pt.
+  private let configuredDiameter: CGFloat
+
   private let glyphView = UIImageView()
   private let rimLayer = CAShapeLayer()
   private let innerShadowLayer = CAShapeLayer()
@@ -35,23 +39,29 @@ final class CassettePlayButton: UIControl {
   /// Invoked on touch-up-inside. Wire this to the existing play action.
   var onTap: (() -> Void)?
 
-  override init(frame: CGRect) {
-    super.init(frame: frame)
+  init(diameter: CGFloat = CassettePlayButton.diameter) {
+    self.configuredDiameter = diameter
+    super.init(frame: CGRect(x: 0, y: 0, width: diameter, height: diameter))
     setup()
   }
 
+  override convenience init(frame: CGRect) {
+    self.init(diameter: CassettePlayButton.diameter)
+  }
+
   required init?(coder: NSCoder) {
+    self.configuredDiameter = CassettePlayButton.diameter
     super.init(coder: coder)
     setup()
   }
 
   override var intrinsicContentSize: CGSize {
-    CGSize(width: Self.diameter, height: Self.diameter)
+    CGSize(width: configuredDiameter, height: configuredDiameter)
   }
 
   private func setup() {
     backgroundColor = CassetteTheme.UIColors.ink
-    layer.cornerRadius = Self.diameter / 2
+    layer.cornerRadius = configuredDiameter / 2
     layer.masksToBounds = false
 
     // Soft drop shadow beneath the disc — the "raised" cue.
@@ -81,7 +91,10 @@ final class CassettePlayButton: UIControl {
 
     glyphView.image = UIImage(
       systemName: "play.fill",
-      withConfiguration: UIImage.SymbolConfiguration(pointSize: 24, weight: .medium)
+      withConfiguration: UIImage.SymbolConfiguration(
+        pointSize: (configuredDiameter * 0.35).rounded(),
+        weight: .medium
+      )
     )
     glyphView.tintColor = CassetteTheme.UIColors.bg
     glyphView.contentMode = .center

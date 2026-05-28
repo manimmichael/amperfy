@@ -137,6 +137,11 @@ class GenericDetailTableHeader: UIView {
   func prepare(configuration: DetailHeaderConfiguration) {
     config = configuration
     config?.playShuffleInfoConfig?.isEmbeddedInOtherView = true
+    // cassette Polish 2 (D1): hand the embedded action bar the entity + root VC
+    // so its heart can favorite the container and its overflow can open the
+    // entity context menu — no per-VC wiring needed.
+    config?.playShuffleInfoConfig?.favoriteEntity = configuration.entityContainer
+    config?.playShuffleInfoConfig?.rootViewController = configuration.rootView
     titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
     nameTextField.setContentCompressionResistancePriority(.required, for: .vertical)
     subtitleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
@@ -193,6 +198,13 @@ class GenericDetailTableHeader: UIView {
         self.applyTraitCollectionChange()
       }
     )
+    // cassette Polish 2 (D2/E1): size the header on first load. Previously
+    // applyTraitCollectionChange() only ran on a *subsequent* trait change, so
+    // the prominent header's inner container kept its XIB default height while
+    // the outer frame was grown — the play disc rendered outside its clipping
+    // slot (taps missed) and the malformed frame pushed the artist track list
+    // off-screen. Sizing here makes the first frame correct.
+    applyTraitCollectionChange()
   }
 
   private func configureArtworkPresentation() {
@@ -284,6 +296,18 @@ class GenericDetailTableHeader: UIView {
     }
   }
 
+  // cassette Polish 2 (D2): the play slot's height is a self-height constraint
+  // in the XIB (no outlet). Locate and update it rather than adding a competing
+  // constraint.
+  private func setPlayShuffleSlotHeight(_ value: CGFloat) {
+    let slotConstraint = playShuffleInfoContainerView.constraints.first { constraint in
+      (constraint.firstItem as? UIView) === playShuffleInfoContainerView &&
+        constraint.firstAttribute == .height &&
+        constraint.secondItem == nil
+    }
+    slotConstraint?.constant = value
+  }
+
   func applyTraitCollectionChange() {
     guard let config = config else { return }
     let rootView = config.rootView
@@ -307,6 +331,13 @@ class GenericDetailTableHeader: UIView {
         titlePlayButtonContainerHeightConstraint.constant = Self
           .titlePlayButtonContainerHeightCompact + (isProminent ? Self.prominentExtraHeight : 0)
         height += isProminent ? Self.prominentExtraHeight : 0
+        // cassette Polish 2 (D2): the embedded action bar's 56pt Play disc was
+        // clipped by the XIB's fixed 40pt play slot, so touches landed outside
+        // the slot. Grow the slot to the 56pt play height when prominent (the
+        // +16pt delta matches prominentExtraHeight added to the column/frame).
+        setPlayShuffleSlotHeight(
+          isProminent ? LibraryElementDetailTableHeaderView.prominentPlayDiameter : 40.0
+        )
       }
     }
     if config.descriptionText != nil {

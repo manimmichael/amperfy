@@ -36,11 +36,16 @@ struct PlayShuffleInfoConfiguration {
   var isShuffleOnContextNeccessary: Bool = true
   var shuffleContextCb: GetPlayContextCallback?
   var isEmbeddedInOtherView: Bool = false
-  /// cassette polish Part 4: when true (set only by the Album / Artist /
-  /// Playlist detail headers), the compact-width layout swaps the side-by-side
-  /// bordered pair for a prominent skeuomorphic CassettePlayButton with a
-  /// quiet secondary Shuffle beneath it. List headers leave this false.
+  /// cassette polish Part 4 / Polish 2 (D1): when true (set only by the Album /
+  /// Artist / Playlist detail headers), the compact-width layout swaps the
+  /// side-by-side bordered pair for a single action bar:
+  /// `[heart]  [PLAY][shuffle]  [overflow]`. List headers leave this false.
   var usesProminentPlayButton: Bool = false
+  /// cassette Polish 2 (D1): the entity the action-bar heart favorites and the
+  /// overflow menu targets. Injected by GenericDetailTableHeader from its own
+  /// DetailHeaderConfiguration so the shared header needs no VC-specific code.
+  var favoriteEntity: (any PlayableContainable)?
+  var rootViewController: UIViewController?
 }
 
 // MARK: - LibraryElementDetailTableHeaderView
@@ -56,16 +61,20 @@ class LibraryElementDetailTableHeaderView: UIView {
   weak var infoLabel: UILabel!
 
   static let frameHeight: CGFloat = 40.0 + margin.top + margin.bottom
-  /// Height of the prominent (skeuomorphic) layout: 68pt Play + 16pt gap +
-  /// ~36pt Shuffle = 120pt of content.
-  static let prominentFrameHeight: CGFloat = 120.0 + margin.top + margin.bottom
+  /// cassette Polish 2 (D1): the prominent layout is now a single 56pt-tall
+  /// action bar (was a 120pt stacked Play + bordered Shuffle), so the detail
+  /// header grows by only ~16pt over the bordered baseline.
+  static let prominentPlayDiameter: CGFloat = 56.0
+  static let prominentFrameHeight: CGFloat = prominentPlayDiameter + margin.top + margin.bottom
   static let margin = UIView.defaultMarginMiddleElement
 
   private var config: PlayShuffleInfoConfiguration?
 
   private var prominentContainer: UIView?
   private var cassettePlayButton: CassettePlayButton?
-  private var secondaryShuffleButton: UIButton?
+  private var prominentShuffleButton: UIButton?
+  private var prominentHeartButton: UIButton?
+  private var prominentOverflowButton: UIButton?
 
   required init?(coder aDecoder: NSCoder) {
     super.init(coder: aDecoder)
@@ -132,14 +141,31 @@ class LibraryElementDetailTableHeaderView: UIView {
       .isInfoAlwaysHidden || (traitCollection.horizontalSizeClass == .compact)
     infoLabel.text = config.infoCB?() ?? ""
 
-    // cassette polish Part 4: the prominent skeuomorphic layout is compact-
-    // width only; iPad/Mac (regular) and standalone list headers keep the
-    // known-good bordered pair.
+    // cassette polish Part 4 / Polish 2 (D1): the prominent action bar is
+    // compact-width only; iPad/Mac (regular) and standalone list headers keep
+    // the known-good bordered pair.
     let showProminent = config.usesProminentPlayButton &&
       traitCollection.horizontalSizeClass == .compact
     prominentContainer?.isHidden = !showProminent
     playAllButton.isHidden = showProminent
     playShuffledButton.isHidden = showProminent || config.isShuffleHidden
+
+    if showProminent {
+      prominentShuffleButton?.isHidden = config.isShuffleHidden
+      // Heart only for favoritable containers (Album/Artist). Playlists,
+      // genres and podcasts are not favoritable and hide it.
+      prominentHeartButton?.isHidden = !(config.favoriteEntity?.isFavoritable ?? false)
+      refreshProminentHeartIcon()
+    }
+  }
+
+  private func refreshProminentHeartIcon() {
+    guard let heart = prominentHeartButton else { return }
+    let isFav = config?.favoriteEntity?.isFavorite ?? false
+    var heartConfig = heart.configuration ?? UIButton.Configuration.plain()
+    heartConfig.image = isFav ? UIImage(systemName: "heart.fill") : UIImage(systemName: "heart")
+    heart.configuration = heartConfig
+    heart.accessibilityLabel = isFav ? "Unmark favorite" : "Favorite"
   }
 
   @IBAction
@@ -231,10 +257,14 @@ class LibraryElementDetailTableHeaderView: UIView {
     button.isHidden = isHidden
   }
 
-  // cassette polish Part 4: build the prominent skeuomorphic Play + secondary
-  // Shuffle layout once. It overlays the header's full bounds and is toggled
-  // visible only for compact width in refresh(). The Shuffle button is a quiet
-  // bordered control (1pt ink4 border, ink glyph + label, light haptic).
+  // cassette Polish 2 (D1): build the action bar once. A single horizontal row,
+  // pinned to the header bounds and toggled visible only for compact width in
+  // refresh():  [heart]  ...  [PLAY 56][shuffle]  ...  [overflow].
+  // - PLAY is the skeuomorphic CassettePlayButton (56pt), the visual anchor.
+  // - Shuffle is a small ink icon (no label) to the immediate right of Play.
+  // - Heart (leading) and overflow (trailing) are plain ink icons matching the
+  //   player treatment; heart favorites the container, overflow opens the
+  //   entity context menu.
   private func setupProminentLayoutIfNeeded() {
     guard config?.usesProminentPlayButton == true, prominentContainer == nil else { return }
 
@@ -242,53 +272,87 @@ class LibraryElementDetailTableHeaderView: UIView {
     container.translatesAutoresizingMaskIntoConstraints = false
     addSubview(container)
 
-    let play = CassettePlayButton()
+    let play = CassettePlayButton(diameter: Self.prominentPlayDiameter)
     play.translatesAutoresizingMaskIntoConstraints = false
     play.onTap = { [weak self] in self?.play(isShuffled: false) }
 
     let shuffle = UIButton(type: .system)
-    var shuffleConfig = UIButton.Configuration.bordered()
+    var shuffleConfig = UIButton.Configuration.plain()
     shuffleConfig.image = UIImage(systemName: "shuffle")
-    shuffleConfig.imagePadding = 6
-    shuffleConfig.imagePlacement = .leading
-    shuffleConfig.cornerStyle = .medium
     shuffleConfig.baseForegroundColor = CassetteTheme.UIColors.ink
-    shuffleConfig.baseBackgroundColor = .clear
-    shuffleConfig.background.strokeColor = CassetteTheme.UIColors.ink4
-    shuffleConfig.background.strokeWidth = 1
     shuffleConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-      pointSize: 13,
+      pointSize: 18,
       weight: .semibold
     )
-    var titleAttributes = AttributeContainer()
-    titleAttributes.font = UIFont.cassette(.miniTitle)
-    shuffleConfig.attributedTitle = AttributedString("Shuffle", attributes: titleAttributes)
+    shuffleConfig.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5)
     shuffle.configuration = shuffleConfig
+    shuffle.tintColor = CassetteTheme.UIColors.ink
+    shuffle.accessibilityLabel = "Shuffle"
     shuffle.translatesAutoresizingMaskIntoConstraints = false
     shuffle.addTarget(self, action: #selector(prominentShufflePressed), for: .touchUpInside)
 
+    let heart = Self.makePlainActionButton(systemImage: "heart")
+    heart.addTarget(self, action: #selector(prominentHeartPressed), for: .touchUpInside)
+
+    let overflow = Self.makePlainActionButton(systemImage: "ellipsis")
+    overflow.accessibilityLabel = "More"
+    overflow.showsMenuAsPrimaryAction = true
+    overflow.menu = UIMenu.lazyMenu { [weak self] in
+      guard let self,
+            let entity = self.config?.favoriteEntity,
+            let rootVC = self.config?.rootViewController
+      else { return [] }
+      return EntityPreviewActionBuilder(container: entity, on: rootVC).createMenuActions()
+    }
+
+    container.addSubview(heart)
     container.addSubview(play)
     container.addSubview(shuffle)
+    container.addSubview(overflow)
     NSLayoutConstraint.activate([
       container.topAnchor.constraint(equalTo: topAnchor),
       container.bottomAnchor.constraint(equalTo: bottomAnchor),
       container.leadingAnchor.constraint(equalTo: leadingAnchor),
       container.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-      play.topAnchor.constraint(equalTo: container.topAnchor),
-      play.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-      play.widthAnchor.constraint(equalToConstant: CassettePlayButton.diameter),
-      play.heightAnchor.constraint(equalToConstant: CassettePlayButton.diameter),
+      heart.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      heart.centerYAnchor.constraint(equalTo: container.centerYAnchor),
 
-      shuffle.topAnchor.constraint(equalTo: play.bottomAnchor, constant: 16),
-      shuffle.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-      shuffle.widthAnchor.constraint(equalToConstant: 140),
-      shuffle.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+      play.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+      play.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+      play.widthAnchor.constraint(equalToConstant: Self.prominentPlayDiameter),
+      play.heightAnchor.constraint(equalToConstant: Self.prominentPlayDiameter),
+
+      shuffle.leadingAnchor.constraint(equalTo: play.trailingAnchor, constant: 12),
+      shuffle.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+
+      overflow.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      overflow.centerYAnchor.constraint(equalTo: container.centerYAnchor),
     ])
 
     prominentContainer = container
     cassettePlayButton = play
-    secondaryShuffleButton = shuffle
+    prominentShuffleButton = shuffle
+    prominentHeartButton = heart
+    prominentOverflowButton = overflow
+  }
+
+  // cassette Polish 2 (D1): plain ink icon button, 22pt symbol, 44pt hit
+  // target via symmetric insets — matches the popup player heart/overflow.
+  private static func makePlainActionButton(systemImage: String) -> UIButton {
+    let button = UIButton(type: .system)
+    var config = UIButton.Configuration.plain()
+    config.image = UIImage(systemName: systemImage)
+    config.baseForegroundColor = CassetteTheme.UIColors.ink
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+      pointSize: 22,
+      weight: .regular
+    )
+    config.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11)
+    button.configuration = config
+    button.tintColor = CassetteTheme.UIColors.ink
+    button.translatesAutoresizingMaskIntoConstraints = false
+    return button
   }
 
   @objc
@@ -297,18 +361,40 @@ class LibraryElementDetailTableHeaderView: UIView {
     shuffle()
   }
 
+  @objc
+  private func prominentHeartPressed() {
+    guard let entity = config?.favoriteEntity, entity.isFavoritable,
+          let accountInfo = entity.account?.info else { return }
+    guard appDelegate.storage.settings.user.isOnlineMode else { return }
+    Haptics.light.vibrate(isHapticsEnabled: appDelegate.storage.settings.user.isHapticsEnabled)
+    Task { @MainActor in
+      do {
+        try await entity.remoteToggleFavorite(
+          syncer: self.appDelegate.getMeta(accountInfo).librarySyncer
+        )
+      } catch {
+        self.appDelegate.eventLogger.report(
+          topic: "Toggle Favorite",
+          error: error,
+          isBackground: true
+        )
+      }
+      self.refreshProminentHeartIcon()
+    }
+  }
+
   func activate() {
     playAllButton.isEnabled = true
     playShuffledButton.isEnabled = !(config?.isShuffleOnContextNeccessary ?? true) || appDelegate
       .storage.settings.user.isPlayerShuffleButtonEnabled
     cassettePlayButton?.isEnabled = true
-    secondaryShuffleButton?.isEnabled = playShuffledButton.isEnabled
+    prominentShuffleButton?.isEnabled = playShuffledButton.isEnabled
   }
 
   func deactivate() {
     playAllButton.isEnabled = false
     playShuffledButton.isEnabled = false
     cassettePlayButton?.isEnabled = false
-    secondaryShuffleButton?.isEnabled = false
+    prominentShuffleButton?.isEnabled = false
   }
 }
