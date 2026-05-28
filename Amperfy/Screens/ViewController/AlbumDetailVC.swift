@@ -136,11 +136,9 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       self?.updateHideUniformArtistSubtitle()
     }
 
-    optionsButton = UIBarButtonItem.createOptionsBarButton()
-    optionsButton.menu = UIMenu.lazyMenu {
-      EntityPreviewActionBuilder(container: self.album, on: self).createMenuActions()
-    }
-    navigationItem.rightBarButtonItem = optionsButton
+    // cassette Polish 2 (D1): overflow lives in the header action bar now, not
+    // the nav bar. The nav bar shows only the back button at rest and fades in
+    // the title on scroll.
 
     containableAtIndexPathCallback = { indexPath in
       self.fetchedResultsController.getWrappedEntity(at: indexPath)

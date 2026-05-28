@@ -324,7 +324,9 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       }
     }
 
-    navigationItem.rightBarButtonItems = [optionsButton, edititingBarButton].compactMap { $0 }
+    // cassette Polish 2 (D1/F): overflow moves to the header action bar; the nav
+    // bar keeps only the playlist Edit affordance.
+    navigationItem.rightBarButtonItems = [edititingBarButton].compactMap { $0 }
   }
 
   func convertIndexPathToPlayContext(songIndexPath: IndexPath) -> PlayContext? {

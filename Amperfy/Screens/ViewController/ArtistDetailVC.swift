@@ -109,11 +109,9 @@ class ArtistDetailVC: MultiSourceTableViewController {
       self?.stickyHeader.alpha = 0
     }
 
-    optionsButton = UIBarButtonItem.createOptionsBarButton()
-    optionsButton.menu = UIMenu.lazyMenu {
-      EntityPreviewActionBuilder(container: self.artist, on: self).createMenuActions()
-    }
-    navigationItem.rightBarButtonItem = optionsButton
+    // cassette Polish 2 (D1/E2): overflow lives in the header action bar now,
+    // not the nav bar. The nav bar shows only the back button at rest and fades
+    // in the title on scroll.
 
     containableAtIndexPathCallback = { indexPath in
       switch indexPath.section + 1 {
