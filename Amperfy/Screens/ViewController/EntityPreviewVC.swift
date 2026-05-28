@@ -95,7 +95,6 @@ class EntityPreviewActionBuilder {
 
     var playActions = [UIMenuElement]()
     var gotoActions = [UIMenuElement]()
-    var ratingFavActions = [UIMenuElement]()
     var elementHandlingActions = [UIMenuElement]()
 
     if isPlay {
@@ -104,9 +103,7 @@ class EntityPreviewActionBuilder {
     if isShuffle {
       playActions.append(createPlayShuffledAction())
     }
-    if isInstantMix {
-      playActions.append(createInstantMixAction())
-    }
+    // cassette Polish 2 (G4): Instant Mix removed from every context menu.
     if !playActions.isEmpty {
       menuActions.append(UIMenu(options: .displayInline, children: playActions))
     }
@@ -137,23 +134,12 @@ class EntityPreviewActionBuilder {
     if !gotoActions.isEmpty {
       menuActions.append(UIMenu(options: .displayInline, children: gotoActions))
     }
-    if let libraryEntity = entityContainer as? AbstractLibraryEntity, entityContainer.isFavoritable,
-       appDelegate.storage.settings.user.isOnlineMode {
-      ratingFavActions.append(createFavoriteMenu(libraryEntity: libraryEntity))
-    }
-    if let libraryEntity = entityContainer as? AbstractLibraryEntity, entityContainer.isRateable,
-       appDelegate.storage.settings.user.isOnlineMode {
-      ratingFavActions.append(createRatingMenu(libraryEntity: libraryEntity))
-    }
-    if !ratingFavActions.isEmpty {
-      menuActions.append(UIMenu(options: .displayInline, children: ratingFavActions))
-    }
+    // cassette Polish 2 (G4): Favorite + Rating removed from every context menu.
+    // (Detail pages favorite via the header heart instead.)
     if isAddToPlaylist {
       elementHandlingActions.append(createAddToPlaylistAction())
     }
-    if isDownloadPossible {
-      elementHandlingActions.append(createDownloadAction())
-    }
+    // cassette Polish 2 (G4): Download removed from every context menu.
     if entityContainer.playables.hasCachedItems {
       elementHandlingActions.append(createDeleteCacheAction())
     }
