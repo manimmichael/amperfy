@@ -49,6 +49,13 @@ final class SubsonicApi {
   func setAuthType(newAuthType: SubsonicApiAuthType) {
     subsonicServerApi.setAuthType(newAuthType: newAuthType)
   }
+
+  // Cassette fork — Layer 3 (Phase 3.1): build a download URL straight from
+  // a raw Subsonic track id, without needing a local AbstractPlayableInfo.
+  // Used by the transfer mechanism, which resolves track ids server-side.
+  func cassetteGenerateDownloadUrl(forPlayableId apiId: String) async throws -> URL {
+    try await subsonicServerApi.generateUrl(forDownloadingPlayableId: apiId)
+  }
 }
 
 // MARK: BackendApi

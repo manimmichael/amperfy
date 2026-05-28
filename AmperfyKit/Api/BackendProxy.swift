@@ -214,6 +214,17 @@ public final class BackendProxy: Sendable {
   private let activeApiType = Atomic<BackenApiType>(wrappedValue: .ampache)
   private let downloadManagerDelegate = Atomic<DownloadManagerDelegate?>(wrappedValue: nil)
 
+  // Cassette fork — Layer 3 (Phase 3.1): expose a raw-id download URL for the
+  // transfer mechanism. Subsonic-only (the Cassette Player pairs over
+  // Subsonic). Throws if the active backend isn't Subsonic.
+  @MainActor
+  public func cassetteDownloadUrl(forSubsonicTrackId apiId: String) async throws -> URL {
+    guard let subsonic = activeApi as? SubsonicApi else {
+      throw CassetteSyncError.unsupportedBackend
+    }
+    return try await subsonic.cassetteGenerateDownloadUrl(forPlayableId: apiId)
+  }
+
   private var activeApi: BackendApi {
     switch activeApiType.wrappedValue {
     case .notDetected:
