@@ -61,6 +61,8 @@ enum CoreDataMigrationVersion: String, CaseIterable {
   case v49 =
     "Amperfy v49" // Remove PlayableFile and Artwork data (they were already deprecated); Account: add apiType
   case v50 = "Amperfy v50" // Album: add albumType (OpenSubsonic releaseTypes / isCompilation)
+  case v51 =
+    "Amperfy v51" // Cassette Layer 3: add DeviceOwnership entity (standalone, additive — lightweight inferred mapping)
 
   // MARK: - Current
 
@@ -175,6 +177,8 @@ enum CoreDataMigrationVersion: String, CaseIterable {
     case .v49:
       return .v50
     case .v50:
+      return .v51
+    case .v51:
       return nil
     }
   }
