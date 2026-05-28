@@ -390,12 +390,16 @@ class PlayerUIHandler: NSObject {
     remainingTimeLabel.text = remainingTime.asShortString()
   }
 
+  // cassette polish Part 1: audioInfoLabel + playTypeIcon (the "MP3 2658 kbps"
+  // line beneath the scrubber) are removed from the popup player. The params
+  // are optional so the bitrate strip can be dropped from the hierarchy while
+  // the Mac hover overlay still passes real labels.
   func refreshTimeInfo(
     timeSlider: UISlider,
     elapsedTimeLabel: UILabel,
     remainingTimeLabel: UILabel,
-    audioInfoLabel: UILabel,
-    playTypeIcon: UIImageView,
+    audioInfoLabel: UILabel?,
+    playTypeIcon: UIImageView?,
     liveLabel: UILabel
   ) {
     timeSlider.preferredBehavioralStyle = .pad
@@ -417,8 +421,8 @@ class PlayerUIHandler: NSObject {
       }
 
       if !supportTimeInteraction {
-        audioInfoLabel.isHidden = true
-        playTypeIcon.isHidden = true
+        audioInfoLabel?.isHidden = true
+        playTypeIcon?.isHidden = true
         liveLabel.isHidden = false
         timeSlider.minimumValue = 0.0
         timeSlider.maximumValue = 1.0
@@ -443,8 +447,8 @@ class PlayerUIHandler: NSObject {
         elapsedTimeLabel.text = ""
         remainingTimeLabel.text = ""
       } else {
-        audioInfoLabel.isHidden = false
-        playTypeIcon.isHidden = false
+        audioInfoLabel?.isHidden = false
+        playTypeIcon?.isHidden = false
         refreshAudioInfo(
           currentlyPlaying: currentlyPlaying,
           audioInfoLabel: audioInfoLabel,
@@ -455,8 +459,8 @@ class PlayerUIHandler: NSObject {
         timeSlider.layer.mask = nil
       }
     } else {
-      audioInfoLabel.isHidden = true
-      playTypeIcon.isHidden = true
+      audioInfoLabel?.isHidden = true
+      playTypeIcon?.isHidden = true
       liveLabel.isHidden = true
       timeSlider.layer.mask = nil
       elapsedTimeLabel.text = "--:--"
@@ -470,9 +474,10 @@ class PlayerUIHandler: NSObject {
 
   private func refreshAudioInfo(
     currentlyPlaying: AbstractPlayable,
-    audioInfoLabel: UILabel,
-    playTypeIcon: UIImageView
+    audioInfoLabel: UILabel?,
+    playTypeIcon: UIImageView?
   ) {
+    guard let audioInfoLabel, let playTypeIcon else { return }
     guard let playType = player.playType else {
       playTypeIcon.image = nil
       playTypeIcon.isHidden = true

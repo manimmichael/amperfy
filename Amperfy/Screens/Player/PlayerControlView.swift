@@ -131,6 +131,11 @@ class PlayerControlView: UIView {
     timeSlider.minimumTrackTintColor = CassetteTheme.UIColors.orange
     timeSlider.maximumTrackTintColor = CassetteTheme.UIColors.ink4
     timeSlider.thumbTintColor = CassetteTheme.UIColors.orange
+    // cassette polish Part 1: drop the "MP3 2658 kbps" bitrate strip beneath the
+    // scrubber. Removed from the hierarchy so the time row reads clean; the
+    // refresh path keeps these as optionals and no longer un-hides them.
+    audioInfoLabel?.removeFromSuperview()
+    playTypeIcon?.removeFromSuperview()
     refreshPlayer()
     playerHandler?.refreshPlayerOptions(
       optionsButton: optionsButton,
