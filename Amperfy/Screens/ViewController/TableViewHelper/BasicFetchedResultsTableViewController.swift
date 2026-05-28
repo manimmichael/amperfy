@@ -26,6 +26,8 @@ import UIKit
 class BasicFetchedResultsTableViewController<ResultType>: BasicTableViewController
   where ResultType: NSFetchRequestResult {
   var isIndexTitelsHidden = false
+  /// cassette Patch 063: fade section index in while scrolling, hide when idle.
+  var usesFadingSectionIndex = false
 
   private var singleFetchController: BasicFetchedResultsController<ResultType>?
   var singleFetchedResultsController: BasicFetchedResultsController<ResultType>? {
@@ -60,5 +62,53 @@ class BasicFetchedResultsTableViewController<ResultType>: BasicTableViewControll
   )
     -> Int {
     singleFetchController?.section(forSectionIndexTitle: title, at: index) ?? 0
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    if usesFadingSectionIndex {
+      setSectionIndexHidden(true, animated: false)
+    }
+  }
+
+  override func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    if usesFadingSectionIndex {
+      setSectionIndexHidden(false, animated: true)
+    }
+  }
+
+  override func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    if usesFadingSectionIndex {
+      setSectionIndexHidden(true, animated: true)
+    }
+  }
+
+  override func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    if usesFadingSectionIndex, !decelerate {
+      setSectionIndexHidden(true, animated: true)
+    }
+  }
+
+  override func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+    if usesFadingSectionIndex {
+      setSectionIndexHidden(true, animated: true)
+    }
+  }
+
+  func setSectionIndexHidden(_ hidden: Bool, animated: Bool) {
+    guard usesFadingSectionIndex, let indexView = tableSectionIndexView else { return }
+    let targetAlpha: CGFloat = hidden ? 0 : 1
+    let apply = { indexView.alpha = targetAlpha }
+    if animated {
+      UIView.animate(withDuration: 0.2, animations: apply)
+    } else {
+      apply()
+    }
+  }
+
+  private var tableSectionIndexView: UIView? {
+    tableView.subviews.first {
+      String(describing: type(of: $0)).contains("UITableViewIndex")
+    }
   }
 }
