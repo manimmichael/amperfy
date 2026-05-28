@@ -66,11 +66,7 @@ class SsIDsParserDelegate: SsNotifiableXmlParser {
       } else if elementName == "album" {
         prefetchIDs.albumIDs.insert(id)
       } else if elementName == "artist" {
-        if isIndex {
-          prefetchIDs.directoryIDs.insert(id)
-        } else {
-          prefetchIDs.artistIDs.insert(id)
-        }
+        prefetchIDs.artistIDs.insert(id)
       } else if elementName == "musicFolder" {
         prefetchIDs.musicFolderIDs.insert(id)
       } else if elementName == "channel" {
