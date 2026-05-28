@@ -126,6 +126,10 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     refreshAlbumMetadataLine()
     DetailStickyHeaderSupport.install(stickyHeader: stickyHeader, in: self)
     stickyHeader.configure(title: album.name, subtitle: album.subtitle)
+    tableView.layoutIfNeeded()
+    DispatchQueue.main.async { [weak self] in
+      self?.stickyHeader.alpha = 0
+    }
     updateHideUniformArtistSubtitle()
     snapshotDidChange = { [weak self] in
       self?.updateHideUniformArtistSubtitle()
@@ -158,22 +162,16 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     stickyHeader.alpha = 0
   }
 
-  override func viewDidLayoutSubviews() {
-    super.viewDidLayoutSubviews()
-    updateStickyHeaderAlpha()
-  }
-
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
     updateStickyHeaderAlpha()
   }
 
   private func updateStickyHeaderAlpha() {
-    let navBarMaxY = navigationController?.navigationBar.frame.maxY ?? view.safeAreaInsets.top
     DetailStickyHeaderSupport.updateAlpha(
       stickyHeader: stickyHeader,
       scrollView: tableView,
       tableHeaderView: tableView.tableHeaderView,
-      navigationBarMaxY: navBarMaxY
+      in: self
     )
   }
 

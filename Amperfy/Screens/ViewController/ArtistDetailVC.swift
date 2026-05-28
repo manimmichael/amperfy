@@ -103,6 +103,10 @@ class ArtistDetailVC: MultiSourceTableViewController {
     refreshArtistMetadataLine()
     DetailStickyHeaderSupport.install(stickyHeader: stickyHeader, in: self)
     refreshStickyHeaderText()
+    tableView.layoutIfNeeded()
+    DispatchQueue.main.async { [weak self] in
+      self?.stickyHeader.alpha = 0
+    }
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()
     optionsButton.menu = UIMenu.lazyMenu {
@@ -196,22 +200,16 @@ class ArtistDetailVC: MultiSourceTableViewController {
     navigationController?.navigationBar.prefersLargeTitles = false
   }
 
-  override func viewDidLayoutSubviews() {
-    super.viewDidLayoutSubviews()
-    updateStickyHeaderAlpha()
-  }
-
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
     updateStickyHeaderAlpha()
   }
 
   private func updateStickyHeaderAlpha() {
-    let navBarMaxY = navigationController?.navigationBar.frame.maxY ?? view.safeAreaInsets.top
     DetailStickyHeaderSupport.updateAlpha(
       stickyHeader: stickyHeader,
       scrollView: tableView,
       tableHeaderView: tableView.tableHeaderView,
-      navigationBarMaxY: navBarMaxY
+      in: self
     )
   }
 

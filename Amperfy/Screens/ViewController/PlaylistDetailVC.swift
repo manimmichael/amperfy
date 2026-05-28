@@ -188,6 +188,10 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     refreshPlaylistMetadataLine()
     DetailStickyHeaderSupport.install(stickyHeader: stickyHeader, in: self)
     stickyHeader.configure(title: playlist.name, subtitle: playlistStickySubtitle())
+    tableView.layoutIfNeeded()
+    DispatchQueue.main.async { [weak self] in
+      self?.stickyHeader.alpha = 0
+    }
     refreshControl?.addTarget(
       self,
       action: #selector(Self.handleRefresh),
@@ -226,22 +230,16 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     stickyHeader.alpha = 0
   }
 
-  override func viewDidLayoutSubviews() {
-    super.viewDidLayoutSubviews()
-    updateStickyHeaderAlpha()
-  }
-
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
     updateStickyHeaderAlpha()
   }
 
   private func updateStickyHeaderAlpha() {
-    let navBarMaxY = navigationController?.navigationBar.frame.maxY ?? view.safeAreaInsets.top
     DetailStickyHeaderSupport.updateAlpha(
       stickyHeader: stickyHeader,
       scrollView: tableView,
       tableHeaderView: tableView.tableHeaderView,
-      navigationBarMaxY: navBarMaxY
+      in: self
     )
   }
 
