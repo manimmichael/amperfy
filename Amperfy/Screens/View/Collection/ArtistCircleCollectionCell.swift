@@ -18,9 +18,11 @@ final class ArtistCircleCollectionCell: BasicCollectionCell {
   private let artworkContainer: UIView = {
     let view = UIView()
     view.translatesAutoresizingMaskIntoConstraints = false
-    view.backgroundColor = CassetteTheme.UIColors.bg2
-    view.layer.cornerRadius = CornerRadius.small.asCGFloat
-    view.clipsToBounds = true
+    // cassette Polish 2 (A3): clear container. Previously a bg2 rounded-rect
+    // tile sat behind the 120pt circle, so the square corners showed around
+    // the photo and made the card read "uneven / broken". The circular photo
+    // now floats directly on the cell background.
+    view.backgroundColor = .clear
     return view
   }()
 
