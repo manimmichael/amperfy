@@ -88,20 +88,14 @@ class PlayableTableCell: BasicTableCell {
   /// This `playingSymbolView` is one of the three permitted orange
   /// surfaces post-Phase 5.2; the other two are the mini + popup
   /// time scrubbers.
-  private lazy var playingSymbolView: UIImageView = {
-    let imageView = UIImageView(
-      image: UIImage(
-        systemName: "waveform",
-        withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
-      )
-    )
-    imageView.tintColor = CassetteTheme.UIColors.orange
-    imageView.contentMode = .center
-    imageView.translatesAutoresizingMaskIntoConstraints = false
-    imageView.isHidden = true
-    return imageView
+  private lazy var playingSymbolView: WaveformAnimatedView = {
+    let view = WaveformAnimatedView()
+    view.translatesAutoresizingMaskIntoConstraints = false
+    view.isHidden = true
+    return view
   }()
   private var didInstallPlayingSymbol = false
+  private var isPlayingSymbolNotificationRegistered = false
 
   static let rowHeight: CGFloat = 48 + margin.bottom + margin.top
   private static let touchAnimation = 0.4
@@ -159,6 +153,7 @@ class PlayableTableCell: BasicTableCell {
       #endif
 
       style = PlayableTableCellStyle.none
+      registerPlayingSymbolNotificationsIfNeeded()
       deleteButton.tintColor = .red
       playOverArtworkButton.layer.backgroundColor = UIColor.imageOverlayBackground.cgColor
       playOverArtworkButton.layer.cornerRadius = CornerRadius.small.asCGFloat
@@ -198,7 +193,7 @@ class PlayableTableCell: BasicTableCell {
 
   override func prepareForReuse() {
     super.prepareForReuse()
-    playingSymbolView.removeAllSymbolEffects()
+    playingSymbolView.stopAnimating()
     resetForReuse()
   }
 
@@ -329,8 +324,7 @@ class PlayableTableCell: BasicTableCell {
     playingSymbolCenterX?.isActive = true
     playingSymbolCenterY?.isActive = true
     playingSymbolView.isHidden = false
-    playingSymbolView.removeAllSymbolEffects()
-    playingSymbolView.addSymbolEffect(.variableColor.iterative.reversing, options: .repeating)
+    updatePlayingSymbolAnimation()
     contentView.bringSubviewToFront(playingSymbolView)
     if replacingTrackNumber {
       trackNumberLabel.alpha = 0
@@ -341,10 +335,49 @@ class PlayableTableCell: BasicTableCell {
 
   private func hidePlayingSymbol() {
     if didInstallPlayingSymbol {
-      playingSymbolView.removeAllSymbolEffects()
+      playingSymbolView.stopAnimating()
       playingSymbolView.isHidden = true
     }
     trackNumberLabel.alpha = 1
+  }
+
+  private func registerPlayingSymbolNotificationsIfNeeded() {
+    guard !isPlayingSymbolNotificationRegistered else { return }
+    isPlayingSymbolNotificationRegistered = true
+    appDelegate.notificationHandler.register(
+      self,
+      selector: #selector(playingSymbolPlayerStateChanged),
+      name: .playerPlay,
+      object: nil
+    )
+    appDelegate.notificationHandler.register(
+      self,
+      selector: #selector(playingSymbolPlayerStateChanged),
+      name: .playerPause,
+      object: nil
+    )
+    appDelegate.notificationHandler.register(
+      self,
+      selector: #selector(playingSymbolPlayerStateChanged),
+      name: .playerStop,
+      object: nil
+    )
+  }
+
+  @objc
+  private func playingSymbolPlayerStateChanged(notification: Notification) {
+    guard !playingSymbolView.isHidden,
+          appDelegate.player.currentlyPlaying == playable
+    else { return }
+    updatePlayingSymbolAnimation()
+  }
+
+  private func updatePlayingSymbolAnimation() {
+    if appDelegate.player.isPlaying {
+      playingSymbolView.startAnimating()
+    } else {
+      playingSymbolView.stopAnimating()
+    }
   }
 
   func refresh() {
