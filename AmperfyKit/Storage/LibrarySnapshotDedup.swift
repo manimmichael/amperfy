@@ -13,19 +13,19 @@ public enum LibrarySnapshotDedup {
     snapshot: NSDiffableDataSourceSnapshot<Int, NSManagedObjectID>,
     context: NSManagedObjectContext
   ) -> NSDiffableDataSourceSnapshot<Int, NSManagedObjectID> {
-    var result = NSDiffableDataSourceSnapshot<Int, NSManagedObjectID>()
-    for section in snapshot.sectionIdentifiers {
-      result.appendSections([section])
-      let items = snapshot.itemIdentifiers(inSection: section)
-      result.appendItems(
-        deduplicateObjectIDs(items, context: context),
-        toSection: section
-      )
+    // Mutate a copy in place and delete the duplicate "loser" object IDs. This reads only the
+    // flat `itemIdentifiers` ([NSManagedObjectID]) and never the typed `sectionIdentifiers`, whose
+    // underlying NSFetchedResultsController section keys are NSString and would crash a
+    // [NSString] -> [Int] force cast.
+    var result = snapshot
+    let losers = duplicateLoserObjectIDs(snapshot.itemIdentifiers, context: context)
+    if !losers.isEmpty {
+      result.deleteItems(losers)
     }
     return result
   }
 
-  private static func deduplicateObjectIDs(
+  private static func duplicateLoserObjectIDs(
     _ items: [NSManagedObjectID],
     context: NSManagedObjectContext
   ) -> [NSManagedObjectID] {
@@ -41,28 +41,12 @@ public enum LibrarySnapshotDedup {
       }
     }
 
-    var emitted = Set<NSManagedObjectID>()
-    var result = [NSManagedObjectID]()
-    for objectID in items {
-      guard let serverId = serverId(for: objectID, context: context) else {
-        if !emitted.contains(objectID) {
-          result.append(objectID)
-          emitted.insert(objectID)
-        }
-        continue
+    return items.filter { objectID in
+      guard let serverId = serverId(for: objectID, context: context), !serverId.isEmpty else {
+        return false
       }
-      if serverId.isEmpty {
-        if !emitted.contains(objectID) {
-          result.append(objectID)
-          emitted.insert(objectID)
-        }
-        continue
-      }
-      guard winnersById[serverId] == objectID, !emitted.contains(objectID) else { continue }
-      result.append(objectID)
-      emitted.insert(objectID)
+      return winnersById[serverId] != objectID
     }
-    return result
   }
 
   private static func serverId(
