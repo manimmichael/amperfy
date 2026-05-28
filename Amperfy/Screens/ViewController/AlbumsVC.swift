@@ -76,7 +76,7 @@ class AlbumsDiffableDataSource: BasicUITableViewDiffableDataSource {
   override func sectionIndexTitles(for tableView: UITableView) -> [String]? {
     let sectionCount = numberOfSections(in: tableView)
     var indexTitles = [String]()
-    for i in 0 ... sectionCount {
+    for i in 0 ..< sectionCount {
       if let sectionName = self.tableView(tableView, titleForHeaderInSection: i) {
         var indexTitle = ""
         switch sortType {

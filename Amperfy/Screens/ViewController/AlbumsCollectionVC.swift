@@ -97,7 +97,7 @@ class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSourc
     case .artist, .duration, .name, .rating, .year:
       let sectionCount = numberOfSections(in: collectionView)
       var indexTitles = [String]()
-      for i in 0 ... sectionCount {
+      for i in 0 ..< sectionCount {
         let sectionName = sectionTitle(for: i)
         indexTitles.append(sectionTitleToIndexTitle(sectionName: sectionName))
       }
