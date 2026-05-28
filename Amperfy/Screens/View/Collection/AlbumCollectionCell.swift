@@ -51,6 +51,8 @@ class AlbumCollectionCell: BasicCollectionCell {
   /// Cleared in `prepareForReuse` so the closure doesn't outlive
   /// the bound container.
   var onPlayTapped: (() -> Void)?
+  /// cassette Patch 069: only the Recent shelf resume card shows the overlay.
+  var showsPlayOverlay = false
 
   func display(
     container: PlayableContainable,
@@ -106,6 +108,7 @@ class AlbumCollectionCell: BasicCollectionCell {
       cornerRadius: .big
     )
     setupPlayOverlayIfNeeded()
+    playOverlay?.isHidden = !showsPlayOverlay
     updateArtworkImageConstraint(indexPath: initialIndexPath)
     layoutIfNeeded()
   }
@@ -113,6 +116,8 @@ class AlbumCollectionCell: BasicCollectionCell {
   override func prepareForReuse() {
     super.prepareForReuse()
     onPlayTapped = nil
+    showsPlayOverlay = false
+    playOverlay?.isHidden = true
   }
 
   override func layoutSubviews() {
@@ -126,7 +131,10 @@ class AlbumCollectionCell: BasicCollectionCell {
   /// `play.fill` button anchored 8pt inside the artwork's bottom-
   /// right corner. Idempotent — safe to call from every `apply(...)`.
   private func setupPlayOverlayIfNeeded() {
-    guard playOverlay == nil else { return }
+    guard playOverlay == nil else {
+      playOverlay?.isHidden = !showsPlayOverlay
+      return
+    }
     // cassette Patch 051 (Phase F): play overlay drops the orange fill in
     // favor of a bg3 disc with an ink glyph. Shadow + capsule shape carry
     // the "tap to play" affordance; orange is reserved for the scrubber +
@@ -149,6 +157,7 @@ class AlbumCollectionCell: BasicCollectionCell {
     button.layer.shadowOpacity = 0.25
     button.layer.shadowRadius = 4
     button.layer.shadowOffset = CGSize(width: 0, height: 2)
+    button.isHidden = !showsPlayOverlay
     button.addAction(UIAction { [weak self] _ in self?.onPlayTapped?() }, for: .touchUpInside)
     contentView.addSubview(button)
     NSLayoutConstraint.activate([
