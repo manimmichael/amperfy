@@ -32,6 +32,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
   private var songsFetchedResultsController: ArtistSongsItemsFetchedResultsController!
   private var optionsButton: UIBarButtonItem!
   private var detailOperationsView: GenericDetailTableHeader?
+  private let stickyHeader = DetailStickyHeaderView()
 
   init(account: Account, artist: Artist) {
     self.artist = artist
@@ -100,6 +101,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
     refreshArtistMetadataLine()
+    DetailStickyHeaderSupport.install(stickyHeader: stickyHeader, in: self)
+    refreshStickyHeaderText()
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()
     optionsButton.menu = UIMenu.lazyMenu {
@@ -193,6 +196,37 @@ class ArtistDetailVC: MultiSourceTableViewController {
     navigationController?.navigationBar.prefersLargeTitles = false
   }
 
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    updateStickyHeaderAlpha()
+  }
+
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    updateStickyHeaderAlpha()
+  }
+
+  private func updateStickyHeaderAlpha() {
+    let navBarMaxY = navigationController?.navigationBar.frame.maxY ?? view.safeAreaInsets.top
+    DetailStickyHeaderSupport.updateAlpha(
+      stickyHeader: stickyHeader,
+      scrollView: tableView,
+      tableHeaderView: tableView.tableHeaderView,
+      navigationBarMaxY: navBarMaxY
+    )
+  }
+
+  private func refreshStickyHeaderText() {
+    var parts: [String] = ["Artist"]
+    if artist.albumCount > 0 {
+      parts.append("\(artist.albumCount) album\(artist.albumCount == 1 ? "" : "s")")
+    }
+    if artist.songCount > 0 {
+      parts.append("\(artist.songCount) song\(artist.songCount == 1 ? "" : "s")")
+    }
+    let subtitle = parts.count > 1 ? parts.joined(separator: " · ") : nil
+    stickyHeader.configure(title: artist.name, subtitle: subtitle)
+  }
+
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
@@ -231,10 +265,12 @@ class ArtistDetailVC: MultiSourceTableViewController {
       parts.append("\(artist.songCount) song\(artist.songCount == 1 ? "" : "s")")
     }
     detailOperationsView?.metadataOverride = parts.joined(separator: " · ")
+    refreshStickyHeaderText()
   }
 
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
+    stickyHeader.alpha = 0
     albumsFetchedResultsController?.delegate = nil
     songsFetchedResultsController?.delegate = nil
   }

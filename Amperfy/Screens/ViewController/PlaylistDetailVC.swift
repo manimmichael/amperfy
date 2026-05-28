@@ -94,6 +94,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   private var editButton: UIBarButtonItem!
   private var optionsButton: UIBarButtonItem!
   var detailOperationsView: GenericDetailTableHeader?
+  private let stickyHeader = DetailStickyHeaderView()
 
   init(account: Account, playlist: Playlist) {
     self.playlist = playlist
@@ -185,6 +186,8 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
     refreshPlaylistMetadataLine()
+    DetailStickyHeaderSupport.install(stickyHeader: stickyHeader, in: self)
+    stickyHeader.configure(title: playlist.name, subtitle: playlistStickySubtitle())
     refreshControl?.addTarget(
       self,
       action: #selector(Self.handleRefresh),
@@ -216,6 +219,38 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = false
     refreshEmptyState()
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    stickyHeader.alpha = 0
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    updateStickyHeaderAlpha()
+  }
+
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    updateStickyHeaderAlpha()
+  }
+
+  private func updateStickyHeaderAlpha() {
+    let navBarMaxY = navigationController?.navigationBar.frame.maxY ?? view.safeAreaInsets.top
+    DetailStickyHeaderSupport.updateAlpha(
+      stickyHeader: stickyHeader,
+      scrollView: tableView,
+      tableHeaderView: tableView.tableHeaderView,
+      navigationBarMaxY: navBarMaxY
+    )
+  }
+
+  private func playlistStickySubtitle() -> String? {
+    var parts: [String] = ["Playlist"]
+    if playlist.songCount > 0 {
+      parts.append("\(playlist.songCount) song\(playlist.songCount == 1 ? "" : "s")")
+    }
+    return parts.joined(separator: " · ")
   }
 
   override func viewIsAppearing(_ animated: Bool) {
@@ -254,6 +289,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       parts.append(playlist.duration.asDurationShortString)
     }
     detailOperationsView?.metadataOverride = parts.joined(separator: " · ")
+    stickyHeader.configure(title: playlist.name, subtitle: playlistStickySubtitle())
   }
 
   /// cassette Patch 020: Cassette-flavored "Empty playlist" state.
