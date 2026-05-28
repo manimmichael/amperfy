@@ -17,15 +17,10 @@ enum DetailStickyHeaderSupport {
     stickyHeader: DetailStickyHeaderView,
     in viewController: UIViewController
   ) {
-    guard let hostView = viewController.view else { return }
-    hostView.addSubview(stickyHeader)
-    NSLayoutConstraint.activate([
-      stickyHeader.topAnchor.constraint(equalTo: hostView.safeAreaLayoutGuide.topAnchor),
-      stickyHeader.leadingAnchor.constraint(equalTo: hostView.leadingAnchor),
-      stickyHeader.trailingAnchor.constraint(equalTo: hostView.trailingAnchor),
-      stickyHeader.heightAnchor.constraint(equalToConstant: stickyHeaderHeight),
-    ])
-    hostView.bringSubviewToFront(stickyHeader)
+    // cassette Polish 2 (D3): mount the fade-in title in the navigation bar
+    // itself instead of a separate band below the safe area. At rest alpha = 0
+    // so the nav bar shows only the back button.
+    viewController.navigationItem.titleView = stickyHeader
     stickyHeader.alpha = 0
   }
 
