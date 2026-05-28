@@ -160,6 +160,8 @@ class AlbumsVC: SingleSnapshotFetchedResultsTableViewController<AlbumMO> {
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    suppressDuplicateLibraryEntityIds = true
+    usesFadingSectionIndex = true
 
     #if !targetEnvironment(macCatalyst)
       refreshControl = UIRefreshControl()

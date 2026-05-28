@@ -154,6 +154,8 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    suppressDuplicateLibraryEntityIds = true
+    usesFadingSectionIndex = true
     appDelegate.userStatistics.visited(.artists)
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()

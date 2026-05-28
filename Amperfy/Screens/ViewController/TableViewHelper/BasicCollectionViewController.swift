@@ -165,6 +165,8 @@ class SingleSnapshotFetchedResultsCollectionViewController<ResultType>:
   @preconcurrency NSFetchedResultsControllerDelegate where ResultType: NSFetchRequestResult {
   var diffableDataSource: BasicUICollectionViewDiffableDataSource?
   var snapshotDidChange: (() -> ())?
+  /// cassette Patch 059: hide duplicate ArtistMO/AlbumMO rows by server id at render time.
+  var suppressDuplicateLibraryEntityIds = false
   let account: Account
 
   init(collectionViewLayout: UICollectionViewLayout, account: Account) {
@@ -219,6 +221,13 @@ class SingleSnapshotFetchedResultsCollectionViewController<ResultType>:
           return itemIdentifier
         }
       snapshot.reconfigureItems(reloadIdentifiers)
+
+      if suppressDuplicateLibraryEntityIds {
+        snapshot = LibrarySnapshotDedup.suppressingDuplicateServerIds(
+          snapshot: snapshot,
+          context: controller.managedObjectContext
+        )
+      }
 
       dataSource.apply(
         snapshot as NSDiffableDataSourceSnapshot<Int, NSManagedObjectID>,

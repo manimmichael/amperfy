@@ -207,6 +207,7 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    suppressDuplicateLibraryEntityIds = true
     // ensures that the collection view stops placing items under the sidebar
     collectionView.contentInsetAdjustmentBehavior = .always
 
