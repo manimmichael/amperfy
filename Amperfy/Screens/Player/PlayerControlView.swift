@@ -79,6 +79,10 @@ class PlayerControlView: UIView {
   @IBOutlet
   weak var optionsButton: UIButton!
 
+  /// cassette polish Part 2: the heart moves into the bottom row (AirPlay -
+  /// Heart - Queue). Created in code and inserted into `optionsStackView`.
+  private var heartButton: UIButton?
+
   required init?(coder aDecoder: NSCoder) {
     #if targetEnvironment(macCatalyst) // ok
       self.airplayVolume = MPVolumeView(frame: .zero)
@@ -122,8 +126,6 @@ class PlayerControlView: UIView {
     skipForwardButton.tintColor = CassetteTheme.UIColors.ink
     airplayButton.tintColor = CassetteTheme.UIColors.ink2
     playerModeButton.tintColor = CassetteTheme.UIColors.ink2
-    volumeButton.tintColor = CassetteTheme.UIColors.ink2
-    optionsButton.imageView?.tintColor = CassetteTheme.UIColors.ink2
     elapsedTimeLabel.font = UIFont.cassette(.metadata)
     elapsedTimeLabel.textColor = CassetteTheme.UIColors.ink2
     remainingTimeLabel.font = UIFont.cassette(.metadata)
@@ -136,11 +138,15 @@ class PlayerControlView: UIView {
     // refresh path keeps these as optionals and no longer un-hides them.
     audioInfoLabel?.removeFromSuperview()
     playTypeIcon?.removeFromSuperview()
+    // cassette polish Part 2: kill the on-screen volume control (physical
+    // buttons handle volume) and the player-level overflow menu. The heart
+    // joins the bottom row between AirPlay and the queue button. The heart's
+    // data path (rootView.favoritePressed -> remoteToggleFavorite) is
+    // untouched; only its placement changes.
+    volumeButton?.removeFromSuperview()
+    optionsButton?.removeFromSuperview()
+    setupBottomRowHeart()
     refreshPlayer()
-    playerHandler?.refreshPlayerOptions(
-      optionsButton: optionsButton,
-      menuCreateCB: createPlayerOptionsMenu
-    )
 
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
@@ -217,36 +223,30 @@ class PlayerControlView: UIView {
     #endif
   }
 
+  // cassette polish Part 2: the on-screen volume control is removed (physical
+  // buttons own volume). The button is dropped from the bottom row; this stub
+  // preserves the XIB action connection and does nothing.
   @IBAction
-  func volumeButtonPressed(_ sender: Any) {
-    showVolumeSliderMenu()
+  func volumeButtonPressed(_ sender: Any) {}
+
+  private func setupBottomRowHeart() {
+    let heart = UIButton(type: .system)
+    heart.translatesAutoresizingMaskIntoConstraints = false
+    heart.addTarget(self, action: #selector(heartButtonPushed), for: .touchUpInside)
+    NSLayoutConstraint.activate([
+      heart.widthAnchor.constraint(equalToConstant: 28),
+      heart.heightAnchor.constraint(equalToConstant: 28),
+    ])
+    // AirPlay (index 0) - Heart - Queue ...
+    optionsStackView.insertArrangedSubview(heart, at: 1)
+    heartButton = heart
   }
 
-  func showVolumeSliderMenu() {
-    let popoverContentController = SliderMenuPopover()
-    let sliderMenuView = popoverContentController.sliderMenuView
-    sliderMenuView.frame = CGRect(x: 0, y: 0, width: 250, height: 50)
-
-    sliderMenuView.slider.minimumValue = 0
-    sliderMenuView.slider.maximumValue = 100
-    sliderMenuView.slider.value = appDelegate.player.volume * 100
-
-    sliderMenuView.sliderValueChangedCB = {
-      self.appDelegate.player.volume = Float(sliderMenuView.slider.value) / 100.0
-    }
-
-    popoverContentController.modalPresentationStyle = .popover
-    popoverContentController.preferredContentSize = sliderMenuView.frame.size
-
-    if let popoverPresentationController = popoverContentController.popoverPresentationController {
-      popoverPresentationController.permittedArrowDirections = .down
-      popoverPresentationController.delegate = popoverContentController
-      popoverPresentationController.sourceView = volumeButton
-      rootView?.present(
-        popoverContentController,
-        animated: true,
-        completion: nil
-      )
+  @objc
+  func heartButtonPushed() {
+    rootView?.favoritePressed()
+    if let heartButton {
+      rootView?.refreshFavoriteButton(button: heartButton)
     }
   }
 
@@ -254,10 +254,6 @@ class PlayerControlView: UIView {
   func displayPlaylistPressed() {
     rootView?.switchDisplayStyleOptionPersistent()
     playerHandler?.refreshDisplayPlaylistButton(displayPlaylistButton: displayPlaylistButton)
-    playerHandler?.refreshPlayerOptions(
-      optionsButton: optionsButton,
-      menuCreateCB: createPlayerOptionsMenu
-    )
   }
 
   @IBAction
@@ -291,174 +287,10 @@ class PlayerControlView: UIView {
     )
     playerHandler?.refreshPrevNextButtons(previousButton: previousButton, nextButton: nextButton)
     playerHandler?.refreshDisplayPlaylistButton(displayPlaylistButton: displayPlaylistButton)
+    if let heartButton {
+      rootView?.refreshFavoriteButton(button: heartButton)
+    }
     refreshPlayerModeChangeButton()
-  }
-
-  func createPlaybackRateMenu() -> UIMenuElement {
-    let playerPlaybackRate = player.playbackRate
-    let availablePlaybackRates: [UIAction] = PlaybackRate.allCases.compactMap { playbackRate in
-      UIAction(
-        title: playbackRate.description,
-        image: playbackRate == playerPlaybackRate ? .check : nil,
-        handler: { _ in
-          self.player.setPlaybackRate(playbackRate)
-        }
-      )
-    }
-    return UIMenu(
-      title: "Playback Rate",
-      subtitle: playerPlaybackRate.description,
-      image: .playbackRate,
-      children: availablePlaybackRates
-    )
-  }
-
-  func createVisualizerTypeMenu() -> UIMenuElement {
-    let currentType = appDelegate.storage.settings.user.selectedVisualizerType
-    let availableTypes: [UIAction] = VisualizerType.allCases.reversed()
-      .compactMap { visualizerType in
-        UIAction(
-          title: visualizerType.displayName,
-          image: UIImage(systemName: visualizerType.iconName),
-          state: visualizerType == currentType ? .on : .off,
-          handler: { _ in
-            self.appDelegate.storage.settings.user.selectedVisualizerType = visualizerType
-            self.rootView?.largeCurrentlyPlayingView?.showVisualizer()
-          }
-        )
-      }
-    return UIMenu(
-      title: "Visualizer Style",
-      subtitle: currentType.displayName,
-      image: .sparkles,
-      children: availableTypes
-    )
-  }
-
-  func createPlayerOptionsMenu() -> [UIMenuElement] {
-    var menuActions = [UIMenuElement]()
-    if player.currentlyPlaying != nil || player.prevQueueCount > 0 || player
-      .userQueueCount > 0 || player.nextQueueCount > 0 {
-      let clearPlayer = UIAction(title: "Clear Player", image: .clear, handler: { _ in
-        self.player.clearQueues()
-      })
-      menuActions.append(clearPlayer)
-    }
-    if player.userQueueCount > 0 {
-      let clearUserQueue = UIAction(title: "Clear User Queue", image: .playlistX, handler: { _ in
-        self.rootView?.clearUserQueue()
-      })
-      menuActions.append(clearUserQueue)
-    }
-
-    menuActions.append(appDelegate.createSleepTimerMenu(refreshCB: nil))
-    menuActions.append(createPlaybackRateMenu())
-
-    if rootView?.largeCurrentlyPlayingView?.isLyricsButtonAllowedToDisplay ?? false {
-      if !appDelegate.storage.settings.user.isPlayerLyricsDisplayed ||
-        appDelegate.storage.settings.user.playerDisplayStyle != .large {
-        let showLyricsAction = UIAction(title: "Show Lyrics", image: .lyrics, handler: { _ in
-          if !self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed {
-            self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed.toggle()
-            self.appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
-            self.rootView?.largeCurrentlyPlayingView?.display(element: .lyrics)
-          }
-          if self.appDelegate.storage.settings.user.playerDisplayStyle != .large {
-            self.displayPlaylistPressed()
-          }
-        })
-        menuActions.append(showLyricsAction)
-      } else {
-        let hideLyricsAction = UIAction(title: "Hide Lyrics", image: .lyrics, handler: { _ in
-          self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed.toggle()
-          self.rootView?.largeCurrentlyPlayingView?.display(element: .artwork)
-        })
-        menuActions.append(hideLyricsAction)
-      }
-    }
-
-    if !appDelegate.storage.settings.user.isPlayerVisualizerDisplayed ||
-      appDelegate.storage.settings.user.playerDisplayStyle != .large {
-      let showVisualizerAction = UIAction(
-        title: "Show Audio Visualizer",
-        image: .audioVisualizer,
-        handler: { _ in
-          if !self.appDelegate.storage.settings.user.isPlayerVisualizerDisplayed {
-            self.appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = true
-            self.appDelegate.storage.settings.user.isPlayerLyricsDisplayed = false
-            self.rootView?.largeCurrentlyPlayingView?.display(element: .visualizer)
-          }
-          if self.appDelegate.storage.settings.user.playerDisplayStyle != .large {
-            self.displayPlaylistPressed()
-          }
-        }
-      )
-      menuActions.append(showVisualizerAction)
-    } else {
-      let hideVisualizerAction = UIAction(
-        title: "Hide Audio Visualizer",
-        image: .audioVisualizer,
-        handler: { _ in
-          self.appDelegate.storage.settings.user.isPlayerVisualizerDisplayed = false
-          self.rootView?.largeCurrentlyPlayingView?.display(element: .artwork)
-        }
-      )
-      menuActions.append(hideVisualizerAction)
-
-      // Add visualizer type selector submenu
-      menuActions.append(createVisualizerTypeMenu())
-    }
-
-    switch player.playerMode {
-    case .music:
-      if player.currentlyPlaying != nil || player.prevQueueCount > 0 || player.nextQueueCount > 0,
-         appDelegate.storage.settings.user.isOnlineMode {
-        let addContextToPlaylist = UIAction(
-          title: "Add Context Queue to Playlist",
-          image: .playlistPlus,
-          handler: { _ in
-            var itemsToAdd = self.player.getAllPrevQueueItems().filterSongs()
-            if let currentlyPlaying = self.player.currentlyPlaying,
-               let currentSong = currentlyPlaying.asSong {
-              itemsToAdd.append(currentSong)
-            }
-            itemsToAdd.append(contentsOf: self.player.getAllNextQueueItems().filterSongs())
-            // allow add to playlist only if all songs belong to the same account
-            guard let firstItemAccount = itemsToAdd.first?.account,
-                  itemsToAdd.count == itemsToAdd.filter({ $0.account == firstItemAccount }).count
-            else { return }
-            let selectPlaylistVC = AppStoryboard.Main
-              .segueToPlaylistSelector(account: firstItemAccount, itemsToAdd: itemsToAdd)
-            let selectPlaylistNav = UINavigationController(rootViewController: selectPlaylistVC)
-            self.rootView?.present(selectPlaylistNav, animated: true, completion: nil)
-          }
-        )
-        menuActions.append(addContextToPlaylist)
-      }
-    case .podcast: break
-    }
-
-    switch appDelegate.storage.settings.user.playerDisplayStyle {
-    case .compact:
-      let scrollToCurrentlyPlaying = UIAction(
-        title: "Scroll to currently playing",
-        image: .squareArrow,
-        handler: { _ in
-          self.rootView?.scrollToCurrentlyPlayingRow()
-        }
-      )
-      menuActions.append(scrollToCurrentlyPlaying)
-    case .large: break
-    }
-
-    let playerInfo = UIAction(title: "Player Info", image: .info, handler: { _ in
-      guard let rootView = self.rootView else { return }
-      let detailVC = PlainDetailsVC()
-      detailVC.display(player: self.player, on: rootView)
-      rootView.present(detailVC, animated: true)
-    })
-    menuActions.append(playerInfo)
-    return menuActions
   }
 
   func refreshPlayerModeChangeButton() {

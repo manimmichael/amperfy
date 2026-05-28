@@ -831,6 +831,8 @@ class EntityPreviewActionBuilder {
   }
 
   private func createShowLyricsAction(song: Song) -> UIAction? {
+    // cassette polish Part 2: lyrics UI gated behind Cassette.lyricsEnabled.
+    guard Cassette.lyricsEnabled else { return nil }
     guard let playable = entityContainer as? AbstractPlayable,
           let song = playable.asSong,
           let lyricsRelFilePath = song.lyricsRelFilePath,

@@ -171,6 +171,10 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
 
   func prepare(toWorkOnRootView: PopupPlayerVC?) {
     rootView = toWorkOnRootView
+    // cassette polish Part 2: the heart moved to the bottom transport row in
+    // PlayerControlView, so the artwork-row favorite button is hidden here.
+    // The per-track overflow (optionsButton) stays in this row.
+    favoriteButton.isHidden = true
     titleLabel.applyAmperfyStyle()
     albumLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
@@ -325,7 +329,10 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   var isLyricsButtonAllowedToDisplay: Bool {
-    appDelegate.player.playerMode == .music &&
+    // cassette polish Part 2: lyrics scaffolding stays in code but every
+    // user-facing entry point is gated behind Cassette.lyricsEnabled.
+    Cassette.lyricsEnabled &&
+      appDelegate.player.playerMode == .music &&
       appDelegate.storage.settings.accounts.availableApiTypes.contains(.subsonic)
   }
 

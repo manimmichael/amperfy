@@ -362,7 +362,9 @@ class PlayerUIHandler: NSObject {
   }
 
   var isLyricsButtonAllowedToDisplay: Bool {
-    appDelegate.player.playerMode == .music && appDelegate.storage.settings.accounts
+    // cassette polish Part 2: gated behind Cassette.lyricsEnabled.
+    Cassette.lyricsEnabled && appDelegate.player.playerMode == .music && appDelegate.storage
+      .settings.accounts
       .availableApiTypes.contains(.subsonic)
   }
 

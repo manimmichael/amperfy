@@ -33,6 +33,16 @@ let settingsWindowActivityType = "amperfy.settings"
 let miniPlayerWindowActivityType = "amperfy.miniplayer"
 let defaultWindowActivityType = "amperfy.main"
 
+// MARK: - Cassette
+
+/// Cassette fork build-time feature flags.
+enum Cassette {
+  /// Lyrics scaffolding (LyricsView, data fetch, gesture recognizers) stays in
+  /// the codebase, but every user-facing lyrics entry point is gated behind
+  /// this flag. Flip to `true` to re-enable in one place.
+  static let lyricsEnabled = false
+}
+
 // MARK: - AppDelegate
 
 @main
