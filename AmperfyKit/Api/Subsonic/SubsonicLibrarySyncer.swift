@@ -121,7 +121,7 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
     }
     statusNotifyier?.notifySyncStarted(ofType: .album, totalCount: pollCountArtist)
     try await withThrowingTaskGroup(of: Void.self) { taskGroup in
-      for index in Array(0 ... pollCountArtist) {
+      for index in 0 ..< pollCountArtist {
         taskGroup.addTask { @MainActor @Sendable in
           let albumsResponse = try await self.subsonicServerApi.requestAlbums(
             offset: index * Self.maxItemCountToPollAtOnce,
