@@ -44,6 +44,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   private var fetchedResultsController: AlbumSongsFetchedResultsController!
   private var optionsButton: UIBarButtonItem!
   private var detailOperationsView: GenericDetailTableHeader?
+  private let stickyHeader = DetailStickyHeaderView()
+  private var hideUniformArtistSubtitle = false
   let album: Album
 
   init(account: Account, album: Album) {
@@ -122,6 +124,12 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
     refreshAlbumMetadataLine()
+    DetailStickyHeaderSupport.install(stickyHeader: stickyHeader, in: self)
+    stickyHeader.configure(title: album.name, subtitle: album.subtitle)
+    updateHideUniformArtistSubtitle()
+    snapshotDidChange = { [weak self] in
+      self?.updateHideUniformArtistSubtitle()
+    }
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()
     optionsButton.menu = UIMenu.lazyMenu {
@@ -143,6 +151,37 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = false
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    stickyHeader.alpha = 0
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    updateStickyHeaderAlpha()
+  }
+
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    updateStickyHeaderAlpha()
+  }
+
+  private func updateStickyHeaderAlpha() {
+    let navBarMaxY = navigationController?.navigationBar.frame.maxY ?? view.safeAreaInsets.top
+    DetailStickyHeaderSupport.updateAlpha(
+      stickyHeader: stickyHeader,
+      scrollView: tableView,
+      tableHeaderView: tableView.tableHeaderView,
+      navigationBarMaxY: navBarMaxY
+    )
+  }
+
+  private func updateHideUniformArtistSubtitle() {
+    let songs = fetchedResultsController?
+      .getContextSongs(onlyCachedSongs: false) ?? []
+    let names = Set(songs.compactMap(\.creatorName))
+    hideUniformArtistSubtitle = names.count == 1
   }
 
   override func viewIsAppearing(_ animated: Bool) {
@@ -220,7 +259,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       playable: song,
       playContextCb: convertCellViewToPlayContext,
       rootView: self,
-      isDislayAlbumTrackNumberStyle: true
+      isDislayAlbumTrackNumberStyle: true,
+      hideArtistSubtitle: hideUniformArtistSubtitle
     )
     return cell
   }
