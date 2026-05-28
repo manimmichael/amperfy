@@ -54,9 +54,17 @@ extension PopupPlayerVC {
   }
 
   func refreshOptionButton(button: UIButton, rootView: UIViewController?) {
-    var config = UIButton.Configuration.playerRound()
+    // cassette polish Part 5: per-track overflow sits plain against the player
+    // background (no bg2 circular tile). 22pt ellipsis in ink; 44pt hit target
+    // preserved via symmetric content insets around the ~22pt glyph.
+    var config = UIButton.Configuration.plain()
     config.image = .ellipsis
     config.baseForegroundColor = CassetteTheme.UIColors.ink
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+      pointSize: 22,
+      weight: .regular
+    )
+    config.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11)
     button.isEnabled = true
     button.configuration = config
 
@@ -73,7 +81,15 @@ extension PopupPlayerVC {
   }
 
   func refreshFavoriteButton(button: UIButton) {
-    var config = UIButton.Configuration.playerRound()
+    // cassette polish Part 5: heart sits plain against the player background
+    // (no bg2 circular tile). 22pt symbol in ink, filled when favorited and
+    // outlined when not; 44pt hit target via symmetric content insets.
+    var config = UIButton.Configuration.plain()
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+      pointSize: 22,
+      weight: .regular
+    )
+    config.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11)
     switch player.playerMode {
     case .music:
       if let playableInfo = player.currentlyPlaying,
