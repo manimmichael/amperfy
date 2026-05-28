@@ -148,7 +148,10 @@ final class LibraryContainerVC: UIViewController {
     )
     config.imagePadding = 6
     config.baseForegroundColor = CassetteTheme.UIColors.ink
-    config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+    // cassette Polish 2 (C4/H): Barlow Condensed Bold at 22pt has a tall
+    // bounding box; with zero vertical insets + sizeToFit the glyph tops were
+    // clipped in the nav titleView. Give the line vertical breathing room.
+    config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)
     button.configuration = config
     button.tintColor = CassetteTheme.UIColors.ink
     // Force the button to size itself so the chevron sits next to

@@ -121,6 +121,16 @@ final class HomeVC: UICollectionViewController {
       .font: UIFont.cassette(.heroTitle),
       .foregroundColor: CassetteTheme.UIColors.ink,
     ]
+    // cassette Polish 2 (A1/H): the collapsed/inline title previously fell
+    // back to the global 18pt semibold, so scrolling produced a jarring
+    // font-swap "slide-up" into the Barlow Condensed large title. Pin the
+    // inline title to the same Barlow Condensed family (sectionTitle, the
+    // exact token the Library "Artists ▾" dropdown uses) so the collapse is
+    // a clean scale with no typeface change.
+    appearance.titleTextAttributes = [
+      .font: UIFont.cassette(.sectionTitle),
+      .foregroundColor: CassetteTheme.UIColors.ink,
+    ]
     navigationItem.standardAppearance = appearance
     navigationItem.scrollEdgeAppearance = appearance
     if #available(iOS 15.0, *) {
@@ -175,6 +185,13 @@ final class HomeVC: UICollectionViewController {
         bottom: 24,
         trailing: 16
       )
+      // cassette Polish 2 (A2): don't let the section's 16pt content inset
+      // also indent the shelf header. Otherwise the header is inset 16 AND
+      // its title label adds its own 16pt leading (= 32pt), pushing "Recent"/
+      // "Albums" right of the first card (which starts at 16). With this the
+      // header spans full width and the label's 16pt leading lines up exactly
+      // with the card column.
+      sectionLayout.supplementariesFollowContentInsets = false
 
       // Header
       let headerSize = NSCollectionLayoutSize(
@@ -631,18 +648,24 @@ final class SectionHeaderView: UICollectionReusableView {
     addSubview(chevronImageView)
     addSubview(refreshButton)
     addSubview(tapButton)
+    // cassette Polish 2 (A2): the chevron now sits directly adjacent to the
+    // title (6pt gap) instead of floating against the trailing edge. On Home
+    // it reads "tap into this shelf"; in Library the same glyph (rotated to
+    // chevron.down) reads "dropdown". The trailing region is intentionally
+    // empty space.
+    titleLabel.setContentHuggingPriority(.required, for: .horizontal)
     NSLayoutConstraint.activate([
       titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-      titleLabel.trailingAnchor.constraint(
-        lessThanOrEqualTo: chevronImageView.leadingAnchor,
-        constant: -6
-      ),
       titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 16),
       titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
 
+      chevronImageView.leadingAnchor.constraint(
+        equalTo: titleLabel.trailingAnchor,
+        constant: 6
+      ),
       chevronImageView.trailingAnchor.constraint(
-        lessThanOrEqualTo: refreshButton.leadingAnchor,
-        constant: -8
+        lessThanOrEqualTo: trailingAnchor,
+        constant: -16
       ),
       chevronImageView.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
       chevronImageView.widthAnchor.constraint(equalToConstant: 12),
