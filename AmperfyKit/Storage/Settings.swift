@@ -565,4 +565,23 @@ public struct AmperfySettings: Sendable, Codable {
       } catch {}
     }
   }
+
+  /// Cassette fork — Layer 3: the bearer token obtained during Cassette
+  /// pairing/login, reused to authenticate /api/sync/* requests. Stored in
+  /// UserDefaults to stay consistent with the other credential storage here
+  /// (Keychain is a later hardening step). `nil` clears it.
+  public var cassetteBearerToken: String? {
+    get {
+      UserDefaults.standard
+        .string(forKey: PersistentStorage.UserDefaultsKey.CassetteBearerToken.rawValue)
+    }
+    set {
+      let key = PersistentStorage.UserDefaultsKey.CassetteBearerToken.rawValue
+      if let newValue, !newValue.isEmpty {
+        UserDefaults.standard.set(newValue, forKey: key)
+      } else {
+        UserDefaults.standard.removeObject(forKey: key)
+      }
+    }
+  }
 }

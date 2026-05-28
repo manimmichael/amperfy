@@ -246,6 +246,10 @@ class LoginVC: UIViewController {
       )
 
       DispatchQueue.main.async {
+        // Cassette fork — Layer 3: the bearer token authenticated against
+        // /api/player/me, so it's valid. Persist it for the sync layer
+        // (/api/sync/*), which runs long after this login flow ends.
+        self.appDelegate.storage.settings.cassetteBearerToken = token
         self.loginWithCredentials(credentials)
       }
     }.resume()

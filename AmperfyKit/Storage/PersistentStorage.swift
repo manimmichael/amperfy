@@ -104,6 +104,10 @@ public class PersistentStorage {
     case SettingsApp = "settings.app"
     case SettingsUser = "settings.user"
     case SettingsAccount = "settings.account"
+    // Cassette fork — Layer 3: bearer token issued during /auth/player
+    // pairing, reused for /api/sync/* calls. Persisted so the sync layer
+    // can authenticate after the login flow ends.
+    case CassetteBearerToken = "cassette.bearerToken"
 
     // Deprecated Settings
     case ServerUrl = "serverUrl"
