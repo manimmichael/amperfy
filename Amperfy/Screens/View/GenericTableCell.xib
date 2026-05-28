@@ -28,7 +28,7 @@
                                     <constraint firstAttribute="width" secondItem="kaN-9u-M2i" secondAttribute="height" multiplier="1:1" id="wD7-nl-i5l"/>
                                 </constraints>
                             </view>
-                            <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" translatesAutoresizingMaskIntoConstraints="NO" id="55a-sm-8cR" userLabel="HStack View">
+                            <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" spacing="4" translatesAutoresizingMaskIntoConstraints="NO" id="55a-sm-8cR" userLabel="HStack View">
                                 <rect key="frame" x="56" y="7" width="549" height="35"/>
                                 <subviews>
                                     <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" translatesAutoresizingMaskIntoConstraints="NO" id="HDj-Db-Qbv">
