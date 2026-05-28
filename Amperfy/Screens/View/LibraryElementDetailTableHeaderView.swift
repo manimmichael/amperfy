@@ -36,6 +36,11 @@ struct PlayShuffleInfoConfiguration {
   var isShuffleOnContextNeccessary: Bool = true
   var shuffleContextCb: GetPlayContextCallback?
   var isEmbeddedInOtherView: Bool = false
+  /// cassette polish Part 4: when true (set only by the Album / Artist /
+  /// Playlist detail headers), the compact-width layout swaps the side-by-side
+  /// bordered pair for a prominent skeuomorphic CassettePlayButton with a
+  /// quiet secondary Shuffle beneath it. List headers leave this false.
+  var usesProminentPlayButton: Bool = false
 }
 
 // MARK: - LibraryElementDetailTableHeaderView
@@ -51,9 +56,16 @@ class LibraryElementDetailTableHeaderView: UIView {
   weak var infoLabel: UILabel!
 
   static let frameHeight: CGFloat = 40.0 + margin.top + margin.bottom
+  /// Height of the prominent (skeuomorphic) layout: 68pt Play + 16pt gap +
+  /// ~36pt Shuffle = 120pt of content.
+  static let prominentFrameHeight: CGFloat = 120.0 + margin.top + margin.bottom
   static let margin = UIView.defaultMarginMiddleElement
 
   private var config: PlayShuffleInfoConfiguration?
+
+  private var prominentContainer: UIView?
+  private var cassettePlayButton: CassettePlayButton?
+  private var secondaryShuffleButton: UIButton?
 
   required init?(coder aDecoder: NSCoder) {
     super.init(coder: aDecoder)
@@ -119,6 +131,15 @@ class LibraryElementDetailTableHeaderView: UIView {
     infoContainerView.isHidden = config
       .isInfoAlwaysHidden || (traitCollection.horizontalSizeClass == .compact)
     infoLabel.text = config.infoCB?() ?? ""
+
+    // cassette polish Part 4: the prominent skeuomorphic layout is compact-
+    // width only; iPad/Mac (regular) and standalone list headers keep the
+    // known-good bordered pair.
+    let showProminent = config.usesProminentPlayButton &&
+      traitCollection.horizontalSizeClass == .compact
+    prominentContainer?.isHidden = !showProminent
+    playAllButton.isHidden = showProminent
+    playShuffledButton.isHidden = showProminent || config.isShuffleHidden
   }
 
   @IBAction
@@ -165,6 +186,7 @@ class LibraryElementDetailTableHeaderView: UIView {
       systemImage: "shuffle",
       isHidden: configuration.isShuffleHidden
     )
+    setupProminentLayoutIfNeeded()
     activate()
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
@@ -209,14 +231,84 @@ class LibraryElementDetailTableHeaderView: UIView {
     button.isHidden = isHidden
   }
 
+  // cassette polish Part 4: build the prominent skeuomorphic Play + secondary
+  // Shuffle layout once. It overlays the header's full bounds and is toggled
+  // visible only for compact width in refresh(). The Shuffle button is a quiet
+  // bordered control (1pt ink4 border, ink glyph + label, light haptic).
+  private func setupProminentLayoutIfNeeded() {
+    guard config?.usesProminentPlayButton == true, prominentContainer == nil else { return }
+
+    let container = UIView()
+    container.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(container)
+
+    let play = CassettePlayButton()
+    play.translatesAutoresizingMaskIntoConstraints = false
+    play.onTap = { [weak self] in self?.play(isShuffled: false) }
+
+    let shuffle = UIButton(type: .system)
+    var shuffleConfig = UIButton.Configuration.bordered()
+    shuffleConfig.image = UIImage(systemName: "shuffle")
+    shuffleConfig.imagePadding = 6
+    shuffleConfig.imagePlacement = .leading
+    shuffleConfig.cornerStyle = .medium
+    shuffleConfig.baseForegroundColor = CassetteTheme.UIColors.ink
+    shuffleConfig.baseBackgroundColor = .clear
+    shuffleConfig.background.strokeColor = CassetteTheme.UIColors.ink4
+    shuffleConfig.background.strokeWidth = 1
+    shuffleConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+      pointSize: 13,
+      weight: .semibold
+    )
+    var titleAttributes = AttributeContainer()
+    titleAttributes.font = UIFont.cassette(.miniTitle)
+    shuffleConfig.attributedTitle = AttributedString("Shuffle", attributes: titleAttributes)
+    shuffle.configuration = shuffleConfig
+    shuffle.translatesAutoresizingMaskIntoConstraints = false
+    shuffle.addTarget(self, action: #selector(prominentShufflePressed), for: .touchUpInside)
+
+    container.addSubview(play)
+    container.addSubview(shuffle)
+    NSLayoutConstraint.activate([
+      container.topAnchor.constraint(equalTo: topAnchor),
+      container.bottomAnchor.constraint(equalTo: bottomAnchor),
+      container.leadingAnchor.constraint(equalTo: leadingAnchor),
+      container.trailingAnchor.constraint(equalTo: trailingAnchor),
+
+      play.topAnchor.constraint(equalTo: container.topAnchor),
+      play.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+      play.widthAnchor.constraint(equalToConstant: CassettePlayButton.diameter),
+      play.heightAnchor.constraint(equalToConstant: CassettePlayButton.diameter),
+
+      shuffle.topAnchor.constraint(equalTo: play.bottomAnchor, constant: 16),
+      shuffle.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+      shuffle.widthAnchor.constraint(equalToConstant: 140),
+      shuffle.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+    ])
+
+    prominentContainer = container
+    cassettePlayButton = play
+    secondaryShuffleButton = shuffle
+  }
+
+  @objc
+  private func prominentShufflePressed() {
+    Haptics.light.vibrate(isHapticsEnabled: appDelegate.storage.settings.user.isHapticsEnabled)
+    shuffle()
+  }
+
   func activate() {
     playAllButton.isEnabled = true
     playShuffledButton.isEnabled = !(config?.isShuffleOnContextNeccessary ?? true) || appDelegate
       .storage.settings.user.isPlayerShuffleButtonEnabled
+    cassettePlayButton?.isEnabled = true
+    secondaryShuffleButton?.isEnabled = playShuffledButton.isEnabled
   }
 
   func deactivate() {
     playAllButton.isEnabled = false
     playShuffledButton.isEnabled = false
+    cassettePlayButton?.isEnabled = false
+    secondaryShuffleButton?.isEnabled = false
   }
 }

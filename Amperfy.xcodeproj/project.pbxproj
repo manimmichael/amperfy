@@ -21,6 +21,7 @@
 		5007CE4721EF6A8E00BC5CBA /* PlaylistDetailVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5007CE4621EF6A8E00BC5CBA /* PlaylistDetailVC.swift */; };
 		500B7D4521EDB05F0083ED6F /* LibraryElementDetailTableHeaderView.xib in Resources */ = {isa = PBXBuildFile; fileRef = 500B7D4421EDB05F0083ED6F /* LibraryElementDetailTableHeaderView.xib */; };
 		500B7D4721EDB0890083ED6F /* LibraryElementDetailTableHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500B7D4621EDB0890083ED6F /* LibraryElementDetailTableHeaderView.swift */; };
+		CA55E77E0000000000000001 /* CassettePlayButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E77E0000000000000002 /* CassettePlayButton.swift */; };
 		500B7D4921EDD6250083ED6F /* ViewCreator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500B7D4821EDD6250083ED6F /* ViewCreator.swift */; };
 		500B97CD2B7BC680005554BF /* EntityPreviewVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500B97CC2B7BC67F005554BF /* EntityPreviewVC.swift */; };
 		500B97D02B7C9555005554BF /* EntityPreviewVC.xib in Resources */ = {isa = PBXBuildFile; fileRef = 500B97CF2B7C9546005554BF /* EntityPreviewVC.xib */; };
@@ -631,6 +632,7 @@
 		500B7D4221ECFCDD0083ED6F /* LibraryElementEnum.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryElementEnum.swift; sourceTree = "<group>"; };
 		500B7D4421EDB05F0083ED6F /* LibraryElementDetailTableHeaderView.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = LibraryElementDetailTableHeaderView.xib; sourceTree = "<group>"; };
 		500B7D4621EDB0890083ED6F /* LibraryElementDetailTableHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryElementDetailTableHeaderView.swift; sourceTree = "<group>"; };
+		CA55E77E0000000000000002 /* CassettePlayButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassettePlayButton.swift; sourceTree = "<group>"; };
 		500B7D4821EDD6250083ED6F /* ViewCreator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewCreator.swift; sourceTree = "<group>"; };
 		500B97CC2B7BC67F005554BF /* EntityPreviewVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntityPreviewVC.swift; sourceTree = "<group>"; };
 		500B97CF2B7C9546005554BF /* EntityPreviewVC.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = EntityPreviewVC.xib; sourceTree = "<group>"; };
@@ -1869,6 +1871,7 @@
 				50C9D691284FAA4D007F18D0 /* DetailStickyHeaderView.swift */,
 				500B7D4421EDB05F0083ED6F /* LibraryElementDetailTableHeaderView.xib */,
 				500B7D4621EDB0890083ED6F /* LibraryElementDetailTableHeaderView.swift */,
+				CA55E77E0000000000000002 /* CassettePlayButton.swift */,
 				50C16C2521E7CBA500F086F0 /* GenericTableCell.xib */,
 				50C16C1D21E7A35C00F086F0 /* GenericTableCell.swift */,
 				50C16C0B21E52BBB00F086F0 /* PlayableTableCell.xib */,
@@ -2521,6 +2524,7 @@
 				504262B32BF5FC3800B5EF38 /* PlayMediaIntentHandler.swift in Sources */,
 				507148AD2B767FE200557904 /* ContextQueuePrevSectionHeader.swift in Sources */,
 				500B7D4721EDB0890083ED6F /* LibraryElementDetailTableHeaderView.swift in Sources */,
+				CA55E77E0000000000000001 /* CassettePlayButton.swift in Sources */,
 				50C171542D1078A500C0C53A /* PlaylistAddPlaylistDetailVC.swift in Sources */,
 				641708592C13BF5100BA2619 /* Haptics.swift in Sources */,
 				50CCD0592B6C388B0073793B /* PlainDetailsVC.swift in Sources */,

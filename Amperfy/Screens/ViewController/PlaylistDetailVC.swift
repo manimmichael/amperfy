@@ -175,7 +175,8 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
           []
       ) },
       player: appDelegate.player,
-      isInfoAlwaysHidden: true
+      isInfoAlwaysHidden: true,
+      usesProminentPlayButton: true
     )
     let detailHeaderConfig = DetailHeaderConfiguration(
       entityContainer: playlist,

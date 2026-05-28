@@ -90,7 +90,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
         return PlayContext(containable: self.artist, playables: sortedSongs)
       },
       player: appDelegate.player,
-      isInfoAlwaysHidden: true
+      isInfoAlwaysHidden: true,
+      usesProminentPlayButton: true
     )
     let detailHeaderConfig = DetailHeaderConfiguration(
       entityContainer: artist,

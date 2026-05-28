@@ -80,9 +80,19 @@ class GenericDetailTableHeader: UIView {
   // the artwork. iPad/Mac (regular) keeps the existing rhythm.
   static let frameHeightCompact: CGFloat = 424.0
   static let frameHeightRegular: CGFloat = 240.0
-  static func frameHeight(traitCollection: UITraitCollection) -> CGFloat {
+  // cassette polish Part 4: the prominent skeuomorphic Play layout is taller
+  // than the bordered pair. The detail header grows by this delta, but only at
+  // compact width (where the prominent layout actually renders).
+  static let prominentExtraHeight: CGFloat =
+    LibraryElementDetailTableHeaderView.prominentFrameHeight
+      - LibraryElementDetailTableHeaderView.frameHeight
+  static func frameHeight(
+    traitCollection: UITraitCollection,
+    isProminentPlayButton: Bool = false
+  ) -> CGFloat {
     if traitCollection.horizontalSizeClass == .compact {
-      return GenericDetailTableHeader.frameHeightCompact
+      return GenericDetailTableHeader.frameHeightCompact +
+        (isProminentPlayButton ? prominentExtraHeight : 0)
     } else {
       return GenericDetailTableHeader.frameHeightRegular
     }
@@ -97,12 +107,16 @@ class GenericDetailTableHeader: UIView {
 
   public static func createTableHeader(configuration: DetailHeaderConfiguration)
     -> GenericDetailTableHeader? {
+    let isProminent = configuration.playShuffleInfoConfig?.usesProminentPlayButton ?? false
     configuration.tableView.tableHeaderView = UIView(frame: CGRect(
       x: 0,
       y: 0,
       width: configuration.rootView.view.bounds.size.width,
       height: GenericDetailTableHeader
-        .frameHeight(traitCollection: configuration.rootView.traitCollection)
+        .frameHeight(
+          traitCollection: configuration.rootView.traitCollection,
+          isProminentPlayButton: isProminent
+        )
     ))
     let genericDetailTableHeaderView = ViewCreator<GenericDetailTableHeader>
       .createFromNib(withinFixedFrame: CGRect(
@@ -110,7 +124,10 @@ class GenericDetailTableHeader: UIView {
         y: 0,
         width: configuration.rootView.view.bounds.size.width,
         height: GenericDetailTableHeader
-          .frameHeight(traitCollection: configuration.rootView.traitCollection)
+          .frameHeight(
+            traitCollection: configuration.rootView.traitCollection,
+            isProminentPlayButton: isProminent
+          )
       ))!
     genericDetailTableHeaderView.prepare(configuration: configuration)
     configuration.tableView.tableHeaderView?.addSubview(genericDetailTableHeaderView)
@@ -271,6 +288,7 @@ class GenericDetailTableHeader: UIView {
     guard let config = config else { return }
     let rootView = config.rootView
 
+    let isProminent = config.playShuffleInfoConfig?.usesProminentPlayButton ?? false
     var height = (traitCollection.horizontalSizeClass == .compact) ?
       GenericDetailTableHeader.frameHeightCompact :
       GenericDetailTableHeader.frameHeightRegular
@@ -284,8 +302,11 @@ class GenericDetailTableHeader: UIView {
               .titlePlayButtonContainerHeightWithoutButtons
           )
       } else {
+        // cassette polish Part 4: grow the title/play column + total header by
+        // the prominent delta when the skeuomorphic Play layout is active.
         titlePlayButtonContainerHeightConstraint.constant = Self
-          .titlePlayButtonContainerHeightCompact
+          .titlePlayButtonContainerHeightCompact + (isProminent ? Self.prominentExtraHeight : 0)
+        height += isProminent ? Self.prominentExtraHeight : 0
       }
     }
     if config.descriptionText != nil {
