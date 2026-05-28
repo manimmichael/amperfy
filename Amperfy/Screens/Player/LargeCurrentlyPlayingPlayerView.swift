@@ -178,17 +178,15 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     titleLabel.applyAmperfyStyle()
     albumLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
-    // cassette Patch 032: route popup player through the canonical scale.
-    // Title is sectionTitle (22pt bold display). Album subtitle drops
-    // 16pt display -> 12pt medium mono (.metadata) — the audit's one-off
-    // is killed and the album name now reads as the catalog metadata it
-    // semantically is. Artist drops 13pt -> 12pt to match the 12pt floor.
-    titleLabel.font = UIFont.cassette(.sectionTitle)
+    // cassette polish Part 3: intentionally composed metadata stack.
+    // Title -> heroTitle (28pt Barlow Bold, ink); album -> metadata (12pt
+    // DM Mono, ink2); artist -> miniTitle (14pt Barlow Semibold, ink).
+    titleLabel.font = UIFont.cassette(.heroTitle)
     titleLabel.textColor = CassetteTheme.UIColors.ink
     albumLabel.font = UIFont.cassette(.metadata)
     albumLabel.textColor = CassetteTheme.UIColors.ink2
-    artistLabel.font = UIFont.cassette(.metadata)
-    artistLabel.textColor = CassetteTheme.UIColors.ink2
+    artistLabel.font = UIFont.cassette(.miniTitle)
+    artistLabel.textColor = CassetteTheme.UIColors.ink
 
     lyricsView = LyricsView()
     lyricsView!.frame = upperContainerView.bounds
