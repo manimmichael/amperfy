@@ -124,8 +124,10 @@ class PlayerControlView: UIView {
     nextButton.tintColor = CassetteTheme.UIColors.ink
     skipBackwardButton.tintColor = CassetteTheme.UIColors.ink
     skipForwardButton.tintColor = CassetteTheme.UIColors.ink
-    airplayButton.tintColor = CassetteTheme.UIColors.ink2
-    playerModeButton.tintColor = CassetteTheme.UIColors.ink2
+    // cassette Polish 2 (G2): AirPlay + player-mode buttons were ink2 while
+    // every other bottom-row glyph is ink — uniform ink reads as one row.
+    airplayButton.tintColor = CassetteTheme.UIColors.ink
+    playerModeButton.tintColor = CassetteTheme.UIColors.ink
     elapsedTimeLabel.font = UIFont.cassette(.metadata)
     elapsedTimeLabel.textColor = CassetteTheme.UIColors.ink2
     remainingTimeLabel.font = UIFont.cassette(.metadata)
@@ -233,21 +235,35 @@ class PlayerControlView: UIView {
     let heart = UIButton(type: .system)
     heart.translatesAutoresizingMaskIntoConstraints = false
     heart.addTarget(self, action: #selector(heartButtonPushed), for: .touchUpInside)
+    // cassette Polish 2 (G1): keep the heart from clipping inside the 28pt row.
+    heart.clipsToBounds = false
     NSLayoutConstraint.activate([
       heart.widthAnchor.constraint(equalToConstant: 28),
       heart.heightAnchor.constraint(equalToConstant: 28),
     ])
+    optionsStackView.clipsToBounds = false
     // AirPlay (index 0) - Heart - Queue ...
     optionsStackView.insertArrangedSubview(heart, at: 1)
     heartButton = heart
   }
 
+  // cassette Polish 2 (G1): the shared `refreshFavoriteButton` applies an 11pt
+  // content inset for a standalone 44pt hit target. Inside the 28pt bottom row
+  // that left only ~6pt for the 22pt glyph, clipping it. Re-fit to the row
+  // after refreshing the favorite state.
+  private func refreshBottomRowHeart() {
+    guard let heartButton else { return }
+    rootView?.refreshFavoriteButton(button: heartButton)
+    if var config = heartButton.configuration {
+      config.contentInsets = .zero
+      heartButton.configuration = config
+    }
+  }
+
   @objc
   func heartButtonPushed() {
     rootView?.favoritePressed()
-    if let heartButton {
-      rootView?.refreshFavoriteButton(button: heartButton)
-    }
+    refreshBottomRowHeart()
   }
 
   @IBAction
@@ -287,9 +303,7 @@ class PlayerControlView: UIView {
     )
     playerHandler?.refreshPrevNextButtons(previousButton: previousButton, nextButton: nextButton)
     playerHandler?.refreshDisplayPlaylistButton(displayPlaylistButton: displayPlaylistButton)
-    if let heartButton {
-      rootView?.refreshFavoriteButton(button: heartButton)
-    }
+    refreshBottomRowHeart()
     refreshPlayerModeChangeButton()
   }
 
