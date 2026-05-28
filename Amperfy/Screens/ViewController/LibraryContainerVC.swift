@@ -136,14 +136,20 @@ final class LibraryContainerVC: UIViewController {
 
   private func applyTitleButtonAppearance(button: UIButton, label: String) {
     var config = UIButton.Configuration.plain()
-    config.title = label
+    var titleContainer = AttributeContainer()
+    titleContainer.font = UIFont.cassette(.sectionTitle)
+    titleContainer.foregroundColor = CassetteTheme.UIColors.ink
+    config.attributedTitle = AttributedString(label, attributes: titleContainer)
     config.image = UIImage(systemName: "chevron.down")
     config.imagePlacement = .trailing
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+      pointSize: 12,
+      weight: .semibold
+    )
     config.imagePadding = 6
     config.baseForegroundColor = CassetteTheme.UIColors.ink
     config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
     button.configuration = config
-    button.titleLabel?.font = UIFont.cassette(.sectionTitle)
     button.tintColor = CassetteTheme.UIColors.ink
     // Force the button to size itself so the chevron sits next to
     // the title rather than centered awkwardly.
