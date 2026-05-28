@@ -89,6 +89,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
   var window: UIWindow?
 
+  // Cassette fork — Layer 3 (Phase 3.1): foreground polling for sync intents.
+  // 30s cadence is for testing; background polling is out of scope for 3.1.
+  private var cassetteIntentPollTimer: Timer?
+
   func scene(
     _ scene: UIScene,
     willConnectTo session: UISceneSession,
@@ -175,6 +179,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
     appDelegate.quickActionsManager.handleSavedShortCutItemIfSaved()
     appDelegate.rebuildMainMenu()
+    startCassetteIntentPolling()
+  }
+
+  // MARK: - Cassette intent polling (Phase 3.1)
+
+  private func startCassetteIntentPolling() {
+    // Poll once immediately, then every 30s while in the foreground.
+    Task { await IntentExecutor.shared.handlePendingIntents() }
+    cassetteIntentPollTimer?.invalidate()
+    cassetteIntentPollTimer = Timer.scheduledTimer(
+      withTimeInterval: 30,
+      repeats: true
+    ) { _ in
+      Task { await IntentExecutor.shared.handlePendingIntents() }
+    }
+  }
+
+  private func stopCassetteIntentPolling() {
+    cassetteIntentPollTimer?.invalidate()
+    cassetteIntentPollTimer = nil
   }
 
   func sceneWillResignActive(_ scene: UIScene) {
@@ -202,6 +226,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     // Save changes in the application's managed object context when the application transitions to the background.
     os_log("sceneDidEnterBackground", log: self.log, type: .info)
     AmperKit.shared.threadPerformanceMonitor.isInForeground = false
+    stopCassetteIntentPolling()
     guard appDelegate.isNormalInteraction else {
       return
     }

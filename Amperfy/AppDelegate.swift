@@ -452,6 +452,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     completionHandler: @Sendable @escaping () -> ()
   ) {
     os_log("handleEventsForBackgroundURLSession: %s", log: self.log, type: .info, identifier)
+    // Cassette fork — Layer 3 (Phase 3.1): route the transfer session's
+    // background completions to CassetteTransferSession. Must run before the
+    // playableDownloadManager lookup, which doesn't own this identifier.
+    if identifier == CassetteTransferSession.backgroundIdentifier {
+      CassetteTransferSession.shared.handleBackgroundEvents(completionHandler: completionHandler)
+      return
+    }
     let responsibleMeta = AmperKit.shared.allActiveMetas
       .first(where: { $0.value.playableDownloadManager.urlSessionIdentifier == identifier })
     responsibleMeta?.value.playableDownloadManager
