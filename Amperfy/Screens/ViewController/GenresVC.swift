@@ -51,10 +51,7 @@ class GenresVC: SingleFetchedResultsTableViewController<GenreMO> {
     )
     singleFetchedResultsController = fetchedResultsController
 
-    configureSearchController(
-      placeholder: "Search in \"Genres\"",
-      scopeButtonTitles: ["All", "Cached"]
-    )
+    // cassette Polish 2 (B1): per-category search removed; use the global Search tab.
     setNavBarTitle(title: "Genres")
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.rowHeight = GenericTableCell.rowHeightWithoutImage

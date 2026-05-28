@@ -189,10 +189,8 @@ class AlbumsVC: SingleSnapshotFetchedResultsTableViewController<AlbumMO> {
     }
 
     common.applyFilter()
-    configureSearchController(
-      placeholder: "Search in \"\(common.filterTitle)\"",
-      scopeButtonTitles: ["All", "Cached"]
-    )
+    // cassette Polish 2 (B1): per-category search removed; the global Search
+    // tab covers this. No `navigationItem.searchController` is installed.
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.rowHeight = GenericTableCell.rowHeight
     tableView.estimatedRowHeight = GenericTableCell.rowHeight
@@ -202,10 +200,10 @@ class AlbumsVC: SingleSnapshotFetchedResultsTableViewController<AlbumMO> {
     tableView.estimatedSectionHeaderHeight = 0.0
     tableView.backgroundColor = .backgroundColor
 
-    detailHeader = LibraryElementDetailTableHeaderView.createTableHeader(
-      rootView: self,
-      configuration: common.createPlayShuffleInfoConfig()
-    )
+    // cassette Polish 2 (B2): no Play/Shuffle header on the Albums listing
+    // page ("play all my albums" is not a useful action). The detail-page
+    // header (Album/Artist/Playlist) keeps its Play/Shuffle. `detailHeader`
+    // stays nil; all `detailHeader?.` calls become no-ops.
     refreshControl?.addTarget(
       common,
       action: #selector(AlbumsCommonVCInteractions.handleRefresh),

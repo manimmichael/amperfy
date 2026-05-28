@@ -63,28 +63,14 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
     optionsButton = UIBarButtonItem.createOptionsBarButton()
 
     applyFilter()
-    configureSearchController(
-      placeholder: "Search in \"\(filterTitle)\"",
-      scopeButtonTitles: ["All", "Cached"]
-    )
+    // cassette Polish 2 (B1): per-category search removed; use the global
+    // Search tab. (B2): no Play/Shuffle listing header either. `detailHeaderView`
+    // stays nil and all `detailHeaderView?.` calls are no-ops.
     tableView.register(nibName: PlayableTableCell.typeName)
     tableView.rowHeight = PlayableTableCell.rowHeight
     tableView.estimatedRowHeight = PlayableTableCell.rowHeight
     tableView.backgroundColor = .backgroundColor
 
-    let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
-      infoCB: {
-        "\(self.fetchedResultsController.fetchedObjects?.count ?? 0) Song\((self.fetchedResultsController.fetchedObjects?.count ?? 0) == 1 ? "" : "s")"
-      },
-      playContextCb: handleHeaderPlay,
-      player: appDelegate.player,
-      isInfoAlwaysHidden: false,
-      shuffleContextCb: handleHeaderShuffle
-    )
-    detailHeaderView = LibraryElementDetailTableHeaderView.createTableHeader(
-      rootView: self,
-      configuration: playShuffleInfoConfig
-    )
     #if !targetEnvironment(macCatalyst)
       refreshControl?.addTarget(
         self,

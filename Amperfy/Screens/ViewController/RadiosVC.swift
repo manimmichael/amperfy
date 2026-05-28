@@ -55,9 +55,9 @@ class RadiosVC: SingleFetchedResultsTableViewController<RadioMO> {
     singleFetchedResultsController = fetchedResultsController
     tableView.reloadData()
 
-    configureSearchController(
-      placeholder: "Search in \"\(sceneTitle ?? "")\""
-    )
+    // cassette Polish 2 (B1): per-category search removed; use the global
+    // Search tab. (B2): no Play/Shuffle listing header. `detailHeaderView`
+    // stays nil and all `detailHeaderView?.` calls are no-ops.
     tableView.register(nibName: PlayableTableCell.typeName)
     tableView.rowHeight = PlayableTableCell.rowHeight
     tableView.estimatedRowHeight = PlayableTableCell.rowHeight
@@ -67,20 +67,6 @@ class RadiosVC: SingleFetchedResultsTableViewController<RadioMO> {
     tableView.estimatedSectionFooterHeight = 0.0
     tableView.backgroundColor = .backgroundColor
 
-    let playShuffleConfig = PlayShuffleInfoConfiguration(
-      infoCB: {
-        "\(self.fetchedResultsController.fetchedObjects?.count ?? 0) Radio\((self.fetchedResultsController.fetchedObjects?.count ?? 0) == 1 ? "" : "s")"
-      },
-      playContextCb: handleHeaderPlay,
-      player: appDelegate.player,
-      isInfoAlwaysHidden: false,
-      isShuffleOnContextNeccessary: false,
-      shuffleContextCb: handleHeaderShuffle
-    )
-    detailHeaderView = LibraryElementDetailTableHeaderView.createTableHeader(
-      rootView: self,
-      configuration: playShuffleConfig
-    )
     refreshControl?.addTarget(
       self,
       action: #selector(Self.handleRefresh),

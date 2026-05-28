@@ -127,16 +127,7 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
 
     change(sortType: appDelegate.storage.settings.user.playlistsSortSetting)
 
-    var searchTiles: [String]? = nil
-    if account.apiType.asServerApiType == .ampache {
-      searchTiles = ["All", "Cached", "User", "Smart"]
-    } else if account.apiType.asServerApiType == .subsonic {
-      searchTiles = ["All", "Cached"]
-    }
-    configureSearchController(
-      placeholder: "Search in \"Playlists\"",
-      scopeButtonTitles: searchTiles
-    )
+    // cassette Polish 2 (B1): per-category search removed; use the global Search tab.
     setNavBarTitle(title: "Playlists")
     tableView.register(nibName: PlaylistTableCell.typeName)
     tableView.rowHeight = PlaylistTableCell.rowHeight

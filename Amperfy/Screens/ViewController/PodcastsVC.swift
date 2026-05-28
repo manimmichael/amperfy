@@ -54,10 +54,7 @@ class PodcastsVC: MultiSourceTableViewController {
       isGroupedInAlphabeticSections: false
     )
 
-    configureSearchController(
-      placeholder: "Search in \"Podcasts\"",
-      scopeButtonTitles: ["All", "Cached"]
-    )
+    // cassette Polish 2 (B1): per-category search removed; use the global Search tab.
     setNavBarTitle(title: "Podcasts")
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.register(nibName: PodcastEpisodeTableCell.typeName)

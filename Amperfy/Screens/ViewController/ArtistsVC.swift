@@ -163,10 +163,7 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
     applyFilter()
     change(sortType: appDelegate.storage.settings.user.artistsSortSetting)
     change(filterType: appDelegate.storage.settings.user.artistsFilterSetting)
-    configureSearchController(
-      placeholder: "Search in \"\(filterTitle)\"",
-      scopeButtonTitles: ["All", "Cached"]
-    )
+    // cassette Polish 2 (B1/C3): per-category search removed; use the global Search tab.
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.rowHeight = GenericTableCell.rowHeight
     tableView.estimatedRowHeight = GenericTableCell.rowHeight

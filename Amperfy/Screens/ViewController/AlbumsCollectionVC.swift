@@ -86,9 +86,7 @@ class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSourc
       sectionHeader.display(title: nil)
     }
 
-    if indexPath.section == 0 {
-      sectionHeader.displayPlayHeader(configuration: vc.common.createPlayShuffleInfoConfig())
-    }
+    // cassette Polish 2 (B2): no Play/Shuffle header on the Albums grid listing.
     return sectionHeader
   }
 
@@ -231,10 +229,7 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
     }
 
     common.applyFilter()
-    configureSearchController(
-      placeholder: "Search in \"\(common.filterTitle)\"",
-      scopeButtonTitles: ["All", "Cached"]
-    )
+    // cassette Polish 2 (B1): per-category search removed; use the global Search tab.
     collectionView.register(
       UINib(nibName: CommonCollectionSectionHeader.typeName, bundle: .main),
       forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
@@ -419,7 +414,9 @@ extension AlbumsCollectionVC: UICollectionViewDelegateFlowLayout {
     referenceSizeForHeaderInSection section: Int
   )
     -> CGSize {
-    let headerTopHeight = section == 0 ? LibraryElementDetailTableHeaderView.frameHeight : 0.0
+    // cassette Polish 2 (B2): Play/Shuffle header removed, so reserve no extra
+    // top height for section 0.
+    let headerTopHeight = 0.0
     switch common.sortType {
     case .artist, .name, .rating, .year:
       return CGSize(
