@@ -33,12 +33,7 @@ final class HomeVC: UICollectionViewController {
   private let log = OSLog(subsystem: "Amperfy", category: "HomeVC")
 
   private static let itemWidth: CGFloat = 160.0
-  // cassette Patch 038: Artists shelf uses a narrower group so we
-  // can fit more circular avatars on screen at a glance. Height is
-  // estimated to accommodate the 96pt image + ~28pt of two-line
-  // metadata-font name underneath.
-  private static let artistGroupWidth: CGFloat = 110.0
-  private static let artistGroupHeight: CGFloat = 150.0
+  private static let shelfEstimatedHeight: CGFloat = 210.0
 
   private var userButton: UIButton?
   private var userBarButtonItem: UIBarButtonItem?
@@ -93,7 +88,7 @@ final class HomeVC: UICollectionViewController {
       )
     }
 
-    navigationController?.navigationBar.prefersLargeTitles = true
+    configureHomeNavigationBar()
     // cassette Patch 035: the top-right Edit button is removed; the
     // "Edit Home" action lives in the account-button menu now (see
     // `setupUserNavButton` call above), and only the three Cassette
@@ -113,7 +108,24 @@ final class HomeVC: UICollectionViewController {
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
+    configureHomeNavigationBar()
+  }
+
+  private func configureHomeNavigationBar() {
+    title = "Home"
+    navigationItem.largeTitleDisplayMode = .always
     navigationController?.navigationBar.prefersLargeTitles = true
+    let appearance = UINavigationBarAppearance()
+    appearance.configureWithDefaultBackground()
+    appearance.largeTitleTextAttributes = [
+      .font: UIFont.cassette(.heroTitle),
+      .foregroundColor: CassetteTheme.UIColors.ink,
+    ]
+    navigationItem.standardAppearance = appearance
+    navigationItem.scrollEdgeAppearance = appearance
+    if #available(iOS 15.0, *) {
+      navigationItem.compactAppearance = appearance
+    }
   }
 
   override func viewIsAppearing(_ animated: Bool) {
@@ -141,15 +153,10 @@ final class HomeVC: UICollectionViewController {
 
       let groupSize: NSCollectionLayoutSize
       switch section {
-      case .recentlyPlayedArtists:
-        groupSize = NSCollectionLayoutSize(
-          widthDimension: .absolute(artistGroupWidth),
-          heightDimension: .estimated(artistGroupHeight)
-        )
       default:
         groupSize = NSCollectionLayoutSize(
           widthDimension: .absolute(itemWidth),
-          heightDimension: .estimated(210)
+          heightDimension: .estimated(shelfEstimatedHeight)
         )
       }
       _ = environment
@@ -216,15 +223,14 @@ final class HomeVC: UICollectionViewController {
       HomeSection,
       HomeItem
     >(collectionView: collectionView) { [unowned self] collectionView, indexPath, item in
-      // cassette Patch 038: dispatch on the item's concrete type so
-      // the Artists shelf gets the circular cell while other shelves
-      // keep the standard square album-card.
+      let section = self.dataSource.snapshot().sectionIdentifiers.element(at: indexPath.section)
+      let showsPlayOverlay = section == .recent && indexPath.item == 0
       if let artist = item.playableContainable as? Artist {
         let cell = collectionView.dequeueReusableCell(
           withReuseIdentifier: ArtistCircleCollectionCell.typeName,
           for: indexPath
         ) as! ArtistCircleCollectionCell
-        cell.display(artist: artist)
+        cell.display(artist: artist, showsPlayOverlay: showsPlayOverlay)
         // cassette Patch 043: tap-vs-play split. Body tap still
         // navigates to detail via didSelectItemAt; the overlay
         // starts playback for the artist's playable contents.
@@ -241,6 +247,7 @@ final class HomeVC: UICollectionViewController {
         for: indexPath
       ) as! AlbumCollectionCell
       let containable = item.playableContainable
+      cell.showsPlayOverlay = showsPlayOverlay
       cell.display(
         container: containable,
         rootView: self,
