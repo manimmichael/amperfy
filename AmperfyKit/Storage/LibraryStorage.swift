@@ -1334,6 +1334,61 @@ public class LibraryStorage: PlayableFileCachable {
     return artists?.lazy.compactMap { Artist(managedObject: $0) }.first
   }
 
+  /// Exact name match (case-sensitive, no trimming). Prefers non-empty server id.
+  public func getArtistByExactName(for account: Account, name: String) -> Artist? {
+    let fetchRequest: NSFetchRequest<ArtistMO> = ArtistMO.fetchRequest()
+    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+      getFetchPredicate(forAccount: account),
+      NSPredicate(format: "%K == %@", #keyPath(ArtistMO.name), NSString(string: name)),
+    ])
+    guard let artistsMO = try? context.fetch(fetchRequest), !artistsMO.isEmpty else { return nil }
+    return artistsMO
+      .map { Artist(managedObject: $0) }
+      .max(by: { artistMergePreferenceScore($0) < artistMergePreferenceScore($1) })
+  }
+
+  func resolveEmptyIdArtistStubs(account: Account) {
+    let fetchRequest: NSFetchRequest<ArtistMO> = ArtistMO.fetchRequest()
+    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+      getFetchPredicate(forAccount: account),
+      NSPredicate(format: "%K == %@", #keyPath(ArtistMO.id), ""),
+    ])
+    guard let stubs = try? context.fetch(fetchRequest), !stubs.isEmpty else { return }
+    for stubMO in stubs {
+      guard let name = stubMO.name, !name.isEmpty else { continue }
+      let candidatesRequest: NSFetchRequest<ArtistMO> = ArtistMO.fetchRequest()
+      candidatesRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+        getFetchPredicate(forAccount: account),
+        NSPredicate(format: "%K == %@", #keyPath(ArtistMO.name), NSString(string: name)),
+        NSPredicate(format: "%K != %@", #keyPath(ArtistMO.id), ""),
+      ])
+      let candidatesMO = (try? context.fetch(candidatesRequest)) ?? []
+      guard let canonicalMO = candidatesMO.max(by: {
+        artistMergePreferenceScore(Artist(managedObject: $0)) <
+          artistMergePreferenceScore(Artist(managedObject: $1))
+      }) else { continue }
+      let stub = Artist(managedObject: stubMO)
+      let canonical = Artist(managedObject: canonicalMO)
+      os_log(
+        "Merge empty-id artist stub %s into %s (id: %s)",
+        log: log,
+        type: .info,
+        name,
+        name,
+        canonical.id
+      )
+      stub.managedObject.passOwnership(to: canonical.managedObject)
+      context.delete(stubMO)
+    }
+  }
+
+  private func artistMergePreferenceScore(_ artist: Artist) -> Int {
+    var score = artist.songCount
+    if !artist.id.isEmpty { score += 10_000 }
+    if artist.artwork != nil { score += 1_000 }
+    return score
+  }
+
   // MARK: Albums
 
   public func getAllAlbums() -> [Album] {

@@ -102,6 +102,7 @@ public class DuplicateEntitiesResolver {
             account: accountAsync,
             duplicates: duplicates
           )
+          asyncCompanion.library.resolveEmptyIdArtistStubs(account: accountAsync)
         }
       }
 
