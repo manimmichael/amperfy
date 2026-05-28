@@ -113,6 +113,7 @@ class PlayableTableCell: BasicTableCell {
   private var download: Download?
   private var rootView: UIViewController?
   private var isDislayAlbumTrackNumberStyle: Bool = false
+  private var hideArtistSubtitle = false
   private var displayMode: DisplayMode = .normal
   #if targetEnvironment(macCatalyst) // ok
     private var hoverGestureRecognizer: UIHoverGestureRecognizer!
@@ -197,6 +198,7 @@ class PlayableTableCell: BasicTableCell {
 
   override func prepareForReuse() {
     super.prepareForReuse()
+    playingSymbolView.removeAllSymbolEffects()
     resetForReuse()
   }
 
@@ -232,6 +234,7 @@ class PlayableTableCell: BasicTableCell {
     rootView: UIViewController,
     playerIndexCb: GetPlayerIndexFromTableCellCallback? = nil,
     isDislayAlbumTrackNumberStyle: Bool = false,
+    hideArtistSubtitle: Bool = false,
     download: Download? = nil,
     isMarked: Bool = false
   ) {
@@ -241,6 +244,7 @@ class PlayableTableCell: BasicTableCell {
     self.playerIndexCb = playerIndexCb
     self.rootView = rootView
     self.isDislayAlbumTrackNumberStyle = isDislayAlbumTrackNumberStyle
+    self.hideArtistSubtitle = hideArtistSubtitle
     self.download = download
     self.isMarked = isMarked
 
@@ -325,6 +329,8 @@ class PlayableTableCell: BasicTableCell {
     playingSymbolCenterX?.isActive = true
     playingSymbolCenterY?.isActive = true
     playingSymbolView.isHidden = false
+    playingSymbolView.removeAllSymbolEffects()
+    playingSymbolView.addSymbolEffect(.variableColor.iterative.reversing, options: .repeating)
     contentView.bringSubviewToFront(playingSymbolView)
     if replacingTrackNumber {
       trackNumberLabel.alpha = 0
@@ -335,6 +341,7 @@ class PlayableTableCell: BasicTableCell {
 
   private func hidePlayingSymbol() {
     if didInstallPlayingSymbol {
+      playingSymbolView.removeAllSymbolEffects()
       playingSymbolView.isHidden = true
     }
     trackNumberLabel.alpha = 1
@@ -344,6 +351,7 @@ class PlayableTableCell: BasicTableCell {
     guard let playable = playable else { return }
     titleLabel.text = playable.title
     artistLabel.text = playable.creatorName
+    artistLabel.isHidden = hideArtistSubtitle
 
     configureStyle(
       playable: playable,
