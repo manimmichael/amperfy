@@ -51,12 +51,45 @@ struct DeveloperView: View {
     }
   }
 
+  // Cassette fork — Layer 3 Phase 3.1 debug affordances.
+
+  /// Manually trigger the same poll the foreground timer runs. Logs whether a
+  /// bearer token is present so the console makes the cause obvious.
+  private func cassetteSyncNow() {
+    let hasToken = appDelegate.storage.settings.cassetteBearerToken != nil
+    print("Cassette poll: 'Sync now' tapped (bearer token present=\(hasToken))")
+    Task { await IntentExecutor.shared.handlePendingIntents() }
+  }
+
+  /// Re-run the Cassette web-auth flow purely to mint + persist a fresh bearer
+  /// token for the already-logged-in account, then kick off a sync.
+  private func cassetteRelink() {
+    print("Cassette re-link: 'Re-link Cassette' tapped")
+    let reauth = CassetteTokenReauth()
+    reauth.start { token in
+      guard let token else { return }
+      appDelegate.storage.settings.cassetteBearerToken = token
+      print("Cassette re-link: token persisted, triggering immediate sync")
+      Task { await IntentExecutor.shared.handlePendingIntents() }
+    }
+  }
+
   var body: some View {
     ZStack {
       SettingsList {
         SettingsSection(content: {
           SettingsButtonRow(title: "Generate Default Artworks") {
             generateDefaultArtworks()
+          }
+        })
+
+        // Cassette fork — Layer 3 Phase 3.1 sync debugging.
+        SettingsSection(content: {
+          SettingsButtonRow(title: "Sync now") {
+            cassetteSyncNow()
+          }
+          SettingsButtonRow(title: "Re-link Cassette (get sync token)") {
+            cassetteRelink()
           }
         })
       }
