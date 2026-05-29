@@ -29,8 +29,10 @@
 
 import CoreData
 import Foundation
+import os.log
 
 public final class DeviceOwnershipManager {
+  private let log = OSLog(subsystem: "Amperfy", category: "DeviceOwnershipManager")
   private let context: NSManagedObjectContext
   private let fileStorage: CassetteFileStorage
 
@@ -123,6 +125,45 @@ public final class DeviceOwnershipManager {
 
   public func exists(cassetteLocalId: String) -> Bool {
     ((try? fetchOne(cassetteLocalId: cassetteLocalId)) ?? nil) != nil
+  }
+
+  /// Fast, tight-predicate lookup by Subsonic track id. The `subsonicTrackId`
+  /// attribute is fetch-indexed (v51), so this is cheap enough for the
+  /// playback-dispatch hot path. Returns nil if no row matches.
+  public func fetchOne(subsonicTrackId: String) throws -> DeviceOwnershipMO? {
+    var result: DeviceOwnershipMO?
+    var caught: Error?
+    context.performAndWait {
+      let request: NSFetchRequest<DeviceOwnershipMO> = DeviceOwnershipMO.fetchRequest()
+      request.predicate = NSPredicate(format: "subsonicTrackId == %@", subsonicTrackId)
+      request.fetchLimit = 1
+      do { result = try context.fetch(request).first }
+      catch { caught = error }
+    }
+    if let caught { throw caught }
+    return result
+  }
+
+  /// Resolve the on-disk owned-file URL for a Subsonic track id, or nil if the
+  /// track isn't owned (or the row is stale). Fully defensive — never throws —
+  /// so it is safe to call inline at playback dispatch: any failure simply
+  /// falls back to Amperfy's existing cache/stream behavior.
+  public func localFileURL(forSubsonicTrackId id: String) -> URL? {
+    guard !id.isEmpty, let row = try? fetchOne(subsonicTrackId: id) else { return nil }
+    let url = fileStorage.musicDirectory().appendingPathComponent(row.filePath)
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      // Stale ownership row: recorded but the backing file is gone. Fall back
+      // to streaming rather than handing the player a missing file.
+      os_log(
+        "owned row for %{public}@ has no file on disk (%{public}@) — falling back",
+        log: self.log,
+        type: .error,
+        id,
+        row.filePath
+      )
+      return nil
+    }
+    return url
   }
 
   // MARK: - Internal (must be called inside context.perform*)

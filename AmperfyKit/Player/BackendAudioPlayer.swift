@@ -411,6 +411,35 @@ class BackendAudioPlayer: NSObject {
       self.nextPreloadedPlayable = nil
       nextPreloadedUrl = ""
       responder?.notifyItemPreparationFinished()
+    } else if playable.isSong,
+              let ownedUrl = DeviceOwnershipManager(
+                context: AmperKit.shared.storage.main.context
+              ).localFileURL(forSubsonicTrackId: playable.id) {
+      // Cassette fork — Layer 3 Phase 3.2 (playback dispatch). A Phase 3.1
+      // owned file exists on disk for this song: play it directly. Works in
+      // airplane mode and takes precedence over Amperfy's cache. The state
+      // resets + guards mirror the cache branch below; the only difference is
+      // the file URL source (CassetteMusic/ instead of cacheProxy).
+      currentPlayUrl = ""
+      nextPreloadedPlayable = nil
+      nextPreloadedUrl = ""
+      activeStreamingBitrate = nil
+      perloadedStreamingBitrate = nil
+      activeTranscodingFormat = nil
+      preloadTranscodingFormat = nil
+      guard playable.isPlayableOniOS else {
+        reactToIncompatibleContentType(
+          contentType: playable.fileContentType ?? "",
+          playableDisplayTitle: playable.displayString
+        )
+        return
+      }
+      os_log(.default, "Cassette playback: serving local file for %s", playable.id)
+      currentReplayGainValue = playable.replayGainTrackGain
+      applyReplayGain()
+      insertOwnedPlayable(playable: playable, fileURL: ownedUrl)
+      isPlaying = shouldPlaybackStart
+      responder?.notifyItemPreparationFinished()
     } else if let relFilePath = playable.relFilePath,
               fileManager.fileExits(relFilePath: relFilePath) {
       currentPlayUrl = ""
@@ -522,6 +551,27 @@ class BackendAudioPlayer: NSObject {
     stopTimers()
     audioAnalyzer.stop()
     player?.stop()
+  }
+
+  /// Cassette fork — Layer 3 Phase 3.2. Play a Phase 3.1 owned file from
+  /// `CassetteMusic/`. Identical to `insertCachedPlayable` except the URL is
+  /// supplied by the caller (resolved from `DeviceOwnership`) rather than the
+  /// cache proxy, so it routes through the same proven local-file play path.
+  private func insertOwnedPlayable(
+    playable: AbstractPlayable,
+    fileURL: URL,
+    queueType: BackendAudioQueueType = .play
+  ) {
+    if queueType == .play {
+      playType = .cache
+      perloadedPlayType = nil
+      os_log(.default, "Play Owned: %s (%s)", playable.displayString, fileURL.absoluteString)
+    } else {
+      perloadedPlayType = .cache
+      os_log(.default, "Insert Owned: %s (%s)", playable.displayString, fileURL.absoluteString)
+    }
+    if playable.isSong { userStatistics.playedSong(isPlayedFromCache: true) }
+    insert(playable: playable, withUrl: fileURL, queueType: queueType)
   }
 
   private func insertCachedPlayable(
