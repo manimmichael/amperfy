@@ -100,6 +100,16 @@ struct SettingsView: View {
         SettingsSection(
           content: {
             SettingsCheckBoxRow(title: "Server Mode", isOn: $isServerModeEnabled)
+              .onChange(of: isServerModeEnabled) { _, _ in
+                // cassette Layer 3 Phase 3.2: flipping Server Mode changes the
+                // library filter (on-device-only <-> full catalog). Notify the
+                // list view controllers so they rebuild their fetched-results
+                // controllers with the new predicate.
+                NotificationCenter.default.post(
+                  name: CassetteLibraryFilterProvider.filterChangedNotification,
+                  object: nil
+                )
+              }
             if let url = URL(string: "https://cassette.digital/help/server-mode") {
               Link("Learn about Server Mode", destination: url)
             }

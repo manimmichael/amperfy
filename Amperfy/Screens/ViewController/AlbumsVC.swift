@@ -124,6 +124,8 @@ class AlbumsVC: SingleSnapshotFetchedResultsTableViewController<AlbumMO> {
 
   private let common: AlbumsCommonVCInteractions
   private var detailHeader: LibraryElementDetailTableHeaderView?
+  // cassette Layer 3 Phase 3.2: owned album ids for Server Mode row dimming.
+  private var cassetteOwnedAlbumIds: Set<String> = []
 
   public var displayFilter: DisplayCategoryFilter {
     set { common.displayFilter = newValue }
@@ -188,6 +190,7 @@ class AlbumsVC: SingleSnapshotFetchedResultsTableViewController<AlbumMO> {
       self.singleFetchedResultsController?.delegate = self
     }
 
+    refreshCassetteOwnedAlbumIdsIfServerMode()
     common.applyFilter()
     // cassette Polish 2 (B1): per-category search removed; the global Search
     // tab covers this. No `navigationItem.searchController` is installed.
@@ -245,6 +248,31 @@ class AlbumsVC: SingleSnapshotFetchedResultsTableViewController<AlbumMO> {
       self.common.updateContentUnavailable()
       self.updateHeaderViewVisibility()
     }
+
+    // cassette Layer 3 Phase 3.2: rebuild the FRC when Server Mode toggles so
+    // the ownership predicate changes between on-device-only and full catalog.
+    appDelegate.notificationHandler.register(
+      self,
+      selector: #selector(cassetteLibraryFilterChanged),
+      name: CassetteLibraryFilterProvider.filterChangedNotification,
+      object: nil
+    )
+  }
+
+  @objc
+  private func cassetteLibraryFilterChanged() {
+    refreshCassetteOwnedAlbumIdsIfServerMode()
+    common.change(sortType: common.sortType)
+  }
+
+  private func refreshCassetteOwnedAlbumIdsIfServerMode() {
+    guard CassetteLibraryFilterProvider.shared.currentFilter == .everything else {
+      cassetteOwnedAlbumIds = []
+      return
+    }
+    cassetteOwnedAlbumIds = DeviceOwnershipManager(
+      context: appDelegate.storage.main.context
+    ).fetchOwnedAlbumIds()
   }
 
   override func viewWillAppear(_ animated: Bool) {
@@ -282,7 +310,13 @@ class AlbumsVC: SingleSnapshotFetchedResultsTableViewController<AlbumMO> {
     -> UITableViewCell {
     let cell: GenericTableCell = dequeueCell(for: tableView, at: indexPath)
     if let album = (diffableDataSource as? AlbumsDiffableDataSource)?.getAlbum(at: indexPath) {
-      cell.display(container: album, rootView: self)
+      // cassette Layer 3 Phase 3.2: dim non-owned albums in Server Mode.
+      let isServerMode = CassetteLibraryFilterProvider.shared.currentFilter == .everything
+      cell.display(
+        container: album,
+        rootView: self,
+        cassetteIsOwned: isServerMode ? cassetteOwnedAlbumIds.contains(album.id) : nil
+      )
     }
     return cell
   }

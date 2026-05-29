@@ -134,14 +134,32 @@ class AlbumsCommonVCInteractions {
   func updateContentUnavailable() {
     if isContentUnavailable {
       if fetchedResultsController.isSearchActive {
-        rootVC?.contentUnavailableConfiguration = UIContentUnavailableConfiguration.search()
+        rootVC?.contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared
+          .isOnDeviceOnly ? cassetteOnDeviceSearchEmptyConfig : UIContentUnavailableConfiguration
+          .search()
       } else {
-        rootVC?.contentUnavailableConfiguration = emptyContentConfig
+        rootVC?.contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared
+          .isOnDeviceOnly ? cassetteOnDeviceEmptyConfig : emptyContentConfig
       }
     } else {
       rootVC?.contentUnavailableConfiguration = nil
     }
   }
+
+  // cassette Layer 3 Phase 3.2: on-device-only empty states.
+  lazy var cassetteOnDeviceEmptyConfig: UIContentUnavailableConfiguration = {
+    var config = UIContentUnavailableConfiguration.empty()
+    config.image = .album
+    config.text = "No music on this phone yet"
+    config.secondaryText = "Send albums from cassette.digital, or turn on Server Mode in Settings."
+    return config
+  }()
+
+  lazy var cassetteOnDeviceSearchEmptyConfig: UIContentUnavailableConfiguration = {
+    var config = UIContentUnavailableConfiguration.search()
+    config.secondaryText = "No results on this phone. Enable Server Mode in Settings to search your full catalog."
+    return config
+  }()
 
   lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.empty()
@@ -546,7 +564,11 @@ class AlbumsCommonVCInteractions {
 
   func updateSearchResults(for searchController: UISearchController) {
     let searchText = searchController.searchBar.text ?? ""
-    if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 0 {
+    if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 0,
+       CassetteLibraryFilterProvider.shared.currentFilter == .everything {
+      // Cassette fork — Layer 3 Phase 3.2 (library filtering). Remote Subsonic
+      // search only runs in Server Mode; on-device-only searches the
+      // ownership-filtered local FRC alone.
       Task { @MainActor in do {
         try await self.appDelegate.getMeta(self.account.info).librarySyncer
           .searchAlbums(searchText: searchText)

@@ -104,6 +104,22 @@ final class HomeVC: UICollectionViewController {
       name: .offlineModeChanged,
       object: nil
     )
+
+    // cassette Layer 3 Phase 3.2: rebuild the Home shelves when Server Mode
+    // toggles. The shelves reuse the library FRCs, so recreating their fetch
+    // controllers picks up the new ownership predicate.
+    appDelegate.notificationHandler.register(
+      self,
+      selector: #selector(cassetteLibraryFilterChanged),
+      name: CassetteLibraryFilterProvider.filterChangedNotification,
+      object: nil
+    )
+  }
+
+  @objc
+  private func cassetteLibraryFilterChanged() {
+    sharedHome.createFetchController()
+    applySnapshot(animated: false)
   }
 
   override func viewWillAppear(_ animated: Bool) {

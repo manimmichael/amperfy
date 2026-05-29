@@ -121,6 +121,8 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
   public var displayFilter: ArtistCategoryFilter = .all
   private var sortType: ArtistElementSortType = .name
   private var filterTitle = "Artists"
+  // cassette Layer 3 Phase 3.2: owned artist ids for Server Mode row dimming.
+  private var cassetteOwnedArtistIds: Set<String> = []
 
   init(account: Account) {
     super.init(style: .grouped, account: account)
@@ -160,6 +162,7 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()
 
+    refreshCassetteOwnedArtistIdsIfServerMode()
     applyFilter()
     change(sortType: appDelegate.storage.settings.user.artistsSortSetting)
     change(filterType: appDelegate.storage.settings.user.artistsFilterSetting)
@@ -215,14 +218,42 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
     snapshotDidChange = {
       self.updateContentUnavailable()
     }
+
+    // cassette Layer 3 Phase 3.2: rebuild the FRC when Server Mode toggles so
+    // the ownership predicate changes between on-device-only and full catalog.
+    appDelegate.notificationHandler.register(
+      self,
+      selector: #selector(cassetteLibraryFilterChanged),
+      name: CassetteLibraryFilterProvider.filterChangedNotification,
+      object: nil
+    )
+  }
+
+  @objc
+  private func cassetteLibraryFilterChanged() {
+    refreshCassetteOwnedArtistIdsIfServerMode()
+    change(sortType: sortType)
+    updateContentUnavailable()
+  }
+
+  private func refreshCassetteOwnedArtistIdsIfServerMode() {
+    guard CassetteLibraryFilterProvider.shared.currentFilter == .everything else {
+      cassetteOwnedArtistIds = []
+      return
+    }
+    cassetteOwnedArtistIds = DeviceOwnershipManager(
+      context: appDelegate.storage.main.context
+    ).fetchOwnedArtistIds()
   }
 
   func updateContentUnavailable() {
     if fetchedResultsController.fetchedObjects?.count ?? 0 == 0 {
       if fetchedResultsController.isSearchActive {
-        contentUnavailableConfiguration = UIContentUnavailableConfiguration.search()
+        contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared.isOnDeviceOnly ?
+          cassetteOnDeviceSearchEmptyConfig : UIContentUnavailableConfiguration.search()
       } else {
-        contentUnavailableConfiguration = emptyContentConfig
+        contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared.isOnDeviceOnly ?
+          cassetteOnDeviceEmptyConfig : emptyContentConfig
       }
     } else {
       contentUnavailableConfiguration = nil
@@ -234,6 +265,21 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
     config.image = .artist
     config.text = "No " + filterTitle
     config.secondaryText = "Your " + filterTitle.lowercased() + " will appear here."
+    return config
+  }()
+
+  // cassette Layer 3 Phase 3.2: on-device-only empty states.
+  lazy var cassetteOnDeviceEmptyConfig: UIContentUnavailableConfiguration = {
+    var config = UIContentUnavailableConfiguration.empty()
+    config.image = .artist
+    config.text = "No music on this phone yet"
+    config.secondaryText = "Send albums from cassette.digital, or turn on Server Mode in Settings."
+    return config
+  }()
+
+  lazy var cassetteOnDeviceSearchEmptyConfig: UIContentUnavailableConfiguration = {
+    var config = UIContentUnavailableConfiguration.search()
+    config.secondaryText = "No results on this phone. Enable Server Mode in Settings to search your full catalog."
     return config
   }()
 
@@ -333,7 +379,13 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
   )
     -> UITableViewCell {
     let cell: GenericTableCell = dequeueCell(for: tableView, at: indexPath)
-    cell.display(container: artist, rootView: self)
+    // cassette Layer 3 Phase 3.2: dim non-owned artists in Server Mode.
+    let isServerMode = CassetteLibraryFilterProvider.shared.currentFilter == .everything
+    cell.display(
+      container: artist,
+      rootView: self,
+      cassetteIsOwned: isServerMode ? cassetteOwnedArtistIds.contains(artist.id) : nil
+    )
     return cell
   }
 
@@ -392,7 +444,11 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
       displayFilter: displayFilter
     )
     tableView.reloadData()
-    if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 0 {
+    if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 0,
+       CassetteLibraryFilterProvider.shared.currentFilter == .everything {
+      // Cassette fork — Layer 3 Phase 3.2 (library filtering). Remote Subsonic
+      // search only runs in Server Mode; on-device-only searches the
+      // ownership-filtered local FRC alone.
       Task { @MainActor in do {
         try await self.appDelegate.getMeta(self.account.info).librarySyncer
           .searchArtists(searchText: searchText)

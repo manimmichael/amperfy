@@ -518,27 +518,33 @@ class SearchVC: BasicTableViewController {
 
   override func updateSearchResults(for searchController: UISearchController) {
     guard let searchText = searchController.searchBar.text, let accountObjectId else { return }
+    // Cassette fork — Layer 3 Phase 3.2 (library filtering). In on-device-only
+    // mode global search stays local and is constrained to owned items; the
+    // remote Subsonic searches only run in Server Mode.
+    let isOnDeviceOnly = CassetteLibraryFilterProvider.shared.isOnDeviceOnly
     if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 0 {
-      Task { @MainActor in do {
-        try await self.appDelegate.getMeta(self.account.info).librarySyncer
-          .searchArtists(searchText: searchText)
-      } catch {
-        self.appDelegate.eventLogger.report(topic: "Artists Search", error: error)
-      }}
+      if !isOnDeviceOnly {
+        Task { @MainActor in do {
+          try await self.appDelegate.getMeta(self.account.info).librarySyncer
+            .searchArtists(searchText: searchText)
+        } catch {
+          self.appDelegate.eventLogger.report(topic: "Artists Search", error: error)
+        }}
 
-      Task { @MainActor in do {
-        try await self.appDelegate.getMeta(self.account.info).librarySyncer
-          .searchAlbums(searchText: searchText)
-      } catch {
-        self.appDelegate.eventLogger.report(topic: "Albums Search", error: error)
-      }}
+        Task { @MainActor in do {
+          try await self.appDelegate.getMeta(self.account.info).librarySyncer
+            .searchAlbums(searchText: searchText)
+        } catch {
+          self.appDelegate.eventLogger.report(topic: "Albums Search", error: error)
+        }}
 
-      Task { @MainActor in do {
-        try await self.appDelegate.getMeta(self.account.info).librarySyncer
-          .searchSongs(searchText: searchText)
-      } catch {
-        self.appDelegate.eventLogger.report(topic: "Songs Search", error: error)
-      }}
+        Task { @MainActor in do {
+          try await self.appDelegate.getMeta(self.account.info).librarySyncer
+            .searchSongs(searchText: searchText)
+        } catch {
+          self.appDelegate.eventLogger.report(topic: "Songs Search", error: error)
+        }}
+      }
 
       Task { @MainActor in do {
         let searchResult = try await appDelegate.storage.async.performAndGet { asyncCompanion in
@@ -567,12 +573,28 @@ class SearchVC: BasicTableViewController {
             displayFilter: .all
           )
 
+          // Cassette fork — Layer 3 Phase 3.2 (library filtering). Constrain the
+          // local search to owned items in on-device-only mode. Playlists are
+          // not ownership-scoped, so they pass through unfiltered.
+          var filteredArtists = artists
+          var filteredAlbums = albums
+          var filteredSongs = songs
+          if isOnDeviceOnly {
+            let ownership = DeviceOwnershipManager(context: asyncCompanion.context)
+            let ownedSongIds = ownership.fetchAllSubsonicTrackIds()
+            let ownedAlbumIds = ownership.fetchOwnedAlbumIds()
+            let ownedArtistIds = ownership.fetchOwnedArtistIds()
+            filteredArtists = artists.filter { ownedArtistIds.contains($0.id) }
+            filteredAlbums = albums.filter { ownedAlbumIds.contains($0.id) }
+            filteredSongs = songs.filter { ownedSongIds.contains($0.id) }
+          }
+
           var result = SearchResultObjectContainer()
-          result.artistsIDs = FuzzySearcher.findBestMatch(in: artists, search: searchText)
+          result.artistsIDs = FuzzySearcher.findBestMatch(in: filteredArtists, search: searchText)
             .prefix(upToAsArray: Self.categoryItemLimit)
             .compactMap { $0 as? Artist }
             .compactMap { $0.managedObject.objectID }
-          result.albumsIDs = FuzzySearcher.findBestMatch(in: albums, search: searchText)
+          result.albumsIDs = FuzzySearcher.findBestMatch(in: filteredAlbums, search: searchText)
             .prefix(upToAsArray: Self.categoryItemLimit)
             .compactMap { $0 as? Album }
             .compactMap { $0.managedObject.objectID }
@@ -580,7 +602,7 @@ class SearchVC: BasicTableViewController {
             .prefix(upToAsArray: Self.categoryItemLimit)
             .compactMap { $0 as? Playlist }
             .compactMap { $0.managedObject.objectID }
-          result.songsIDs = FuzzySearcher.findBestMatch(in: songs, search: searchText)
+          result.songsIDs = FuzzySearcher.findBestMatch(in: filteredSongs, search: searchText)
             .prefix(upToAsArray: Self.categoryItemLimit)
             .compactMap { $0 as? Song }
             .compactMap { $0.managedObject.objectID }
@@ -695,7 +717,10 @@ class SearchVC: BasicTableViewController {
   func updateContentUnavailable() {
     if isSearchActive {
       if artists.isEmpty, albums.isEmpty, playlists.isEmpty, songs.isEmpty {
-        contentUnavailableConfiguration = noSearchResultsConfig
+        // cassette Layer 3 Phase 3.2: in on-device-only mode search is scoped to
+        // owned items, so steer the user to Server Mode when nothing matches.
+        contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared.isOnDeviceOnly ?
+          cassetteOnDeviceNoResultsConfig : noSearchResultsConfig
       } else {
         contentUnavailableConfiguration = nil
       }
@@ -703,6 +728,19 @@ class SearchVC: BasicTableViewController {
       contentUnavailableConfiguration = searchHistory.isEmpty ? noSearchHistoryConfig : nil
     }
   }
+
+  // cassette Layer 3 Phase 3.2: on-device-only search empty state.
+  lazy var cassetteOnDeviceNoResultsConfig: UIContentUnavailableConfiguration = {
+    var config = UIContentUnavailableConfiguration.search()
+    config.text = "No results on this phone"
+    config.secondaryText = "Enable Server Mode in Settings to search your full Cassette Player catalog."
+    config.textProperties.font = UIFont.cassette(.sectionTitle)
+    config.textProperties.color = CassetteTheme.UIColors.ink
+    config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
+    config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
+    config.imageProperties.tintColor = CassetteTheme.UIColors.ink3
+    return config
+  }()
 
   /// cassette Patch 020: Cassette-flavored empty states. The renderer
   /// for `UIContentUnavailableConfiguration` honors the
