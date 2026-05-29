@@ -22,6 +22,39 @@
 import CoreData
 import Foundation
 
+// MARK: - Cassette library-filter helpers (Layer 3 Phase 3.2)
+
+/// Which owned-id set a library FRC should constrain itself to in
+/// on-device-only mode. `id` on Song/Album/Artist managed objects is the
+/// Subsonic id, so each predicate is a simple `id IN <ownedSet>`.
+enum CassetteOwnedScope {
+  case song
+  case album
+  case artist
+}
+
+/// Returns the ownership predicate to AND into a library FRC, or nil when the
+/// library filter is Server Mode (everything). An empty owned set yields a
+/// predicate that matches nothing, which is the correct on-device-only result
+/// when nothing has been transferred yet.
+func makeCassetteOwnershipPredicate(
+  _ scope: CassetteOwnedScope,
+  coreDataCompanion: CoreDataCompanion
+) -> NSPredicate? {
+  guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return nil }
+  let manager = DeviceOwnershipManager(context: coreDataCompanion.context)
+  let ids: Set<String>
+  switch scope {
+  case .song:
+    ids = manager.fetchAllSubsonicTrackIds()
+  case .album:
+    ids = manager.fetchOwnedAlbumIds()
+  case .artist:
+    ids = manager.fetchOwnedArtistIds()
+  }
+  return NSPredicate(format: "id IN %@", ids)
+}
+
 // MARK: - ArtistElementSortType
 
 public enum ArtistElementSortType: Int, Sendable, Codable {
@@ -514,6 +547,15 @@ public class ArtistFetchedResultsController: CachedFetchedResultsController<Arti
         coreDataCompanion.library.getFetchPredicate(onlyCachedArtists: true),
       ]),
     ])
+    // Cassette fork — Layer 3 Phase 3.2: constrain to owned artists in
+    // on-device-only mode (nil/no-op in Server Mode).
+    let cassetteOwned = makeCassetteOwnershipPredicate(.artist, coreDataCompanion: coreDataCompanion)
+    if let cassetteOwned, let base = fetchRequest.predicate {
+      fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+        base,
+        cassetteOwned,
+      ])
+    }
     fetchRequest.relationshipKeyPathsForPrefetching = ArtistMO.relationshipKeyPathsForPrefetching
     fetchRequest.returnsObjectsAsFaults = false
     super.init(
@@ -523,6 +565,7 @@ public class ArtistFetchedResultsController: CachedFetchedResultsController<Arti
       sectionIndexType: sortType.asSectionIndexType,
       isGroupedInAlphabeticSections: isGroupedInAlphabeticSections
     )
+    cassetteOwnershipPredicate = cassetteOwned
   }
 
   public func search(searchText: String, onlyCached: Bool, displayFilter: ArtistCategoryFilter) {
@@ -562,6 +605,15 @@ public class ArtistAlbumsItemsFetchedResultsController: BasicFetchedResultsContr
         AlbumMO.getFetchPredicateForAlbumsWhoseSongsHave(artist: artist),
       ]),
     ])
+    // Cassette fork — Layer 3 Phase 3.2: constrain the artist's album list to
+    // owned albums in on-device-only mode (nil/no-op in Server Mode).
+    let cassetteOwned = makeCassetteOwnershipPredicate(.album, coreDataCompanion: coreDataCompanion)
+    if let cassetteOwned, let base = fetchRequest.predicate {
+      fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+        base,
+        cassetteOwned,
+      ])
+    }
     fetchRequest.relationshipKeyPathsForPrefetching = AlbumMO.relationshipKeyPathsForPrefetching
     fetchRequest.returnsObjectsAsFaults = false
     super.init(
@@ -569,6 +621,7 @@ public class ArtistAlbumsItemsFetchedResultsController: BasicFetchedResultsContr
       fetchRequest: fetchRequest,
       isGroupedInAlphabeticSections: isGroupedInAlphabeticSections
     )
+    cassetteOwnershipPredicate = cassetteOwned
   }
 
   public func search(searchText: String, onlyCached: Bool) {
@@ -707,6 +760,15 @@ public class AlbumFetchedResultsController: CachedFetchedResultsController<Album
         coreDataCompanion.library.getFetchPredicate(onlyCachedAlbums: true),
       ]),
     ])
+    // Cassette fork — Layer 3 Phase 3.2: constrain to owned albums in
+    // on-device-only mode (nil/no-op in Server Mode).
+    let cassetteOwned = makeCassetteOwnershipPredicate(.album, coreDataCompanion: coreDataCompanion)
+    if let cassetteOwned, let base = fetchRequest.predicate {
+      fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+        base,
+        cassetteOwned,
+      ])
+    }
     fetchRequest.relationshipKeyPathsForPrefetching = AlbumMO.relationshipKeyPathsForPrefetching
     fetchRequest.returnsObjectsAsFaults = false
     super.init(
@@ -715,6 +777,7 @@ public class AlbumFetchedResultsController: CachedFetchedResultsController<Album
       sectionIndexType: sortType.asSectionIndexType,
       isGroupedInAlphabeticSections: isGroupedInAlphabeticSections
     )
+    cassetteOwnershipPredicate = cassetteOwned
   }
 
   public func search(searchText: String, onlyCached: Bool, displayFilter: DisplayCategoryFilter) {
@@ -767,6 +830,15 @@ public class SongsFetchedResultsController: CachedFetchedResultsController<SongM
       coreDataCompanion.library.getFetchPredicate(forAccount: account),
       SongMO.excludeServerDeleteUncachedSongsFetchPredicate,
     ])
+    // Cassette fork — Layer 3 Phase 3.2: constrain to owned tracks in
+    // on-device-only mode (nil/no-op in Server Mode).
+    let cassetteOwned = makeCassetteOwnershipPredicate(.song, coreDataCompanion: coreDataCompanion)
+    if let cassetteOwned, let base = fetchRequest.predicate {
+      fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+        base,
+        cassetteOwned,
+      ])
+    }
     fetchRequest.relationshipKeyPathsForPrefetching = SongMO.relationshipKeyPathsForPrefetching
     fetchRequest.returnsObjectsAsFaults = false
     super.init(
@@ -775,6 +847,7 @@ public class SongsFetchedResultsController: CachedFetchedResultsController<SongM
       sectionIndexType: sortType.asSectionIndexType,
       isGroupedInAlphabeticSections: isGroupedInAlphabeticSections
     )
+    cassetteOwnershipPredicate = cassetteOwned
     // CPU load for song VCs is high when background sync is active
     // reduce the CPU load on song VCs by turning updates off for those VCs
     keepAllResultsUpdated = false

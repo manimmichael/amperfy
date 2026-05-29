@@ -166,7 +166,65 @@ public final class DeviceOwnershipManager {
     return url
   }
 
+  // MARK: - Library-filter id sets (Phase 3.2)
+
+  /// All owned Subsonic track ids — the predicate set for on-device-only Song
+  /// surfaces. `SongMO.id` equals `DeviceOwnership.subsonicTrackId`.
+  public func fetchAllSubsonicTrackIds() -> Set<String> {
+    var result = Set<String>()
+    context.performAndWait { result = ownedSubsonicTrackIdsInternal() }
+    return result
+  }
+
+  /// Ids of albums that have at least one owned track (for the Albums list /
+  /// Artist-detail album list filter).
+  public func fetchOwnedAlbumIds() -> Set<String> {
+    var result = Set<String>()
+    context.performAndWait {
+      for song in ownedSongsInternal() {
+        if let id = song.album?.id, !id.isEmpty { result.insert(id) }
+      }
+    }
+    return result
+  }
+
+  /// Ids of artists that have at least one owned track (for the Artists list).
+  public func fetchOwnedArtistIds() -> Set<String> {
+    var result = Set<String>()
+    context.performAndWait {
+      for song in ownedSongsInternal() {
+        if let id = song.artist?.id, !id.isEmpty { result.insert(id) }
+      }
+    }
+    return result
+  }
+
   // MARK: - Internal (must be called inside context.perform*)
+
+  private func ownedSubsonicTrackIdsInternal() -> Set<String> {
+    let request: NSFetchRequest<DeviceOwnershipMO> = DeviceOwnershipMO.fetchRequest()
+    request.predicate = NSPredicate(format: "subsonicTrackId != nil")
+    var ids = Set<String>()
+    if let rows = try? context.fetch(request) {
+      for row in rows {
+        if let sid = row.subsonicTrackId, !sid.isEmpty { ids.insert(sid) }
+      }
+    }
+    return ids
+  }
+
+  private func ownedSongsInternal() -> [SongMO] {
+    let ids = ownedSubsonicTrackIdsInternal()
+    guard !ids.isEmpty else { return [] }
+    let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
+    request.predicate = NSPredicate(format: "id IN %@", ids)
+    request.relationshipKeyPathsForPrefetching = [
+      #keyPath(SongMO.album),
+      #keyPath(SongMO.artist),
+    ]
+    request.returnsObjectsAsFaults = false
+    return (try? context.fetch(request)) ?? []
+  }
 
   private func fetchOneInternal(cassetteLocalId: String) throws -> DeviceOwnershipMO? {
     let request: NSFetchRequest<DeviceOwnershipMO> = DeviceOwnershipMO.fetchRequest()

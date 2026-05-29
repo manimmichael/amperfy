@@ -215,6 +215,18 @@ public class BasicFetchedResultsController<ResultType>: NSObject
 
   public var isSearchActive = false
 
+  /// Cassette fork — Layer 3 Phase 3.2. When set (on-device-only library
+  /// filter), this is AND-ed into search predicates so search honors the
+  /// ownership filter the same way the baked browse predicate does. nil for
+  /// Server Mode and for non-filtered controllers — no effect.
+  public var cassetteOwnershipPredicate: NSPredicate?
+
+  func cassetteCompose(_ predicate: NSPredicate?) -> NSPredicate? {
+    guard let ownership = cassetteOwnershipPredicate else { return predicate }
+    guard let predicate else { return ownership }
+    return NSCompoundPredicate(andPredicateWithSubpredicates: [predicate, ownership])
+  }
+
   public init(
     coreDataCompanion: CoreDataCompanion,
     fetchRequest: NSFetchRequest<ResultType>,
@@ -234,7 +246,7 @@ public class BasicFetchedResultsController<ResultType>: NSObject
 
   public func search(predicate: NSPredicate?) {
     isSearchActive = true
-    fetchResultsController.fetchRequest.predicate = predicate
+    fetchResultsController.fetchRequest.predicate = cassetteCompose(predicate)
     fetchResultsController.fetch()
   }
 
@@ -498,11 +510,18 @@ public class CachedFetchedResultsController<ResultType>: BasicFetchedResultsCont
     self.sectionIndexType = sectionIndexType
     let sectionNameKeyPath: String? = isGroupedInAlphabeticSections ? fetchRequest
       .sortDescriptors![0].key : nil
+    // Cassette fork — Layer 3 Phase 3.2. The on-device-only browse predicate is
+    // dynamic (the owned set grows as music transfers), which is unsafe against
+    // a persistent NSFetchedResultsController cache keyed by a stable name. Skip
+    // the disk cache in that mode (owned libraries are small, so the section
+    // cache buys little); Server Mode keeps the original cached behavior.
+    let cassetteUsesCache = !CassetteLibraryFilterProvider.shared.isOnDeviceOnly
     self.allFetchResulsController = CustomSectionIndexFetchedResultsController<ResultType>(
       fetchRequest: fetchRequest.copy() as! NSFetchRequest<ResultType>,
       coreDataCompanion: coreDataCompanion,
       sectionNameKeyPath: sectionNameKeyPath,
-      cacheName: "\(Self.typeName)-\(account.serverHash)-\(account.userHash)"
+      cacheName: cassetteUsesCache ? "\(Self.typeName)-\(account.serverHash)-\(account.userHash)" :
+        nil
     )
     allFetchResulsController.sectionIndexType = sectionIndexType
     self.searchFetchResulsController = CustomSectionIndexFetchedResultsController<ResultType>(
@@ -522,7 +541,7 @@ public class CachedFetchedResultsController<ResultType>: BasicFetchedResultsCont
 
   override public func search(predicate: NSPredicate?) {
     isSearchActive = true
-    searchFetchResulsController.fetchRequest.predicate = predicate
+    searchFetchResulsController.fetchRequest.predicate = cassetteCompose(predicate)
     searchFetchResulsController.fetch()
   }
 

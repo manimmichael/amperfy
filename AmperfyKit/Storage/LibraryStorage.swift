@@ -1285,12 +1285,32 @@ public class LibraryStorage: PlayableFileCachable {
     return artists ?? [Artist]()
   }
 
+  /// Cassette fork — Layer 3 Phase 3.2 (library filtering). Returns the
+  /// owned-id predicate to AND into a favorites fetch when the library filter
+  /// is on-device-only; nil in Server Mode so favorites span the full catalog.
+  private func cassetteOwnershipFavoritesPredicate(_ scope: CassetteOwnedScope) -> NSPredicate? {
+    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return nil }
+    let manager = DeviceOwnershipManager(context: context)
+    let ids: Set<String>
+    switch scope {
+    case .song:
+      ids = manager.fetchAllSubsonicTrackIds()
+    case .album:
+      ids = manager.fetchOwnedAlbumIds()
+    case .artist:
+      ids = manager.fetchOwnedArtistIds()
+    }
+    return NSPredicate(format: "id IN %@", ids)
+  }
+
   public func getFavoriteArtists(for account: Account) -> [Artist] {
     let fetchRequest: NSFetchRequest<ArtistMO> = ArtistMO.identifierSortedFetchRequest
-    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+    var subpredicates: [NSPredicate] = [
       getFetchPredicate(forAccount: account),
       NSPredicate(format: "%K == TRUE", #keyPath(ArtistMO.isFavorite)),
-    ])
+    ]
+    if let owned = cassetteOwnershipFavoritesPredicate(.artist) { subpredicates.append(owned) }
+    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: subpredicates)
     let foundArtists = try? context.fetch(fetchRequest)
     let artists = foundArtists?.compactMap { Artist(managedObject: $0) }
     return artists ?? [Artist]()
@@ -1464,10 +1484,12 @@ public class LibraryStorage: PlayableFileCachable {
 
   public func getFavoriteAlbums(for account: Account) -> [Album] {
     let fetchRequest: NSFetchRequest<AlbumMO> = AlbumMO.identifierSortedFetchRequest
-    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+    var subpredicates: [NSPredicate] = [
       getFetchPredicate(forAccount: account),
       NSPredicate(format: "%K == TRUE", #keyPath(AlbumMO.isFavorite)),
-    ])
+    ]
+    if let owned = cassetteOwnershipFavoritesPredicate(.album) { subpredicates.append(owned) }
+    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: subpredicates)
     let foundAlbums = try? context.fetch(fetchRequest)
     let albums = foundAlbums?.compactMap { Album(managedObject: $0) }
     return albums ?? [Album]()
@@ -1713,11 +1735,13 @@ public class LibraryStorage: PlayableFileCachable {
 
   public func getFavoriteSongs(for account: Account) -> [Song] {
     let fetchRequest = SongMO.identifierSortedFetchRequest
-    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+    var subpredicates: [NSPredicate] = [
       getFetchPredicate(forAccount: account),
       SongMO.excludeServerDeleteUncachedSongsFetchPredicate,
       NSPredicate(format: "%K == TRUE", #keyPath(SongMO.isFavorite)),
-    ])
+    ]
+    if let owned = cassetteOwnershipFavoritesPredicate(.song) { subpredicates.append(owned) }
+    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: subpredicates)
     let foundSongs = try? context.fetch(fetchRequest)
     let songs = foundSongs?.compactMap { Song(managedObject: $0) }
     return songs ?? [Song]()

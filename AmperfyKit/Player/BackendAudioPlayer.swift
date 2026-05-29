@@ -440,6 +440,23 @@ class BackendAudioPlayer: NSObject {
       insertOwnedPlayable(playable: playable, fileURL: ownedUrl)
       isPlaying = shouldPlaybackStart
       responder?.notifyItemPreparationFinished()
+    } else if playable.isSong,
+              CassetteLibraryFilterProvider.shared.currentFilter == .onDeviceOnly {
+      // Cassette fork — Layer 3 Phase 3.2 (library filtering). In on-device-only
+      // mode a non-owned song reached the player — e.g. a mixed playlist, or a
+      // queue built before its transfer finished. Don't stream it; skip silently
+      // to the next item. The async hop avoids deep recursion when an entire
+      // queue is non-owned; the queue advance (didItemFinishedPlaying) ends
+      // gracefully once nothing playable remains.
+      os_log(
+        .default,
+        "Cassette playback: skipping non-owned track in on-device-only mode (%s)",
+        playable.id
+      )
+      clearPlayer()
+      DispatchQueue.main.async { [weak self] in
+        self?.responder?.didItemFinishedPlaying()
+      }
     } else if let relFilePath = playable.relFilePath,
               fileManager.fileExits(relFilePath: relFilePath) {
       currentPlayUrl = ""
