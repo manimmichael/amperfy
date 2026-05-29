@@ -46,6 +46,10 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   private var detailOperationsView: GenericDetailTableHeader?
   private let stickyHeader = DetailStickyHeaderView()
   private var hideUniformArtistSubtitle = false
+  // Cassette fork — Layer 3 Phase 3.2 (library filtering). Owned track ids used
+  // to dim non-owned rows; the detail list itself is never filtered. Empty when
+  // nothing is on the phone (then every row dims, which is correct).
+  private var cassetteOwnedTrackIds: Set<String> = []
   let album: Album
 
   init(account: Account, album: Album) {
@@ -81,6 +85,10 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     appDelegate.userStatistics.visited(.albumDetail)
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()
+
+    cassetteOwnedTrackIds = DeviceOwnershipManager(
+      context: appDelegate.storage.main.context
+    ).fetchAllSubsonicTrackIds()
 
     fetchedResultsController = AlbumSongsFetchedResultsController(
       forAlbum: album,
@@ -257,7 +265,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       playContextCb: convertCellViewToPlayContext,
       rootView: self,
       isDislayAlbumTrackNumberStyle: true,
-      hideArtistSubtitle: hideUniformArtistSubtitle
+      hideArtistSubtitle: hideUniformArtistSubtitle,
+      cassetteIsOwned: cassetteOwnedTrackIds.contains(song.id)
     )
     return cell
   }

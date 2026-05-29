@@ -90,6 +90,10 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
 
   private var fetchedResultsController: PlaylistItemsFetchedResultsController!
   let playlist: Playlist
+  // Cassette fork — Layer 3 Phase 3.2 (library filtering). Owned track ids used
+  // to dim non-owned rows; playlist contents are never filtered (mixed
+  // playlists keep all items, non-owned ones skip silently on playback).
+  private var cassetteOwnedTrackIds: Set<String> = []
 
   private var editButton: UIBarButtonItem!
   private var optionsButton: UIBarButtonItem!
@@ -136,6 +140,9 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     #endif
 
     appDelegate.userStatistics.visited(.playlistDetail)
+    cassetteOwnedTrackIds = DeviceOwnershipManager(
+      context: appDelegate.storage.main.context
+    ).fetchAllSubsonicTrackIds()
     fetchedResultsController = PlaylistItemsFetchedResultsController(
       forPlaylist: playlist,
       coreDataCompanion: appDelegate.storage.main,
@@ -365,7 +372,12 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     -> UITableViewCell {
     let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
     if let song = playlistItem.playable.asSong {
-      cell.display(playable: song, playContextCb: convertCellViewToPlayContext, rootView: self)
+      cell.display(
+        playable: song,
+        playContextCb: convertCellViewToPlayContext,
+        rootView: self,
+        cassetteIsOwned: cassetteOwnedTrackIds.contains(song.id)
+      )
     }
     return cell
   }

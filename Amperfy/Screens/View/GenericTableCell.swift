@@ -56,7 +56,11 @@ class GenericTableCell: BasicTableCell {
       : CornerRadius.small.asCGFloat
   }
 
-  func display(container: PlayableContainable, rootView: UITableViewController) {
+  func display(
+    container: PlayableContainable,
+    rootView: UITableViewController,
+    cassetteIsOwned: Bool? = nil
+  ) {
     self.container = container
     self.rootView = rootView
     isArtworkCircular = container is Artist
@@ -104,5 +108,21 @@ class GenericTableCell: BasicTableCell {
     subtitleLabel.textColor = CassetteTheme.UIColors.ink2
     infoLabel.font = UIFont.cassette(.caption)
     infoLabel.textColor = CassetteTheme.UIColors.ink3
+
+    // cassette Layer 3 Phase 3.2 (library filtering). In Server Mode the list
+    // shows the full catalog; non-owned rows are dimmed (ink alphas only) so
+    // what's on the phone stays legible. nil = not in a filtered context (every
+    // other call site), so no dimming applies.
+    let ownershipAlpha: CGFloat
+    switch cassetteIsOwned {
+    case .none, .some(true):
+      ownershipAlpha = 1.0
+    case .some(false):
+      ownershipAlpha = 0.6
+    }
+    titleLabel.alpha = ownershipAlpha
+    subtitleLabel.alpha = ownershipAlpha
+    infoLabel.alpha = ownershipAlpha
+    entityImage.alpha = ownershipAlpha
   }
 }

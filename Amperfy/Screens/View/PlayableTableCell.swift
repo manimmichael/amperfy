@@ -109,6 +109,10 @@ class PlayableTableCell: BasicTableCell {
   private var isDislayAlbumTrackNumberStyle: Bool = false
   private var hideArtistSubtitle = false
   private var displayMode: DisplayMode = .normal
+  // Cassette fork — Layer 3 Phase 3.2 (library filtering). Detail views show
+  // every track but dim the ones not on this phone. nil = not in a filtered
+  // detail context (no dimming, the default for all existing call sites).
+  private var cassetteIsOwned: Bool?
   #if targetEnvironment(macCatalyst) // ok
     private var hoverGestureRecognizer: UIHoverGestureRecognizer!
     private var doubleTapGestureRecognizer: UITapGestureRecognizer!
@@ -231,7 +235,8 @@ class PlayableTableCell: BasicTableCell {
     isDislayAlbumTrackNumberStyle: Bool = false,
     hideArtistSubtitle: Bool = false,
     download: Download? = nil,
-    isMarked: Bool = false
+    isMarked: Bool = false,
+    cassetteIsOwned: Bool? = nil
   ) {
     self.playable = playable
     self.displayMode = displayMode
@@ -242,6 +247,7 @@ class PlayableTableCell: BasicTableCell {
     self.hideArtistSubtitle = hideArtistSubtitle
     self.download = download
     self.isMarked = isMarked
+    self.cassetteIsOwned = cassetteIsOwned
 
     #if targetEnvironment(macCatalyst) // ok
       hoverGestureRecognizer.isEnabled = (displayMode == .normal)
@@ -438,9 +444,31 @@ class PlayableTableCell: BasicTableCell {
 
     refreshSubtitleColor()
     refreshCacheAndDuration()
+    applyCassetteOwnershipDimming()
     // cassette Patch 054 (Phase I): rating stars removed from rows. See
     // resetForReuse for full rationale; the user's `isShowRating`
     // preference no longer controls per-row display (data model intact).
+  }
+
+  /// Cassette fork — Layer 3 Phase 3.2 (library filtering). Detail views pass a
+  /// non-nil `cassetteIsOwned`; non-owned rows are dimmed (ink alphas only, no
+  /// new color tokens) so the user can see the full album/playlist while it's
+  /// clear which tracks are actually on the phone. Default mode dims harder
+  /// (0.4) than Server Mode (0.6) since non-owned tracks won't play in default
+  /// mode. Rows stay tappable — a tap on a non-owned row hits the skip path.
+  private func applyCassetteOwnershipDimming() {
+    let alpha: CGFloat
+    switch cassetteIsOwned {
+    case .none, .some(true):
+      alpha = 1.0
+    case .some(false):
+      alpha = CassetteLibraryFilterProvider.shared.currentFilter == .everything ? 0.6 : 0.4
+    }
+    titleLabel.alpha = alpha
+    artistLabel.alpha = alpha
+    durationLabel.alpha = alpha
+    trackNumberLabel.alpha = alpha
+    entityImage.alpha = alpha
   }
 
   private func configureTrackNumberLabel() {
