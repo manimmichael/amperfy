@@ -184,10 +184,16 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   }
 
   private func perform(_ request: URLRequest) async throws -> Data {
+    // Verbose-but-temporary logging (Phase 3.1) — `print` is visible in the
+    // Xcode console regardless of os_log level filtering.
+    let label = "\(request.httpMethod ?? "?") \(request.url?.path ?? "?")"
+    print("Cassette sync: -> \(label)")
     let (data, response) = try await session.data(for: request)
     guard let http = response as? HTTPURLResponse else {
+      print("Cassette sync: <- \(label) invalid (non-HTTP) response")
       throw CassetteSyncError.invalidResponse
     }
+    print("Cassette sync: <- \(label) \(http.statusCode)")
     guard (200 ..< 300).contains(http.statusCode) else {
       os_log(
         "sync request %{public}@ failed: %d",

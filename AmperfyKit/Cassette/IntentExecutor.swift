@@ -51,17 +51,31 @@ public final class IntentExecutor {
   /// Entry point for polling (foreground + 30s timer). No-op if no account or
   /// no bearer token yet, or if a run is already in progress.
   public func handlePendingIntents() async {
-    guard !isRunning else { return }
-    guard CassetteSyncAPI.bearerToken != nil else { return }
-    guard AmperKit.shared.storage.settings.accounts.active != nil else { return }
+    // Verbose-but-temporary logging (Phase 3.1) — `print` is guaranteed
+    // visible in the Xcode console, unlike os_log .info which is filtered.
+    print("Cassette poll: handlePendingIntents() entered")
+    guard !isRunning else {
+      print("Cassette poll: skip - a run is already in progress")
+      return
+    }
+    guard CassetteSyncAPI.bearerToken != nil else {
+      print("Cassette poll: skip - NO BEARER TOKEN (re-link in Settings > Developer)")
+      return
+    }
+    guard AmperKit.shared.storage.settings.accounts.active != nil else {
+      print("Cassette poll: skip - no active account")
+      return
+    }
 
     isRunning = true
     defer { isRunning = false }
 
     let intents: [CassetteSyncIntent]
     do {
+      print("Cassette poll: fetching pending intents from cassette.digital")
       intents = try await api.getActionableIntents()
     } catch {
+      print("Cassette poll: failed to fetch intents - \(error.localizedDescription)")
       os_log(
         "failed to fetch intents: %{public}@",
         log: self.log,
@@ -71,14 +85,20 @@ public final class IntentExecutor {
       return
     }
 
+    print("Cassette poll: received \(intents.count) actionable intent(s)")
     for intent in intents {
       await executeIntent(intent)
     }
   }
 
   private func executeIntent(_ intent: CassetteSyncIntent) async {
+    print(
+      "Cassette poll: executing intent \(intent.id) " +
+        "scope=\(intent.scope) kind=\(intent.intentKind) target=\(intent.targetId)"
+    )
     // Phase 3.1: album scope only.
     guard intent.scope == "album" else {
+      print("Cassette poll: intent \(intent.id) - unsupported scope '\(intent.scope)', failing")
       try? await api.updateIntent(
         id: intent.id,
         state: "failed",
@@ -92,7 +112,9 @@ public final class IntentExecutor {
     }
 
     // Reachability: the Cassette Player must be on the LAN to pull files.
-    guard await isCassettePlayerReachable() else {
+    let reachable = await isCassettePlayerReachable()
+    print("Cassette poll: intent \(intent.id) - Cassette Player reachable=\(reachable)")
+    guard reachable else {
       try? await api.updateIntent(
         id: intent.id,
         state: "waiting",
@@ -105,6 +127,7 @@ public final class IntentExecutor {
     do {
       tracks = try await api.getIntentTracks(intentId: intent.id)
     } catch {
+      print("Cassette poll: intent \(intent.id) - track resolve failed: \(error.localizedDescription)")
       try? await api.updateIntent(
         id: intent.id,
         state: "failed",
@@ -112,6 +135,7 @@ public final class IntentExecutor {
       )
       return
     }
+    print("Cassette poll: intent \(intent.id) - resolved \(tracks.count) track(s)")
 
     let manager = DeviceOwnershipManager(context: AmperKit.shared.storage.main.context)
 
@@ -124,6 +148,7 @@ public final class IntentExecutor {
     guard let accountInfo = AmperKit.shared.storage.settings.accounts.active else { return }
     let backendApi = AmperKit.shared.getMeta(accountInfo).backendApi
 
+    var enqueued = 0
     for track in tracks {
       if manager.exists(cassetteLocalId: track.cassetteLocalId) { continue }
       do {
@@ -137,7 +162,13 @@ public final class IntentExecutor {
           fileExtension: track.fileExtension,
           intentId: intent.id
         )
+        enqueued += 1
+        print("Cassette poll: intent \(intent.id) - enqueued download for \(track.cassetteLocalId)")
       } catch {
+        print(
+          "Cassette poll: intent \(intent.id) - failed to build download URL " +
+            "for \(track.subsonicTrackId): \(error.localizedDescription)"
+        )
         os_log(
           "failed to build download URL for %{public}@: %{public}@",
           log: self.log,
@@ -147,13 +178,17 @@ public final class IntentExecutor {
         )
       }
     }
+    print("Cassette poll: intent \(intent.id) - enqueued \(enqueued) new download(s)")
 
     // Complete the intent once everything it covers is on disk. Otherwise
     // leave it `syncing`; a later poll (or the next foreground) finalizes it
     // as background downloads land.
     let allOwned = tracks.allSatisfy { manager.exists(cassetteLocalId: $0.cassetteLocalId) }
     if allOwned {
+      print("Cassette poll: intent \(intent.id) - all tracks owned, marking complete")
       try? await api.updateIntent(id: intent.id, state: "complete")
+    } else {
+      print("Cassette poll: intent \(intent.id) - downloads in flight, leaving syncing")
     }
   }
 
@@ -179,6 +214,7 @@ public final class IntentExecutor {
       }
     }
 
+    print("Cassette poll: intent \(intent.id) - removed \(removed.count) owned track(s)")
     if !removed.isEmpty {
       let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? "unknown-device"
       try? await api.reportDeviceInventory(

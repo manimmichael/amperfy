@@ -111,6 +111,7 @@ public final class CassetteTransferSession: NSObject, @unchecked Sendable {
       task.taskDescription = json
     }
     task.resume()
+    print("Cassette transfer: enqueued background download for \(cassetteLocalId) (.\(ext))")
     os_log("enqueued download for %{public}@", log: self.log, type: .info, cassetteLocalId)
   }
 
@@ -162,9 +163,11 @@ extension CassetteTransferSession: URLSessionDownloadDelegate {
           let data = desc.data(using: .utf8),
           let meta = try? JSONDecoder().decode(CassetteTransferMetadata.self, from: data)
     else {
+      print("Cassette transfer: download finished with no/invalid metadata")
       os_log("download finished with no/invalid metadata", log: self.log, type: .error)
       return
     }
+    print("Cassette transfer: download finished for \(meta.cassetteLocalId), moving into place")
 
     // The temp file at `location` is only valid synchronously here — move it
     // into place immediately.
@@ -232,6 +235,7 @@ extension CassetteTransferSession: URLSessionDownloadDelegate {
         subsonicTrackId: meta.subsonicTrackId,
         fileExtension: meta.ext
       )
+      print("Cassette transfer: recorded ownership for \(meta.cassetteLocalId)")
     } catch {
       os_log(
         "failed to record ownership for %{public}@: %{public}@",
@@ -251,6 +255,7 @@ extension CassetteTransferSession: URLSessionDownloadDelegate {
         added: [(cassetteLocalId: meta.cassetteLocalId, mbid: meta.mbid, downloadedAt: Date())],
         removed: []
       )
+      print("Cassette transfer: reported inventory addition for \(meta.cassetteLocalId)")
     } catch {
       os_log(
         "failed to report inventory for %{public}@: %{public}@",

@@ -186,17 +186,22 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
   private func startCassetteIntentPolling() {
     // Poll once immediately, then every 30s while in the foreground.
+    // Verbose-but-temporary logging (Phase 3.1) — `print` is guaranteed
+    // visible in the Xcode console, unlike os_log .info which is filtered.
+    print("Cassette poll: app became active -> triggering poll")
     Task { await IntentExecutor.shared.handlePendingIntents() }
     cassetteIntentPollTimer?.invalidate()
     cassetteIntentPollTimer = Timer.scheduledTimer(
       withTimeInterval: 30,
       repeats: true
     ) { _ in
+      print("Cassette poll: 30s timer fired -> triggering poll")
       Task { await IntentExecutor.shared.handlePendingIntents() }
     }
   }
 
   private func stopCassetteIntentPolling() {
+    print("Cassette poll: backgrounded -> timer stopped")
     cassetteIntentPollTimer?.invalidate()
     cassetteIntentPollTimer = nil
   }
