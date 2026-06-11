@@ -25,6 +25,7 @@
 
 import Foundation
 import os.log
+import UIKit
 
 // MARK: - CassetteSyncError
 
@@ -34,6 +35,14 @@ public enum CassetteSyncError: Error {
   case badURL
   case http(Int)
   case invalidResponse
+}
+
+public extension Notification.Name {
+  /// Posted when a sync request gets a 401 — the bearer token was revoked
+  /// (e.g. the device was removed from the account on the dashboard) or
+  /// expired. The app shows a one-per-launch "reconnect?" alert that runs
+  /// the re-link flow instead of silently dying.
+  static let cassetteTokenRejected = Notification.Name("CassetteTokenRejected")
 }
 
 // MARK: - CassetteSyncIntent
@@ -101,7 +110,46 @@ public final class CassetteSyncAPI: @unchecked Sendable {
       .string(forKey: PersistentStorage.UserDefaultsKey.CassetteBearerToken.rawValue)
   }
 
+  // MARK: Device identity
+
+  /// Stable per-vendor device id — the key the whole sync layer (inventory,
+  /// intents, and now the user_devices registry) uses for this phone.
+  public static var deviceId: String {
+    UIDevice.current.identifierForVendor?.uuidString ?? "unknown-device"
+  }
+
+  /// Human label ("Michael's iPhone").
+  public static var deviceLabel: String {
+    UIDevice.current.name
+  }
+
+  /// HTTP header values must be ASCII; device names often aren't (curly
+  /// apostrophes). Header carries the lossy form, registerDevice's JSON body
+  /// carries the exact one.
+  private static var deviceLabelHeaderValue: String {
+    let ascii = deviceLabel.unicodeScalars.filter { $0.isASCII && $0.value >= 0x20 }
+    let cleaned = String(String.UnicodeScalarView(ascii))
+    return cleaned.isEmpty ? "iPhone" : cleaned
+  }
+
   // MARK: Endpoints
+
+  /// Register (upsert) this device in the cassette.digital first-class
+  /// device registry (user_devices). Called at pairing and once per launch;
+  /// the registry row is what makes the phone visible on the dashboard,
+  /// independent of any downloads. Idempotent — safe to call repeatedly.
+  public func registerDevice() async throws {
+    let body: [String: Any] = [
+      "device_id": Self.deviceId,
+      "device_label": Self.deviceLabel,
+      "platform": "ios",
+      "model": UIDevice.current.model,
+      "app_version": Bundle.main
+        .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+    ]
+    _ = try await send(method: "POST", path: "/api/sync/devices", json: body)
+    print("Cassette sync: device registered (\(Self.deviceId))")
+  }
 
   /// Non-terminal intents the device should act on: brand-new (`pending`),
   /// resuming after a crash (`syncing`), and parked-on-unreachable
@@ -169,6 +217,7 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     request.timeoutInterval = 20
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Accept")
+    applyDeviceHeaders(&request)
     return try await perform(request)
   }
 
@@ -181,8 +230,18 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Accept")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    applyDeviceHeaders(&request)
     request.httpBody = try JSONSerialization.data(withJSONObject: json)
     return try await perform(request)
+  }
+
+  /// Device identity rides every sync request. Server-side, a bearer-authed
+  /// request carrying X-Cassette-Device-Id bumps user_devices.last_seen_at
+  /// (the keep-alive that keeps the dashboard's device view honest) and
+  /// stamps the token <-> device link used by unpair.
+  private func applyDeviceHeaders(_ request: inout URLRequest) {
+    request.setValue(Self.deviceId, forHTTPHeaderField: "X-Cassette-Device-Id")
+    request.setValue(Self.deviceLabelHeaderValue, forHTTPHeaderField: "X-Cassette-Device-Label")
   }
 
   private func perform(_ request: URLRequest) async throws -> Data {
@@ -204,6 +263,11 @@ public final class CassetteSyncAPI: @unchecked Sendable {
         request.url?.path ?? "?",
         http.statusCode
       )
+      if http.statusCode == 401 {
+        // Token revoked (device unpaired on the dashboard) or expired.
+        // Let the app surface a reconnect prompt instead of dying silently.
+        NotificationCenter.default.post(name: .cassetteTokenRejected, object: nil)
+      }
       throw CassetteSyncError.http(http.statusCode)
     }
     return data

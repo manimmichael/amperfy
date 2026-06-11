@@ -246,6 +246,9 @@ class LoginVC: UIViewController {
         // /api/player/me, so it's valid. Persist it for the sync layer
         // (/api/sync/*), which runs long after this login flow ends.
         self.appDelegate.storage.settings.cassetteBearerToken = token
+        // Register this phone in the first-class device registry so it shows
+        // on the dashboard immediately — independent of any download.
+        Task { try? await CassetteSyncAPI.shared.registerDevice() }
         self.loginWithCredentials(credentials)
       }
     }.resume()

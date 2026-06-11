@@ -92,6 +92,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   // Cassette fork — Layer 3 (Phase 3.1): foreground polling for sync intents.
   // 30s cadence is for testing; background polling is out of scope for 3.1.
   private var cassetteIntentPollTimer: Timer?
+  // Cassette fork — graceful unpair handling: when the bearer token starts
+  // 401ing (the device was removed on the dashboard), show one reconnect
+  // alert per launch instead of silently going dead.
+  private var cassetteTokenRejectedObserver: NSObjectProtocol?
+  private var cassetteReconnectAlertShown = false
+  private var cassetteReauth: CassetteTokenReauth?
 
   func scene(
     _ scene: UIScene,
@@ -179,6 +185,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
     appDelegate.quickActionsManager.handleSavedShortCutItemIfSaved()
     appDelegate.rebuildMainMenu()
+    observeCassetteTokenRejection()
     startCassetteIntentPolling()
   }
 
@@ -204,6 +211,61 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     print("Cassette poll: backgrounded -> timer stopped")
     cassetteIntentPollTimer?.invalidate()
     cassetteIntentPollTimer = nil
+  }
+
+  // MARK: - Cassette token revocation (unpair) handling
+
+  /// When sync requests start 401ing, the device was unpaired from the
+  /// account on the dashboard (its tokens were revoked) or the token
+  /// expired. Offer to reconnect — once per launch, never silently.
+  private func observeCassetteTokenRejection() {
+    guard cassetteTokenRejectedObserver == nil else { return }
+    cassetteTokenRejectedObserver = NotificationCenter.default.addObserver(
+      forName: .cassetteTokenRejected,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in
+        self?.presentCassetteReconnectAlert()
+      }
+    }
+  }
+
+  @MainActor
+  private func presentCassetteReconnectAlert() {
+    guard !cassetteReconnectAlertShown else { return }
+    guard let topVC = AppDelegate.topViewController() else { return }
+    cassetteReconnectAlertShown = true
+    print("Cassette sync: token rejected -> showing reconnect alert")
+
+    let alert = UIAlertController(
+      title: "Device removed",
+      message: "This device was removed from your Cassette account, so syncing has stopped. Reconnect to keep syncing music from your library.",
+      preferredStyle: .alert
+    )
+    alert.addAction(UIAlertAction(title: "Not now", style: .cancel))
+    alert.addAction(UIAlertAction(title: "Reconnect", style: .default) { [weak self] _ in
+      guard let self else { return }
+      let reauth = CassetteTokenReauth()
+      self.cassetteReauth = reauth
+      reauth.start { token in
+        Task { @MainActor in
+          self.cassetteReauth = nil
+          guard let token else {
+            // Let a later 401 re-offer the alert if the user bailed out.
+            self.cassetteReconnectAlertShown = false
+            return
+          }
+          self.appDelegate.storage.settings.cassetteBearerToken = token
+          print("Cassette sync: reconnected, re-registering device")
+          Task {
+            try? await CassetteSyncAPI.shared.registerDevice()
+            await IntentExecutor.shared.handlePendingIntents()
+          }
+        }
+      }
+    })
+    topVC.present(alert, animated: true)
   }
 
   func sceneWillResignActive(_ scene: UIScene) {

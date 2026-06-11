@@ -69,8 +69,11 @@ struct DeveloperView: View {
     reauth.start { token in
       guard let token else { return }
       appDelegate.storage.settings.cassetteBearerToken = token
-      print("Cassette re-link: token persisted, triggering immediate sync")
-      Task { await IntentExecutor.shared.handlePendingIntents() }
+      print("Cassette re-link: token persisted, registering device + triggering immediate sync")
+      Task {
+        try? await CassetteSyncAPI.shared.registerDevice()
+        await IntentExecutor.shared.handlePendingIntents()
+      }
     }
   }
 

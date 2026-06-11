@@ -45,6 +45,10 @@ public final class IntentExecutor {
   private let transferSession = CassetteTransferSession.shared
 
   private var isRunning = false
+  // Once-per-launch device registration (user_devices upsert). The header
+  // keep-alive rides every request; this full registration also refreshes
+  // platform/model/app_version.
+  private var hasRegisteredDevice = false
 
   public init() {}
 
@@ -69,6 +73,17 @@ public final class IntentExecutor {
 
     isRunning = true
     defer { isRunning = false }
+
+    if !hasRegisteredDevice {
+      do {
+        try await api.registerDevice()
+        hasRegisteredDevice = true
+      } catch {
+        // Non-fatal: the X-Cassette-Device-Id header on the poll below still
+        // upserts the registry row. Retry the full registration next poll.
+        print("Cassette poll: device registration failed - \(error.localizedDescription)")
+      }
+    }
 
     let intents: [CassetteSyncIntent]
     do {
