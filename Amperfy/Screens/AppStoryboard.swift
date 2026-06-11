@@ -113,6 +113,7 @@ enum AppStoryboard: String {
   func segueToLibraryContainer(account: Account) -> UIViewController {
     LibraryContainerVC(account: account)
   }
+
   func segueToSearch(account: Account) -> SearchVC { SearchVC(account: account) }
   func segueToSettings() -> SettingsHostVC { SettingsHostVC(isForOwnWindow: false) }
   func segueToDownloads(account: Account) -> UIViewController { DownloadsVC(account: account) }

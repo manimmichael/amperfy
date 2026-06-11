@@ -256,7 +256,7 @@ final class HomeVC: UICollectionViewController {
       HomeSection,
       HomeItem
     >(collectionView: collectionView) { [unowned self] collectionView, indexPath, item in
-      let section = self.dataSource.snapshot().sectionIdentifiers.element(at: indexPath.section)
+      let section = dataSource.snapshot().sectionIdentifiers.element(at: indexPath.section)
       let showsPlayOverlay = section == .recent && indexPath.item == 0
       if let artist = item.playableContainable as? Artist {
         let cell = collectionView.dequeueReusableCell(
@@ -269,7 +269,7 @@ final class HomeVC: UICollectionViewController {
         // starts playback for the artist's playable contents.
         cell.onPlayTapped = { [weak self] in
           guard let self else { return }
-          self.appDelegate.player.play(
+          appDelegate.player.play(
             context: PlayContext(containable: artist)
           )
         }
@@ -292,7 +292,7 @@ final class HomeVC: UICollectionViewController {
       // container this card represents (album, playlist, podcast).
       cell.onPlayTapped = { [weak self] in
         guard let self else { return }
-        self.appDelegate.player.play(
+        appDelegate.player.play(
           context: PlayContext(containable: containable)
         )
       }
@@ -307,7 +307,7 @@ final class HomeVC: UICollectionViewController {
               for: indexPath
             ) as? SectionHeaderView,
             let snapshotSection = self?.dataSource.snapshot().sectionIdentifiers
-              .element(at: indexPath.section)
+            .element(at: indexPath.section)
       else {
         return nil
       }
@@ -326,7 +326,7 @@ final class HomeVC: UICollectionViewController {
 
   /// cassette Patch 042: returns the handler that fires when the
   /// shelf header is tapped, or nil if the header is presentational.
-  private func tapHandler(for section: HomeSection) -> (() -> Void)? {
+  private func tapHandler(for section: HomeSection) -> (() -> ())? {
     let category: LibraryDisplayType
     switch section {
     case .yourPlaylists: category = .playlists
@@ -618,7 +618,7 @@ final class SectionHeaderView: UICollectionReusableView {
   /// the chevron indicator surfaces, the header becomes a hit
   /// target, and tapping fires the handler (e.g. switch the Library
   /// tab to .albums).
-  var tapHandler: (() -> Void)? {
+  var tapHandler: (() -> ())? {
     didSet {
       let isTappable = tapHandler != nil
       chevronImageView.isHidden = !isTappable

@@ -160,7 +160,9 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
 
   lazy var cassetteOnDeviceSearchEmptyConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.search()
-    config.secondaryText = "No results on this phone. Enable Server Mode in Settings to search your full catalog."
+    config
+      .secondaryText =
+      "No results on this phone. Enable Server Mode in Settings to search your full catalog."
     return config
   }()
 

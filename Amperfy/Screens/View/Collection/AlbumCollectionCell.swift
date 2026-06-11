@@ -50,7 +50,7 @@ class AlbumCollectionCell: BasicCollectionCell {
   /// tapping the overlay starts playback for the cell's container.
   /// Cleared in `prepareForReuse` so the closure doesn't outlive
   /// the bound container.
-  var onPlayTapped: (() -> Void)?
+  var onPlayTapped: (() -> ())?
   /// cassette Patch 069: only the Recent shelf resume card shows the overlay.
   var showsPlayOverlay = false
 

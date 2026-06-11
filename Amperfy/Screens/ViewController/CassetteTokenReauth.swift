@@ -39,7 +39,7 @@ final class CassetteTokenReauth: NSObject {
   /// Presents the Cassette sign-in sheet and returns the freshly minted bearer
   /// token (or nil on cancel/failure). The caller persists it and kicks off a
   /// sync. Verbose-but-temporary `print` logging mirrors the rest of Phase 3.1.
-  func start(completion: @escaping (String?) -> Void) {
+  func start(completion: @escaping (String?) -> ()) {
     guard let callbackScheme = URL(string: "cassette://")?.scheme else {
       print("Cassette re-link: bad callback scheme")
       completion(nil)
@@ -73,11 +73,10 @@ final class CassetteTokenReauth: NSObject {
         completion(nil)
         return
       }
-      guard
-        let url = callbackURL,
-        let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-        let tokenItem = components.queryItems?.first(where: { $0.name == "token" }),
-        let token = tokenItem.value, !token.isEmpty
+      guard let url = callbackURL,
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            let tokenItem = components.queryItems?.first(where: { $0.name == "token" }),
+            let token = tokenItem.value, !token.isEmpty
       else {
         print("Cassette re-link: no token in callback")
         completion(nil)
@@ -93,7 +92,7 @@ final class CassetteTokenReauth: NSObject {
   }
 }
 
-// MARK: - ASWebAuthenticationPresentationContextProviding
+// MARK: ASWebAuthenticationPresentationContextProviding
 
 extension CassetteTokenReauth: ASWebAuthenticationPresentationContextProviding {
   func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {

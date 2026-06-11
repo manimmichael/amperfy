@@ -252,7 +252,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   }
 
   private func playlistStickySubtitle() -> String? {
-    var parts: [String] = ["Playlist"]
+    var parts = ["Playlist"]
     if playlist.songCount > 0 {
       parts.append("\(playlist.songCount) song\(playlist.songCount == 1 ? "" : "s")")
     }
@@ -287,7 +287,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   // so we surface scope: "Playlist · 14 songs · 56m". Counts and
   // duration are skipped when missing.
   private func refreshPlaylistMetadataLine() {
-    var parts: [String] = ["Playlist"]
+    var parts = ["Playlist"]
     if playlist.songCount > 0 {
       parts.append("\(playlist.songCount) song\(playlist.songCount == 1 ? "" : "s")")
     }

@@ -284,7 +284,12 @@ class LibraryElementDetailTableHeaderView: UIView {
       pointSize: 18,
       weight: .semibold
     )
-    shuffleConfig.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5)
+    shuffleConfig.contentInsets = NSDirectionalEdgeInsets(
+      top: 5,
+      leading: 5,
+      bottom: 5,
+      trailing: 5
+    )
     shuffle.configuration = shuffleConfig
     shuffle.tintColor = CassetteTheme.UIColors.ink
     shuffle.accessibilityLabel = "Shuffle"
@@ -299,8 +304,8 @@ class LibraryElementDetailTableHeaderView: UIView {
     overflow.showsMenuAsPrimaryAction = true
     overflow.menu = UIMenu.lazyMenu { [weak self] in
       guard let self,
-            let entity = self.config?.favoriteEntity,
-            let rootVC = self.config?.rootViewController
+            let entity = config?.favoriteEntity,
+            let rootVC = config?.rootViewController
       else { return [] }
       return EntityPreviewActionBuilder(container: entity, on: rootVC).createMenuActions()
     }

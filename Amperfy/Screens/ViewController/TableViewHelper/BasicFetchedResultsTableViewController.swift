@@ -83,7 +83,10 @@ class BasicFetchedResultsTableViewController<ResultType>: BasicTableViewControll
     }
   }
 
-  override func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+  override func scrollViewDidEndDragging(
+    _ scrollView: UIScrollView,
+    willDecelerate decelerate: Bool
+  ) {
     if usesFadingSectionIndex, !decelerate {
       setSectionIndexHidden(true, animated: true)
     }

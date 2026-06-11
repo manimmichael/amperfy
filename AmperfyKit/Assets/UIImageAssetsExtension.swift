@@ -542,9 +542,9 @@ extension UIImage {
   /// the caller falls through to the SF Symbol path.
   private static func ghostInitial(for name: String?, artworkType: ArtworkType) -> String? {
     switch artworkType {
-    case .genre, .radio, .podcast:
+    case .genre, .podcast, .radio:
       return nil
-    case .album, .artist, .playlist, .song, .podcastEpisode, .folder:
+    case .album, .artist, .folder, .playlist, .podcastEpisode, .song:
       let trimmed = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
       guard let first = trimmed.first else { return nil }
       return String(first).uppercased()
@@ -560,7 +560,7 @@ extension UIImage {
     case .artist: return "music.mic"
     case .playlist: return "music.note.list"
     case .folder: return "folder"
-    case .song, .podcastEpisode: return "music.note"
+    case .podcastEpisode, .song: return "music.note"
     }
   }
 

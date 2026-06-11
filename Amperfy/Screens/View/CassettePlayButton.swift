@@ -37,7 +37,7 @@ final class CassettePlayButton: UIControl {
   private let innerShadowMask = CAShapeLayer()
 
   /// Invoked on touch-up-inside. Wire this to the existing play action.
-  var onTap: (() -> Void)?
+  var onTap: (() -> ())?
 
   init(diameter: CGFloat = CassettePlayButton.diameter) {
     self.configuredDiameter = diameter

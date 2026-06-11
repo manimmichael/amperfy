@@ -26,7 +26,7 @@ import UIKit
 class ArtistDetailVC: MultiSourceTableViewController {
   override var sceneTitle: String? { artist.name }
 
-  private let artist: Artist
+  private var artist: Artist
   var albumToScrollTo: Album?
   private var albumsFetchedResultsController: ArtistAlbumsItemsFetchedResultsController!
   private var songsFetchedResultsController: ArtistSongsItemsFetchedResultsController!
@@ -51,6 +51,12 @@ class ArtistDetailVC: MultiSourceTableViewController {
     navigationItem.largeTitleDisplayMode = .never
     super.viewDidLoad()
     appDelegate.userStatistics.visited(.artistDetail)
+
+    // cassette Patch 103 (Phase 3.3): re-resolve to the relationship-rich same-id
+    // artist before building the FRCs. Prevents the empty-detail bug when this VC
+    // is entered with a metadata-only stub (album link, search, Home shelf) whose
+    // identity-bound FRCs (song.artist == self) would otherwise return nothing.
+    artist = appDelegate.storage.main.library.richestSameIdArtist(for: artist, account: account)
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()
 
@@ -213,7 +219,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
   }
 
   private func refreshStickyHeaderText() {
-    var parts: [String] = ["Artist"]
+    var parts = ["Artist"]
     if artist.albumCount > 0 {
       parts.append("\(artist.albumCount) album\(artist.albumCount == 1 ? "" : "s")")
     }
@@ -254,7 +260,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
   // catalog scope instead: "Artist · 12 albums · 187 songs". Counts are
   // suppressed when missing rather than rendered as zeros.
   private func refreshArtistMetadataLine() {
-    var parts: [String] = ["Artist"]
+    var parts = ["Artist"]
     if artist.albumCount > 0 {
       parts.append("\(artist.albumCount) album\(artist.albumCount == 1 ? "" : "s")")
     }

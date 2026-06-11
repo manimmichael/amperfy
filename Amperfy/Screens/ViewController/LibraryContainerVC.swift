@@ -22,6 +22,8 @@
 import AmperfyKit
 import UIKit
 
+// MARK: - LibraryContainerVC
+
 /// cassette Patch 039: Library tab redesign. Replaces `LibraryVC`'s
 /// intermediate category list. Opens directly to the user's last-
 /// surfaced category, hosts a nav-bar dropdown for switching, and

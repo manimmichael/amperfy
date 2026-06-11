@@ -60,8 +60,6 @@ extension UITextField {
 
 // MARK: - LoginVC
 
-// MARK: - LoginVC
-
 class LoginVC: UIViewController {
   var selectedApiType: BackenApiType = .notDetected
 
@@ -130,7 +128,7 @@ class LoginVC: UIViewController {
   }()
 
   // Container that wraps the Cassette sign-in section (hidden when manual mode active)
-  fileprivate lazy var cassetteSignInContainer: UIView = UIView()
+  fileprivate lazy var cassetteSignInContainer: UIView = .init()
 
   @IBAction
   func cassetteSignInPressed() {
@@ -161,18 +159,17 @@ class LoginVC: UIViewController {
         }
         return
       }
-      guard
-        let url = callbackURL,
-        let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-        let tokenItem = components.queryItems?.first(where: { $0.name == "token" }),
-        let token = tokenItem.value, !token.isEmpty
+      guard let url = callbackURL,
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            let tokenItem = components.queryItems?.first(where: { $0.name == "token" }),
+            let token = tokenItem.value, !token.isEmpty
       else {
         DispatchQueue.main.async {
           self.showErrorMsg(message: "Couldn't get credentials from Cassette. Try again.")
         }
         return
       }
-      self.fetchAndLoginWithCassetteToken(token)
+      fetchAndLoginWithCassetteToken(token)
     }
 
     session.presentationContextProvider = self
@@ -201,14 +198,14 @@ class LoginVC: UIViewController {
 
       if let error {
         DispatchQueue.main.async {
-          self.showErrorMsg(message: "Couldn't reach Cassette. Check your connection and try again.")
+          self
+            .showErrorMsg(message: "Couldn't reach Cassette. Check your connection and try again.")
         }
         return
       }
-      guard
-        let httpResponse = response as? HTTPURLResponse,
-        let data,
-        httpResponse.statusCode == 200
+      guard let httpResponse = response as? HTTPURLResponse,
+            let data,
+            httpResponse.statusCode == 200
       else {
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         let msg: String
@@ -223,12 +220,11 @@ class LoginVC: UIViewController {
         return
       }
 
-      guard
-        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-        let lanHostname = json["lanHostname"] as? String,
-        let lanPort = json["lanPort"] as? Int,
-        let subsonicUsername = json["subsonicUsername"] as? String,
-        let subsonicPassword = json["subsonicPassword"] as? String
+      guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let lanHostname = json["lanHostname"] as? String,
+            let lanPort = json["lanPort"] as? Int,
+            let subsonicUsername = json["subsonicUsername"] as? String,
+            let subsonicPassword = json["subsonicPassword"] as? String
       else {
         DispatchQueue.main.async {
           self.showErrorMsg(message: "Unexpected response from Cassette. Try again.")
@@ -799,26 +795,38 @@ class LoginVC: UIViewController {
     cassetteSignInContainer.addSubview(manualSetupButton)
     NSLayoutConstraint.activate([
       cassetteOnboardingLabel.topAnchor.constraint(equalTo: cassetteSignInContainer.topAnchor),
-      cassetteOnboardingLabel.leadingAnchor.constraint(equalTo: cassetteSignInContainer.leadingAnchor),
-      cassetteOnboardingLabel.trailingAnchor.constraint(equalTo: cassetteSignInContainer.trailingAnchor),
+      cassetteOnboardingLabel.leadingAnchor
+        .constraint(equalTo: cassetteSignInContainer.leadingAnchor),
+      cassetteOnboardingLabel.trailingAnchor
+        .constraint(equalTo: cassetteSignInContainer.trailingAnchor),
 
-      cassetteSignInButton.topAnchor.constraint(equalTo: cassetteOnboardingLabel.bottomAnchor, constant: 24),
+      cassetteSignInButton.topAnchor.constraint(
+        equalTo: cassetteOnboardingLabel.bottomAnchor,
+        constant: 24
+      ),
       cassetteSignInButton.centerXAnchor.constraint(equalTo: cassetteSignInContainer.centerXAnchor),
       cassetteSignInButton.widthAnchor.constraint(equalToConstant: 240),
       cassetteSignInButton.heightAnchor.constraint(equalToConstant: 48),
 
-      cassetteActivityIndicator.centerXAnchor.constraint(equalTo: cassetteSignInContainer.centerXAnchor),
-      cassetteActivityIndicator.topAnchor.constraint(equalTo: cassetteSignInButton.bottomAnchor, constant: 12),
+      cassetteActivityIndicator.centerXAnchor
+        .constraint(equalTo: cassetteSignInContainer.centerXAnchor),
+      cassetteActivityIndicator.topAnchor.constraint(
+        equalTo: cassetteSignInButton.bottomAnchor,
+        constant: 12
+      ),
 
       manualSetupButton.centerXAnchor.constraint(equalTo: cassetteSignInContainer.centerXAnchor),
-      manualSetupButton.topAnchor.constraint(equalTo: cassetteActivityIndicator.bottomAnchor, constant: 12),
+      manualSetupButton.topAnchor.constraint(
+        equalTo: cassetteActivityIndicator.bottomAnchor,
+        constant: 12
+      ),
       manualSetupButton.bottomAnchor.constraint(equalTo: cassetteSignInContainer.bottomAnchor),
     ])
 
     view.addSubview(iconView)
     view.addSubview(amperfyLabel)
     view.addSubview(serverDescriptionLabel)
-    view.addSubview(cassetteSignInContainer)  // Patch 013: primary sign-in section
+    view.addSubview(cassetteSignInContainer) // Patch 013: primary sign-in section
     view.addSubview(formGlassContainer)
     view.addSubview(loginGlassContainer)
     view.addSubview(navidromeHelpButton)
@@ -985,12 +993,16 @@ class LoginVC: UIViewController {
   }
 }
 
+// MARK: ASWebAuthenticationPresentationContextProviding
+
 // cassette Patch 013: ASWebAuthenticationSession needs a presentation context
 extension LoginVC: ASWebAuthenticationPresentationContextProviding {
   func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
     view.window ?? UIWindow()
   }
 }
+
+// MARK: - CassetteAuthPreservingDelegate
 
 // cassette Patch 014: Preserve the Authorization header on HTTP redirects.
 // URLSession.shared drops Authorization when following any redirect (standard iOS
@@ -1003,7 +1015,7 @@ private final class CassetteAuthPreservingDelegate: NSObject, URLSessionTaskDele
     task: URLSessionTask,
     willPerformHTTPRedirection response: HTTPURLResponse,
     newRequest: URLRequest,
-    completionHandler: @escaping (URLRequest?) -> Void
+    completionHandler: @escaping (URLRequest?) -> ()
   ) {
     var req = newRequest
     if let auth = task.originalRequest?.value(forHTTPHeaderField: "Authorization") {

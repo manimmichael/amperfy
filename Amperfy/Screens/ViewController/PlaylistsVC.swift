@@ -406,8 +406,8 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
     header.translatesAutoresizingMaskIntoConstraints = false
     header.onTap = { [weak self] in
       guard let self else { return }
-      self.navigationController?.pushViewController(
-        AppStoryboard.Main.segueToFavoriteSongs(account: self.account),
+      navigationController?.pushViewController(
+        AppStoryboard.Main.segueToFavoriteSongs(account: account),
         animated: true
       )
     }
@@ -430,13 +430,17 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
 
   private func relayoutLikedSongsHeader() {
     guard let header = likedSongsHeader else { return }
-    let target = CGSize(width: tableView.bounds.width, height: UIView.layoutFittingCompressedSize.height)
+    let target = CGSize(
+      width: tableView.bounds.width,
+      height: UIView.layoutFittingCompressedSize.height
+    )
     let size = header.systemLayoutSizeFitting(
       target,
       withHorizontalFittingPriority: .required,
       verticalFittingPriority: .fittingSizeLevel
     )
-    if header.frame.size.height != size.height || header.frame.size.width != tableView.bounds.width {
+    if header.frame.size.height != size.height || header.frame.size.width != tableView.bounds
+      .width {
       header.frame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: size.height)
       tableView.tableHeaderView = header
     }
@@ -516,7 +520,7 @@ private final class LikedSongsHeaderRowView: UIControl {
 
   /// cassette Patch 044: PlaylistsVC sets this to push the
   /// favorites-filtered SongsVC.
-  var onTap: (() -> Void)?
+  var onTap: (() -> ())?
 
   override init(frame: CGRect) {
     super.init(frame: frame)

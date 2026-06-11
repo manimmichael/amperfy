@@ -254,7 +254,7 @@ class GenreDetailVC: MultiSourceTableViewController {
 
   // Patch 026: genre metadata line — "Genre · 23 artists · 412 songs".
   private func refreshGenreMetadataLine() {
-    var parts: [String] = ["Genre"]
+    var parts = ["Genre"]
     if genre.artistCount > 0 {
       parts.append("\(genre.artistCount) artist\(genre.artistCount == 1 ? "" : "s")")
     }

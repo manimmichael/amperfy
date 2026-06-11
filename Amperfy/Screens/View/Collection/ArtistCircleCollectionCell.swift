@@ -56,7 +56,7 @@ final class ArtistCircleCollectionCell: BasicCollectionCell {
 
   private var playOverlay: UIButton?
   var showsPlayOverlay = false
-  var onPlayTapped: (() -> Void)?
+  var onPlayTapped: (() -> ())?
 
   override init(frame: CGRect) {
     super.init(frame: frame)

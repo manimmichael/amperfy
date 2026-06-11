@@ -733,7 +733,8 @@ class SearchVC: BasicTableViewController {
   lazy var cassetteOnDeviceNoResultsConfig: UIContentUnavailableConfiguration = {
     var config = UIContentUnavailableConfiguration.search()
     config.text = "No results on this phone"
-    config.secondaryText = "Enable Server Mode in Settings to search your full Cassette Player catalog."
+    config
+      .secondaryText = "Enable Server Mode in Settings to search your full Cassette Player catalog."
     config.textProperties.font = UIFont.cassette(.sectionTitle)
     config.textProperties.color = CassetteTheme.UIColors.ink
     config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)

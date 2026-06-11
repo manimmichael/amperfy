@@ -89,7 +89,8 @@ class GenericDetailTableHeader: UIView {
   static func frameHeight(
     traitCollection: UITraitCollection,
     isProminentPlayButton: Bool = false
-  ) -> CGFloat {
+  )
+    -> CGFloat {
     if traitCollection.horizontalSizeClass == .compact {
       return GenericDetailTableHeader.frameHeightCompact +
         (isProminentPlayButton ? prominentExtraHeight : 0)

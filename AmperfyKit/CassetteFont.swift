@@ -20,6 +20,8 @@
 import SwiftUI
 import UIKit
 
+// MARK: - CassetteDisplayWeight
+
 public enum CassetteDisplayWeight {
   case regular
   case semibold
@@ -54,6 +56,8 @@ public enum CassetteDisplayWeight {
   }
 }
 
+// MARK: - CassetteMonoWeight
+
 public enum CassetteMonoWeight {
   case regular
   case medium
@@ -86,7 +90,8 @@ extension UIFont {
   public static func cassetteDisplay(
     size: CGFloat,
     weight: CassetteDisplayWeight = .semibold
-  ) -> UIFont {
+  )
+    -> UIFont {
     if let font = UIFont(name: weight.postScriptName, size: size) {
       return font
     }
@@ -96,7 +101,8 @@ extension UIFont {
   public static func cassetteMono(
     size: CGFloat,
     weight: CassetteMonoWeight = .regular
-  ) -> UIFont {
+  )
+    -> UIFont {
     if let font = UIFont(name: weight.postScriptName, size: size) {
       return font
     }
@@ -110,7 +116,8 @@ extension Font {
   public static func cassetteDisplay(
     size: CGFloat,
     weight: CassetteDisplayWeight = .semibold
-  ) -> Font {
+  )
+    -> Font {
     // SwiftUI's `Font(name:size:)` silently falls back to the system font
     // if the PostScript name can't be resolved, so we always ask for the
     // custom one and layer `.weight()` on top for the system fallback path.
@@ -121,13 +128,14 @@ extension Font {
   public static func cassetteMono(
     size: CGFloat,
     weight: CassetteMonoWeight = .regular
-  ) -> Font {
+  )
+    -> Font {
     Font.custom(weight.postScriptName, size: size)
       .weight(weight.swiftUIWeight)
   }
 }
 
-// MARK: - CassetteTextStyle (Phase 4.3 typography scale)
+// MARK: - CassetteTextStyle
 
 /// Canonical typography scale for the Cassette iOS fork. Eight semantic
 /// roles map onto the existing Display (Barlow Condensed) / Mono (DM Mono)
@@ -138,14 +146,14 @@ extension Font {
 /// (medium mono, 12pt) by weight only, not size. The 12pt floor is a Cassette
 /// product decision; iOS HIG would allow 11pt here but we don't.
 public enum CassetteTextStyle {
-  case heroTitle    // Barlow Condensed Bold, 28pt
+  case heroTitle // Barlow Condensed Bold, 28pt
   case sectionTitle // Barlow Condensed Bold, 22pt
-  case rowTitle     // Barlow Condensed Semibold, 16pt
-  case miniTitle    // Barlow Condensed Semibold, 14pt
+  case rowTitle // Barlow Condensed Semibold, 16pt
+  case miniTitle // Barlow Condensed Semibold, 14pt
   case sectionLabel // Barlow Condensed Bold, 13pt (callers uppercase as needed)
-  case metadata     // DM Mono Medium, 12pt
-  case caption      // DM Mono Regular, 12pt
-  case body         // SF Pro Text Regular, 15pt (system font, not Cassette Display)
+  case metadata // DM Mono Medium, 12pt
+  case caption // DM Mono Regular, 12pt
+  case body // SF Pro Text Regular, 15pt (system font, not Cassette Display)
 }
 
 extension UIFont {

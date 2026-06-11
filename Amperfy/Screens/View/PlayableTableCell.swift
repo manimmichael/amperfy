@@ -94,6 +94,7 @@ class PlayableTableCell: BasicTableCell {
     view.isHidden = true
     return view
   }()
+
   private var didInstallPlayingSymbol = false
   private var isPlayingSymbolNotificationRegistered = false
 
