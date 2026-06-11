@@ -134,8 +134,15 @@ class EntityPreviewActionBuilder {
     if !gotoActions.isEmpty {
       menuActions.append(UIMenu(options: .displayInline, children: gotoActions))
     }
-    // cassette Polish 2 (G4): Favorite + Rating removed from every context menu.
-    // (Detail pages favorite via the header heart instead.)
+    // cassette Polish 2 (G4): Rating removed from every context menu.
+    // cassette redesign (Surface 2): Favorite returns for TRACK-level rows
+    // only — rows stay quiet (no persistent per-row heart), so the overflow
+    // menu + swipe actions are the favoriting surfaces. Containers (album /
+    // artist) keep the detail-header heart and stay out of the menu.
+    if let playable = entityContainer as? AbstractPlayable,
+       playable.isSong, playable.isFavoritable {
+      elementHandlingActions.append(createFavoriteMenu(libraryEntity: playable))
+    }
     if isAddToPlaylist {
       elementHandlingActions.append(createAddToPlaylistAction())
     }

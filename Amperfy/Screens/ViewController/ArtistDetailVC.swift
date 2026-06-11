@@ -31,6 +31,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
   private var albumsFetchedResultsController: ArtistAlbumsItemsFetchedResultsController!
   private var songsFetchedResultsController: ArtistSongsItemsFetchedResultsController!
   private var optionsButton: UIBarButtonItem!
+  private var collapsedPlayButton: UIBarButtonItem!
   private var detailOperationsView: GenericDetailTableHeader?
   private let stickyHeader = DetailStickyHeaderView()
 
@@ -58,7 +59,27 @@ class ArtistDetailVC: MultiSourceTableViewController {
     // identity-bound FRCs (song.artist == self) would otherwise return nothing.
     artist = appDelegate.storage.main.library.richestSameIdArtist(for: artist, account: account)
 
+    // cassette redesign (Surface 1): overflow returns to the navigation bar
+    // (native glass circle on iOS 26); a play bar-button joins it when the
+    // hero collapses under the bar.
     optionsButton = UIBarButtonItem.createOptionsBarButton()
+    optionsButton.menu = UIMenu.lazyMenu { [weak self] in
+      guard let self else { return [] }
+      return EntityPreviewActionBuilder(container: artist, on: self).createMenuActions()
+    }
+    collapsedPlayButton = UIBarButtonItem(
+      image: UIImage(systemName: "play.fill"),
+      primaryAction: UIAction { [weak self] _ in
+        guard let self else { return }
+        let songs = songsFetchedResultsController
+          .getContextSongs(onlyCachedSongs: appDelegate.storage.settings.user.isOfflineMode) ?? []
+        appDelegate.player.play(context: PlayContext(
+          containable: artist,
+          playables: songs.filterSongs().sortByAlbum()
+        ))
+      }
+    )
+    collapsedPlayButton.accessibilityLabel = "Play"
 
     albumsFetchedResultsController = ArtistAlbumsItemsFetchedResultsController(
       for: artist,
@@ -108,16 +129,17 @@ class ArtistDetailVC: MultiSourceTableViewController {
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
     refreshArtistMetadataLine()
-    DetailStickyHeaderSupport.install(stickyHeader: stickyHeader, in: self)
+    DetailStickyHeaderSupport.install(
+      stickyHeader: stickyHeader,
+      in: self,
+      overflowItem: optionsButton,
+      collapsedPlayItem: collapsedPlayButton
+    )
     refreshStickyHeaderText()
     tableView.layoutIfNeeded()
     DispatchQueue.main.async { [weak self] in
       self?.stickyHeader.alpha = 0
     }
-
-    // cassette Polish 2 (D1/E2): overflow lives in the header action bar now,
-    // not the nav bar. The nav bar shows only the back button at rest and fades
-    // in the title on scroll.
 
     containableAtIndexPathCallback = { indexPath in
       switch indexPath.section + 1 {
@@ -214,7 +236,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
       stickyHeader: stickyHeader,
       scrollView: tableView,
       tableHeaderView: tableView.tableHeaderView,
-      in: self
+      in: self,
+      collapsedPlayItem: collapsedPlayButton
     )
   }
 

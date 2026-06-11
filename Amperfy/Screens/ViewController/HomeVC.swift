@@ -95,6 +95,11 @@ final class HomeVC: UICollectionViewController {
     // shelves remain visible/editable.
     configureCollectionView()
     configureDataSource()
+    // cassette redesign (Surface 4): swap in the snapshot-aware layout so
+    // the Resume section gets its full-width card geometry. Replaces the
+    // raw-value section lookup (which broke once hidden-when-empty shelves
+    // shifted the section indices).
+    collectionView.setCollectionViewLayout(makeLayout(), animated: false)
     sharedHome.createFetchController()
     applySnapshot(animated: false)
 
@@ -162,70 +167,89 @@ final class HomeVC: UICollectionViewController {
 
   // MARK: - Layout
 
+  /// Placeholder used between init and viewDidLoad (before the diffable
+  /// data source exists). Resolves sections by raw value, which is good
+  /// enough for the empty first pass; `makeLayout()` replaces it.
   private static func createLayout() -> UICollectionViewCompositionalLayout {
-    // cassette Patch 038: section-aware layout. Captures the
-    // section enum from the snapshot so the Artists shelf can swap
-    // to a tighter ~110pt-wide group sized for the circular
-    // ArtistCircleCollectionCell, while other shelves keep the
-    // existing 160pt × 210pt rhythm.
-    let layout = UICollectionViewCompositionalLayout { sectionIndex, environment in
-      guard let section = HomeSection(rawValue: sectionIndex) else { return nil }
+    UICollectionViewCompositionalLayout { sectionIndex, _ in
+      Self.sectionLayout(for: HomeSection(rawValue: sectionIndex))
+    }
+  }
 
-      let itemSize = NSCollectionLayoutSize(
+  /// cassette redesign (Surface 4): snapshot-aware layout. Resolves the
+  /// section enum from the data source (hidden-when-empty shelves shift
+  /// indices) so the Resume section can take a full-width card row while
+  /// the shelves keep the 160pt orthogonal carousel rhythm.
+  private func makeLayout() -> UICollectionViewCompositionalLayout {
+    UICollectionViewCompositionalLayout { [weak self] sectionIndex, _ in
+      let section = self?.dataSource.snapshot().sectionIdentifiers.element(at: sectionIndex)
+      return Self.sectionLayout(for: section)
+    }
+  }
+
+  private static func sectionLayout(for section: HomeSection?) -> NSCollectionLayoutSection? {
+    guard let section else { return nil }
+
+    let itemSize = NSCollectionLayoutSize(
+      widthDimension: .fractionalWidth(1.0),
+      heightDimension: .fractionalHeight(1.0)
+    )
+    let item = NSCollectionLayoutItem(layoutSize: itemSize)
+
+    let groupSize: NSCollectionLayoutSize
+    switch section {
+    case .resume:
+      // Single full-width glass card.
+      groupSize = NSCollectionLayoutSize(
         widthDimension: .fractionalWidth(1.0),
-        heightDimension: .fractionalHeight(1.0)
+        heightDimension: .absolute(ResumeCardCell.cardHeight)
       )
-      let item = NSCollectionLayoutItem(layoutSize: itemSize)
+    default:
+      groupSize = NSCollectionLayoutSize(
+        widthDimension: .absolute(itemWidth),
+        heightDimension: .estimated(shelfEstimatedHeight)
+      )
+    }
+    let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
 
-      let groupSize: NSCollectionLayoutSize
-      switch section {
-      default:
-        groupSize = NSCollectionLayoutSize(
-          widthDimension: .absolute(itemWidth),
-          heightDimension: .estimated(shelfEstimatedHeight)
-        )
-      }
-      _ = environment
-      let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
-
-      let sectionLayout = NSCollectionLayoutSection(group: group)
+    let sectionLayout = NSCollectionLayoutSection(group: group)
+    if section != .resume {
       sectionLayout.orthogonalScrollingBehavior = .continuous
       sectionLayout.interGroupSpacing = 12
-      // cassette Patch 025: drop the section top inset — vertical
-      // rhythm above the carousel now comes from `SectionHeaderView`'s
-      // own internal padding (16pt above title, 8pt below) so we
-      // don't double-count the gap.
-      sectionLayout.contentInsets = NSDirectionalEdgeInsets(
-        top: 0,
-        leading: 16,
-        bottom: 24,
-        trailing: 16
-      )
-      // cassette Polish 2 (A2): don't let the section's 16pt content inset
-      // also indent the shelf header. Otherwise the header is inset 16 AND
-      // its title label adds its own 16pt leading (= 32pt), pushing "Recent"/
-      // "Albums" right of the first card (which starts at 16). With this the
-      // header spans full width and the label's 16pt leading lines up exactly
-      // with the card column.
-      sectionLayout.supplementariesFollowContentInsets = false
-
-      // Header
-      let headerSize = NSCollectionLayoutSize(
-        widthDimension: .fractionalWidth(1.0),
-        heightDimension: .estimated(44)
-      )
-      let header = NSCollectionLayoutBoundarySupplementaryItem(
-        layoutSize: headerSize,
-        elementKind: UICollectionView.elementKindSectionHeader,
-        alignment: .top
-      )
-      header.pinToVisibleBounds = false
-      header.zIndex = 1
-      sectionLayout.boundarySupplementaryItems = [header]
-
-      return sectionLayout
     }
-    return layout
+    // cassette Patch 025: drop the section top inset — vertical
+    // rhythm above the carousel now comes from `SectionHeaderView`'s
+    // own internal padding (16pt above title, 8pt below) so we
+    // don't double-count the gap.
+    sectionLayout.contentInsets = NSDirectionalEdgeInsets(
+      top: 0,
+      leading: 16,
+      bottom: 24,
+      trailing: 16
+    )
+    // cassette Polish 2 (A2): don't let the section's 16pt content inset
+    // also indent the shelf header. Otherwise the header is inset 16 AND
+    // its title label adds its own 16pt leading (= 32pt), pushing "Recent"/
+    // "Albums" right of the first card (which starts at 16). With this the
+    // header spans full width and the label's 16pt leading lines up exactly
+    // with the card column.
+    sectionLayout.supplementariesFollowContentInsets = false
+
+    // Header
+    let headerSize = NSCollectionLayoutSize(
+      widthDimension: .fractionalWidth(1.0),
+      heightDimension: .estimated(44)
+    )
+    let header = NSCollectionLayoutBoundarySupplementaryItem(
+      layoutSize: headerSize,
+      elementKind: UICollectionView.elementKindSectionHeader,
+      alignment: .top
+    )
+    header.pinToVisibleBounds = false
+    header.zIndex = 1
+    sectionLayout.boundarySupplementaryItems = [header]
+
+    return sectionLayout
   }
 
   // MARK: - CollectionView Setup
@@ -242,6 +266,11 @@ final class HomeVC: UICollectionViewController {
       ArtistCircleCollectionCell.self,
       forCellWithReuseIdentifier: ArtistCircleCollectionCell.typeName
     )
+    // cassette redesign (Surface 4): full-width Resume glass card.
+    collectionView.register(
+      ResumeCardCell.self,
+      forCellWithReuseIdentifier: ResumeCardCell.typeName
+    )
     collectionView.register(
       SectionHeaderView.self,
       forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
@@ -257,45 +286,42 @@ final class HomeVC: UICollectionViewController {
       HomeItem
     >(collectionView: collectionView) { [unowned self] collectionView, indexPath, item in
       let section = dataSource.snapshot().sectionIdentifiers.element(at: indexPath.section)
-      let showsPlayOverlay = section == .recent && indexPath.item == 0
+      // cassette redesign (Surface 4): the Resume card is the screen's one
+      // dedicated play surface — the shelf cards below navigate only, so
+      // the old Recent[0] play overlay (Patch 069) is retired.
+      if section == .resume {
+        let cell = collectionView.dequeueReusableCell(
+          withReuseIdentifier: ResumeCardCell.typeName,
+          for: indexPath
+        ) as! ResumeCardCell
+        let containable = item.playableContainable
+        cell.display(container: containable)
+        cell.onPlayTapped = { [weak self] in
+          guard let self else { return }
+          appDelegate.player.play(
+            context: PlayContext(containable: containable)
+          )
+        }
+        return cell
+      }
       if let artist = item.playableContainable as? Artist {
         let cell = collectionView.dequeueReusableCell(
           withReuseIdentifier: ArtistCircleCollectionCell.typeName,
           for: indexPath
         ) as! ArtistCircleCollectionCell
-        cell.display(artist: artist, showsPlayOverlay: showsPlayOverlay)
-        // cassette Patch 043: tap-vs-play split. Body tap still
-        // navigates to detail via didSelectItemAt; the overlay
-        // starts playback for the artist's playable contents.
-        cell.onPlayTapped = { [weak self] in
-          guard let self else { return }
-          appDelegate.player.play(
-            context: PlayContext(containable: artist)
-          )
-        }
+        cell.display(artist: artist)
         return cell
       }
       let cell = collectionView.dequeueReusableCell(
         withReuseIdentifier: AlbumCollectionCell.typeName,
         for: indexPath
       ) as! AlbumCollectionCell
-      let containable = item.playableContainable
-      cell.showsPlayOverlay = showsPlayOverlay
       cell.display(
-        container: containable,
+        container: item.playableContainable,
         rootView: self,
         itemWidth: Self.itemWidth,
         initialIndexPath: indexPath
       )
-      // cassette Patch 043: same tap-vs-play split as the artist
-      // cell — overlay tap fires `player.play` for whatever
-      // container this card represents (album, playlist, podcast).
-      cell.onPlayTapped = { [weak self] in
-        guard let self else { return }
-        appDelegate.player.play(
-          context: PlayContext(containable: containable)
-        )
-      }
       return cell
     }
 
@@ -311,16 +337,35 @@ final class HomeVC: UICollectionViewController {
       else {
         return nil
       }
-      header.title = snapshotSection.title
+      // cassette redesign (Surface 4): the Resume section's header is the
+      // greeting line — quiet DM Mono, not a shelf title (and definitely
+      // not Newsreader, which isn't bundled).
+      if snapshotSection == .resume {
+        header.style = .greeting
+        header.title = Self.greetingText()
+      } else {
+        header.style = .shelf
+        header.title = snapshotSection.title
+      }
       // cassette Patch 035: every shelf is deterministic now; no
       // refresh button surfaces on any header.
       header.showsRefreshButton = false
       header.setRefreshHandler(nil)
       // cassette Patch 042: header tap navigates Playlists / Albums /
-      // Artists into the matching Library category. Recent stays
+      // Artists into the matching Library category. Resume + Recent stay
       // presentational (handler nil → chevron hides).
       header.tapHandler = self?.tapHandler(for: snapshotSection)
       return header
+    }
+  }
+
+  /// cassette redesign (Surface 4): time-of-day greeting above the Resume
+  /// card, set in DM Mono caps like the app's other data labels.
+  private static func greetingText() -> String {
+    switch Calendar.current.component(.hour, from: Date()) {
+    case 5..<12: return "GOOD MORNING"
+    case 12..<18: return "GOOD AFTERNOON"
+    default: return "GOOD EVENING"
     }
   }
 
@@ -409,7 +454,9 @@ final class HomeVC: UICollectionViewController {
   func presentSectionEditor() {
     let editor = HomeEditorVC(current: sharedHome.orderedVisibleSections) { [weak self] newOrder in
       guard let self else { return }
-      sharedHome.orderedVisibleSections = newOrder
+      // cassette redesign (Surface 4): Resume isn't editable — the editor
+      // only surfaces the shelves, so re-pin the Resume card to the top.
+      sharedHome.orderedVisibleSections = [.resume] + newOrder.filter { $0 != .resume }
       if let accountInfo = appDelegate.storage.settings.accounts.active {
         appDelegate.storage.settings.accounts.updateSetting(accountInfo) { accountSettings in
           accountSettings.homeSections = newOrder
@@ -554,6 +601,26 @@ extension HomeVC {
 final class SectionHeaderView: UICollectionReusableView {
   static let reuseID = "SectionHeaderView"
 
+  /// cassette redesign (Surface 4): the Resume section's header is a quiet
+  /// DM Mono greeting; the shelves keep the Barlow section title.
+  enum Style {
+    case shelf
+    case greeting
+  }
+
+  var style: Style = .shelf {
+    didSet {
+      switch style {
+      case .shelf:
+        titleLabel.font = UIFont.cassette(.sectionTitle)
+        titleLabel.textColor = CassetteTheme.UIColors.ink
+      case .greeting:
+        titleLabel.font = UIFont.cassette(.metadata)
+        titleLabel.textColor = CassetteTheme.UIColors.ink2
+      }
+    }
+  }
+
   private let refreshButton: UIButton = {
     let btn = UIButton(type: .system)
     btn.translatesAutoresizingMaskIntoConstraints = false
@@ -649,6 +716,7 @@ final class SectionHeaderView: UICollectionReusableView {
     tapHandler = nil
     setRefreshHandler(nil)
     showsRefreshButton = false
+    style = .shelf
   }
 
   /// cassette Patch 025: give the section title room to breathe. The

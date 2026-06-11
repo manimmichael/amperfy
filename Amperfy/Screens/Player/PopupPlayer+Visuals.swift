@@ -95,12 +95,13 @@ extension PopupPlayerVC {
       if let playableInfo = player.currentlyPlaying,
          playableInfo.isSong {
         config.image = playableInfo.isFavorite ? .heartFill : .heartEmpty
-        // cassette Patch 034: drop amber from the heart — too much amber/
-        // orange sat in the immediate vicinity of other orange affordances.
-        // White (warm-paper ink) reads cleanly as a standalone affordance,
-        // and the active/inactive state is already conveyed by the fill/
-        // empty SF Symbol toggle.
-        config.baseForegroundColor = CassetteTheme.UIColors.ink
+        // cassette redesign (Surface 5): the favorited heart is one of the
+        // three sanctioned orange live-state surfaces (scrubber fill,
+        // playing indicator, active heart). Unfavorited stays quiet ink
+        // alongside its row siblings.
+        config.baseForegroundColor = playableInfo.isFavorite
+          ? CassetteTheme.UIColors.orange
+          : CassetteTheme.UIColors.ink
         button.isEnabled = appDelegate.storage.settings.user.isOnlineMode
       } else if let playableInfo = player.currentlyPlaying,
                 let radio = playableInfo.asRadio {

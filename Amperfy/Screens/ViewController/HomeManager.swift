@@ -271,10 +271,12 @@ class HomeManager: NSObject {
     updateRecentArtists()
   }
 
-  /// `Set<String>` of stable IDs already surfaced in Recent — used
-  /// by the lower shelves to skip duplicates.
+  /// `Set<String>` of stable IDs already surfaced in Resume + Recent —
+  /// used by the lower shelves to skip duplicates (and to keep diffable
+  /// item identifiers unique across the whole snapshot).
   private var recentStableIDs: Set<String> {
-    Set((data[.recent] ?? []).map { $0.stableID })
+    Set((data[.resume] ?? []).map { $0.stableID })
+      .union((data[.recent] ?? []).map { $0.stableID })
   }
 
   /// Heterogeneous merge: recently-played albums + playlists +
@@ -339,13 +341,31 @@ class HomeManager: NSObject {
     // Prepend live queue's source album if present and not already
     // in the top slot. Drop any later occurrence so the live album
     // only appears once.
+    var hasLiveAlbum = false
     if let song = player.currentlyPlaying?.asSong, let liveAlbum = song.album {
+      hasLiveAlbum = true
       let liveID = Self.stableID(for: liveAlbum)
       let isAlreadyTop = merged.first.map { Self.stableID(for: $0) == liveID } ?? false
       if !isAlreadyTop {
         merged.removeAll { Self.stableID(for: $0) == liveID }
         merged.insert(liveAlbum, at: 0)
       }
+    }
+
+    // cassette redesign (Surface 4): the head of the merged recency list
+    // becomes the Resume card (live queue first, otherwise the most
+    // recently played container) and drops out of the Recent shelf. On a
+    // fresh library with no play history (first-run fallback only) there
+    // is nothing to resume, so the card hides.
+    let hasPlayHistory = hasLiveAlbum || entries.contains { $0.date > distantPast }
+    if hasPlayHistory, let resumeContainer = merged.first {
+      data[.resume] = [HomeItem(
+        stableID: Self.stableID(for: resumeContainer),
+        playableContainable: resumeContainer
+      )]
+      merged.removeFirst()
+    } else {
+      data[.resume] = []
     }
 
     data[.recent] = merged.prefix(Self.sectionMaxItemCount).map {

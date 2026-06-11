@@ -97,6 +97,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
 
   private var editButton: UIBarButtonItem!
   private var optionsButton: UIBarButtonItem!
+  private var collapsedPlayButton: UIBarButtonItem!
   var detailOperationsView: GenericDetailTableHeader?
   private let stickyHeader = DetailStickyHeaderView()
 
@@ -172,6 +173,21 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     optionsButton.menu = UIMenu.lazyMenu {
       EntityPreviewActionBuilder(container: self.playlist, on: self).createMenuActions()
     }
+    // cassette redesign (Surface 1): play bar-button revealed when the hero
+    // collapses under the (native glass) navigation bar.
+    collapsedPlayButton = UIBarButtonItem(
+      image: UIImage(systemName: "play.fill"),
+      primaryAction: UIAction { [weak self] _ in
+        guard let self else { return }
+        appDelegate.player.play(context: PlayContext(
+          containable: playlist,
+          playables: fetchedResultsController
+            .getContextSongs(onlyCachedSongs: appDelegate.storage.settings.user.isOfflineMode) ?? []
+        ))
+      }
+    )
+    collapsedPlayButton.accessibilityLabel = "Play"
+    collapsedPlayButton.isHidden = true
 
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
       infoCB: { "\(self.playlist.songCount) Song\(self.playlist.songCount == 1 ? "" : "s")" },
@@ -247,7 +263,8 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       stickyHeader: stickyHeader,
       scrollView: tableView,
       tableHeaderView: tableView.tableHeaderView,
-      in: self
+      in: self,
+      collapsedPlayItem: collapsedPlayButton
     )
   }
 
@@ -331,9 +348,11 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       }
     }
 
-    // cassette Polish 2 (D1/F): overflow moves to the header action bar; the nav
-    // bar keeps only the playlist Edit affordance.
-    navigationItem.rightBarButtonItems = [edititingBarButton].compactMap { $0 }
+    // cassette redesign (Surface 1): overflow returns to the navigation bar
+    // alongside Edit; the play bar-button sits between them and stays hidden
+    // until the hero collapses (DetailStickyHeaderSupport toggles it).
+    navigationItem.rightBarButtonItems = [optionsButton, collapsedPlayButton, edititingBarButton]
+      .compactMap { $0 }
   }
 
   func convertIndexPathToPlayContext(songIndexPath: IndexPath) -> PlayContext? {

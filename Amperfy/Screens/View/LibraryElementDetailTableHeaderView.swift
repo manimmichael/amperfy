@@ -71,10 +71,9 @@ class LibraryElementDetailTableHeaderView: UIView {
   private var config: PlayShuffleInfoConfiguration?
 
   private var prominentContainer: UIView?
-  private var cassettePlayButton: CassettePlayButton?
+  private var prominentPlayButton: UIButton?
   private var prominentShuffleButton: UIButton?
   private var prominentHeartButton: UIButton?
-  private var prominentOverflowButton: UIButton?
 
   required init?(coder aDecoder: NSCoder) {
     super.init(coder: aDecoder)
@@ -159,11 +158,17 @@ class LibraryElementDetailTableHeaderView: UIView {
     }
   }
 
+  // cassette redesign (Surface 1): orange is reserved for live state — the
+  // filled heart is the "favorited" live state and paints orange; the empty
+  // heart is quiet ink2.
   private func refreshProminentHeartIcon() {
     guard let heart = prominentHeartButton else { return }
     let isFav = config?.favoriteEntity?.isFavorite ?? false
     var heartConfig = heart.configuration ?? UIButton.Configuration.plain()
     heartConfig.image = isFav ? UIImage(systemName: "heart.fill") : UIImage(systemName: "heart")
+    heartConfig.baseForegroundColor = isFav
+      ? CassetteTheme.UIColors.orange
+      : CassetteTheme.UIColors.ink2
     heart.configuration = heartConfig
     heart.accessibilityLabel = isFav ? "Unmark favorite" : "Favorite"
   }
@@ -257,14 +262,15 @@ class LibraryElementDetailTableHeaderView: UIView {
     button.isHidden = isHidden
   }
 
-  // cassette Polish 2 (D1): build the action bar once. A single horizontal row,
-  // pinned to the header bounds and toggled visible only for compact width in
-  // refresh():  [heart]  ...  [PLAY 56][shuffle]  ...  [overflow].
-  // - PLAY is the skeuomorphic CassettePlayButton (56pt), the visual anchor.
-  // - Shuffle is a small ink icon (no label) to the immediate right of Play.
-  // - Heart (leading) and overflow (trailing) are plain ink icons matching the
-  //   player treatment; heart favorites the container, overflow opens the
-  //   entity context menu.
+  // cassette redesign (Surface 1): the action bar is a balanced three-slot
+  // row toggled visible only for compact width in refresh():
+  //   [heart]  ...  [PLAY 56]  ...  [shuffle]
+  // - PLAY is a native UIButton.Configuration CTA (cream fill by default,
+  //   Liquid Glass variant available — see DetailPlayCTAStyle).
+  // - Heart (leading) and shuffle (trailing) are plain icon buttons that
+  //   mirror each other so the play disc sits visually centered.
+  // - Overflow no longer lives here: it is a navigation-bar item (native
+  //   glass on iOS 26), wired by the detail view controllers.
   private func setupProminentLayoutIfNeeded() {
     guard config?.usesProminentPlayButton == true, prominentContainer == nil else { return }
 
@@ -272,48 +278,19 @@ class LibraryElementDetailTableHeaderView: UIView {
     container.translatesAutoresizingMaskIntoConstraints = false
     addSubview(container)
 
-    let play = CassettePlayButton(diameter: Self.prominentPlayDiameter)
-    play.translatesAutoresizingMaskIntoConstraints = false
-    play.onTap = { [weak self] in self?.play(isShuffled: false) }
+    let play = Self.makeDetailPlayCTA(diameter: Self.prominentPlayDiameter)
+    play.addTarget(self, action: #selector(prominentPlayPressed), for: .touchUpInside)
 
-    let shuffle = UIButton(type: .system)
-    var shuffleConfig = UIButton.Configuration.plain()
-    shuffleConfig.image = UIImage(systemName: "shuffle")
-    shuffleConfig.baseForegroundColor = CassetteTheme.UIColors.ink
-    shuffleConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-      pointSize: 18,
-      weight: .semibold
-    )
-    shuffleConfig.contentInsets = NSDirectionalEdgeInsets(
-      top: 5,
-      leading: 5,
-      bottom: 5,
-      trailing: 5
-    )
-    shuffle.configuration = shuffleConfig
-    shuffle.tintColor = CassetteTheme.UIColors.ink
+    let shuffle = Self.makePlainActionButton(systemImage: "shuffle")
     shuffle.accessibilityLabel = "Shuffle"
-    shuffle.translatesAutoresizingMaskIntoConstraints = false
     shuffle.addTarget(self, action: #selector(prominentShufflePressed), for: .touchUpInside)
 
     let heart = Self.makePlainActionButton(systemImage: "heart")
     heart.addTarget(self, action: #selector(prominentHeartPressed), for: .touchUpInside)
 
-    let overflow = Self.makePlainActionButton(systemImage: "ellipsis")
-    overflow.accessibilityLabel = "More"
-    overflow.showsMenuAsPrimaryAction = true
-    overflow.menu = UIMenu.lazyMenu { [weak self] in
-      guard let self,
-            let entity = config?.favoriteEntity,
-            let rootVC = config?.rootViewController
-      else { return [] }
-      return EntityPreviewActionBuilder(container: entity, on: rootVC).createMenuActions()
-    }
-
     container.addSubview(heart)
     container.addSubview(play)
     container.addSubview(shuffle)
-    container.addSubview(overflow)
     NSLayoutConstraint.activate([
       container.topAnchor.constraint(equalTo: topAnchor),
       container.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -328,36 +305,78 @@ class LibraryElementDetailTableHeaderView: UIView {
       play.widthAnchor.constraint(equalToConstant: Self.prominentPlayDiameter),
       play.heightAnchor.constraint(equalToConstant: Self.prominentPlayDiameter),
 
-      shuffle.leadingAnchor.constraint(equalTo: play.trailingAnchor, constant: 12),
+      shuffle.trailingAnchor.constraint(equalTo: container.trailingAnchor),
       shuffle.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-
-      overflow.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-      overflow.centerYAnchor.constraint(equalTo: container.centerYAnchor),
     ])
 
     prominentContainer = container
-    cassettePlayButton = play
+    prominentPlayButton = play
     prominentShuffleButton = shuffle
     prominentHeartButton = heart
-    prominentOverflowButton = overflow
   }
 
-  // cassette Polish 2 (D1): plain ink icon button, 22pt symbol, 44pt hit
-  // target via symmetric insets — matches the popup player heart/overflow.
+  /// cassette redesign (Surface 1): visual style of the prominent detail
+  /// play CTA. `.creamFill` is the approved default (brand ink disc);
+  /// `.prominentGlass` is the Liquid Glass comparison variant — flip the
+  /// static below to compare the two on-device.
+  enum DetailPlayCTAStyle {
+    case creamFill
+    case prominentGlass
+  }
+
+  /// One-line switch for the cream-vs-glass play button comparison.
+  static var detailPlayCTAStyle: DetailPlayCTAStyle = .creamFill
+
+  /// Native circular play CTA. Replaces the skeuomorphic CassettePlayButton
+  /// (hand-drawn CAShapeLayer rim/inner-shadow disc) with a stock
+  /// UIButton.Configuration so pressed states, pointer effects, and — in the
+  /// glass variant — Liquid Glass all come from the system.
+  static func makeDetailPlayCTA(diameter: CGFloat) -> UIButton {
+    var config: UIButton.Configuration
+    switch detailPlayCTAStyle {
+    case .creamFill:
+      config = .filled()
+      config.baseBackgroundColor = CassetteTheme.UIColors.ink
+      config.baseForegroundColor = CassetteTheme.UIColors.bg
+    case .prominentGlass:
+      config = .prominentGlass()
+      config.baseForegroundColor = CassetteTheme.UIColors.ink
+    }
+    config.cornerStyle = .capsule
+    config.image = UIImage(systemName: "play.fill")
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+      pointSize: (diameter * 0.35).rounded(),
+      weight: .medium
+    )
+    let button = UIButton(configuration: config)
+    button.translatesAutoresizingMaskIntoConstraints = false
+    button.accessibilityLabel = "Play"
+    return button
+  }
+
+  // cassette redesign (Surface 1): plain quiet icon button, 22pt symbol,
+  // 44pt hit target via symmetric insets. ink2 baseline — orange is reserved
+  // for live state (the favorited heart overrides via its own refresh).
   private static func makePlainActionButton(systemImage: String) -> UIButton {
     let button = UIButton(type: .system)
     var config = UIButton.Configuration.plain()
     config.image = UIImage(systemName: systemImage)
-    config.baseForegroundColor = CassetteTheme.UIColors.ink
+    config.baseForegroundColor = CassetteTheme.UIColors.ink2
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
       pointSize: 22,
       weight: .regular
     )
     config.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11)
     button.configuration = config
-    button.tintColor = CassetteTheme.UIColors.ink
+    button.tintColor = CassetteTheme.UIColors.ink2
     button.translatesAutoresizingMaskIntoConstraints = false
     return button
+  }
+
+  @objc
+  private func prominentPlayPressed() {
+    Haptics.medium.vibrate(isHapticsEnabled: appDelegate.storage.settings.user.isHapticsEnabled)
+    play(isShuffled: false)
   }
 
   @objc
@@ -392,14 +411,14 @@ class LibraryElementDetailTableHeaderView: UIView {
     playAllButton.isEnabled = true
     playShuffledButton.isEnabled = !(config?.isShuffleOnContextNeccessary ?? true) || appDelegate
       .storage.settings.user.isPlayerShuffleButtonEnabled
-    cassettePlayButton?.isEnabled = true
+    prominentPlayButton?.isEnabled = true
     prominentShuffleButton?.isEnabled = playShuffledButton.isEnabled
   }
 
   func deactivate() {
     playAllButton.isEnabled = false
     playShuffledButton.isEnabled = false
-    cassettePlayButton?.isEnabled = false
+    prominentPlayButton?.isEnabled = false
     prominentShuffleButton?.isEnabled = false
   }
 }

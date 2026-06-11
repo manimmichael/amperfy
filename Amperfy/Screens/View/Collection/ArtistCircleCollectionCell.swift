@@ -117,18 +117,16 @@ final class ArtistCircleCollectionCell: BasicCollectionCell {
     playOverlay?.isHidden = !showsPlayOverlay
   }
 
+  // cassette redesign (Surface 3/4): overlay play is Liquid Glass (shared
+  // config with AlbumCollectionCell) — no filled disc, no manual shadow.
   private func setupPlayOverlayIfNeeded() {
     guard playOverlay == nil else {
       playOverlay?.isHidden = !showsPlayOverlay
       return
     }
-    var config = UIButton.Configuration.filled()
-    config.baseBackgroundColor = CassetteTheme.UIColors.bg3
-    config.baseForegroundColor = CassetteTheme.UIColors.ink
-    config.cornerStyle = .capsule
-    config.image = UIImage(systemName: "play.fill")?
-      .withConfiguration(UIImage.SymbolConfiguration(pointSize: 16, weight: .bold))
-    let button = UIButton(configuration: config)
+    let button = UIButton(
+      configuration: AlbumCollectionCell.makeGlassPlayOverlayConfiguration()
+    )
     button.translatesAutoresizingMaskIntoConstraints = false
     button.accessibilityLabel = "Play"
     button.isHidden = !showsPlayOverlay

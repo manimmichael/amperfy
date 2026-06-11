@@ -43,6 +43,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   var songToScrollTo: Song?
   private var fetchedResultsController: AlbumSongsFetchedResultsController!
   private var optionsButton: UIBarButtonItem!
+  private var collapsedPlayButton: UIBarButtonItem!
   private var detailOperationsView: GenericDetailTableHeader?
   private let stickyHeader = DetailStickyHeaderView()
   private var hideUniformArtistSubtitle = false
@@ -84,7 +85,26 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     super.viewDidLoad()
     appDelegate.userStatistics.visited(.albumDetail)
 
+    // cassette redesign (Surface 1): overflow returns to the navigation bar
+    // (native glass circle on iOS 26); a play bar-button joins it when the
+    // hero collapses under the bar.
     optionsButton = UIBarButtonItem.createOptionsBarButton()
+    optionsButton.menu = UIMenu.lazyMenu { [weak self] in
+      guard let self else { return [] }
+      return EntityPreviewActionBuilder(container: album, on: self).createMenuActions()
+    }
+    collapsedPlayButton = UIBarButtonItem(
+      image: UIImage(systemName: "play.fill"),
+      primaryAction: UIAction { [weak self] _ in
+        guard let self else { return }
+        appDelegate.player.play(context: PlayContext(
+          containable: album,
+          playables: fetchedResultsController
+            .getContextSongs(onlyCachedSongs: appDelegate.storage.settings.user.isOfflineMode) ?? []
+        ))
+      }
+    )
+    collapsedPlayButton.accessibilityLabel = "Play"
 
     cassetteOwnedTrackIds = DeviceOwnershipManager(
       context: appDelegate.storage.main.context
@@ -133,7 +153,12 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
     refreshAlbumMetadataLine()
-    DetailStickyHeaderSupport.install(stickyHeader: stickyHeader, in: self)
+    DetailStickyHeaderSupport.install(
+      stickyHeader: stickyHeader,
+      in: self,
+      overflowItem: optionsButton,
+      collapsedPlayItem: collapsedPlayButton
+    )
     stickyHeader.configure(title: album.name, subtitle: album.subtitle)
     tableView.layoutIfNeeded()
     DispatchQueue.main.async { [weak self] in
@@ -143,10 +168,6 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     snapshotDidChange = { [weak self] in
       self?.updateHideUniformArtistSubtitle()
     }
-
-    // cassette Polish 2 (D1): overflow lives in the header action bar now, not
-    // the nav bar. The nav bar shows only the back button at rest and fades in
-    // the title on scroll.
 
     containableAtIndexPathCallback = { indexPath in
       self.fetchedResultsController.getWrappedEntity(at: indexPath)
@@ -178,7 +199,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       stickyHeader: stickyHeader,
       scrollView: tableView,
       tableHeaderView: tableView.tableHeaderView,
-      in: self
+      in: self,
+      collapsedPlayItem: collapsedPlayButton
     )
   }
 

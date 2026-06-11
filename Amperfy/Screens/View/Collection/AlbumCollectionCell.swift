@@ -107,6 +107,12 @@ class AlbumCollectionCell: BasicCollectionCell {
       container: container,
       cornerRadius: .big
     )
+    // cassette redesign (Surface 3): subtle content-level highlight — a
+    // hairline ink ring that lifts dark covers off the dark background.
+    // Content styling the OS doesn't provide; not a material.
+    entityImage.layer.borderWidth = 1.0 / max(traitCollection.displayScale, 1.0)
+    entityImage.layer.borderColor = CassetteTheme.UIColors.ink
+      .withAlphaComponent(0.08).cgColor
     setupPlayOverlayIfNeeded()
     playOverlay?.isHidden = !showsPlayOverlay
     updateArtworkImageConstraint(indexPath: initialIndexPath)
@@ -127,36 +133,21 @@ class AlbumCollectionCell: BasicCollectionCell {
     super.layoutSubviews()
   }
 
-  /// cassette Patch 043: lazily install a 40pt circular orange
-  /// `play.fill` button anchored 8pt inside the artwork's bottom-
-  /// right corner. Idempotent — safe to call from every `apply(...)`.
+  /// cassette redesign (Surface 3/4): lazily install a 40pt circular Liquid
+  /// Glass `play.fill` button anchored 8pt inside the artwork's bottom-right
+  /// corner. The bg3 disc + manual CALayer drop shadow are retired — the
+  /// overlay sits directly on artwork, which is exactly where system glass
+  /// earns its keep (this overlay only shows on the Home Resume card, so it
+  /// is the Resume play affordance). Idempotent — safe to call from every
+  /// `apply(...)`.
   private func setupPlayOverlayIfNeeded() {
     guard playOverlay == nil else {
       playOverlay?.isHidden = !showsPlayOverlay
       return
     }
-    // cassette Patch 051 (Phase F): play overlay drops the orange fill in
-    // favor of a bg3 disc with an ink glyph. Shadow + capsule shape carry
-    // the "tap to play" affordance; orange is reserved for the scrubber +
-    // waveform exceptions. If the bg3 disc lacks contrast on bright
-    // artwork during device review, swap to ink4 here or add a 1pt ink4
-    // border (no geometry change needed).
-    var config = UIButton.Configuration.filled()
-    config.baseBackgroundColor = CassetteTheme.UIColors.bg3
-    config.baseForegroundColor = CassetteTheme.UIColors.ink
-    config.cornerStyle = .capsule
-    config.image = UIImage(systemName: "play.fill")?
-      .withConfiguration(UIImage.SymbolConfiguration(pointSize: 16, weight: .bold))
-    config.contentInsets = NSDirectionalEdgeInsets(
-      top: 0, leading: 0, bottom: 0, trailing: 0
-    )
-    let button = UIButton(configuration: config)
+    let button = UIButton(configuration: Self.makeGlassPlayOverlayConfiguration())
     button.translatesAutoresizingMaskIntoConstraints = false
     button.accessibilityLabel = "Play"
-    button.layer.shadowColor = UIColor.black.cgColor
-    button.layer.shadowOpacity = 0.25
-    button.layer.shadowRadius = 4
-    button.layer.shadowOffset = CGSize(width: 0, height: 2)
     button.isHidden = !showsPlayOverlay
     button.addAction(UIAction { [weak self] _ in self?.onPlayTapped?() }, for: .touchUpInside)
     contentView.addSubview(button)
@@ -167,6 +158,17 @@ class AlbumCollectionCell: BasicCollectionCell {
       button.bottomAnchor.constraint(equalTo: entityImage.bottomAnchor, constant: -8),
     ])
     playOverlay = button
+  }
+
+  /// Shared Liquid Glass overlay-play configuration for cards (album +
+  /// artist circle). Matches the footer's system-glass material.
+  static func makeGlassPlayOverlayConfiguration() -> UIButton.Configuration {
+    var config = UIButton.Configuration.glass()
+    config.baseForegroundColor = CassetteTheme.UIColors.ink
+    config.cornerStyle = .capsule
+    config.image = UIImage(systemName: "play.fill")?
+      .withConfiguration(UIImage.SymbolConfiguration(pointSize: 16, weight: .bold))
+    return config
   }
 
   func updateArtworkImageConstraint(indexPath: IndexPath) {

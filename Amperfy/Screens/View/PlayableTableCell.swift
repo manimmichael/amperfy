@@ -98,6 +98,47 @@ class PlayableTableCell: BasicTableCell {
   private var didInstallPlayingSymbol = false
   private var isPlayingSymbolNotificationRegistered = false
 
+  /// cassette redesign (Surface 2): trailing download affordance, shown only
+  /// on off-device tracks. Replaces the old cached-check icon — on-device
+  /// rows stay quiet (no marker at all). Native UIButton.Configuration with
+  /// a 44pt hit target via insets.
+  private lazy var downloadButton: UIButton = {
+    var config = UIButton.Configuration.plain()
+    config.image = UIImage(systemName: "arrow.down.circle")
+    config.baseForegroundColor = CassetteTheme.UIColors.ink2
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+      pointSize: 15,
+      weight: .regular
+    )
+    config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14)
+    let button = UIButton(configuration: config)
+    button.accessibilityLabel = "Download"
+    button.translatesAutoresizingMaskIntoConstraints = false
+    button.isHidden = true
+    button.addAction(UIAction { [weak self] _ in self?.downloadPressed() }, for: .touchUpInside)
+    return button
+  }()
+
+  private var didInstallDownloadButton = false
+
+  private func installDownloadButtonIfNeeded() {
+    guard !didInstallDownloadButton else { return }
+    didInstallDownloadButton = true
+    contentView.addSubview(downloadButton)
+    NSLayoutConstraint.activate([
+      downloadButton.centerXAnchor.constraint(equalTo: cacheIconImage.centerXAnchor),
+      downloadButton.centerYAnchor.constraint(equalTo: cacheIconImage.centerYAnchor),
+    ])
+  }
+
+  private func downloadPressed() {
+    guard let playable, !playable.isCached,
+          let accountInfo = playable.account?.info else { return }
+    Haptics.light.vibrate(isHapticsEnabled: appDelegate.storage.settings.user.isHapticsEnabled)
+    appDelegate.getMeta(accountInfo).playableDownloadManager.download(objects: [playable])
+    downloadButton.isHidden = true
+  }
+
   static let rowHeight: CGFloat = 48 + margin.bottom + margin.top
   private static let touchAnimation = 0.4
 
@@ -479,12 +520,10 @@ class PlayableTableCell: BasicTableCell {
 
   func refreshCacheAndDuration() {
     guard let playable = playable else { return }
-    favoriteIconImage.isHidden = !playable.isFavorite
-    // cassette Patch 016: align favourite tint with GenericTableCell (amber).
-    // cassette Patch 049 (Phase D): favorite icon drops from amber to ink.
-    // Hearts across the app share the same tint; filled vs outline carries
-    // the state (here the icon is hidden when not favorited).
-    favoriteIconImage.tintColor = CassetteTheme.UIColors.ink
+    // cassette redesign (Surface 2): rows stay quiet — the per-row favorite
+    // heart is gone. Favoriting lives in the row overflow menu and the
+    // configurable swipe actions instead.
+    favoriteIconImage.isHidden = true
 
     let isDurationVisible = !playable.isRadio &&
       (
@@ -499,6 +538,18 @@ class PlayableTableCell: BasicTableCell {
     let isDisplayOptionButton = (playContextCb != nil) && (playerIndexCb == nil)
     let durationTrailing = isDisplayOptionButton ?
       ((traitCollection.horizontalSizeClass == .regular) ? 30 : 30.0) : 0.0
+
+    // cassette redesign (Surface 2): download affordance only on off-device
+    // tracks; on-device rows show nothing in this slot (the old cached-check
+    // marker is retired).
+    let showsDownloadAffordance = isDisplayOptionButton
+      && displayMode == .normal
+      && !playable.isCached
+      && playable.isDownloadAvailable
+      && !playable.isRadio
+      && appDelegate.storage.settings.user.isOnlineMode
+    installDownloadButtonIfNeeded()
+    downloadButton.isHidden = !showsDownloadAffordance
 
     optionsButton.isHidden = !isDisplayOptionButton
     if isDisplayOptionButton {
@@ -539,9 +590,9 @@ class PlayableTableCell: BasicTableCell {
       labelTrailingCellConstraint.constant = 80 + durationTrailing
     } else {
       var lableTrailing = durationTrailing
-      if playable.isCached, isDurationVisible {
+      if showsDownloadAffordance, isDurationVisible {
         lableTrailing += 4 + cacheIconWidth + 4 + durationWidth
-      } else if playable.isCached {
+      } else if showsDownloadAffordance {
         lableTrailing += 4 + cacheIconWidth
       } else if isDurationVisible {
         lableTrailing += 8 + durationWidth
@@ -554,7 +605,7 @@ class PlayableTableCell: BasicTableCell {
     }
 
     durationTrailingCellConstraint.constant = durationTrailing
-    cacheIconImage.isHidden = !playable.isCached
+    cacheIconImage.isHidden = true
     cacheTrailingCellConstaint
       .constant = durationTrailing + (isDurationVisible ? (4.0 + durationWidth) : 0.0)
     durationLabel.isHidden = !isDurationVisible

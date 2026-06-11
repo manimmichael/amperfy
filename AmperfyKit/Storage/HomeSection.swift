@@ -52,7 +52,11 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   // decoding; .resume left in the enum but no longer rendered.
   case recent
 
+  // cassette redesign (Surface 4): Resume leads the Home IA again — a
+  // single full-width card sourced from the lastPlayedDate FRCs. The four
+  // shelves follow (Recent = recently played; typed shelves = browse).
   public static let defaultValue: [HomeSection] = [
+    .resume,
     .recent,
     .yourPlaylists,
     .recentlyAdded,

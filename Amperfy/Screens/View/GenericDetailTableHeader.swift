@@ -60,13 +60,6 @@ class GenericDetailTableHeader: UIView {
   var playShuffleInfoView: LibraryElementDetailTableHeaderView?
   var isEditing = false
 
-  // cassette Patch 026: artist headers keep their bottom-edge gradient so
-  // the circular photo gracefully fades into the title block. The orange
-  // category eyebrow introduced in Patch 019/021 is gone — detail VCs now
-  // set `metadataOverride` with a Spotify-style "Type · Year · Duration"
-  // (or per-type equivalent) line, rendered in the existing infoLabel.
-  private let artistGradient = CAGradientLayer()
-
   /// Optional one-line metadata that replaces the auto-generated info
   /// text (e.g. "Album · 2024 · 23m"). Detail VCs set this in their
   /// existing refresh path; nil falls back to the entity's default
@@ -172,7 +165,7 @@ class GenericDetailTableHeader: UIView {
     // legacy defaultMarginTopElement set top=0 which packed the artwork
     // hard against the nav bar.
     layoutMargins = UIEdgeInsets(
-      top: 24.0,
+      top: CassetteTheme.Spacing.xl,
       left: UIView.defaultMarginX,
       bottom: 0.0,
       right: UIView.defaultMarginX
@@ -208,29 +201,17 @@ class GenericDetailTableHeader: UIView {
     applyTraitCollectionChange()
   }
 
+  // cassette redesign (Surface 1): the artist photo is a clean circular
+  // crop. The CAGradientLayer bottom wash (Patches 026/033) is retired —
+  // the title block sits below the photo on its own surface, so the
+  // legibility gradient was pure decoration.
   private func configureArtworkPresentation() {
     guard let entityContainer = config?.entityContainer else { return }
     if entityContainer is Artist {
-      // Circular artist photo + bottom gradient for legibility.
       entityImage.layer.masksToBounds = true
-      if artistGradient.superlayer == nil {
-        // cassette Patch 033: replace pure black at 35% (cool grey wash)
-        // with bg4 at 50% so the artist photo's bottom edge fades into
-        // the same neutral grey family as the rest of the chrome.
-        artistGradient.colors = [
-          UIColor.clear.cgColor,
-          CassetteTheme.UIColors.bg4.withAlphaComponent(0.5).cgColor,
-        ]
-        artistGradient.locations = [0.6, 1.0]
-        artistGradient.startPoint = CGPoint(x: 0.5, y: 0.0)
-        artistGradient.endPoint = CGPoint(x: 0.5, y: 1.0)
-        entityImage.layer.addSublayer(artistGradient)
-      }
-      artistGradient.isHidden = false
     } else {
       // Album / playlist / genre / podcast keep the existing square crop.
       entityImage.layer.cornerRadius = CornerRadius.small.asCGFloat
-      artistGradient.isHidden = true
     }
   }
 
@@ -287,13 +268,9 @@ class GenericDetailTableHeader: UIView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    // Circular crop and gradient frame have to track the artwork's bounds.
+    // Circular crop has to track the artwork's bounds.
     if config?.entityContainer is Artist {
       entityImage.layer.cornerRadius = entityImage.bounds.width / 2
-      CATransaction.begin()
-      CATransaction.setDisableActions(true)
-      artistGradient.frame = entityImage.bounds
-      CATransaction.commit()
     }
   }
 
