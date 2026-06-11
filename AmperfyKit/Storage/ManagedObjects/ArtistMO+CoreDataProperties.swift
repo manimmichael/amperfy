@@ -30,6 +30,9 @@ extension ArtistMO {
 
   @NSManaged
   public var albumCount: Int16
+  /// Cassette Layer 1 (Identity): embedded MusicBrainz artist id from Subsonic (optional).
+  @NSManaged
+  public var musicBrainzId: String?
   @NSManaged
   public var remoteAlbumCount: Int16
   @NSManaged

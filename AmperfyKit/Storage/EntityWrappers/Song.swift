@@ -33,6 +33,16 @@ public class Song: AbstractPlayable, Identifyable {
     super.init(managedObject: managedObject)
   }
 
+  /// Cassette Layer 1 (Identity): embedded MusicBrainz recording id from Subsonic (optional).
+  public var musicBrainzId: String? {
+    get { managedObject.musicBrainzId }
+    set {
+      if managedObject.musicBrainzId != newValue {
+        managedObject.musicBrainzId = newValue
+      }
+    }
+  }
+
   public var lyricsRelFilePath: URL? {
     get {
       guard let lyricsRelFilePathString = managedObject.lyricsRelFilePath else { return nil }

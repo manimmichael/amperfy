@@ -22,7 +22,7 @@
 import CoreData
 import Foundation
 
-// MARK: - Cassette library-filter helpers (Layer 3 Phase 3.2)
+// MARK: - CassetteOwnedScope
 
 /// Which owned-id set a library FRC should constrain itself to in
 /// on-device-only mode. `id` on Song/Album/Artist managed objects is the
@@ -40,7 +40,8 @@ enum CassetteOwnedScope {
 func makeCassetteOwnershipPredicate(
   _ scope: CassetteOwnedScope,
   coreDataCompanion: CoreDataCompanion
-) -> NSPredicate? {
+)
+  -> NSPredicate? {
   guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return nil }
   let manager = DeviceOwnershipManager(context: coreDataCompanion.context)
   let ids: Set<String>
@@ -549,7 +550,10 @@ public class ArtistFetchedResultsController: CachedFetchedResultsController<Arti
     ])
     // Cassette fork — Layer 3 Phase 3.2: constrain to owned artists in
     // on-device-only mode (nil/no-op in Server Mode).
-    let cassetteOwned = makeCassetteOwnershipPredicate(.artist, coreDataCompanion: coreDataCompanion)
+    let cassetteOwned = makeCassetteOwnershipPredicate(
+      .artist,
+      coreDataCompanion: coreDataCompanion
+    )
     if let cassetteOwned, let base = fetchRequest.predicate {
       fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
         base,

@@ -32,6 +32,9 @@ extension SongMO {
   public var lyricsRelFilePath: String?
   @NSManaged
   public var addedDate: Date?
+  /// Cassette Layer 1 (Identity): embedded MusicBrainz recording id from Subsonic (optional).
+  @NSManaged
+  public var musicBrainzId: String?
   @NSManaged
   public var album: AlbumMO?
   @NSManaged

@@ -30,6 +30,9 @@ extension AlbumMO {
 
   @NSManaged
   public var albumType: String?
+  /// Cassette Layer 1 (Identity): embedded MusicBrainz release id from Subsonic (optional).
+  @NSManaged
+  public var musicBrainzId: String?
   @NSManaged
   public var duration: Int64
   @NSManaged

@@ -127,7 +127,9 @@ public final class IntentExecutor {
     do {
       tracks = try await api.getIntentTracks(intentId: intent.id)
     } catch {
-      print("Cassette poll: intent \(intent.id) - track resolve failed: \(error.localizedDescription)")
+      print(
+        "Cassette poll: intent \(intent.id) - track resolve failed: \(error.localizedDescription)"
+      )
       try? await api.updateIntent(
         id: intent.id,
         state: "failed",
@@ -232,9 +234,8 @@ public final class IntentExecutor {
   /// A quick GET to the active account's LAN server with a 5s timeout. Any
   /// HTTP response means reachable; only network errors / timeouts mean not.
   private func isCassettePlayerReachable() async -> Bool {
-    guard
-      let serverUrl = AmperKit.shared.storage.settings.accounts.activeSetting.read
-        .loginCredentials?.serverUrl,
+    guard let serverUrl = AmperKit.shared.storage.settings.accounts.activeSetting.read
+      .loginCredentials?.serverUrl,
       let url = URL(string: serverUrl)
     else { return false }
 

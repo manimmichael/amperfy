@@ -64,6 +64,10 @@ class SsArtistParserDelegate: SsXmlLibWithArtworkParser {
       if let attributeCoverArtId = attributeDict["coverArt"] {
         artistBuffer?.artwork = parseArtwork(id: attributeCoverArtId)
       }
+      // Cassette Layer 1 (Identity): persist embedded MusicBrainz artist id when present.
+      if let attributeMusicBrainzId = attributeDict["musicBrainzId"] {
+        artistBuffer?.musicBrainzId = attributeMusicBrainzId
+      }
       artistBuffer?.rating = Int(attributeDict["userRating"] ?? "0") ?? 0
       artistBuffer?.isFavorite = attributeDict["starred"] != nil
     }

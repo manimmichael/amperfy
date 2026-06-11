@@ -132,7 +132,7 @@ public enum LibraryDisplayType: Int, CaseIterable, Sendable, Codable {
   // tabs use `image` (filled where it exists), inactive use `outlineImage`.
   public var outlineImage: UIImage {
     switch self {
-    case .favoriteSongs, .favoriteAlbums, .favoriteArtists:
+    case .favoriteAlbums, .favoriteArtists, .favoriteSongs:
       return UIImage.heartOutline
     case .directories:
       return UIImage.folderOutline
@@ -140,8 +140,8 @@ public enum LibraryDisplayType: Int, CaseIterable, Sendable, Codable {
       return UIImage.guitarsOutline
     case .downloads:
       return UIImage.downloadOutline
-    case .artists, .albums, .songs, .playlists, .podcasts,
-         .newestAlbums, .recentAlbums, .radios:
+    case .albums, .artists, .newestAlbums, .playlists, .podcasts,
+         .radios, .recentAlbums, .songs:
       return image
     }
   }

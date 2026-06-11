@@ -53,7 +53,8 @@ public final class DeviceOwnershipManager {
     subsonicTrackId: String?,
     fileExtension: String,
     downloadedAt: Date = Date()
-  ) throws -> NSManagedObjectID {
+  ) throws
+    -> NSManagedObjectID {
     var resultID: NSManagedObjectID!
     var caught: Error?
     context.performAndWait {

@@ -33,6 +33,16 @@ public class Album: AbstractLibraryEntity {
     super.init(managedObject: managedObject)
   }
 
+  /// Cassette Layer 1 (Identity): embedded MusicBrainz release id from Subsonic (optional).
+  public var musicBrainzId: String? {
+    get { managedObject.musicBrainzId }
+    set {
+      if managedObject.musicBrainzId != newValue {
+        managedObject.musicBrainzId = newValue
+      }
+    }
+  }
+
   override public func imagePath(setting: ArtworkDisplayPreference) -> String? {
     super.imagePath(setting: setting)
   }

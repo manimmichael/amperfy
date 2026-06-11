@@ -33,6 +33,16 @@ public class Artist: AbstractLibraryEntity {
     super.init(managedObject: managedObject)
   }
 
+  /// Cassette Layer 1 (Identity): embedded MusicBrainz artist id from Subsonic (optional).
+  public var musicBrainzId: String? {
+    get { managedObject.musicBrainzId }
+    set {
+      if managedObject.musicBrainzId != newValue {
+        managedObject.musicBrainzId = newValue
+      }
+    }
+  }
+
   public var identifier: String {
     name
   }

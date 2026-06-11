@@ -71,6 +71,10 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
       if let attributeCoverArt = attributeDict["coverArt"] {
         albumBuffer?.artwork = parseArtwork(id: attributeCoverArt)
       }
+      // Cassette Layer 1 (Identity): persist embedded MusicBrainz album id when present.
+      if let attributeMusicBrainzId = attributeDict["musicBrainzId"] {
+        albumBuffer?.musicBrainzId = attributeMusicBrainzId
+      }
       albumBuffer?.rating = Int(attributeDict["userRating"] ?? "0") ?? 0
       albumBuffer?.isFavorite = attributeDict["starred"] != nil
       if let attributeYear = attributeDict["year"], let year = Int(attributeYear) {

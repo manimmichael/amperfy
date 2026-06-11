@@ -26,7 +26,7 @@
 import Foundation
 import os.log
 
-// MARK: - Errors
+// MARK: - CassetteSyncError
 
 public enum CassetteSyncError: Error {
   case notAuthenticated
@@ -36,7 +36,7 @@ public enum CassetteSyncError: Error {
   case invalidResponse
 }
 
-// MARK: - Wire models
+// MARK: - CassetteSyncIntent
 
 public struct CassetteSyncIntent: Sendable, Decodable {
   public let id: String
@@ -53,6 +53,8 @@ public struct CassetteSyncIntent: Sendable, Decodable {
     case intentKind = "intent_kind"
   }
 }
+
+// MARK: - CassetteSyncTrack
 
 public struct CassetteSyncTrack: Sendable, Decodable {
   public let subsonicTrackId: String
@@ -219,7 +221,7 @@ final class CassetteAuthPreservingDelegate: NSObject, URLSessionTaskDelegate {
     task: URLSessionTask,
     willPerformHTTPRedirection response: HTTPURLResponse,
     newRequest request: URLRequest,
-    completionHandler: @escaping (URLRequest?) -> Void
+    completionHandler: @escaping (URLRequest?) -> ()
   ) {
     var newRequest = request
     if let auth = task.originalRequest?.value(forHTTPHeaderField: "Authorization") {

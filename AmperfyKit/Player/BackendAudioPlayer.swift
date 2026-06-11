@@ -257,7 +257,33 @@ class BackendAudioPlayer: NSObject {
         nextPreloadedPlayable = nextPlayablePreloadCB?()
         guard let nextPreloadedPlayable = nextPreloadedPlayable else { return }
         os_log(.default, "Preloading: %s", nextPreloadedPlayable.displayString)
-        if nextPreloadedPlayable.isCached {
+        // Cassette fork — Patch 101 (Phase 3.3). Mirror handleRequest's dispatch
+        // order (owned → on-device-only skip → cache → stream) when preloading the
+        // NEXT track. Patch 097 taught handleRequest to play owned files but left
+        // preload unaware of them: an owned-only next track has isCached == false
+        // (relFilePath == nil), so it was flagged as nextPreloadedPlayable but
+        // never queued. At the track boundary handleRequest sees
+        // `playable == nextPreloadedPlayable` and no-ops (assumes it is queued) →
+        // playback stops after each song (the per-album Bluetooth report). Any
+        // path that cannot queue the item clears nextPreloadedPlayable so the
+        // boundary performs a real dispatch instead of the "already queued"
+        // short-circuit.
+        if nextPreloadedPlayable.isSong,
+           let ownedUrl = DeviceOwnershipManager(
+             context: AmperKit.shared.storage.main.context
+           ).localFileURL(forSubsonicTrackId: nextPreloadedPlayable.id) {
+          insertOwnedPlayable(
+            playable: nextPreloadedPlayable,
+            fileURL: ownedUrl,
+            queueType: .queue
+          )
+        } else if nextPreloadedPlayable.isSong,
+                  CassetteLibraryFilterProvider.shared.currentFilter == .onDeviceOnly {
+          // Non-owned song in on-device-only mode: don't preload-stream it. Clear
+          // the phantom so handleRequest's skip-silently branch fires at the
+          // boundary and the queue advances past it.
+          self.nextPreloadedPlayable = nil
+        } else if nextPreloadedPlayable.isCached {
           insertCachedPlayable(playable: nextPreloadedPlayable, queueType: .queue)
         } else if !isOfflineMode {
           Task { @MainActor in
@@ -272,6 +298,11 @@ class BackendAudioPlayer: NSObject {
               self.eventLogger.report(topic: "Player", error: error)
             }
           }
+        } else {
+          // Offline and the track is neither owned nor cached: nothing to queue.
+          // Clear the phantom so the boundary does a real dispatch rather than the
+          // no-op short-circuit.
+          self.nextPreloadedPlayable = nil
         }
       }
     }

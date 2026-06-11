@@ -139,6 +139,10 @@ class SsSongParserDelegate: SsPlayableParserDelegate {
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         songBuffer?.addedDate = dateFormatter.date(from: createdTag)
       }
+      // Cassette Layer 1 (Identity): persist embedded MusicBrainz recording id when present.
+      if let attributeMusicBrainzId = attributeDict["musicBrainzId"] {
+        songBuffer?.musicBrainzId = attributeMusicBrainzId
+      }
     }
 
     super.parser(

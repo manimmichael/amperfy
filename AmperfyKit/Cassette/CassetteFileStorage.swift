@@ -41,7 +41,7 @@ public final class CassetteFileStorage: Sendable {
       for: .applicationSupportDirectory,
       in: .userDomainMask
     ).first!
-    musicDirURL = appSupport.appendingPathComponent("CassetteMusic", isDirectory: true)
+    self.musicDirURL = appSupport.appendingPathComponent("CassetteMusic", isDirectory: true)
 
     try? FileManager.default.createDirectory(
       at: musicDirURL,

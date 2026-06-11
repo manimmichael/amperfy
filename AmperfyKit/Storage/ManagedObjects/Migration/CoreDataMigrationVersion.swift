@@ -63,6 +63,8 @@ enum CoreDataMigrationVersion: String, CaseIterable {
   case v50 = "Amperfy v50" // Album: add albumType (OpenSubsonic releaseTypes / isCompilation)
   case v51 =
     "Amperfy v51" // Cassette Layer 3: add DeviceOwnership entity (standalone, additive — lightweight inferred mapping)
+  case v52 =
+    "Amperfy v52" // Cassette Layer 1: add musicBrainzId to Song/Album/Artist (additive optional — lightweight inferred mapping)
 
   // MARK: - Current
 
@@ -179,6 +181,8 @@ enum CoreDataMigrationVersion: String, CaseIterable {
     case .v50:
       return .v51
     case .v51:
+      return .v52
+    case .v52:
       return nil
     }
   }

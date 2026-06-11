@@ -1367,6 +1367,37 @@ public class LibraryStorage: PlayableFileCachable {
       .max(by: { artistMergePreferenceScore($0) < artistMergePreferenceScore($1) })
   }
 
+  /// Cassette fork — Patch 103 (Phase 3.3). Defense-in-depth for the empty-artist
+  /// detail bug. Returns the same-server-id artist with the most related content
+  /// (songs + albums relationships). Patch 102 fixes the deduped Artists-list
+  /// winner, but the detail can also be reached via an album's artist link,
+  /// search, or the Home shelf — those paths can still hand over a metadata-only
+  /// stub whose identity-bound FRCs (song.artist == self) render an empty page.
+  /// Re-resolving to the relationship-rich sibling guarantees content. Falls back
+  /// to the input when the id is empty or no richer sibling exists.
+  public func richestSameIdArtist(for artist: Artist, account: Account) -> Artist {
+    let serverId = artist.managedObject.id
+    guard !serverId.isEmpty else { return artist }
+    let fetchRequest: NSFetchRequest<ArtistMO> = ArtistMO.fetchRequest()
+    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+      getFetchPredicate(forAccount: account),
+      NSPredicate(format: "%K == %@", #keyPath(ArtistMO.id), NSString(string: serverId)),
+    ])
+    guard let candidates = try? context.fetch(fetchRequest), candidates.count > 1 else {
+      return artist
+    }
+    func relationshipRichness(_ mo: ArtistMO) -> Int {
+      (mo.songs?.count ?? 0) + (mo.albums?.count ?? 0)
+    }
+    let currentRichness = relationshipRichness(artist.managedObject)
+    guard let richestMO = candidates.max(by: {
+      relationshipRichness($0) < relationshipRichness($1)
+    }), relationshipRichness(richestMO) > currentRichness else {
+      return artist
+    }
+    return Artist(managedObject: richestMO)
+  }
+
   func resolveEmptyIdArtistStubs(account: Account) {
     let fetchRequest: NSFetchRequest<ArtistMO> = ArtistMO.fetchRequest()
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [

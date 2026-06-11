@@ -34,7 +34,7 @@ import Foundation
 import os.log
 import UIKit
 
-// MARK: - Transfer metadata
+// MARK: - CassetteTransferMetadata
 
 /// Stored in the download task's taskDescription so it survives a cold launch.
 struct CassetteTransferMetadata: Codable {
@@ -57,7 +57,7 @@ public final class CassetteTransferSession: NSObject, @unchecked Sendable {
   private let syncAPI = CassetteSyncAPI.shared
 
   // Stored background-events completion handler (set by the AppDelegate).
-  private var backgroundCompletionHandler: (() -> Void)?
+  private var backgroundCompletionHandler: (() -> ())?
 
   // In-memory guard against double-enqueueing the same track within a run.
   private let inFlightLock = NSLock()
@@ -146,12 +146,12 @@ public final class CassetteTransferSession: NSObject, @unchecked Sendable {
 
   // MARK: - Background events (called from AppDelegate)
 
-  public func handleBackgroundEvents(completionHandler: @escaping () -> Void) {
+  public func handleBackgroundEvents(completionHandler: @escaping () -> ()) {
     backgroundCompletionHandler = completionHandler
   }
 }
 
-// MARK: - URLSessionDownloadDelegate
+// MARK: URLSessionDownloadDelegate
 
 extension CassetteTransferSession: URLSessionDownloadDelegate {
   public func urlSession(

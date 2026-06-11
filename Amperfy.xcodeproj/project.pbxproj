@@ -134,6 +134,8 @@
 		CA55E0E1000000110000CAFE /* CassetteFileStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000010000CAFE /* CassetteFileStorage.swift */; };
 		CA55E0E1000000120000CAFE /* DeviceOwnershipManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000020000CAFE /* DeviceOwnershipManager.swift */; };
 		CA55E0E1000000130000CAFE /* CassetteSyncAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000030000CAFE /* CassetteSyncAPI.swift */; };
+		CA55E0E1000000160000CAFE /* CassetteLocalID.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000060000CAFE /* CassetteLocalID.swift */; };
+		CA55E0E1000000170000CAFE /* CassetteLocalIDTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000070000CAFE /* CassetteLocalIDTest.swift */; };
 		CA55E0E1000000140000CAFE /* CassetteTransferSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000040000CAFE /* CassetteTransferSession.swift */; };
 		CA55E0E1000000150000CAFE /* IntentExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000050000CAFE /* IntentExecutor.swift */; };
 		5084F7122ED9E47100D8D3DA /* Account.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5084F7112ED9E47100D8D3DA /* Account.swift */; };
@@ -749,6 +751,7 @@
 		504D26262D4168DE003FDEB3 /* Amperfy v41.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v41.xcdatamodel"; sourceTree = "<group>"; };
 		5050C50130000001000110A2 /* Amperfy v50.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v50.xcdatamodel"; sourceTree = "<group>"; };
 		CA55E0E0000000510000CAFE /* Amperfy v51.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v51.xcdatamodel"; sourceTree = "<group>"; };
+		CA55E0E0000000520000CAFE /* Amperfy v52.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v52.xcdatamodel"; sourceTree = "<group>"; };
 		505362D02C23682500846C53 /* AlbumsCollectionVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumsCollectionVC.swift; sourceTree = "<group>"; };
 		505362D22C2425C200846C53 /* AlbumsCommonVCInteractions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumsCommonVCInteractions.swift; sourceTree = "<group>"; };
 		5055AA5526835A9000096B8D /* PodcastEpisodeTableCell.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = PodcastEpisodeTableCell.xib; sourceTree = "<group>"; };
@@ -839,6 +842,8 @@
 		CA55E0E1000000010000CAFE /* CassetteFileStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteFileStorage.swift; sourceTree = "<group>"; };
 		CA55E0E1000000020000CAFE /* DeviceOwnershipManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceOwnershipManager.swift; sourceTree = "<group>"; };
 		CA55E0E1000000030000CAFE /* CassetteSyncAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteSyncAPI.swift; sourceTree = "<group>"; };
+		CA55E0E1000000060000CAFE /* CassetteLocalID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteLocalID.swift; sourceTree = "<group>"; };
+		CA55E0E1000000070000CAFE /* CassetteLocalIDTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Cases/Cassette/CassetteLocalIDTest.swift"; sourceTree = "<group>"; };
 		CA55E0E1000000040000CAFE /* CassetteTransferSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteTransferSession.swift; sourceTree = "<group>"; };
 		CA55E0E1000000050000CAFE /* IntentExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentExecutor.swift; sourceTree = "<group>"; };
 		5084F7112ED9E47100D8D3DA /* Account.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Account.swift; sourceTree = "<group>"; };
@@ -1961,6 +1966,7 @@
 				CA55E0E1000000030000CAFE /* CassetteSyncAPI.swift */,
 				CA55E0E1000000040000CAFE /* CassetteTransferSession.swift */,
 				CA55E0E1000000050000CAFE /* IntentExecutor.swift */,
+				CA55E0E1000000060000CAFE /* CassetteLocalID.swift */,
 			);
 			path = Cassette;
 			sourceTree = "<group>";
@@ -1969,6 +1975,7 @@
 			isa = PBXGroup;
 			children = (
 				50C9D615284FA847007F18D0 /* AmpertyKitTests.swift */,
+				CA55E0E1000000070000CAFE /* CassetteLocalIDTest.swift */,
 				50E6BCA223B8F22E005C1DDA /* Cases */,
 				50B798B023B7F4E900551E62 /* Helper */,
 			);
@@ -2883,6 +2890,7 @@
 				CA55E0E1000000130000CAFE /* CassetteSyncAPI.swift in Sources */,
 				CA55E0E1000000140000CAFE /* CassetteTransferSession.swift in Sources */,
 				CA55E0E1000000150000CAFE /* IntentExecutor.swift in Sources */,
+				CA55E0E1000000160000CAFE /* CassetteLocalID.swift in Sources */,
 				50C9D6DB284FAB88007F18D0 /* AudioSessionHandler.swift in Sources */,
 				50C9D677284FAA4D007F18D0 /* PersistentStorage.swift in Sources */,
 				50C9D6E6284FABCB007F18D0 /* AudioPlayer.swift in Sources */,
@@ -2970,6 +2978,7 @@
 				50BE5D4E2850F4C900156FC6 /* PlayerDataTest.swift in Sources */,
 				502B8A532EE0D354004CA3AD /* AccountTest.swift in Sources */,
 				50C9D616284FA847007F18D0 /* AmpertyKitTests.swift in Sources */,
+				CA55E0E1000000170000CAFE /* CassetteLocalIDTest.swift in Sources */,
 				50BE5D4D2850F4C900156FC6 /* ArtworkTest.swift in Sources */,
 				50BE5D932850F51E00156FC6 /* CoreDataSeeder.swift in Sources */,
 				50BE5D922850F50F00156FC6 /* PlaylistsParserTest.swift in Sources */,
@@ -3582,6 +3591,7 @@
 		500BB49521CAAA2700D367CF /* Amperfy.xcdatamodeld */ = {
 			isa = XCVersionGroup;
 			children = (
+				CA55E0E0000000520000CAFE /* Amperfy v52.xcdatamodel */,
 				CA55E0E0000000510000CAFE /* Amperfy v51.xcdatamodel */,
 				5050C50130000001000110A2 /* Amperfy v50.xcdatamodel */,
 				506C314D2EE6D2100011A2C3 /* Amperfy v49.xcdatamodel */,
@@ -3634,7 +3644,7 @@
 				506B3A3823B4539D00E31F21 /* Amperfy v2.xcdatamodel */,
 				500BB49621CAAA2700D367CF /* Amperfy.xcdatamodel */,
 			);
-			currentVersion = CA55E0E0000000510000CAFE /* Amperfy v51.xcdatamodel */;
+			currentVersion = CA55E0E0000000520000CAFE /* Amperfy v52.xcdatamodel */;
 			path = Amperfy.xcdatamodeld;
 			sourceTree = "<group>";
 			versionGroupType = wrapper.xcdatamodel;
