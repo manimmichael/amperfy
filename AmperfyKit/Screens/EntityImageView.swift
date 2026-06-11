@@ -23,6 +23,21 @@ import Foundation
 import UIKit
 
 open class EntityImageView: UIView {
+  /// cassette Patch 104 (Root 3): the corner radius used to be owned by two
+  /// parties — `display()` stomped `layer.cornerRadius` back to 5pt on every
+  /// artwork refresh while hosts applied circle masks one-shot in their own
+  /// `layoutSubviews`. Whoever ran last won, so artist circles flashed round
+  /// then went square (or never rounded at all on reused cells). The shape is
+  /// now owned here and re-applied on both layout and display.
+  public enum Shape {
+    case rounded(CornerRadius)
+    case circle
+  }
+
+  public var shape: Shape = .rounded(.small) {
+    didSet { applyShape() }
+  }
+
   @IBOutlet
   weak var singleImage: LibraryEntityImage!
   @IBOutlet
@@ -114,12 +129,33 @@ open class EntityImageView: UIView {
     singleImage.display(image: modImage)
   }
 
+  override open func layoutSubviews() {
+    super.layoutSubviews()
+    applyShape()
+  }
+
+  private func applyShape() {
+    layer.masksToBounds = true
+    switch shape {
+    case let .rounded(radius):
+      layer.cornerRadius = radius.asCGFloat
+    case .circle:
+      layer.cornerRadius = min(bounds.width, bounds.height) / 2.0
+    }
+  }
+
   private func display(
     theme: ThemePreference,
     collection: ArtworkCollection,
     cornerRadius: CornerRadius = .small
   ) {
-    layer.cornerRadius = cornerRadius.asCGFloat
+    // Patch 104 (Root 3): an explicit `.circle` shape set by the host wins;
+    // otherwise the call-site radius parameter keeps working as before.
+    if case .circle = shape {
+      applyShape()
+    } else {
+      shape = .rounded(cornerRadius)
+    }
     quadImages.forEach { $0.isHidden = true }
     singleImage.isHidden = false
 

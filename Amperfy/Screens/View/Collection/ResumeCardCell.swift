@@ -33,8 +33,20 @@ final class ResumeCardCell: BasicCollectionCell {
     return container
   }()
 
+  // cassette Patch 104: the broken artwork crop came from
+  // `EntityImageView(frame: .zero)` — the view loads its nib content with
+  // autoresizing masks scaled from the init frame, so a zero frame laid the
+  // inner image out as garbage. Seed it with the real artwork square (the
+  // constraints below keep it at that size).
   private let artworkView: EntityImageView = {
-    let view = EntityImageView(frame: .zero)
+    let view = EntityImageView(
+      frame: CGRect(
+        x: 0,
+        y: 0,
+        width: ResumeCardCell.artworkSide,
+        height: ResumeCardCell.artworkSide
+      )
+    )
     view.translatesAutoresizingMaskIntoConstraints = false
     return view
   }()

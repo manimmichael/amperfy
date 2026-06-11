@@ -139,7 +139,10 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   /// the registry row is what makes the phone visible on the dashboard,
   /// independent of any downloads. Idempotent — safe to call repeatedly.
   public func registerDevice() async throws {
-    let body: [String: Any] = [
+    // iOS 26 SDK: UIDevice.current is MainActor-isolated, so reading
+    // `model` from this nonisolated context now requires an await.
+    // Compile fix only — no behavior change to the spine.
+    let body: [String: Any] = await [
       "device_id": Self.deviceId,
       "device_label": Self.deviceLabel,
       "platform": "ios",

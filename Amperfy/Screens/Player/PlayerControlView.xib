@@ -58,7 +58,7 @@
                             <color key="tintColor" systemColor="labelColor"/>
                             <state key="normal" image="10.arrow.trianglehead.counterclockwise" catalog="system">
                                 <color key="titleColor" systemColor="labelColor"/>
-                                <preferredSymbolConfiguration key="preferredSymbolConfiguration" configurationType="pointSize" pointSize="30"/>
+                                <preferredSymbolConfiguration key="preferredSymbolConfiguration" configurationType="pointSize" pointSize="20"/>
                             </state>
                             <connections>
                                 <action selector="skipBackwardButtonPushed:" destination="iN0-l3-epB" eventType="touchUpInside" id="GNs-ds-sdw"/>
@@ -69,7 +69,7 @@
                             <color key="tintColor" systemColor="labelColor"/>
                             <state key="normal" image="backward.fill" catalog="system">
                                 <color key="titleColor" systemColor="labelColor"/>
-                                <preferredSymbolConfiguration key="preferredSymbolConfiguration" configurationType="pointSize" pointSize="30"/>
+                                <preferredSymbolConfiguration key="preferredSymbolConfiguration" configurationType="pointSize" pointSize="20"/>
                             </state>
                             <connections>
                                 <action selector="previousButtonPushed:" destination="iN0-l3-epB" eventType="touchUpInside" id="UBQ-J2-BCO"/>
@@ -81,7 +81,7 @@
                             <state key="normal">
                                 <color key="titleColor" systemColor="labelColor"/>
                                 <imageReference key="image" image="play.fill" catalog="system" symbolScale="default"/>
-                                <preferredSymbolConfiguration key="preferredSymbolConfiguration" configurationType="pointSize" pointSize="45"/>
+                                <preferredSymbolConfiguration key="preferredSymbolConfiguration" configurationType="pointSize" pointSize="32"/>
                             </state>
                             <connections>
                                 <action selector="playButtonPushed:" destination="iN0-l3-epB" eventType="touchUpInside" id="x3u-6i-ytK"/>
@@ -93,7 +93,7 @@
                             <state key="normal">
                                 <color key="titleColor" systemColor="labelColor"/>
                                 <imageReference key="image" image="forward.fill" catalog="system" symbolScale="default" variableValue="1"/>
-                                <preferredSymbolConfiguration key="preferredSymbolConfiguration" configurationType="pointSize" pointSize="30"/>
+                                <preferredSymbolConfiguration key="preferredSymbolConfiguration" configurationType="pointSize" pointSize="20"/>
                             </state>
                             <connections>
                                 <action selector="nextButtonPushed:" destination="iN0-l3-epB" eventType="touchUpInside" id="aSu-T2-0y0"/>
@@ -105,7 +105,7 @@
                             <state key="normal">
                                 <color key="titleColor" systemColor="labelColor"/>
                                 <imageReference key="image" image="10.arrow.trianglehead.clockwise" catalog="system" symbolScale="default" variableValue="1"/>
-                                <preferredSymbolConfiguration key="preferredSymbolConfiguration" configurationType="pointSize" pointSize="30"/>
+                                <preferredSymbolConfiguration key="preferredSymbolConfiguration" configurationType="pointSize" pointSize="20"/>
                             </state>
                             <connections>
                                 <action selector="skipForwardButtonPushed:" destination="iN0-l3-epB" eventType="touchUpInside" id="Mbv-5W-tEf"/>
@@ -262,7 +262,7 @@
                 <constraint firstItem="okd-ac-nGY" firstAttribute="leading" secondItem="iN0-l3-epB" secondAttribute="leadingMargin" id="tbM-wh-ia0"/>
                 <constraint firstAttribute="leadingMargin" secondItem="okd-ac-nGY" secondAttribute="trailing" constant="-159" id="vQu-6h-oG4"/>
                 <constraint firstItem="1aU-Ga-twf" firstAttribute="centerY" secondItem="fic-HG-erH" secondAttribute="centerY" id="xoa-iu-CiD"/>
-                <constraint firstItem="xXq-r4-gI6" firstAttribute="top" secondItem="SoI-ny-Hw0" secondAttribute="bottom" constant="20" id="zg3-MD-JbT"/>
+                <constraint firstItem="xXq-r4-gI6" firstAttribute="top" secondItem="SoI-ny-Hw0" secondAttribute="bottom" constant="32" id="zg3-MD-JbT"/>
             </constraints>
             <connections>
                 <outlet property="airplayButton" destination="l5j-2I-Ltc" id="ENH-UT-6ix"/>

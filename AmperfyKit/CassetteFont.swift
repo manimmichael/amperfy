@@ -142,17 +142,26 @@ extension Font {
 /// helpers, plus a system-font `.body` for SwiftUI lists and other places
 /// where SF Pro Text reads better than a condensed display face.
 ///
-/// Caption is held at 12pt (regular mono) — differentiated from `.metadata`
-/// (medium mono, 12pt) by weight only, not size. The 12pt floor is a Cassette
-/// product decision; iOS HIG would allow 11pt here but we don't.
+/// Caption and `.metadata` share a size and are differentiated by weight
+/// only (medium vs regular mono). The 12pt floor is a Cassette product
+/// decision; iOS HIG would allow 11pt here but we don't.
+///
+/// cassette Patch 104 (Root 4): the scale read small on track numbers,
+/// library rows and the Home greeting, so the roles were lifted app-wide
+/// (roles, not per-screen sizes): heroTitle 28 -> 30, rowTitle 16 -> 18,
+/// miniTitle 14 -> 15, metadata/caption 12 -> 13. sectionTitle stays 22.
+/// `.greeting` is new: the Home greeting used to fall back to tiny 12pt
+/// mono (the prototype's Newsreader face isn't bundled) — it now gets a
+/// real Barlow treatment at a legible size.
 public enum CassetteTextStyle {
-  case heroTitle // Barlow Condensed Bold, 28pt
+  case heroTitle // Barlow Condensed Bold, 30pt
   case sectionTitle // Barlow Condensed Bold, 22pt
-  case rowTitle // Barlow Condensed Semibold, 16pt
-  case miniTitle // Barlow Condensed Semibold, 14pt
+  case greeting // Barlow Condensed SemiBold, 20pt (Home greeting line)
+  case rowTitle // Barlow Condensed Semibold, 18pt
+  case miniTitle // Barlow Condensed Semibold, 15pt
   case sectionLabel // Barlow Condensed Bold, 13pt (callers uppercase as needed)
-  case metadata // DM Mono Medium, 12pt
-  case caption // DM Mono Regular, 12pt
+  case metadata // DM Mono Medium, 13pt
+  case caption // DM Mono Regular, 13pt
   case body // SF Pro Text Regular, 15pt (system font, not Cassette Display)
 }
 
@@ -160,19 +169,21 @@ extension UIFont {
   public static func cassette(_ style: CassetteTextStyle) -> UIFont {
     switch style {
     case .heroTitle:
-      return .cassetteDisplay(size: 28, weight: .bold)
+      return .cassetteDisplay(size: 30, weight: .bold)
     case .sectionTitle:
       return .cassetteDisplay(size: 22, weight: .bold)
+    case .greeting:
+      return .cassetteDisplay(size: 20, weight: .semibold)
     case .rowTitle:
-      return .cassetteDisplay(size: 16, weight: .semibold)
+      return .cassetteDisplay(size: 18, weight: .semibold)
     case .miniTitle:
-      return .cassetteDisplay(size: 14, weight: .semibold)
+      return .cassetteDisplay(size: 15, weight: .semibold)
     case .sectionLabel:
       return .cassetteDisplay(size: 13, weight: .bold)
     case .metadata:
-      return .cassetteMono(size: 12, weight: .medium)
+      return .cassetteMono(size: 13, weight: .medium)
     case .caption:
-      return .cassetteMono(size: 12, weight: .regular)
+      return .cassetteMono(size: 13, weight: .regular)
     case .body:
       return .systemFont(ofSize: 15, weight: .regular)
     }
@@ -183,19 +194,21 @@ extension Font {
   public static func cassette(_ style: CassetteTextStyle) -> Font {
     switch style {
     case .heroTitle:
-      return .cassetteDisplay(size: 28, weight: .bold)
+      return .cassetteDisplay(size: 30, weight: .bold)
     case .sectionTitle:
       return .cassetteDisplay(size: 22, weight: .bold)
+    case .greeting:
+      return .cassetteDisplay(size: 20, weight: .semibold)
     case .rowTitle:
-      return .cassetteDisplay(size: 16, weight: .semibold)
+      return .cassetteDisplay(size: 18, weight: .semibold)
     case .miniTitle:
-      return .cassetteDisplay(size: 14, weight: .semibold)
+      return .cassetteDisplay(size: 15, weight: .semibold)
     case .sectionLabel:
       return .cassetteDisplay(size: 13, weight: .bold)
     case .metadata:
-      return .cassetteMono(size: 12, weight: .medium)
+      return .cassetteMono(size: 13, weight: .medium)
     case .caption:
-      return .cassetteMono(size: 12, weight: .regular)
+      return .cassetteMono(size: 13, weight: .regular)
     case .body:
       return .system(size: 15, weight: .regular)
     }

@@ -36,11 +36,15 @@ import UIKit
 final class LibraryContainerVC: UIViewController {
   // MARK: - Dropdown surface
 
-  /// The seven categories that surface in the dropdown. Mirrors the
+  /// The categories that surface in the dropdown. Mirrors the
   /// shipping iOS information architecture; favorites / newest /
   /// recent / directories / downloads are deliberately excluded per
   /// spec (still reachable via the existing tab sub-items and the
   /// Mac sidebar's `LibraryNavigatorConfigurator`).
+  /// cassette Patch 104: Radios is disabled for now — removed from the
+  /// iOS dropdown only (the Mac sidebar configurator is untouched). A
+  /// stale persisted `.radios` selection falls back to Artists via the
+  /// allow-list check in `init`.
   private static let dropdownCategories: [LibraryDisplayType] = [
     .artists,
     .albums,
@@ -48,7 +52,6 @@ final class LibraryContainerVC: UIViewController {
     .playlists,
     .genres,
     .podcasts,
-    .radios,
   ]
 
   // MARK: - State
@@ -128,7 +131,11 @@ final class LibraryContainerVC: UIViewController {
   // MARK: - Title button + dropdown
 
   private func setupTitleButton() {
-    let button = UIButton(type: .system)
+    // cassette Patch 104 (Root 1): UIButton(configuration:) + cassetteBare()
+    // instead of UIButton(type: .system) + .plain() — the system-button
+    // default picked up the iOS 26 glass capsule and drew a faint rounded
+    // container behind the "Artists v" dropdown.
+    let button = UIButton(configuration: .cassetteBare())
     button.showsMenuAsPrimaryAction = true
     button.menu = makeCategoryMenu()
     applyTitleButtonAppearance(button: button, label: currentCategory.displayName)
@@ -137,7 +144,7 @@ final class LibraryContainerVC: UIViewController {
   }
 
   private func applyTitleButtonAppearance(button: UIButton, label: String) {
-    var config = UIButton.Configuration.plain()
+    var config = UIButton.Configuration.cassetteBare()
     var titleContainer = AttributeContainer()
     titleContainer.font = UIFont.cassette(.sectionTitle)
     titleContainer.foregroundColor = CassetteTheme.UIColors.ink

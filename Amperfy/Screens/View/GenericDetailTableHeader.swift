@@ -30,32 +30,104 @@ struct DetailHeaderConfiguration {
   var tableView: UITableView
   var playShuffleInfoConfig: PlayShuffleInfoConfiguration?
   var descriptionText: String?
+  /// cassette Patch 104 (Root 2): album/artist detail extend the scroll
+  /// under the navigation bar so the artwork is the first content and the
+  /// nav (back/overflow) floats over it. The header pads its top by the
+  /// root view's safe-area inset instead of relying on the bar pushing
+  /// the content down. Other detail screens leave this false and keep
+  /// the below-the-bar layout.
+  var extendsUnderNavigationBar: Bool = false
 }
 
 // MARK: - GenericDetailTableHeader
 
+/// cassette Patch 104 (Root 2): rebuilt programmatically. The old XIB was a
+/// fixed-height block (424pt of hand-tuned constants) whose artwork lived in
+/// a nested stack below the navigation bar — it could never be the top of
+/// the scroll, and its IB-instantiated plain buttons + systemBackground
+/// artwork backing leaked the iOS 26 default glass treatment (Root 1).
+/// The header now self-sizes, owns no fixed frame constants, and the
+/// artwork is the first content of the scroll view.
 class GenericDetailTableHeader: UIView {
-  @IBOutlet
-  weak var entityImage: EntityImageView!
-  @IBOutlet
-  weak var titleLabel: UILabel!
-  @IBOutlet
-  weak var nameTextField: UITextField!
-  @IBOutlet
-  weak var subtitleView: UIView!
-  @IBOutlet
-  weak var subtitleLabel: UILabel!
-  @IBOutlet
-  weak var infoLabel: UILabel!
-  @IBOutlet
-  weak var playShuffleInfoPlaceholderStack: UIStackView!
-  @IBOutlet
-  weak var descriptionLabel: UILabel!
-  @IBOutlet
-  weak var playShuffleInfoContainerView: UIView!
+  // MARK: Subviews
 
-  @IBOutlet
-  weak var titlePlayButtonContainerHeightConstraint: NSLayoutConstraint!
+  let entityImage = EntityImageView(
+    frame: CGRect(
+      x: 0,
+      y: 0,
+      width: GenericDetailTableHeader.artworkSide,
+      height: GenericDetailTableHeader.artworkSide
+    )
+  )
+
+  private let titleLabel: UILabel = {
+    let label = UILabel()
+    label.font = UIFont.cassette(.heroTitle)
+    label.textColor = CassetteTheme.UIColors.ink
+    label.numberOfLines = 2
+    label.lineBreakMode = .byTruncatingTail
+    label.setContentCompressionResistancePriority(.required, for: .vertical)
+    return label
+  }()
+
+  private let nameTextField: UITextField = {
+    let field = UITextField()
+    field.font = UIFont.cassette(.heroTitle)
+    field.textColor = CassetteTheme.UIColors.ink
+    field.isHidden = true
+    field.setContentCompressionResistancePriority(.required, for: .vertical)
+    return field
+  }()
+
+  // Patch 104 (Root 1): the XIB's invisible full-width system button behind
+  // the subtitle label picked up the iOS 26 glass capsule. The subtitle is
+  // now a single bare-configured button (label + action in one view).
+  private let subtitleButton: UIButton = {
+    let button = UIButton(configuration: .cassetteBare())
+    button.configuration?.contentInsets = .zero
+    return button
+  }()
+
+  private let infoLabel: UILabel = {
+    let label = UILabel()
+    label.font = UIFont.cassette(.metadata)
+    label.textColor = CassetteTheme.UIColors.ink2
+    label.numberOfLines = 2
+    label.setContentCompressionResistancePriority(.required, for: .vertical)
+    return label
+  }()
+
+  private let descriptionLabel: UILabel = {
+    let label = UILabel()
+    label.font = UIFont.cassette(.body)
+    label.textColor = CassetteTheme.UIColors.ink2
+    label.numberOfLines = 0
+    label.isHidden = true
+    return label
+  }()
+
+  private let artworkWrap = UIView()
+  private let playSlot: UIStackView = {
+    let stack = UIStackView()
+    stack.axis = .vertical
+    return stack
+  }()
+
+  private let contentColumn: UIStackView = {
+    let stack = UIStackView()
+    stack.axis = .vertical
+    stack.alignment = .fill
+    stack.spacing = CassetteTheme.Spacing.xs
+    return stack
+  }()
+
+  private let mainStack: UIStackView = {
+    let stack = UIStackView()
+    stack.axis = .vertical
+    stack.alignment = .fill
+    stack.spacing = CassetteTheme.Spacing.md
+    return stack
+  }()
 
   var playShuffleInfoView: LibraryElementDetailTableHeaderView?
   var isEditing = false
@@ -68,64 +140,36 @@ class GenericDetailTableHeader: UIView {
     didSet { refresh() }
   }
 
-  // cassette Patch 034 (3C): bump compact-width header by 24pt to absorb
-  // the new top breathing room added in prepare() without compressing
-  // the artwork. iPad/Mac (regular) keeps the existing rhythm.
-  static let frameHeightCompact: CGFloat = 424.0
-  static let frameHeightRegular: CGFloat = 240.0
-  // cassette polish Part 4: the prominent skeuomorphic Play layout is taller
-  // than the bordered pair. The detail header grows by this delta, but only at
-  // compact width (where the prominent layout actually renders).
-  static let prominentExtraHeight: CGFloat =
-    LibraryElementDetailTableHeaderView.prominentFrameHeight
-      - LibraryElementDetailTableHeaderView.frameHeight
-  static func frameHeight(
-    traitCollection: UITraitCollection,
-    isProminentPlayButton: Bool = false
-  )
-    -> CGFloat {
-    if traitCollection.horizontalSizeClass == .compact {
-      return GenericDetailTableHeader.frameHeightCompact +
-        (isProminentPlayButton ? prominentExtraHeight : 0)
-    } else {
-      return GenericDetailTableHeader.frameHeightRegular
-    }
-  }
+  // MARK: Layout constants
 
-  static let frameHeightForDescription: CGFloat = 85.0
-  private static let titlePlayButtonContainerHeightCompact: CGFloat = 155.0
-  private static let titlePlayButtonContainerHeightWithoutButtons: CGFloat =
-    titlePlayButtonContainerHeightCompact - LibraryElementDetailTableHeaderView.frameHeight
+  /// Square artwork side (album / playlist / genre / podcast).
+  private static let artworkSide: CGFloat = 240.0
+  /// Artist photos render as a slightly smaller circle so the tightened
+  /// picture/title/subtitle block reads as one unit.
+  private static let artistCircleDiameter: CGFloat = 200.0
 
   private var config: DetailHeaderConfiguration?
 
+  private var artworkWidthConstraint: NSLayoutConstraint!
+  private var playSlotHeightConstraint: NSLayoutConstraint!
+  private var compactConstraints: [NSLayoutConstraint] = []
+  private var regularConstraints: [NSLayoutConstraint] = []
+  private var lastLayoutWidth: CGFloat = 0
+
+  // MARK: Creation
+
   public static func createTableHeader(configuration: DetailHeaderConfiguration)
     -> GenericDetailTableHeader? {
-    let isProminent = configuration.playShuffleInfoConfig?.usesProminentPlayButton ?? false
-    configuration.tableView.tableHeaderView = UIView(frame: CGRect(
+    let header = GenericDetailTableHeader(frame: CGRect(
       x: 0,
       y: 0,
       width: configuration.rootView.view.bounds.size.width,
-      height: GenericDetailTableHeader
-        .frameHeight(
-          traitCollection: configuration.rootView.traitCollection,
-          isProminentPlayButton: isProminent
-        )
+      height: 100
     ))
-    let genericDetailTableHeaderView = ViewCreator<GenericDetailTableHeader>
-      .createFromNib(withinFixedFrame: CGRect(
-        x: 0,
-        y: 0,
-        width: configuration.rootView.view.bounds.size.width,
-        height: GenericDetailTableHeader
-          .frameHeight(
-            traitCollection: configuration.rootView.traitCollection,
-            isProminentPlayButton: isProminent
-          )
-      ))!
-    genericDetailTableHeaderView.prepare(configuration: configuration)
-    configuration.tableView.tableHeaderView?.addSubview(genericDetailTableHeaderView)
-    return genericDetailTableHeaderView
+    header.prepare(configuration: configuration)
+    configuration.tableView.tableHeaderView = header
+    header.resizeToFit()
+    return header
   }
 
   func prepare(configuration: DetailHeaderConfiguration) {
@@ -136,83 +180,170 @@ class GenericDetailTableHeader: UIView {
     // entity context menu — no per-VC wiring needed.
     config?.playShuffleInfoConfig?.favoriteEntity = configuration.entityContainer
     config?.playShuffleInfoConfig?.rootViewController = configuration.rootView
-    titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-    nameTextField.setContentCompressionResistancePriority(.required, for: .vertical)
-    subtitleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-    // cassette Patch 032: route hero header through the canonical scale.
-    // Title and editable name use heroTitle (28pt bold display); subtitle
-    // (artist link) drops 17pt -> 16pt rowTitle for consistency with row
-    // titles elsewhere; info line is 12pt medium mono (.metadata).
-    titleLabel.font = UIFont.cassette(.heroTitle)
-    titleLabel.textColor = CassetteTheme.UIColors.ink
-    nameTextField.font = UIFont.cassette(.heroTitle)
-    nameTextField.textColor = CassetteTheme.UIColors.ink
-    subtitleLabel.font = UIFont.cassette(.rowTitle)
-    // cassette Patch 048 (Phase C): detail subtitle (artist name) was painted
-    // with `.tintColor` (orange) to suggest "tappable link" affordance.
-    // Inspection shows the label is not actually tappable
-    // (`userInteractionEnabled=NO` in XIB, no gesture recognizer), so the
-    // color was decorative only. Drop to ink2 for quiet secondary metadata.
-    subtitleLabel.textColor = CassetteTheme.UIColors.ink2
-    infoLabel.font = UIFont.cassette(.metadata)
-    infoLabel.textColor = CassetteTheme.UIColors.ink2
-    descriptionLabel.font = UIFont.preferredFont(forTextStyle: .body)
-    descriptionLabel.textColor = CassetteTheme.UIColors.ink2
-    infoLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-    // cassette Patch 034 (3C): the outer wrapper anchors via topMargin in
-    // the XIB, so a 24pt top margin here gives the artwork breathing room
-    // below the navigation bar (Apple Music's album-detail rhythm). The
-    // legacy defaultMarginTopElement set top=0 which packed the artwork
-    // hard against the nav bar.
-    layoutMargins = UIEdgeInsets(
-      top: CassetteTheme.Spacing.xl,
-      left: UIView.defaultMarginX,
-      bottom: 0.0,
-      right: UIView.defaultMarginX
-    )
+
+    buildHierarchyIfNeeded()
+
     if let playShuffleInfoConfig = config?.playShuffleInfoConfig {
       playShuffleInfoView = ViewCreator<LibraryElementDetailTableHeaderView>.createFromNib()
-      playShuffleInfoPlaceholderStack.addArrangedSubview(playShuffleInfoView!)
+      playSlot.addArrangedSubview(playShuffleInfoView!)
       playShuffleInfoView?.prepare(configuration: playShuffleInfoConfig)
-      playShuffleInfoContainerView.isHidden = false
+      playSlot.isHidden = false
     } else {
-      playShuffleInfoContainerView.isHidden = true
+      playSlot.isHidden = true
     }
+
     if let descriptionText = configuration.descriptionText {
       descriptionLabel.text = descriptionText
       descriptionLabel.isHidden = false
     } else {
       descriptionLabel.isHidden = true
     }
+
     configureArtworkPresentation()
+    applyLayout()
     refresh()
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
-      handler: { (self: Self, previousTraitCollection: UITraitCollection) in
-        self.applyTraitCollectionChange()
+      handler: { (self: Self, _: UITraitCollection) in
+        self.applyLayout()
+        self.refresh()
+        self.resizeToFit()
       }
     )
-    // cassette Polish 2 (D2/E1): size the header on first load. Previously
-    // applyTraitCollectionChange() only ran on a *subsequent* trait change, so
-    // the prominent header's inner container kept its XIB default height while
-    // the outer frame was grown — the play disc rendered outside its clipping
-    // slot (taps missed) and the malformed frame pushed the artist track list
-    // off-screen. Sizing here makes the first frame correct.
-    applyTraitCollectionChange()
   }
 
-  // cassette redesign (Surface 1): the artist photo is a clean circular
-  // crop. The CAGradientLayer bottom wash (Patches 026/033) is retired —
-  // the title block sits below the photo on its own surface, so the
-  // legibility gradient was pure decoration.
+  private var didBuildHierarchy = false
+
+  private func buildHierarchyIfNeeded() {
+    guard !didBuildHierarchy else { return }
+    didBuildHierarchy = true
+
+    backgroundColor = .clear
+    directionalLayoutMargins = NSDirectionalEdgeInsets(
+      top: CassetteTheme.Spacing.md,
+      leading: UIView.defaultMarginX,
+      bottom: CassetteTheme.Spacing.lg,
+      trailing: UIView.defaultMarginX
+    )
+
+    subtitleButton.addTarget(self, action: #selector(subtitleButtonPressed), for: .touchUpInside)
+
+    entityImage.translatesAutoresizingMaskIntoConstraints = false
+    artworkWrap.translatesAutoresizingMaskIntoConstraints = false
+    mainStack.translatesAutoresizingMaskIntoConstraints = false
+
+    artworkWrap.addSubview(entityImage)
+
+    contentColumn.addArrangedSubview(titleLabel)
+    contentColumn.addArrangedSubview(nameTextField)
+    contentColumn.addArrangedSubview(subtitleButton)
+    contentColumn.addArrangedSubview(infoLabel)
+    contentColumn.addArrangedSubview(playSlot)
+    contentColumn.addArrangedSubview(descriptionLabel)
+    // Breathing room: tight type block, then air before the action bar and
+    // the optional description.
+    contentColumn.setCustomSpacing(CassetteTheme.Spacing.lg, after: infoLabel)
+    contentColumn.setCustomSpacing(CassetteTheme.Spacing.lg, after: playSlot)
+
+    mainStack.addArrangedSubview(artworkWrap)
+    mainStack.addArrangedSubview(contentColumn)
+    addSubview(mainStack)
+
+    artworkWidthConstraint = entityImage.widthAnchor
+      .constraint(equalToConstant: Self.artworkSide)
+    playSlotHeightConstraint = playSlot.heightAnchor.constraint(
+      equalToConstant: LibraryElementDetailTableHeaderView.prominentPlayDiameter
+    )
+
+    NSLayoutConstraint.activate([
+      mainStack.topAnchor.constraint(equalTo: layoutMarginsGuide.topAnchor),
+      mainStack.bottomAnchor.constraint(equalTo: layoutMarginsGuide.bottomAnchor),
+      mainStack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
+      mainStack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
+
+      entityImage.widthAnchor.constraint(equalTo: entityImage.heightAnchor),
+      entityImage.topAnchor.constraint(equalTo: artworkWrap.topAnchor),
+      artworkWidthConstraint,
+      playSlotHeightConstraint,
+    ])
+
+    compactConstraints = [
+      entityImage.centerXAnchor.constraint(equalTo: artworkWrap.centerXAnchor),
+      entityImage.bottomAnchor.constraint(equalTo: artworkWrap.bottomAnchor),
+    ]
+    regularConstraints = [
+      entityImage.leadingAnchor.constraint(equalTo: artworkWrap.leadingAnchor),
+      entityImage.bottomAnchor.constraint(lessThanOrEqualTo: artworkWrap.bottomAnchor),
+      artworkWrap.widthAnchor.constraint(equalToConstant: Self.artworkSide),
+    ]
+  }
+
+  // cassette redesign (Surface 1) + Patch 104 (Root 3): the artist photo is
+  // a clean circular crop owned by EntityImageView's shape — correct on
+  // layout and after async image loads. Everything else keeps the squared
+  // rounded crop.
   private func configureArtworkPresentation() {
     guard let entityContainer = config?.entityContainer else { return }
-    if entityContainer is Artist {
-      entityImage.layer.masksToBounds = true
-    } else {
-      // Album / playlist / genre / podcast keep the existing square crop.
-      entityImage.layer.cornerRadius = CornerRadius.small.asCGFloat
+    entityImage.shape = entityContainer is Artist ? .circle : .rounded(.small)
+  }
+
+  private var isCompactWidth: Bool {
+    traitCollection.horizontalSizeClass == .compact
+  }
+
+  private func applyLayout() {
+    let compact = isCompactWidth
+    NSLayoutConstraint.deactivate(compact ? regularConstraints : compactConstraints)
+    NSLayoutConstraint.activate(compact ? compactConstraints : regularConstraints)
+    mainStack.axis = compact ? .vertical : .horizontal
+    mainStack.alignment = compact ? .fill : .top
+    mainStack.spacing = compact ? CassetteTheme.Spacing.md : CassetteTheme.Spacing.xl
+    artworkWidthConstraint.constant = (compact && config?.entityContainer is Artist)
+      ? Self.artistCircleDiameter
+      : Self.artworkSide
+    let isProminent = config?.playShuffleInfoConfig?.usesProminentPlayButton ?? false
+    playSlotHeightConstraint.constant = (compact && isProminent)
+      ? LibraryElementDetailTableHeaderView.prominentPlayDiameter
+      : 40.0
+  }
+
+  /// Self-sizing replacement for the old fixed-height constant zoo. Sizes
+  /// the header to fit its content at the table's width, padding the top by
+  /// the root view's safe-area inset when the scroll extends under the bar.
+  func resizeToFit() {
+    guard let config else { return }
+    let width = config.tableView.bounds.width > 0
+      ? config.tableView.bounds.width
+      : config.rootView.view.bounds.width
+    guard width > 0 else { return }
+
+    if config.extendsUnderNavigationBar {
+      // Artwork is the first content: the scroll starts at y=0 under the
+      // floating bar, so the header itself supplies the bar clearance.
+      let desiredTop = config.rootView.view.safeAreaInsets.top + CassetteTheme.Spacing.sm
+      if directionalLayoutMargins.top != desiredTop {
+        directionalLayoutMargins.top = desiredTop
+      }
     }
+
+    let target = systemLayoutSizeFitting(
+      CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+      withHorizontalFittingPriority: .required,
+      verticalFittingPriority: .fittingSizeLevel
+    )
+    let newHeight = ceil(target.height)
+    guard newHeight != frame.height || width != lastLayoutWidth else { return }
+    lastLayoutWidth = width
+    frame = CGRect(x: 0, y: 0, width: width, height: newHeight)
+    // Re-assigning makes the table view pick up the new frame.
+    config.tableView.tableHeaderView = self
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    // Track width changes (rotation, split view) without per-VC hooks; the
+    // guard inside resizeToFit prevents layout recursion.
+    resizeToFit()
   }
 
   func refresh() {
@@ -224,8 +355,22 @@ class GenericDetailTableHeader: UIView {
       container: entityContainer
     )
     titleLabel.text = entityContainer.name
-    subtitleView.isHidden = entityContainer.subtitle == nil
-    subtitleLabel.text = entityContainer.subtitle
+
+    // cassette Patch 048 (Phase C): subtitle is quiet secondary metadata in
+    // ink2; it acts as a link (album -> artist) only where the action exists.
+    var subtitleAttributes = AttributeContainer()
+    subtitleAttributes.font = UIFont.cassette(.rowTitle)
+    subtitleAttributes.foregroundColor = CassetteTheme.UIColors.ink2
+    if let subtitle = entityContainer.subtitle {
+      subtitleButton.configuration?.attributedTitle = AttributedString(
+        subtitle,
+        attributes: subtitleAttributes
+      )
+      subtitleButton.isHidden = false
+      subtitleButton.isUserInteractionEnabled = entityContainer is Album
+    } else {
+      subtitleButton.isHidden = true
+    }
 
     let infoText: String
     if let metadataOverride, !metadataOverride.isEmpty {
@@ -236,7 +381,7 @@ class GenericDetailTableHeader: UIView {
       var isCountInfoHidden = false
       if let playShuffleInfoConfig = config.playShuffleInfoConfig {
         isCountInfoHidden = !playShuffleInfoConfig.isInfoAlwaysHidden && playShuffleInfoConfig
-          .isShuffleHidden && (traitCollection.horizontalSizeClass == .regular)
+          .isShuffleHidden && !isCompactWidth
       }
       let detailLevel = isCountInfoHidden ? DetailType.noCountInfo : DetailType.long
       infoText = entityContainer.info(
@@ -247,12 +392,12 @@ class GenericDetailTableHeader: UIView {
     infoLabel.isHidden = infoText.isEmpty
     infoLabel.text = infoText
 
-    titleLabel.textAlignment = (traitCollection.horizontalSizeClass == .compact) ? .center : .left
-    nameTextField
-      .textAlignment = (traitCollection.horizontalSizeClass == .compact) ? .center : .left
-    subtitleLabel
-      .textAlignment = (traitCollection.horizontalSizeClass == .compact) ? .center : .left
-    infoLabel.textAlignment = (traitCollection.horizontalSizeClass == .compact) ? .center : .left
+    let textAlignment: NSTextAlignment = isCompactWidth ? .center : .left
+    titleLabel.textAlignment = textAlignment
+    nameTextField.textAlignment = textAlignment
+    infoLabel.textAlignment = textAlignment
+    descriptionLabel.textAlignment = isCompactWidth ? .center : .natural
+    subtitleButton.contentHorizontalAlignment = isCompactWidth ? .center : .leading
 
     if isEditing {
       titleLabel.isHidden = true
@@ -264,70 +409,7 @@ class GenericDetailTableHeader: UIView {
     }
 
     playShuffleInfoView?.refresh()
-  }
-
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    // Circular crop has to track the artwork's bounds.
-    if config?.entityContainer is Artist {
-      entityImage.layer.cornerRadius = entityImage.bounds.width / 2
-    }
-  }
-
-  // cassette Polish 2 (D2): the play slot's height is a self-height constraint
-  // in the XIB (no outlet). Locate and update it rather than adding a competing
-  // constraint.
-  private func setPlayShuffleSlotHeight(_ value: CGFloat) {
-    let slotConstraint = playShuffleInfoContainerView.constraints.first { constraint in
-      (constraint.firstItem as? UIView) === playShuffleInfoContainerView &&
-        constraint.firstAttribute == .height &&
-        constraint.secondItem == nil
-    }
-    slotConstraint?.constant = value
-  }
-
-  func applyTraitCollectionChange() {
-    guard let config = config else { return }
-    let rootView = config.rootView
-
-    let isProminent = config.playShuffleInfoConfig?.usesProminentPlayButton ?? false
-    var height = (traitCollection.horizontalSizeClass == .compact) ?
-      GenericDetailTableHeader.frameHeightCompact :
-      GenericDetailTableHeader.frameHeightRegular
-    if traitCollection.horizontalSizeClass == .compact {
-      if config.playShuffleInfoConfig == nil {
-        titlePlayButtonContainerHeightConstraint.constant = Self
-          .titlePlayButtonContainerHeightWithoutButtons
-        height -=
-          (
-            Self.titlePlayButtonContainerHeightCompact - Self
-              .titlePlayButtonContainerHeightWithoutButtons
-          )
-      } else {
-        // cassette polish Part 4: grow the title/play column + total header by
-        // the prominent delta when the skeuomorphic Play layout is active.
-        titlePlayButtonContainerHeightConstraint.constant = Self
-          .titlePlayButtonContainerHeightCompact + (isProminent ? Self.prominentExtraHeight : 0)
-        height += isProminent ? Self.prominentExtraHeight : 0
-        // cassette Polish 2 (D2): the embedded action bar's 56pt Play disc was
-        // clipped by the XIB's fixed 40pt play slot, so touches landed outside
-        // the slot. Grow the slot to the 56pt play height when prominent (the
-        // +16pt delta matches prominentExtraHeight added to the column/frame).
-        setPlayShuffleSlotHeight(
-          isProminent ? LibraryElementDetailTableHeaderView.prominentPlayDiameter : 40.0
-        )
-      }
-    }
-    if config.descriptionText != nil {
-      height += GenericDetailTableHeader.frameHeightForDescription
-    }
-    config.tableView.tableHeaderView?.frame = CGRect(
-      x: 0,
-      y: 0,
-      width: rootView.view.bounds.size.width,
-      height: height
-    )
-    frame = CGRect(x: 0, y: 0, width: rootView.view.bounds.size.width, height: height)
+    resizeToFit()
   }
 
   func startEditing() {
@@ -352,8 +434,8 @@ class GenericDetailTableHeader: UIView {
     }}
   }
 
-  @IBAction
-  func subtitleButtonPressed(_ sender: Any) {
+  @objc
+  private func subtitleButtonPressed() {
     guard let album = config?.entityContainer as? Album,
           let artist = album.artist,
           let account = album.account,

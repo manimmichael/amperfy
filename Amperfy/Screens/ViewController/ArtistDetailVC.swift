@@ -26,6 +26,15 @@ import UIKit
 class ArtistDetailVC: MultiSourceTableViewController {
   override var sceneTitle: String? { artist.name }
 
+  /// cassette Patch 104: artist detail body — "Popular" (songs by play
+  /// count) leads, "Albums" follow. Section 0 stays the empty spacer the
+  /// legacy layout needs (see numberOfSections).
+  private enum BodySection: Int {
+    case spacer = 0
+    case popular = 1
+    case albums = 2
+  }
+
   private var artist: Artist
   var albumToScrollTo: Album?
   private var albumsFetchedResultsController: ArtistAlbumsItemsFetchedResultsController!
@@ -91,9 +100,17 @@ class ArtistDetailVC: MultiSourceTableViewController {
       for: artist,
       displayFilter: appDelegate.storage.settings.user.artistsFilterSetting,
       coreDataCompanion: appDelegate.storage.main,
-      isGroupedInAlphabeticSections: false
+      isGroupedInAlphabeticSections: false,
+      sortByPlayCount: true
     )
     songsFetchedResultsController.delegate = self
+    // cassette Patch 104: the named bug behind the empty artist body — the
+    // FRCs were created but never fetched. Patch 045 removed the in-view
+    // search path whose showAllResults() used to do the fetching, so the
+    // body rendered zero rows even though the data was there. Fetch both
+    // explicitly.
+    albumsFetchedResultsController.fetch()
+    songsFetchedResultsController.fetch()
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.register(nibName: PlayableTableCell.typeName)
     tableView.sectionHeaderHeight = 0.0
@@ -101,6 +118,17 @@ class ArtistDetailVC: MultiSourceTableViewController {
     tableView.sectionFooterHeight = 0.0
     tableView.estimatedSectionFooterHeight = 0.0
     tableView.backgroundColor = .backgroundColor
+
+    // cassette Patch 104 (Root 2): artwork is the first content of the
+    // scroll. The table extends under the navigation bar (insets mirrored
+    // manually in viewDidLayoutSubviews) and the bar is transparent at the
+    // scroll edge so back/overflow float over the artwork; the system
+    // restores the standard bar surface once content scrolls under it.
+    tableView.contentInsetAdjustmentBehavior = .never
+    let transparentBar = UINavigationBarAppearance()
+    transparentBar.configureWithTransparentBackground()
+    navigationItem.scrollEdgeAppearance = transparentBar
+    navigationItem.compactScrollEdgeAppearance = transparentBar
 
     // cassette Patch 045: in-view search removed from artist detail.
     // Library category lists keep their search controllers; the
@@ -124,7 +152,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
       entityContainer: artist,
       rootView: self,
       tableView: tableView,
-      playShuffleInfoConfig: playShuffleInfoConfig
+      playShuffleInfoConfig: playShuffleInfoConfig,
+      extendsUnderNavigationBar: true
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
@@ -142,13 +171,13 @@ class ArtistDetailVC: MultiSourceTableViewController {
     }
 
     containableAtIndexPathCallback = { indexPath in
-      switch indexPath.section + 1 {
-      case LibraryElement.Album.rawValue:
+      switch BodySection(rawValue: indexPath.section) {
+      case .albums:
         return self.albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
           row: indexPath.row,
           section: 0
         ))
-      case LibraryElement.Song.rawValue:
+      case .popular:
         return self.songsFetchedResultsController.getWrappedEntity(at: IndexPath(
           row: indexPath.row,
           section: 0
@@ -158,8 +187,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
       }
     }
     playContextAtIndexPathCallback = { indexPath in
-      switch indexPath.section + 1 {
-      case LibraryElement.Album.rawValue:
+      switch BodySection(rawValue: indexPath.section) {
+      case .albums:
         let album = self.albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
           row: indexPath.row,
           section: 0
@@ -180,7 +209,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
           )
         }}
         return PlayContext(containable: album)
-      case LibraryElement.Song.rawValue:
+      case .popular:
         let songIndexPath = IndexPath(row: indexPath.row, section: 0)
         return self.convertIndexPathToPlayContext(songIndexPath: songIndexPath)
       default:
@@ -188,8 +217,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
       }
     }
     swipeCallback = { indexPath, completionHandler in
-      switch indexPath.section + 1 {
-      case LibraryElement.Album.rawValue:
+      switch BodySection(rawValue: indexPath.section) {
+      case .albums:
         let album = self.albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
           row: indexPath.row,
           section: 0
@@ -211,7 +240,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
           }
           completionHandler(SwipeActionContext(containable: album))
         }
-      case LibraryElement.Song.rawValue:
+      case .popular:
         let songIndexPath = IndexPath(row: indexPath.row, section: 0)
         let song = self.songsFetchedResultsController.getWrappedEntity(at: songIndexPath)
         let playContext = self.convertIndexPathToPlayContext(songIndexPath: songIndexPath)
@@ -225,6 +254,16 @@ class ArtistDetailVC: MultiSourceTableViewController {
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = false
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    // Patch 104 (Root 2): with contentInsetAdjustmentBehavior == .never the
+    // safe areas are mirrored manually (bottom = tab bar + mini player).
+    tableView.contentInset.bottom = view.safeAreaInsets.bottom
+    tableView.verticalScrollIndicatorInsets.top = view.safeAreaInsets.top
+    tableView.verticalScrollIndicatorInsets.bottom = view.safeAreaInsets.bottom
+    detailOperationsView?.resizeToFit()
   }
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -308,7 +347,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
           let indexPath = albumsFetchedResultsController.fetchResultsController
           .indexPath(forObject: albumToScrollTo.managedObject)
     else { return }
-    let adjustedIndexPath = IndexPath(row: indexPath.row, section: 1)
+    let adjustedIndexPath = IndexPath(row: indexPath.row, section: BodySection.albums.rawValue)
     tableView.scrollToRow(at: adjustedIndexPath, at: .top, animated: true)
   }
 
@@ -323,7 +362,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
 
   func convertCellViewToPlayContext(cell: UITableViewCell) -> PlayContext? {
     guard let indexPath = tableView.indexPath(for: cell),
-          indexPath.section + 1 == LibraryElement.Song.rawValue
+          BodySection(rawValue: indexPath.section) == .popular
     else { return nil }
     return convertIndexPathToPlayContext(songIndexPath: IndexPath(row: indexPath.row, section: 0))
   }
@@ -340,21 +379,21 @@ class ArtistDetailVC: MultiSourceTableViewController {
     titleForHeaderInSection section: Int
   )
     -> String? {
-    switch section + 1 {
-    case LibraryElement.Album.rawValue:
+    switch BodySection(rawValue: section) {
+    case .albums:
       return "Albums"
-    case LibraryElement.Song.rawValue:
-      return "Songs"
+    case .popular:
+      return "Popular"
     default:
       return ""
     }
   }
 
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-    switch section + 1 {
-    case LibraryElement.Album.rawValue:
+    switch BodySection(rawValue: section) {
+    case .albums:
       return albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0
-    case LibraryElement.Song.rawValue:
+    case .popular:
       return songsFetchedResultsController.sections?[0].numberOfObjects ?? 0
     default:
       return 0
@@ -366,8 +405,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
     cellForRowAt indexPath: IndexPath
   )
     -> UITableViewCell {
-    switch indexPath.section + 1 {
-    case LibraryElement.Album.rawValue:
+    switch BodySection(rawValue: indexPath.section) {
+    case .albums:
       let cell: GenericTableCell = dequeueCell(for: tableView, at: indexPath)
       let album = albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
         row: indexPath.row,
@@ -375,7 +414,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
       ))
       cell.display(container: album, rootView: self)
       return cell
-    case LibraryElement.Song.rawValue:
+    case .popular:
       let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
       let song = songsFetchedResultsController.getWrappedEntity(at: IndexPath(
         row: indexPath.row,
@@ -393,11 +432,11 @@ class ArtistDetailVC: MultiSourceTableViewController {
     heightForHeaderInSection section: Int
   )
     -> CGFloat {
-    switch section + 1 {
-    case LibraryElement.Album.rawValue:
+    switch BodySection(rawValue: section) {
+    case .albums:
       return albumsFetchedResultsController.sections?[0]
         .numberOfObjects ?? 0 > 0 ? CommonScreenOperations.tableSectionHeightLarge : 0
-    case LibraryElement.Song.rawValue:
+    case .popular:
       return songsFetchedResultsController.sections?[0]
         .numberOfObjects ?? 0 > 0 ? CommonScreenOperations.tableSectionHeightLarge : 0
     default:
@@ -410,10 +449,10 @@ class ArtistDetailVC: MultiSourceTableViewController {
     heightForRowAt indexPath: IndexPath
   )
     -> CGFloat {
-    switch indexPath.section + 1 {
-    case LibraryElement.Album.rawValue:
+    switch BodySection(rawValue: indexPath.section) {
+    case .albums:
       return GenericTableCell.rowHeight
-    case LibraryElement.Song.rawValue:
+    case .popular:
       return PlayableTableCell.rowHeight
     default:
       return 0.0
@@ -425,10 +464,10 @@ class ArtistDetailVC: MultiSourceTableViewController {
     estimatedHeightForRowAt indexPath: IndexPath
   )
     -> CGFloat {
-    switch indexPath.section + 1 {
-    case LibraryElement.Album.rawValue:
+    switch BodySection(rawValue: indexPath.section) {
+    case .albums:
       return GenericTableCell.rowHeight
-    case LibraryElement.Song.rawValue:
+    case .popular:
       return PlayableTableCell.rowHeight
     default:
       return 0.0
@@ -436,8 +475,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
   }
 
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-    switch indexPath.section + 1 {
-    case LibraryElement.Album.rawValue:
+    switch BodySection(rawValue: indexPath.section) {
+    case .albums:
       let album = albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
         row: indexPath.row,
         section: 0
@@ -446,7 +485,6 @@ class ArtistDetailVC: MultiSourceTableViewController {
         AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
         animated: true
       )
-    case LibraryElement.Song.rawValue: break
     default: break
     }
   }
@@ -465,9 +503,9 @@ class ArtistDetailVC: MultiSourceTableViewController {
     var section = 0
     switch controller {
     case albumsFetchedResultsController.fetchResultsController:
-      section = LibraryElement.Album.rawValue - 1
+      section = BodySection.albums.rawValue
     case songsFetchedResultsController.fetchResultsController:
-      section = LibraryElement.Song.rawValue - 1
+      section = BodySection.popular.rawValue
     default:
       return
     }

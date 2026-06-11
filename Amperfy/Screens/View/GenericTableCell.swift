@@ -42,19 +42,6 @@ class GenericTableCell: BasicTableCell {
 
   private var container: PlayableContainable?
   private var rootView: UITableViewController?
-  // cassette Polish 2 (A3/C1): artist artwork is circular app-wide. Albums and
-  // everything else keep the squared 5pt rounded crop. Applied in
-  // layoutSubviews because the imageView's bounds aren't final in display().
-  private var isArtworkCircular = false
-
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    guard let entityImage else { return }
-    entityImage.layer.masksToBounds = true
-    entityImage.layer.cornerRadius = isArtworkCircular
-      ? entityImage.bounds.width / 2.0
-      : CornerRadius.small.asCGFloat
-  }
 
   func display(
     container: PlayableContainable,
@@ -63,8 +50,10 @@ class GenericTableCell: BasicTableCell {
   ) {
     self.container = container
     self.rootView = rootView
-    isArtworkCircular = container is Artist
-    setNeedsLayout()
+    // cassette Polish 2 (A3/C1) + Patch 104 (Root 3): artist artwork is
+    // circular app-wide. The shape is owned by EntityImageView now, so it
+    // survives layout passes and async artwork loads.
+    entityImage.shape = container is Artist ? .circle : .rounded(.small)
     selectionStyle = .none
     titleLabel.text = container.name
     subtitleLabel.isHidden = container.subtitle == nil

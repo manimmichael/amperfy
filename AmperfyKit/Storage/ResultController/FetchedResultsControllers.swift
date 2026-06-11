@@ -659,11 +659,21 @@ public class ArtistSongsItemsFetchedResultsController: BasicFetchedResultsContro
     for artist: Artist,
     displayFilter: ArtistCategoryFilter,
     coreDataCompanion: CoreDataCompanion,
-    isGroupedInAlphabeticSections: Bool
+    isGroupedInAlphabeticSections: Bool,
+    sortByPlayCount: Bool = false
   ) {
     self.artist = artist
     self.displayFilter = displayFilter
     let fetchRequest = SongMO.alphabeticSortedFetchRequest
+    // cassette Patch 104: the artist detail "Popular" section sorts by play
+    // count (most played first) with the alphabetical descriptors kept as
+    // the tie-break fallback. Other callers (e.g. playlist-add) keep the
+    // plain alphabetical order.
+    if sortByPlayCount {
+      fetchRequest.sortDescriptors = [
+        NSSortDescriptor(key: #keyPath(SongMO.playCount), ascending: false),
+      ] + (fetchRequest.sortDescriptors ?? [])
+    }
     switch self.displayFilter {
     case .all, .favorites:
       fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [

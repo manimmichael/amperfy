@@ -27,7 +27,9 @@ import UIKit
 // MARK: - PlayerControlView
 
 class PlayerControlView: UIView {
-  static let frameHeight: CGFloat = 175
+  // cassette Patch 104: +12pt so the added breathing room between the
+  // transport row and the airplay/heart/queue row isn't squeezed out.
+  static let frameHeight: CGFloat = 187
   static private let margin = UIEdgeInsets(
     top: 0,
     left: UIView.defaultMarginX,
@@ -108,11 +110,13 @@ class PlayerControlView: UIView {
     // cassette redesign (Surface 5): no container box behind play/pause —
     // the bg3 capsule (Patch 047) is retired and the play/pause glyph
     // carries the state on its own, matching the prev/next treatment.
-    // Symbol grows 32 -> 40 so the primary action still anchors the row.
-    var playConfig = UIButton.Configuration.plain()
+    // Patch 104: transport glyphs were oversized — play/pause drops
+    // 40 -> 32 (prev/next/skip drop to 20 in the XIB) and the config
+    // routes through cassetteBare() (Root 1) so no glass capsule leaks.
+    var playConfig = UIButton.Configuration.cassetteBare()
     playConfig.baseForegroundColor = CassetteTheme.UIColors.ink
     playConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-      pointSize: 40, weight: .bold
+      pointSize: 32, weight: .bold
     )
     playButton.configuration = playConfig
     playButton.tintColor = CassetteTheme.UIColors.ink

@@ -75,12 +75,11 @@ final class ArtistCircleCollectionCell: BasicCollectionCell {
     playOverlay?.isHidden = true
   }
 
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    entityImage.layer.cornerRadius = entityImage.bounds.width / 2.0
-  }
-
   private func setupSubviews() {
+    // cassette Patch 104 (Root 3): the circle is deterministic — the photo
+    // is constrained to a fixed 120pt square, so the mask is set once from
+    // the constant instead of racing layout passes in layoutSubviews.
+    entityImage.layer.cornerRadius = Self.circleDiameter / 2.0
     contentView.backgroundColor = CassetteTheme.UIColors.bg
     contentView.addSubview(artworkContainer)
     artworkContainer.addSubview(entityImage)

@@ -186,7 +186,6 @@
 		50AE79C22C20709C0085CBB3 /* LyricsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50AE79C12C20709C0085CBB3 /* LyricsView.swift */; };
 		50AE79C32C2070F40085CBB3 /* LyricTableCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50AE79BF2C206EF10085CBB3 /* LyricTableCell.swift */; };
 		50AFA1492632E83100F198DD /* GenericDetailTableHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50AFA1472632E83100F198DD /* GenericDetailTableHeader.swift */; };
-		50AFA14E2632E95900F198DD /* GenericDetailTableHeader.xib in Resources */ = {isa = PBXBuildFile; fileRef = 50AFA1482632E83100F198DD /* GenericDetailTableHeader.xib */; };
 		50B136FA2EFC36D500738475 /* PlayableContainerTypeAppEnum.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B136F32EFC36D500738475 /* PlayableContainerTypeAppEnum.swift */; };
 		50B136FB2EFC36D500738475 /* PlayIDIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B136F42EFC36D500738475 /* PlayIDIntent.swift */; };
 		50B136FC2EFC36D500738475 /* PlayRandomSongsIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B136F52EFC36D500738475 /* PlayRandomSongsIntent.swift */; };
@@ -963,7 +962,6 @@
 		50AE79BF2C206EF10085CBB3 /* LyricTableCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricTableCell.swift; sourceTree = "<group>"; };
 		50AE79C12C20709C0085CBB3 /* LyricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsView.swift; sourceTree = "<group>"; };
 		50AFA1472632E83100F198DD /* GenericDetailTableHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericDetailTableHeader.swift; sourceTree = "<group>"; };
-		50AFA1482632E83100F198DD /* GenericDetailTableHeader.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = GenericDetailTableHeader.xib; sourceTree = "<group>"; };
 		50B053AC27BFADB200D9C1ED /* UIImageAssetsExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIImageAssetsExtension.swift; sourceTree = "<group>"; };
 		50B136F32EFC36D500738475 /* PlayableContainerTypeAppEnum.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayableContainerTypeAppEnum.swift; sourceTree = "<group>"; };
 		50B136F42EFC36D500738475 /* PlayIDIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayIDIntent.swift; sourceTree = "<group>"; };
@@ -1895,7 +1893,6 @@
 			children = (
 				50AE79BE2C206ECB0085CBB3 /* Lyrics */,
 				503E04472B98F42F0091D31E /* Collection */,
-				50AFA1482632E83100F198DD /* GenericDetailTableHeader.xib */,
 				50AFA1472632E83100F198DD /* GenericDetailTableHeader.swift */,
 				50C9D691284FAA4D007F18D0 /* DetailStickyHeaderView.swift */,
 				500B7D4421EDB05F0083ED6F /* LibraryElementDetailTableHeaderView.xib */,
@@ -2422,7 +2419,6 @@
 				43FBE27F250D4DFD00D5F9B3 /* LaunchScreen.storyboard in Resources */,
 				50DEEE08265E27300073FF20 /* DirectoryTableCell.xib in Resources */,
 				500B7D4521EDB05F0083ED6F /* LibraryElementDetailTableHeaderView.xib in Resources */,
-				50AFA14E2632E95900F198DD /* GenericDetailTableHeader.xib in Resources */,
 				50DF1E5A28DDECEA00F3EA00 /* AlbumCollectionCell.xib in Resources */,
 				50C16C2621E7CBA500F086F0 /* GenericTableCell.xib in Resources */,
 				508FDE3821F1E14F005A0724 /* NewPlaylistTableHeader.xib in Resources */,

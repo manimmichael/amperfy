@@ -133,6 +133,15 @@ extension Artist: PlayableContainable {
   public var subsubtitle: String? { nil }
   public func infoDetails(for api: ServerApiType?, details: DetailInfoType) -> [String] {
     var infoContent = [String]()
+    // cassette Patch 104 (list metadata density): artist list rows drop the
+    // "# Albums / # Songs" counts entirely — they read as noise next to the
+    // name. The long (detail) variant below keeps the full breakdown.
+    if details.type == .short {
+      if details.isShowArtistDuration, duration > 0 {
+        infoContent.append("\(duration.asDurationShortString)")
+      }
+      return infoContent
+    }
     if let managedObjectContext = managedObject.managedObjectContext, let account {
       let library = LibraryStorage(context: managedObjectContext)
       let relatedAlbumCount = library.getAlbums(for: account, whichContainsSongsWithArtist: self)
@@ -162,9 +171,6 @@ extension Artist: PlayableContainable {
       infoContent.append("1 Song")
     } else if songCount > 1 {
       infoContent.append("\(songCount) Songs")
-    }
-    if details.type == .short, details.isShowArtistDuration, duration > 0 {
-      infoContent.append("\(duration.asDurationShortString)")
     }
     if details.type == .long {
       if let genre = genre {

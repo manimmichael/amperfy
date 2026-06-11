@@ -55,16 +55,17 @@ extension PopupPlayerVC {
 
   func refreshOptionButton(button: UIButton, rootView: UIViewController?) {
     // cassette polish Part 5: per-track overflow sits plain against the player
-    // background (no bg2 circular tile). 22pt ellipsis in ink; 44pt hit target
-    // preserved via symmetric content insets around the ~22pt glyph.
-    var config = UIButton.Configuration.plain()
+    // background (no bg2 circular tile). Patch 104 (Root 1): routed through
+    // cassetteBare() so the iOS 26 default glass capsule is opted out.
+    // 19pt ellipsis in ink; 44pt hit target preserved via symmetric insets.
+    var config = UIButton.Configuration.cassetteBare()
     config.image = .ellipsis
     config.baseForegroundColor = CassetteTheme.UIColors.ink
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-      pointSize: 22,
+      pointSize: 19,
       weight: .regular
     )
-    config.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11)
+    config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)
     button.isEnabled = true
     button.configuration = config
 
@@ -84,7 +85,9 @@ extension PopupPlayerVC {
     // cassette polish Part 5: heart sits plain against the player background
     // (no bg2 circular tile). 22pt symbol in ink, filled when favorited and
     // outlined when not; 44pt hit target via symmetric content insets.
-    var config = UIButton.Configuration.plain()
+    // Patch 104 (Root 1): cassetteBare() opts out of the iOS 26 default
+    // glass capsule that was leaking a faint container around the heart.
+    var config = UIButton.Configuration.cassetteBare()
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
       pointSize: 22,
       weight: .regular

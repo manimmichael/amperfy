@@ -601,8 +601,9 @@ extension HomeVC {
 final class SectionHeaderView: UICollectionReusableView {
   static let reuseID = "SectionHeaderView"
 
-  /// cassette redesign (Surface 4): the Resume section's header is a quiet
-  /// DM Mono greeting; the shelves keep the Barlow section title.
+  /// cassette redesign (Surface 4): the Resume section's header is the
+  /// greeting line (Barlow, `.greeting` role); the shelves keep the Barlow
+  /// section title.
   enum Style {
     case shelf
     case greeting
@@ -615,8 +616,12 @@ final class SectionHeaderView: UICollectionReusableView {
         titleLabel.font = UIFont.cassette(.sectionTitle)
         titleLabel.textColor = CassetteTheme.UIColors.ink
       case .greeting:
-        titleLabel.font = UIFont.cassette(.metadata)
-        titleLabel.textColor = CassetteTheme.UIColors.ink2
+        // cassette Patch 104 (Root 4): the greeting used to render in 12pt
+        // metadata mono — a fallback after Newsreader was dropped — which
+        // read as a tiny caption. It now uses the dedicated `.greeting`
+        // role (Barlow Condensed SemiBold 20pt, ink).
+        titleLabel.font = UIFont.cassette(.greeting)
+        titleLabel.textColor = CassetteTheme.UIColors.ink
       }
     }
   }

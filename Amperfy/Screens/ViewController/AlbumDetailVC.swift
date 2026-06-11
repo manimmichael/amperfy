@@ -132,6 +132,17 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     tableView.estimatedSectionHeaderHeight = 0.0
     tableView.backgroundColor = .backgroundColor
 
+    // cassette Patch 104 (Root 2): artwork is the first content of the
+    // scroll. The table extends under the navigation bar (insets mirrored
+    // manually in viewDidLayoutSubviews) and the bar is transparent at the
+    // scroll edge so back/overflow float over the artwork; the system
+    // restores the standard bar surface once content scrolls under it.
+    tableView.contentInsetAdjustmentBehavior = .never
+    let transparentBar = UINavigationBarAppearance()
+    transparentBar.configureWithTransparentBackground()
+    navigationItem.scrollEdgeAppearance = transparentBar
+    navigationItem.compactScrollEdgeAppearance = transparentBar
+
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
       infoCB: { "\(self.album.songCount) Song\(self.album.songCount == 1 ? "" : "s")" },
       playContextCb: { () in PlayContext(
@@ -148,7 +159,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       entityContainer: album,
       rootView: self,
       tableView: tableView,
-      playShuffleInfoConfig: playShuffleInfoConfig
+      playShuffleInfoConfig: playShuffleInfoConfig,
+      extendsUnderNavigationBar: true
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
@@ -183,6 +195,16 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = false
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    // Patch 104 (Root 2): with contentInsetAdjustmentBehavior == .never the
+    // safe areas are mirrored manually (bottom = tab bar + mini player).
+    tableView.contentInset.bottom = view.safeAreaInsets.bottom
+    tableView.verticalScrollIndicatorInsets.top = view.safeAreaInsets.top
+    tableView.verticalScrollIndicatorInsets.bottom = view.safeAreaInsets.bottom
+    detailOperationsView?.resizeToFit()
   }
 
   override func viewWillDisappear(_ animated: Bool) {

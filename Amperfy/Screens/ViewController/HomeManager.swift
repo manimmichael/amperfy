@@ -359,8 +359,15 @@ class HomeManager: NSObject {
     // is nothing to resume, so the card hides.
     let hasPlayHistory = hasLiveAlbum || entries.contains { $0.date > distantPast }
     if hasPlayHistory, let resumeContainer = merged.first {
+      // cassette Patch 104: namespace the Resume identity. With the raw
+      // container stableID, a container moving between the Resume section
+      // and a shelf reads as a *move* to the diffable data source, so the
+      // old shelf AlbumCollectionCell gets recycled into the full-width
+      // Resume slot instead of dequeuing a ResumeCardCell. A distinct ID
+      // makes the transition a delete+insert, which re-runs the cell
+      // provider's section check.
       data[.resume] = [HomeItem(
-        stableID: Self.stableID(for: resumeContainer),
+        stableID: "resume:" + Self.stableID(for: resumeContainer),
         playableContainable: resumeContainer
       )]
       merged.removeFirst()

@@ -98,12 +98,21 @@ class PlayableTableCell: BasicTableCell {
   private var didInstallPlayingSymbol = false
   private var isPlayingSymbolNotificationRegistered = false
 
+  /// cassette Patch 104: the per-row download badge is disabled for now —
+  /// it rendered as a non-interactive marker and showed on on-device
+  /// tracks. The scaffolding below (downloadButton, downloadPressed intent
+  /// path, cached/owned state, trailing-slot constraint math) is preserved
+  /// for the planned v2 streaming-gated download button: off-device +
+  /// streaming on -> tap-to-play caches; the download button requests
+  /// permanent-local via the dashboard.
+  static let isDownloadButtonEnabled = false
+
   /// cassette redesign (Surface 2): trailing download affordance, shown only
   /// on off-device tracks. Replaces the old cached-check icon — on-device
   /// rows stay quiet (no marker at all). Native UIButton.Configuration with
   /// a 44pt hit target via insets.
   private lazy var downloadButton: UIButton = {
-    var config = UIButton.Configuration.plain()
+    var config = UIButton.Configuration.cassetteBare()
     config.image = UIImage(systemName: "arrow.down.circle")
     config.baseForegroundColor = CassetteTheme.UIColors.ink2
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
@@ -374,10 +383,13 @@ class PlayableTableCell: BasicTableCell {
     playingSymbolView.isHidden = false
     updatePlayingSymbolAnimation()
     contentView.bringSubviewToFront(playingSymbolView)
+    // cassette Patch 104: the playing indicator REPLACES the track number.
+    // This used to be alpha-based, but applyCassetteOwnershipDimming() runs
+    // later in refresh() and stomps alpha back to a visible value, drawing
+    // the waveform over the number. isHidden is owned by the indicator /
+    // style path only, so the dimming pass can't resurrect the label.
     if replacingTrackNumber {
-      trackNumberLabel.alpha = 0
-    } else {
-      trackNumberLabel.alpha = 1
+      trackNumberLabel.isHidden = true
     }
   }
 
@@ -386,7 +398,9 @@ class PlayableTableCell: BasicTableCell {
       playingSymbolView.stopAnimating()
       playingSymbolView.isHidden = true
     }
-    trackNumberLabel.alpha = 1
+    if isDislayAlbumTrackNumberStyle {
+      trackNumberLabel.isHidden = false
+    }
   }
 
   private func registerPlayingSymbolNotificationsIfNeeded() {
@@ -541,8 +555,10 @@ class PlayableTableCell: BasicTableCell {
 
     // cassette redesign (Surface 2): download affordance only on off-device
     // tracks; on-device rows show nothing in this slot (the old cached-check
-    // marker is retired).
-    let showsDownloadAffordance = isDisplayOptionButton
+    // marker is retired). Patch 104: gated off entirely behind the v2 flag —
+    // rows go quiet (number, title, overflow).
+    let showsDownloadAffordance = Self.isDownloadButtonEnabled
+      && isDisplayOptionButton
       && displayMode == .normal
       && !playable.isCached
       && playable.isDownloadAvailable

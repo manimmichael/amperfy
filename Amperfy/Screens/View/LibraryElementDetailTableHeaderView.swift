@@ -164,7 +164,7 @@ class LibraryElementDetailTableHeaderView: UIView {
   private func refreshProminentHeartIcon() {
     guard let heart = prominentHeartButton else { return }
     let isFav = config?.favoriteEntity?.isFavorite ?? false
-    var heartConfig = heart.configuration ?? UIButton.Configuration.plain()
+    var heartConfig = heart.configuration ?? UIButton.Configuration.cassetteBare()
     heartConfig.image = isFav ? UIImage(systemName: "heart.fill") : UIImage(systemName: "heart")
     heartConfig.baseForegroundColor = isFav
       ? CassetteTheme.UIColors.orange
@@ -291,13 +291,34 @@ class LibraryElementDetailTableHeaderView: UIView {
     container.addSubview(heart)
     container.addSubview(play)
     container.addSubview(shuffle)
+    // cassette Patch 104: heart and shuffle sit on the quarter points —
+    // centered between the central play button and each screen edge
+    // (centerX multipliers 0.5 / 1.5) — instead of flush to the edges.
+    let heartQuarterPoint = NSLayoutConstraint(
+      item: heart,
+      attribute: .centerX,
+      relatedBy: .equal,
+      toItem: container,
+      attribute: .centerX,
+      multiplier: 0.5,
+      constant: 0
+    )
+    let shuffleQuarterPoint = NSLayoutConstraint(
+      item: shuffle,
+      attribute: .centerX,
+      relatedBy: .equal,
+      toItem: container,
+      attribute: .centerX,
+      multiplier: 1.5,
+      constant: 0
+    )
     NSLayoutConstraint.activate([
       container.topAnchor.constraint(equalTo: topAnchor),
       container.bottomAnchor.constraint(equalTo: bottomAnchor),
       container.leadingAnchor.constraint(equalTo: leadingAnchor),
       container.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-      heart.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      heartQuarterPoint,
       heart.centerYAnchor.constraint(equalTo: container.centerYAnchor),
 
       play.centerXAnchor.constraint(equalTo: container.centerXAnchor),
@@ -305,7 +326,7 @@ class LibraryElementDetailTableHeaderView: UIView {
       play.widthAnchor.constraint(equalToConstant: Self.prominentPlayDiameter),
       play.heightAnchor.constraint(equalToConstant: Self.prominentPlayDiameter),
 
-      shuffle.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      shuffleQuarterPoint,
       shuffle.centerYAnchor.constraint(equalTo: container.centerYAnchor),
     ])
 
@@ -357,9 +378,10 @@ class LibraryElementDetailTableHeaderView: UIView {
   // cassette redesign (Surface 1): plain quiet icon button, 22pt symbol,
   // 44pt hit target via symmetric insets. ink2 baseline — orange is reserved
   // for live state (the favorited heart overrides via its own refresh).
+  // Patch 104 (Root 1): cassetteBare() + UIButton(configuration:) opts out
+  // of the iOS 26 default glass capsule that outlined the heart/shuffle.
   private static func makePlainActionButton(systemImage: String) -> UIButton {
-    let button = UIButton(type: .system)
-    var config = UIButton.Configuration.plain()
+    var config = UIButton.Configuration.cassetteBare()
     config.image = UIImage(systemName: systemImage)
     config.baseForegroundColor = CassetteTheme.UIColors.ink2
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
@@ -367,7 +389,7 @@ class LibraryElementDetailTableHeaderView: UIView {
       weight: .regular
     )
     config.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11)
-    button.configuration = config
+    let button = UIButton(configuration: config)
     button.tintColor = CassetteTheme.UIColors.ink2
     button.translatesAutoresizingMaskIntoConstraints = false
     return button

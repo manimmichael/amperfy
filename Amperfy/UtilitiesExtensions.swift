@@ -143,6 +143,20 @@ extension UIColor {
 }
 
 extension UIButton.Configuration {
+  /// cassette Patch 104 (Root 1): the app's quiet-icon recipe was
+  /// `UIButton(type: .system)` + `.plain()`, written when plain meant
+  /// *bare*. Compiled against the iOS 26 SDK, standard buttons pick up
+  /// the system's default Liquid Glass capsule background, so "plain"
+  /// buttons started leaking a faint rounded container (player heart,
+  /// detail action bar, Library title dropdown). Every bare icon/text
+  /// button routes through this factory so the opt-out lives in exactly
+  /// one place: an explicitly cleared background configuration.
+  static func cassetteBare() -> UIButton.Configuration {
+    var config = UIButton.Configuration.plain()
+    config.background = .clear()
+    return config
+  }
+
   static func player(isSelected: Bool) -> UIButton.Configuration {
     var config = UIButton.Configuration.tinted()
     if isSelected {

@@ -44,22 +44,27 @@ enum DetailStickyHeaderSupport {
     in viewController: UIViewController,
     collapsedPlayItem: UIBarButtonItem? = nil
   ) {
-    let layoutHeight = tableHeaderView?.frame.height ?? 0
-    let canonicalHeight = GenericDetailTableHeader.frameHeight(
-      traitCollection: viewController.traitCollection
-    )
-    let heroHeight = max(layoutHeight, canonicalHeight)
-
-    guard heroHeight >= minimumHeroHeight else {
+    // cassette Patch 104 (Root 2): the header self-sizes now, so the hero
+    // height is read from the actual table header frame (no canonical
+    // constants), and the threshold is computed by converting the hero's
+    // bottom edge into the root view's coordinate space. That keeps the
+    // math correct both for the album/artist headers that extend under the
+    // bar (contentInsetAdjustmentBehavior == .never) and for the detail
+    // screens that still lay out below it.
+    guard let tableHeaderView,
+          tableHeaderView.frame.height >= minimumHeroHeight else {
       stickyHeader.alpha = 0
       collapsedPlayItem?.isHidden = true
       return
     }
 
-    let safeAreaTop = viewController.view.safeAreaInsets.top
-    let navBarHeight = viewController.navigationController?.navigationBar.frame.height ?? 0
-    let threshold = heroHeight - safeAreaTop - navBarHeight - stickyHeaderHeight
-    let progress = max(0, min(1, (scrollView.contentOffset.y - threshold) / 20))
+    let heroBottomY = scrollView.convert(
+      CGPoint(x: 0, y: tableHeaderView.frame.maxY),
+      to: viewController.view
+    ).y
+    let barBottomY = viewController.view.safeAreaInsets.top
+    // Title fades in over the last 20pt of the hero sliding under the bar.
+    let progress = max(0, min(1, (barBottomY + 20 - heroBottomY) / 20))
     stickyHeader.alpha = progress
     // Reveal the bar-level play action once the hero's own play CTA has
     // scrolled out from under the bar (midpoint of the title fade).

@@ -403,7 +403,12 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
 
   private func setupLikedSongsHeader() {
     let header = LikedSongsHeaderRowView()
-    header.translatesAutoresizingMaskIntoConstraints = false
+    // cassette Patch 104: tableHeaderView is frame-based — it must keep
+    // translatesAutoresizingMaskIntoConstraints = true. With it disabled the
+    // frame assigned in relayoutLikedSongsHeader() never sticks, the height
+    // comparison fails on every layout pass, and re-assigning the header
+    // re-invalidates layout: an infinite viewDidLayoutSubviews loop that
+    // froze the whole tab the moment the first liked song appeared.
     header.onTap = { [weak self] in
       guard let self else { return }
       navigationController?.pushViewController(
@@ -412,24 +417,36 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
       )
     }
     likedSongsHeader = header
-
-    // tableHeaderView needs an explicit frame width; sizing happens
-    // via auto-layout inside `relayoutLikedSongsHeader`.
-    let containerWidth = tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width
-    header.frame = CGRect(x: 0, y: 0, width: containerWidth, height: 64)
-    tableView.tableHeaderView = header
+    // cassette Patch 104: the row is only installed when there is at least
+    // one liked song — refreshLikedSongsCount() owns install/removal.
     refreshLikedSongsCount()
   }
 
   private func refreshLikedSongsCount() {
     guard let header = likedSongsHeader else { return }
     let count = appDelegate.storage.main.library.getFavoriteSongs(for: account).count
+    // cassette Patch 104: don't render an empty "Liked Songs · 0 songs" row.
+    // The count refreshes on every appear, so liking the first song (or
+    // un-liking the last) adds/removes the row on the next visit.
+    guard count > 0 else {
+      if tableView.tableHeaderView === header {
+        tableView.tableHeaderView = nil
+      }
+      return
+    }
     header.setCount(count)
+    if tableView.tableHeaderView !== header {
+      // tableHeaderView needs an explicit frame width; sizing happens
+      // via auto-layout inside `relayoutLikedSongsHeader`.
+      let containerWidth = tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width
+      header.frame = CGRect(x: 0, y: 0, width: containerWidth, height: 64)
+      tableView.tableHeaderView = header
+    }
     relayoutLikedSongsHeader()
   }
 
   private func relayoutLikedSongsHeader() {
-    guard let header = likedSongsHeader else { return }
+    guard let header = likedSongsHeader, tableView.tableHeaderView === header else { return }
     let target = CGSize(
       width: tableView.bounds.width,
       height: UIView.layoutFittingCompressedSize.height
@@ -461,7 +478,6 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
 /// as part of the playlist list rather than a foreign banner.
 private final class LikedSongsHeaderRowView: UIControl {
   private static let tileSize: CGFloat = 44
-  private static let horizontalInset: CGFloat = 16
   private static let verticalInset: CGFloat = 10
 
   private let iconTile: UIView = {
@@ -536,6 +552,10 @@ private final class LikedSongsHeaderRowView: UIControl {
     backgroundColor = .backgroundColor
     accessibilityTraits = .button
     accessibilityLabel = "Liked Songs"
+    // cassette Patch 104: follow the table view's layout margins instead of
+    // a private fixed inset so the row spans (and aligns with) the playlist
+    // rows below at every width.
+    preservesSuperviewLayoutMargins = true
     addAction(UIAction { [weak self] _ in self?.onTap?() }, for: .touchUpInside)
 
     addSubview(iconTile)
@@ -546,7 +566,7 @@ private final class LikedSongsHeaderRowView: UIControl {
     addSubview(separator)
 
     NSLayoutConstraint.activate([
-      iconTile.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.horizontalInset),
+      iconTile.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
       iconTile.centerYAnchor.constraint(equalTo: centerYAnchor),
       iconTile.widthAnchor.constraint(equalToConstant: Self.tileSize),
       iconTile.heightAnchor.constraint(equalToConstant: Self.tileSize),
@@ -572,14 +592,13 @@ private final class LikedSongsHeaderRowView: UIControl {
       ),
 
       chevronImageView.trailingAnchor.constraint(
-        equalTo: trailingAnchor,
-        constant: -Self.horizontalInset
+        equalTo: layoutMarginsGuide.trailingAnchor
       ),
       chevronImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
       chevronImageView.widthAnchor.constraint(equalToConstant: 10),
       chevronImageView.heightAnchor.constraint(equalToConstant: 14),
 
-      separator.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.horizontalInset),
+      separator.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
       separator.trailingAnchor.constraint(equalTo: trailingAnchor),
       separator.bottomAnchor.constraint(equalTo: bottomAnchor),
       // Half-point hairline; matches the visual weight of UITableView's

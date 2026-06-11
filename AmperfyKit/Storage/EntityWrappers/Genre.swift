@@ -89,6 +89,17 @@ extension Genre: PlayableContainable {
   public var subsubtitle: String? { nil }
   public func infoDetails(for api: ServerApiType?, details: DetailInfoType) -> [String] {
     var infoContent = [String]()
+    // cassette Patch 104: library genre rows show a single normalized count
+    // ("12 Songs") — the "N Artists · N Albums · N Songs" chain read as
+    // noise. The long (detail) variant keeps the full breakdown.
+    if details.type == .short {
+      if songCount == 1 {
+        infoContent.append("1 Song")
+      } else if songCount > 1 {
+        infoContent.append("\(songCount) Songs")
+      }
+      return infoContent
+    }
     if api == .ampache {
       if artistCount == 1 {
         infoContent.append("1 Artist")
