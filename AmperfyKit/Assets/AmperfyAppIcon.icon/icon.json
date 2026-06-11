@@ -6,17 +6,23 @@
     {
       "layers" : [
         {
-          "blend-mode" : "normal",
-          "fill" : "automatic",
-          "glass" : true,
+          "glass-specializations" : [
+            {
+              "value" : false
+            },
+            {
+              "idiom" : "square",
+              "value" : false
+            }
+          ],
           "hidden" : false,
-          "image-name" : "Logo.png",
-          "name" : "Logo",
+          "image-name" : "Unknown.jpg",
+          "name" : "Unknown",
           "position" : {
-            "scale" : 1,
+            "scale" : 1.25,
             "translation-in-points" : [
-              35,
-              0
+              0,
+              1.1368683772161603e-13
             ]
           }
         }
