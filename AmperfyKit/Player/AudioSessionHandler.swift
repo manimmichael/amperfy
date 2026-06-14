@@ -28,6 +28,13 @@ public class AudioSessionHandler {
   var musicPlayer: AudioPlayer?
   var eventLogger: EventLogger?
 
+  /// Patch 113 (step 2): tracks whether WE have activated the session, so the
+  /// per-track `configureBackgroundPlayback()` becomes a no-op once active
+  /// (setActive(true) on every skip is a main-thread staller). Reset to false
+  /// when the OS deactivates us (interruption began); the .ended-resume path
+  /// reactivates explicitly.
+  private var isSessionActive = false
+
   func configureObserverForAudioSessionInterruption() {
     NotificationCenter.default.addObserver(
       self,
@@ -58,6 +65,9 @@ public class AudioSessionHandler {
       // Audio has stopped, already inactive
       // Change state of UI, etc., to reflect non-playing state
       os_log(.info, "Audio Session: Audio interruption began")
+      // The system deactivates our session during the interruption; mark it so
+      // resume reactivates it (Patch 113 step 2).
+      isSessionActive = false
       musicPlayer?.pause()
     case AVAudioSession.InterruptionType.ended:
       // Make session active
@@ -71,6 +81,9 @@ public class AudioSessionHandler {
         if interruptionOption == AVAudioSession.InterruptionOptions.shouldResume {
           // Here you should continue playback
           os_log(.info, "Audio Session: Audio interruption ended -> Resume playing")
+          // Reactivate the session before resuming — the resume path may go
+          // through continuePlay, which doesn't reconfigure (Patch 113 step 2).
+          configureBackgroundPlayback()
           musicPlayer?.play()
         }
       }
@@ -117,9 +130,14 @@ public class AudioSessionHandler {
   }
 
   func configureBackgroundPlayback() {
+    // Patch 113 (step 2): activate once. Once active, this is a no-op so a skip
+    // no longer pays for setActive(true). Reactivated after interruptions via
+    // the isSessionActive reset above.
+    guard !isSessionActive else { return }
     do {
       try AVAudioSession.sharedInstance().setCategory(AVAudioSession.Category.playback)
       try AVAudioSession.sharedInstance().setActive(true)
+      isSessionActive = true
     } catch {
       eventLogger?.report(topic: "Audio Session", error: error)
     }
