@@ -142,6 +142,30 @@ extension PopupPlayerVC {
     backgroundImage.layer.sublayers?
       .filter { $0 is CAGradientLayer }
       .forEach { $0.removeFromSuperlayer() }
+
+    // Patch 112: feed the ambient backlight. One path for cover + placeholder —
+    // getImageToDisplayImmediately returns the cover from cache/disk, or the
+    // on-brand generated placeholder when there's none. The cache key flips to
+    // the artwork file path only once that file actually exists, so a backdrop
+    // that started as the placeholder cross-fades to the real cover when the
+    // download lands (downloadFinishedSuccessful re-invokes this).
+    guard let playable = player.currentlyPlaying else {
+      ambientBackdropModel.image = nil
+      return
+    }
+    let setting = appDelegate.storage.settings.accounts.getSetting(playable.account?.info).read
+    let artworkPath = playable.imagePath(setting: setting.artworkDisplayPreference)
+    let hasCover = artworkPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
+    ambientBackdropModel.coverID = hasCover
+      ? (artworkPath ?? "ambient-placeholder")
+      : "ambient-placeholder"
+    ambientBackdropModel.image = LibraryEntityImage.getImageToDisplayImmediately(
+      libraryEntity: playable,
+      themePreference: setting.themePreference,
+      artworkDisplayPreference: setting.artworkDisplayPreference,
+      useCache: true
+    )
+    ambientBackdropModel.isPlaying = player.isPlaying
   }
 
   /// cassette Patch 029: the host view paints a flat `bg4` backdrop in

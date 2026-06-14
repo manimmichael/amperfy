@@ -21,6 +21,7 @@
 
 import AmperfyKit
 import CoreMedia
+import SwiftUI
 import UIKit
 
 // MARK: - PopupPlayerVC
@@ -54,6 +55,11 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
   var controlView: PlayerControlView?
   var largeCurrentlyPlayingView: LargeCurrentlyPlayingPlayerView?
   var accountNotificationHandler: AccountNotificationHandler?
+
+  // Patch 112: ambient backlight — a soft blurred copy of the current cover,
+  // hosted (SwiftUI) in the backmost backdrop slot. Driven via the model.
+  let ambientBackdropModel = AmbientBackdropModel()
+  private var ambientBackdropHost: UIHostingController<AmbientCoverBackdrop>?
 
   var currentlyPlayingTableCell: CurrentlyPlayingTableCell?
   var contextPrevQueueSectionHeader: ContextQueuePrevSectionHeader?
@@ -91,6 +97,24 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
     // backdrop later, but for now it sits empty.
     backgroundImage.image = nil
     backgroundImage.isHidden = true
+
+    // Patch 112: install the ambient backlight in the backmost backdrop slot
+    // (just above the now-empty `backgroundImage`, below all content). It is
+    // non-interactive and full-bleed; the crisp cover + controls sit on top.
+    let backdrop = UIHostingController(rootView: AmbientCoverBackdrop(model: ambientBackdropModel))
+    backdrop.view.backgroundColor = .clear
+    backdrop.view.isUserInteractionEnabled = false
+    backdrop.view.translatesAutoresizingMaskIntoConstraints = false
+    addChild(backdrop)
+    view.insertSubview(backdrop.view, aboveSubview: backgroundImage)
+    NSLayoutConstraint.activate([
+      backdrop.view.topAnchor.constraint(equalTo: view.topAnchor),
+      backdrop.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      backdrop.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      backdrop.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+    ])
+    backdrop.didMove(toParent: self)
+    ambientBackdropHost = backdrop
 
     controlPlaceholderHeightConstraint.constant = PlayerControlView
       .frameHeight + safetyMarginOnBottom
@@ -384,7 +408,10 @@ extension PopupPlayerVC: MusicPlayable {
     refresh()
   }
 
-  func didPause() {}
+  func didPause() {
+    // Patch 112: settle the ambient backlight intensity when paused.
+    ambientBackdropModel.isPlaying = player.isPlaying
+  }
   func didElapsedTimeChange() {}
 
   func didLyricsTimeChange(time: CMTime) {
