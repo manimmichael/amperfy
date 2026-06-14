@@ -17,8 +17,12 @@
 //
 
 import AmperfyKit
+import CoreImage
 import SwiftUI
 import UIKit
+
+// Patch 114: shared CIContext for the off-main pre-blur (Sendable + thread-safe).
+private let ambientBlurContext = CIContext(options: nil)
 
 // MARK: - AmbientBackdropCache
 
@@ -27,11 +31,17 @@ enum AmbientBackdropCache {
   // strict concurrency for the shared static.
   private nonisolated(unsafe) static let cache = NSCache<NSString, UIImage>()
 
-  /// Returns a ~32px downsampled copy, cached by key. Safe to call repeatedly.
+  /// Returns a ~32px downsampled **and pre-blurred** copy, cached by key.
+  /// Patch 114: the blur now happens HERE, off the main thread, so the SwiftUI
+  /// view renders a plain Image. Previously the view applied `.blur(radius:70)`,
+  /// whose first-render Gaussian shader compiled on the main thread the first
+  /// time the player opened — a one-time spike that starved the audio render
+  /// thread (the "first-open glitch"). Doing the decode + downsample + blur on
+  /// a detached task and caching the result makes opening the player cheap.
   static func tiny(for key: String, image: UIImage) async -> UIImage {
     if let hit = cache.object(forKey: key as NSString) { return hit }
     let small = await Task.detached(priority: .utility) {
-      image.ambientDownsampled(maxDimension: 32)
+      image.ambientDownsampledBlurred(maxDimension: 32, blurRadius: 8)
     }.value
     cache.setObject(small, forKey: key as NSString)
     return small
@@ -49,6 +59,24 @@ private extension UIImage {
     return UIGraphicsImageRenderer(size: target, format: format).image { _ in
       draw(in: CGRect(origin: .zero, size: target))
     }
+  }
+
+  /// Patch 114: downsample to ~`maxDimension`px, then Gaussian-blur the tiny
+  /// image off-main (CIGaussianBlur on a 32px source is trivial). The soft
+  /// blur + the later bilinear upscale-to-fill reproduce the old `.blur(70)`
+  /// lamp look without an on-main render-time blur.
+  func ambientDownsampledBlurred(maxDimension: CGFloat, blurRadius: Double) -> UIImage {
+    let small = ambientDownsampled(maxDimension: maxDimension)
+    guard let input = CIImage(image: small) else { return small }
+    let cropExtent = input.extent
+    guard let filter = CIFilter(name: "CIGaussianBlur") else { return small }
+    // Clamp so the blur doesn't pull in transparent edges (dark halo).
+    filter.setValue(input.clampedToExtent(), forKey: kCIInputImageKey)
+    filter.setValue(blurRadius, forKey: kCIInputRadiusKey)
+    guard let output = filter.outputImage,
+          let cg = ambientBlurContext.createCGImage(output, from: cropExtent)
+    else { return small }
+    return UIImage(cgImage: cg)
   }
 }
 
@@ -89,7 +117,10 @@ struct AmbientCoverBackdrop: View {
             .scaledToFill()
             .frame(width: geo.size.width * 1.4, height: geo.size.height * 1.4)
             .position(x: geo.size.width / 2, y: geo.size.height * 0.42)
-            .blur(radius: 70, opaque: true)
+            // Patch 114: NO `.blur` here — the tiny image is already blurred
+            // off-main in AmbientBackdropCache, so first open compiles no
+            // render-time blur shader on the main thread (the audio-glitch
+            // fix). The bilinear upscale-to-fill keeps it soft.
             // Restrained: quiet/dark covers stay quiet (a dim cover → a dim
             // room is the intended behaviour, not a bug). Slight lift while
             // playing, settling when paused.
