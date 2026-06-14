@@ -44,6 +44,42 @@ class ArtistDetailVC: MultiSourceTableViewController {
   private var detailOperationsView: GenericDetailTableHeader?
   private let stickyHeader = DetailStickyHeaderView()
 
+  /// Patch 110 (3a): the Popular list is capped to the top
+  /// `popularCollapsedLimit` tracks (ranked by play count — `sortByPlayCount`
+  /// is already wired below) with a trailing "Show more" row that expands to
+  /// the full list. Ranking reflects device-local play history; when sparse it
+  /// falls back to the FRC's secondary track order.
+  private static let popularCollapsedLimit = 5
+  private var isPopularExpanded = false
+  private var popularTotalCount: Int {
+    songsFetchedResultsController.sections?[0].numberOfObjects ?? 0
+  }
+
+  private var popularRowsShown: Int {
+    isPopularExpanded ? popularTotalCount : min(popularTotalCount, Self.popularCollapsedLimit)
+  }
+
+  private var showsPopularShowMore: Bool {
+    !isPopularExpanded && popularTotalCount > Self.popularCollapsedLimit
+  }
+
+  private var popularReloadScheduled = false
+  /// Coalesce repeated FRC change events into a single Popular-section reload
+  /// (used while the list is capped — see `controller(_:didChange:)`).
+  private func schedulePopularReload() {
+    guard !popularReloadScheduled else { return }
+    popularReloadScheduled = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.popularReloadScheduled = false
+      guard self.tableView.numberOfSections > BodySection.popular.rawValue else { return }
+      self.tableView.reloadSections(
+        IndexSet(integer: BodySection.popular.rawValue),
+        with: .none
+      )
+    }
+  }
+
   init(account: Account, artist: Artist) {
     self.artist = artist
     super.init(style: .grouped, account: account)
@@ -113,11 +149,21 @@ class ArtistDetailVC: MultiSourceTableViewController {
     songsFetchedResultsController.fetch()
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.register(nibName: PlayableTableCell.typeName)
+    // Patch 110 (3b): the artist's albums render as a horizontal carousel
+    // (one row hosting AlbumCarouselTableCell) instead of vertical list rows.
+    tableView.register(
+      AlbumCarouselTableCell.self,
+      forCellReuseIdentifier: AlbumCarouselTableCell.reuseIdentifier
+    )
     tableView.sectionHeaderHeight = 0.0
     tableView.estimatedSectionHeaderHeight = 0.0
     tableView.sectionFooterHeight = 0.0
     tableView.estimatedSectionFooterHeight = 0.0
     tableView.backgroundColor = .backgroundColor
+    // Patch 111 (1): no row separators. The only divider is the subtle line
+    // between the top-level sections (Popular → Albums), drawn in the custom
+    // Albums header (viewForHeaderInSection).
+    tableView.separatorStyle = .none
 
     // cassette Patch 104 (Root 2): artwork is the first content of the
     // scroll. The table extends under the navigation bar (insets mirrored
@@ -125,10 +171,24 @@ class ArtistDetailVC: MultiSourceTableViewController {
     // scroll edge so back/overflow float over the artwork; the system
     // restores the standard bar surface once content scrolls under it.
     tableView.contentInsetAdjustmentBehavior = .never
+    // Patch 109: every appearance slot starts transparent so the bar never
+    // snaps to the opaque global standardAppearance the instant the user
+    // scrolls. DetailStickyHeaderSupport.updateAlpha then fades the bar
+    // background in lockstep with the title as the hero collapses.
     let transparentBar = UINavigationBarAppearance()
     transparentBar.configureWithTransparentBackground()
+    navigationItem.standardAppearance = transparentBar
+    navigationItem.compactAppearance = transparentBar
     navigationItem.scrollEdgeAppearance = transparentBar
     navigationItem.compactScrollEdgeAppearance = transparentBar
+    // cassette Patch 108: iOS 26 adds an always-on soft top scroll-edge effect
+    // (a dark gradient/scrim) over content that extends under the bar, which
+    // darkens the top of the artwork at rest. Hide it so the artwork is clean
+    // at rest; the opaque standardAppearance still supplies the solid bar
+    // surface once content scrolls under it.
+    if #available(iOS 26.0, *) {
+      tableView.topEdgeEffect.isHidden = true
+    }
 
     // cassette Patch 045: in-view search removed from artist detail.
     // Library category lists keep their search controllers; the
@@ -173,11 +233,10 @@ class ArtistDetailVC: MultiSourceTableViewController {
     containableAtIndexPathCallback = { indexPath in
       switch BodySection(rawValue: indexPath.section) {
       case .albums:
-        return self.albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
-          row: indexPath.row,
-          section: 0
-        ))
+        // Patch 110 (3b): albums are a single carousel row — no per-album swipe.
+        return nil
       case .popular:
+        guard indexPath.row < self.popularRowsShown else { return nil }
         return self.songsFetchedResultsController.getWrappedEntity(at: IndexPath(
           row: indexPath.row,
           section: 0
@@ -189,27 +248,11 @@ class ArtistDetailVC: MultiSourceTableViewController {
     playContextAtIndexPathCallback = { indexPath in
       switch BodySection(rawValue: indexPath.section) {
       case .albums:
-        let album = self.albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
-          row: indexPath.row,
-          section: 0
-        ))
-        Task { @MainActor in do {
-          try await album.fetch(
-            storage: self.appDelegate.storage,
-            librarySyncer: self.appDelegate.getMeta(self.account.info).librarySyncer,
-            playableDownloadManager: self.appDelegate.getMeta(self.account.info)
-              .playableDownloadManager
-          )
-        } catch {
-          // cassette Patch 040: tap-prefetch background sync.
-          self.appDelegate.eventLogger.report(
-            topic: "Album Sync",
-            error: error,
-            isBackground: true
-          )
-        }}
-        return PlayContext(containable: album)
+        // Patch 110 (3b): albums are a single carousel row — taps navigate via
+        // the carousel's onSelect, not a play context.
+        return nil
       case .popular:
+        guard indexPath.row < self.popularRowsShown else { return nil }
         let songIndexPath = IndexPath(row: indexPath.row, section: 0)
         return self.convertIndexPathToPlayContext(songIndexPath: songIndexPath)
       default:
@@ -219,28 +262,13 @@ class ArtistDetailVC: MultiSourceTableViewController {
     swipeCallback = { indexPath, completionHandler in
       switch BodySection(rawValue: indexPath.section) {
       case .albums:
-        let album = self.albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
-          row: indexPath.row,
-          section: 0
-        ))
-        Task { @MainActor in
-          do {
-            try await album.fetch(
-              storage: self.appDelegate.storage,
-              librarySyncer: self.appDelegate.getMeta(self.account.info).librarySyncer,
-              playableDownloadManager: self.appDelegate.getMeta(self.account.info)
-                .playableDownloadManager
-            )
-          } catch {
-            self.appDelegate.eventLogger.report(
-              topic: "Album Sync",
-              error: error,
-              isBackground: true
-            )
-          }
-          completionHandler(SwipeActionContext(containable: album))
-        }
+        // Patch 110 (3b): no swipe actions on the carousel row.
+        completionHandler(nil)
       case .popular:
+        guard indexPath.row < self.popularRowsShown else {
+          completionHandler(nil)
+          return
+        }
         let songIndexPath = IndexPath(row: indexPath.row, section: 0)
         let song = self.songsFetchedResultsController.getWrappedEntity(at: songIndexPath)
         let playContext = self.convertIndexPathToPlayContext(songIndexPath: songIndexPath)
@@ -270,6 +298,28 @@ class ArtistDetailVC: MultiSourceTableViewController {
     updateStickyHeaderAlpha()
   }
 
+  // resizeToFit defers any header re-measure that arrives mid-scroll (it would
+  // flash the collapsed title — see GenericDetailTableHeader.resizeToFit). Land
+  // the deferred size once the scroll settles.
+  // NOTE: no super call here — ArtistDetailVC's super chain goes through
+  // MultiSourceTableViewController → BasicTableViewController →
+  // KeyCommandTableViewController → UITableViewController, none of which
+  // implement scrollViewDidEnd*. The chain for AlbumDetailVC is different
+  // (it goes through BasicFetchedResultsTableViewController which does).
+  // Calling super from here would crash with "unrecognized selector".
+  override func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    detailOperationsView?.resizeToFit()
+  }
+
+  override func scrollViewDidEndDragging(
+    _ scrollView: UIScrollView,
+    willDecelerate decelerate: Bool
+  ) {
+    if !decelerate {
+      detailOperationsView?.resizeToFit()
+    }
+  }
+
   private func updateStickyHeaderAlpha() {
     DetailStickyHeaderSupport.updateAlpha(
       stickyHeader: stickyHeader,
@@ -295,6 +345,9 @@ class ArtistDetailVC: MultiSourceTableViewController {
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
+    // Restore the correct alpha when popping back to a scrolled screen —
+    // viewWillDisappear resets alpha to 0 for the push transition.
+    updateStickyHeaderAlpha()
     albumsFetchedResultsController?.delegate = self
     songsFetchedResultsController?.delegate = self
     Task { @MainActor in
@@ -343,12 +396,17 @@ class ArtistDetailVC: MultiSourceTableViewController {
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
     defer { albumToScrollTo = nil }
-    guard let albumToScrollTo = albumToScrollTo,
-          let indexPath = albumsFetchedResultsController.fetchResultsController
-          .indexPath(forObject: albumToScrollTo.managedObject)
+    // Patch 110 (3b): albums live in one carousel row — scroll that row into
+    // view (the per-album scroll target no longer maps to a table row).
+    guard albumToScrollTo != nil,
+          tableView.numberOfSections > BodySection.albums.rawValue,
+          tableView.numberOfRows(inSection: BodySection.albums.rawValue) > 0
     else { return }
-    let adjustedIndexPath = IndexPath(row: indexPath.row, section: BodySection.albums.rawValue)
-    tableView.scrollToRow(at: adjustedIndexPath, at: .top, animated: true)
+    tableView.scrollToRow(
+      at: IndexPath(row: 0, section: BodySection.albums.rawValue),
+      at: .top,
+      animated: true
+    )
   }
 
   func convertIndexPathToPlayContext(songIndexPath: IndexPath) -> PlayContext? {
@@ -389,15 +447,109 @@ class ArtistDetailVC: MultiSourceTableViewController {
     }
   }
 
+  // Patch 111 (1/2): custom section headers — leading at the shared content
+  // margin (16pt, matching rows and the album carousel) and the single kept
+  // divider (subtle hairline) between the top-level sections, drawn at the top
+  // of the Albums header.
+  override func tableView(
+    _ tableView: UITableView,
+    viewForHeaderInSection section: Int
+  )
+    -> UIView? {
+    switch BodySection(rawValue: section) {
+    case .popular:
+      guard popularTotalCount > 0 else { return nil }
+      return makeSectionHeaderView(title: "Popular", showTopDivider: false)
+    case .albums:
+      guard (albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0) > 0 else {
+        return nil
+      }
+      return makeSectionHeaderView(title: "Albums", showTopDivider: true)
+    default:
+      return nil
+    }
+  }
+
+  private func makeSectionHeaderView(title: String, showTopDivider: Bool) -> UIView {
+    let container = UIView()
+    container.backgroundColor = .clear
+    let label = UILabel()
+    label.text = title.uppercased()
+    label.font = UIFont.cassette(.caption)
+    label.textColor = CassetteTheme.UIColors.ink2
+    label.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(label)
+    NSLayoutConstraint.activate([
+      label.leadingAnchor.constraint(
+        equalTo: container.leadingAnchor,
+        constant: UIView.defaultMarginCellX
+      ),
+      label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+    ])
+    if showTopDivider {
+      let divider = UIView()
+      divider.backgroundColor = CassetteTheme.UIColors.ink4
+      divider.translatesAutoresizingMaskIntoConstraints = false
+      container.addSubview(divider)
+      NSLayoutConstraint.activate([
+        divider.topAnchor.constraint(equalTo: container.topAnchor),
+        divider.leadingAnchor.constraint(
+          equalTo: container.leadingAnchor,
+          constant: UIView.defaultMarginCellX
+        ),
+        divider.trailingAnchor.constraint(
+          equalTo: container.trailingAnchor,
+          constant: -UIView.defaultMarginCellX
+        ),
+        divider.heightAnchor.constraint(equalToConstant: 1.0 / max(traitCollection.displayScale, 1.0)),
+      ])
+    }
+    return container
+  }
+
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
     switch BodySection(rawValue: section) {
     case .albums:
-      return albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0
+      // Patch 110 (3b): a single row hosting the horizontal album carousel.
+      return (albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0) > 0 ? 1 : 0
     case .popular:
-      return songsFetchedResultsController.sections?[0].numberOfObjects ?? 0
+      return popularRowsShown + (showsPopularShowMore ? 1 : 0)
     default:
       return 0
     }
+  }
+
+  /// Patch 110 (3b): all of the artist's albums, in FRC order, for the carousel.
+  private func allArtistAlbums() -> [Album] {
+    let count = albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0
+    return (0 ..< count).compactMap { albumsFetchedResultsController.getWrappedEntity(at: $0) }
+  }
+
+  private var albumsReloadScheduled = false
+  /// Coalesce FRC album changes into a single reload of the carousel row.
+  private func scheduleAlbumsReload() {
+    guard !albumsReloadScheduled else { return }
+    albumsReloadScheduled = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.albumsReloadScheduled = false
+      guard self.tableView.numberOfSections > BodySection.albums.rawValue else { return }
+      self.tableView.reloadSections(IndexSet(integer: BodySection.albums.rawValue), with: .none)
+    }
+  }
+
+  /// Patch 110 (3a): centered "Show more" row that reveals the full Popular
+  /// list. Quiet ink2 styling — orange stays reserved for live state.
+  private func makePopularShowMoreCell() -> UITableViewCell {
+    let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+    var content = cell.defaultContentConfiguration()
+    content.text = "Show more"
+    content.textProperties.color = CassetteTheme.UIColors.ink2
+    content.textProperties.font = UIFont.cassette(.rowTitle)
+    content.textProperties.alignment = .center
+    cell.contentConfiguration = content
+    cell.backgroundColor = .clear
+    return cell
   }
 
   override func tableView(
@@ -407,14 +559,22 @@ class ArtistDetailVC: MultiSourceTableViewController {
     -> UITableViewCell {
     switch BodySection(rawValue: indexPath.section) {
     case .albums:
-      let cell: GenericTableCell = dequeueCell(for: tableView, at: indexPath)
-      let album = albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
-        row: indexPath.row,
-        section: 0
-      ))
-      cell.display(container: album, rootView: self)
+      let cell = tableView.dequeueReusableCell(
+        withIdentifier: AlbumCarouselTableCell.reuseIdentifier,
+        for: indexPath
+      ) as! AlbumCarouselTableCell
+      cell.configure(albums: allArtistAlbums()) { [weak self] album in
+        guard let self else { return }
+        self.navigationController?.pushViewController(
+          AppStoryboard.Main.segueToAlbumDetail(account: self.account, album: album),
+          animated: true
+        )
+      }
       return cell
     case .popular:
+      if showsPopularShowMore, indexPath.row == popularRowsShown {
+        return makePopularShowMoreCell()
+      }
       let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
       let song = songsFetchedResultsController.getWrappedEntity(at: IndexPath(
         row: indexPath.row,
@@ -451,8 +611,11 @@ class ArtistDetailVC: MultiSourceTableViewController {
     -> CGFloat {
     switch BodySection(rawValue: indexPath.section) {
     case .albums:
-      return GenericTableCell.rowHeight
+      return AlbumCarousel.shelfHeight
     case .popular:
+      if showsPopularShowMore, indexPath.row == popularRowsShown {
+        return 48.0
+      }
       return PlayableTableCell.rowHeight
     default:
       return 0.0
@@ -466,8 +629,11 @@ class ArtistDetailVC: MultiSourceTableViewController {
     -> CGFloat {
     switch BodySection(rawValue: indexPath.section) {
     case .albums:
-      return GenericTableCell.rowHeight
+      return AlbumCarousel.shelfHeight
     case .popular:
+      if showsPopularShowMore, indexPath.row == popularRowsShown {
+        return 48.0
+      }
       return PlayableTableCell.rowHeight
     default:
       return 0.0
@@ -477,14 +643,19 @@ class ArtistDetailVC: MultiSourceTableViewController {
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     switch BodySection(rawValue: indexPath.section) {
     case .albums:
-      let album = albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
-        row: indexPath.row,
-        section: 0
-      ))
-      navigationController?.pushViewController(
-        AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
-        animated: true
-      )
+      // Patch 110 (3b): the carousel cell handles album taps via its onSelect;
+      // the table row itself is not selectable.
+      break
+    case .popular:
+      // Patch 110 (3a): tap the trailing "Show more" row to reveal the full list.
+      if showsPopularShowMore, indexPath.row == popularRowsShown {
+        tableView.deselectRow(at: indexPath, animated: true)
+        isPopularExpanded = true
+        tableView.reloadSections(
+          IndexSet(integer: BodySection.popular.rawValue),
+          with: .fade
+        )
+      }
     default: break
     }
   }
@@ -503,8 +674,21 @@ class ArtistDetailVC: MultiSourceTableViewController {
     var section = 0
     switch controller {
     case albumsFetchedResultsController.fetchResultsController:
-      section = BodySection.albums.rawValue
+      // Patch 110 (3b): albums are one carousel row; the FRC's per-album
+      // indices no longer map to table rows. Coalesce to a section reload so
+      // the carousel rebuilds from the fresh album set.
+      scheduleAlbumsReload()
+      return
     case songsFetchedResultsController.fetchResultsController:
+      // Patch 110 (3a): while the Popular list is capped, the FRC's row
+      // indices (full list) no longer match the table's visible rows, so a
+      // granular change beyond the cap (e.g. a play-count re-sort) would
+      // desync. Coalesce to a whole-section reload while collapsed; forward
+      // granular changes only when expanded (1:1 with the FRC).
+      if !isPopularExpanded {
+        schedulePopularReload()
+        return
+      }
       section = BodySection.popular.rawValue
     default:
       return

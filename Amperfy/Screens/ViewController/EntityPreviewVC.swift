@@ -147,7 +147,14 @@ class EntityPreviewActionBuilder {
       elementHandlingActions.append(createAddToPlaylistAction())
     }
     // cassette Polish 2 (G4): Download removed from every context menu.
-    if entityContainer.playables.hasCachedItems {
+    // Patch 111: Delete Cache is a streaming/server-mode affordance. Gate it on
+    // the SAME Cassette server-mode concept the Albums shelf uses — server mode
+    // on == NOT CassetteLibraryFilterProvider.isOnDeviceOnly — not the upstream
+    // `isOnlineMode` (which is true whenever connected, so it leaked the action
+    // into the default on-device-only mode). hasCachedItems keeps it to tracks
+    // that are actually cached.
+    if !CassetteLibraryFilterProvider.shared.isOnDeviceOnly,
+       entityContainer.playables.hasCachedItems {
       elementHandlingActions.append(createDeleteCacheAction())
     }
     if isDeleteOnServer {

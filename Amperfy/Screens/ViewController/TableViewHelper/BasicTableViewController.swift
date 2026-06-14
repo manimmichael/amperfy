@@ -91,6 +91,17 @@ struct SwipeDisplaySettings {
        actionType == .addToPlaylist || actionType == .download || actionType == .favorite {
       return false
     }
+    // Patch 111: Delete Cache (removeFromCache) is a streaming/server-mode
+    // affordance, only meaningful when the row actually has cached files. Gate
+    // it on the Cassette server-mode concept (server mode on == NOT
+    // isOnDeviceOnly) — the same flag the Albums shelf uses — not the upstream
+    // online/offline flag. Hide it in the default on-device-only mode and when
+    // nothing is cached, so it can't appear from the swipe entry point either.
+    if actionType == .removeFromCache,
+       CassetteLibraryFilterProvider.shared.isOnDeviceOnly || !containable.playables
+       .hasCachedItems {
+      return false
+    }
     if !containable.isFavoritable, actionType == .favorite {
       return false
     }

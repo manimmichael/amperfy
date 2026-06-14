@@ -164,7 +164,7 @@ class GenericDetailTableHeader: UIView {
       x: 0,
       y: 0,
       width: configuration.rootView.view.bounds.size.width,
-      height: 100
+      height: 1000  // corrected in viewDidLayoutSubviews once nav bar geometry is available
     ))
     header.prepare(configuration: configuration)
     configuration.tableView.tableHeaderView = header
@@ -219,6 +219,12 @@ class GenericDetailTableHeader: UIView {
     didBuildHierarchy = true
 
     backgroundColor = .clear
+    // The header sits under the status/navigation bars at rest, so UIKit
+    // propagates that covered region into its safeAreaInsets; with the
+    // default insetsLayoutMarginsFromSafeArea the layoutMarginsGuide would
+    // add it ON TOP of the manual bar clearance from resizeToFit, doubling
+    // the gap above the artwork (and re-measuring it during scroll).
+    insetsLayoutMarginsFromSafeArea = false
     directionalLayoutMargins = NSDirectionalEdgeInsets(
       top: CassetteTheme.Spacing.md,
       leading: UIView.defaultMarginX,
@@ -307,43 +313,68 @@ class GenericDetailTableHeader: UIView {
       : 40.0
   }
 
-  /// Self-sizing replacement for the old fixed-height constant zoo. Sizes
-  /// the header to fit its content at the table's width, padding the top by
-  /// the root view's safe-area inset when the scroll extends under the bar.
+  /// Self-sizing replacement for the old fixed-height constant zoo. Sizes the
+  /// header as topInset + mainStackHeight + bottomInset so the margin and the
+  /// frame always land together — no transient constraint break, no
+  /// "Unable to simultaneously satisfy constraints" from Auto Layout.
   func resizeToFit() {
     guard let config else { return }
-    let width = config.tableView.bounds.width > 0
+    let tableWidth = config.tableView.bounds.width > 0
       ? config.tableView.bounds.width
       : config.rootView.view.bounds.width
-    guard width > 0 else { return }
+    guard tableWidth > 0 else { return }
 
+    // Determine the desired top clearance.
+    // For screens that extend under the nav bar the inset is the STATUS-BAR
+    // height (= nav bar's minY in window space) so art starts at the button
+    // line, not below it. Guard: if neither value is available yet (early
+    // viewDidLoad call before the window hierarchy is settled) return — the
+    // VC's viewDidLayoutSubviews will call us back with correct geometry.
+    let topInset: CGFloat
     if config.extendsUnderNavigationBar {
-      // Artwork is the first content: the scroll starts at y=0 under the
-      // floating bar, so the header itself supplies the bar clearance.
-      let desiredTop = config.rootView.view.safeAreaInsets.top + CassetteTheme.Spacing.sm
-      if directionalLayoutMargins.top != desiredTop {
-        directionalLayoutMargins.top = desiredTop
-      }
+      let navBarMinY = config.rootView.navigationController?.navigationBar.frame.minY ?? 0
+      let safeTop = config.rootView.view.safeAreaInsets.top
+      guard navBarMinY > 0 || safeTop > 0 else { return }
+      let statusBarH = navBarMinY > 0 ? navBarMinY : safeTop
+      topInset = statusBarH + CassetteTheme.Spacing.sm
+    } else {
+      topInset = directionalLayoutMargins.top
     }
+    let bottomInset = directionalLayoutMargins.bottom
 
-    let target = systemLayoutSizeFitting(
-      CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+    // Measure the main content stack independently of the header's current
+    // frame and margins so topInset + stackHeight + bottomInset are computed
+    // together. Setting margins.top on a small frame first, then calling
+    // systemLayoutSizeFitting on the whole view, creates a window where the
+    // layout engine sees e.g. margins.top=70 inside a frame.height=100 — the
+    // artwork's 240×240 + labels are crushed to ~14pt and a constraint breaks.
+    let hInset = directionalLayoutMargins.leading + directionalLayoutMargins.trailing
+    let innerWidth = max(0, tableWidth - hInset)
+    let stackH = mainStack.systemLayoutSizeFitting(
+      CGSize(width: innerWidth, height: UIView.layoutFittingCompressedSize.height),
       withHorizontalFittingPriority: .required,
       verticalFittingPriority: .fittingSizeLevel
-    )
-    let newHeight = ceil(target.height)
-    guard newHeight != frame.height || width != lastLayoutWidth else { return }
-    lastLayoutWidth = width
-    frame = CGRect(x: 0, y: 0, width: width, height: newHeight)
-    // Re-assigning makes the table view pick up the new frame.
-    config.tableView.tableHeaderView = self
-  }
+    ).height
+    let newHeight = ceil(topInset + stackH + bottomInset)
 
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    // Track width changes (rotation, split view) without per-VC hooks; the
-    // guard inside resizeToFit prevents layout recursion.
-    resizeToFit()
+    // Apply margin and frame together — they're always in sync from here on.
+    if directionalLayoutMargins.top != topInset {
+      directionalLayoutMargins.top = topInset
+    }
+
+    guard newHeight != frame.height || tableWidth != lastLayoutWidth else { return }
+    // Defer mid-scroll re-measures: re-assigning tableHeaderView while dragging
+    // mutates frame.maxY mid-flight, giving updateAlpha a spurious progress
+    // spike → title flashes in then drops. The scroll-end hooks in both detail
+    // VCs land the deferred size once the scroll settles.
+    if config.tableView.isDragging || config.tableView.isDecelerating { return }
+
+    lastLayoutWidth = tableWidth
+    UIView.performWithoutAnimation {
+      frame = CGRect(x: 0, y: 0, width: tableWidth, height: newHeight)
+      // Re-assigning makes the table view pick up the new frame.
+      config.tableView.tableHeaderView = self
+    }
   }
 
   func refresh() {

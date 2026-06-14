@@ -110,10 +110,17 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       context: appDelegate.storage.main.context
     ).fetchAllSubsonicTrackIds()
 
+    // Patch 110 (1): section the track list by disc. The track FRC sorts by
+    // `disk` first, so grouping turns each distinct disc value into its own
+    // section (the flag's keypath is sortDescriptors[0] == disk). Single-disc
+    // albums produce one section and render flat exactly as before; multi-disc
+    // albums get "Disc N" headers (see viewForHeaderInSection). Playback is
+    // unaffected: getContextSongs still returns one continuous queue ordered
+    // disc 1 → disc 2, so grouping is display-only.
     fetchedResultsController = AlbumSongsFetchedResultsController(
       forAlbum: album,
       coreDataCompanion: appDelegate.storage.main,
-      isGroupedInAlphabeticSections: false
+      isGroupedInAlphabeticSections: true
     )
     singleFetchedResultsController = fetchedResultsController
     singleFetchedResultsController?.delegate = self
@@ -131,6 +138,9 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     tableView.sectionHeaderHeight = 0.0
     tableView.estimatedSectionHeaderHeight = 0.0
     tableView.backgroundColor = .backgroundColor
+    // Patch 111 (1): no row separators — the track list reads as a clean block.
+    // Disc grouping is shown by the "Disc N" labels alone (no dividers).
+    tableView.separatorStyle = .none
 
     // cassette Patch 104 (Root 2): artwork is the first content of the
     // scroll. The table extends under the navigation bar (insets mirrored
@@ -138,10 +148,24 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     // scroll edge so back/overflow float over the artwork; the system
     // restores the standard bar surface once content scrolls under it.
     tableView.contentInsetAdjustmentBehavior = .never
+    // Patch 109: every appearance slot starts transparent so the bar never
+    // snaps to the opaque global standardAppearance the instant the user
+    // scrolls. DetailStickyHeaderSupport.updateAlpha then fades the bar
+    // background in lockstep with the title as the hero collapses.
     let transparentBar = UINavigationBarAppearance()
     transparentBar.configureWithTransparentBackground()
+    navigationItem.standardAppearance = transparentBar
+    navigationItem.compactAppearance = transparentBar
     navigationItem.scrollEdgeAppearance = transparentBar
     navigationItem.compactScrollEdgeAppearance = transparentBar
+    // cassette Patch 108: iOS 26 adds an always-on soft top scroll-edge effect
+    // (a dark gradient/scrim) over content that extends under the bar, which
+    // darkens the top of the artwork at rest. Hide it so the artwork is clean
+    // at rest; the opaque standardAppearance still supplies the solid bar
+    // surface once content scrolls under it.
+    if #available(iOS 26.0, *) {
+      tableView.topEdgeEffect.isHidden = true
+    }
 
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
       infoCB: { "\(self.album.songCount) Song\(self.album.songCount == 1 ? "" : "s")" },
@@ -216,6 +240,24 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     updateStickyHeaderAlpha()
   }
 
+  // resizeToFit defers any header re-measure that arrives mid-scroll (it would
+  // flash the collapsed title — see GenericDetailTableHeader.resizeToFit). Land
+  // the deferred size once the scroll settles.
+  override func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    super.scrollViewDidEndDecelerating(scrollView)
+    detailOperationsView?.resizeToFit()
+  }
+
+  override func scrollViewDidEndDragging(
+    _ scrollView: UIScrollView,
+    willDecelerate decelerate: Bool
+  ) {
+    super.scrollViewDidEndDragging(scrollView, willDecelerate: decelerate)
+    if !decelerate {
+      detailOperationsView?.resizeToFit()
+    }
+  }
+
   private func updateStickyHeaderAlpha() {
     DetailStickyHeaderSupport.updateAlpha(
       stickyHeader: stickyHeader,
@@ -236,6 +278,9 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
+    // Restore the correct alpha when popping back to a scrolled screen —
+    // viewWillDisappear resets alpha to 0 for the push transition.
+    updateStickyHeaderAlpha()
 
     Task { @MainActor in
       do {
@@ -319,4 +364,54 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   // alongside the search controller. The base no-op
   // `BasicTableViewController.updateSearchResults` runs harmlessly
   // when scrolled-into-view callbacks fire.
+
+  // MARK: - Disc section headers (Patch 110, item 1)
+
+  /// True only when the album genuinely spans more than one disc. Single-disc
+  /// albums keep one section and render flat with no header.
+  private var isMultiDisc: Bool {
+    (fetchedResultsController?.numberOfSections ?? 0) > 1
+  }
+
+  override func tableView(
+    _ tableView: UITableView,
+    heightForHeaderInSection section: Int
+  )
+    -> CGFloat {
+    isMultiDisc ? 34.0 : 0.0
+  }
+
+  override func tableView(
+    _ tableView: UITableView,
+    viewForHeaderInSection section: Int
+  )
+    -> UIView? {
+    guard isMultiDisc else { return nil }
+    // The FRC sections by `disk`, so the section name is the raw disc value
+    // (e.g. "1", "2") — display it as-is under a "Disc" label.
+    let discValue = fetchedResultsController?.sections?.element(at: section)?.name ?? "\(section + 1)"
+    return makeDiscHeaderView(disc: discValue)
+  }
+
+  /// Patch 111 (1/2): a quiet "Disc N" label only — no hairline/divider. Leads
+  /// at the shared content margin (16pt) so it lines up with the track rows.
+  /// 12pt caption role (the readable floor — not microscopic).
+  private func makeDiscHeaderView(disc: String) -> UIView {
+    let container = UIView()
+    container.backgroundColor = .clear
+    let label = UILabel()
+    label.text = "Disc \(disc)"
+    label.font = UIFont.cassette(.caption)
+    label.textColor = CassetteTheme.UIColors.ink2
+    label.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(label)
+    NSLayoutConstraint.activate([
+      label.leadingAnchor.constraint(
+        equalTo: container.leadingAnchor,
+        constant: UIView.defaultMarginCellX
+      ),
+      label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+    ])
+    return container
+  }
 }

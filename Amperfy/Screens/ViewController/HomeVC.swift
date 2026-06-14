@@ -190,52 +190,38 @@ final class HomeVC: UICollectionViewController {
   private static func sectionLayout(for section: HomeSection?) -> NSCollectionLayoutSection? {
     guard let section else { return nil }
 
+    // cassette Patch 025 / Polish 2 (A2): top inset is 0 (the SectionHeaderView
+    // owns the vertical rhythm) and supplementariesFollowContentInsets is false
+    // so the header's own 16pt leading lines up with the first card column.
+    let contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 24, trailing: 16)
+
+    // Patch 110 (3b): album/artist shelves use the shared carousel layout —
+    // the same component the artist detail embeds (one carousel, two callers).
+    guard section == .resume else {
+      return AlbumCarousel.makeShelfSection(
+        itemWidth: itemWidth,
+        estimatedHeight: shelfEstimatedHeight,
+        contentInsets: contentInsets,
+        includeHeader: true
+      )
+    }
+
+    // Resume: a single full-width glass card (no orthogonal scrolling).
     let itemSize = NSCollectionLayoutSize(
       widthDimension: .fractionalWidth(1.0),
       heightDimension: .fractionalHeight(1.0)
     )
     let item = NSCollectionLayoutItem(layoutSize: itemSize)
-
-    let groupSize: NSCollectionLayoutSize
-    switch section {
-    case .resume:
-      // Single full-width glass card.
-      groupSize = NSCollectionLayoutSize(
-        widthDimension: .fractionalWidth(1.0),
-        heightDimension: .absolute(ResumeCardCell.cardHeight)
-      )
-    default:
-      groupSize = NSCollectionLayoutSize(
-        widthDimension: .absolute(itemWidth),
-        heightDimension: .estimated(shelfEstimatedHeight)
-      )
-    }
+    let groupSize = NSCollectionLayoutSize(
+      widthDimension: .fractionalWidth(1.0),
+      heightDimension: .absolute(ResumeCardCell.cardHeight)
+    )
     let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
 
     let sectionLayout = NSCollectionLayoutSection(group: group)
-    if section != .resume {
-      sectionLayout.orthogonalScrollingBehavior = .continuous
-      sectionLayout.interGroupSpacing = 12
-    }
-    // cassette Patch 025: drop the section top inset — vertical
-    // rhythm above the carousel now comes from `SectionHeaderView`'s
-    // own internal padding (16pt above title, 8pt below) so we
-    // don't double-count the gap.
-    sectionLayout.contentInsets = NSDirectionalEdgeInsets(
-      top: 0,
-      leading: 16,
-      bottom: 24,
-      trailing: 16
-    )
-    // cassette Polish 2 (A2): don't let the section's 16pt content inset
-    // also indent the shelf header. Otherwise the header is inset 16 AND
-    // its title label adds its own 16pt leading (= 32pt), pushing "Recent"/
-    // "Albums" right of the first card (which starts at 16). With this the
-    // header spans full width and the label's 16pt leading lines up exactly
-    // with the card column.
+    sectionLayout.contentInsets = contentInsets
     sectionLayout.supplementariesFollowContentInsets = false
 
-    // Header
     let headerSize = NSCollectionLayoutSize(
       widthDimension: .fractionalWidth(1.0),
       heightDimension: .estimated(44)
@@ -298,9 +284,24 @@ final class HomeVC: UICollectionViewController {
         cell.display(container: containable)
         cell.onPlayTapped = { [weak self] in
           guard let self else { return }
-          appDelegate.player.play(
-            context: PlayContext(containable: containable)
-          )
+          // Patch 110 (2b): resume the persisted queue at its last position
+          // instead of restarting the container from track 0. The player
+          // restores its queue + musicIndex on launch; play() resumes that
+          // current track and we seek it to its saved playProgress (the
+          // backend defers the seek until the item is ready). The seek is done
+          // explicitly here so ONLY the Resume card resumes mid-track — the
+          // global isPlayerSongPlaybackResumeEnabled setting is left untouched.
+          // Falls back to playing the container when nothing is queued to
+          // resume.
+          let player = appDelegate.player
+          if let resumeTrack = player.currentMusicItem {
+            player.play()
+            if resumeTrack.playProgress > 0 {
+              player.seek(toSecond: Double(resumeTrack.playProgress))
+            }
+          } else {
+            player.play(context: PlayContext(containable: containable))
+          }
         }
         return cell
       }

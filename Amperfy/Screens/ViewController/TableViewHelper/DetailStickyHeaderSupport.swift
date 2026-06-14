@@ -58,14 +58,42 @@ enum DetailStickyHeaderSupport {
       return
     }
 
-    let heroBottomY = scrollView.convert(
-      CGPoint(x: 0, y: tableHeaderView.frame.maxY),
-      to: viewController.view
-    ).y
+    // Patch 108: the detail VCs are UITableViewController subclasses, so
+    // `viewController.view === scrollView` and the old
+    // `scrollView.convert(_, to: viewController.view)` was an identity
+    // transform — heroBottomY never tracked the scroll and the title never
+    // faded in. The hero is the table header (content origin y == 0) and the
+    // table view fills the screen from the top, so the hero's bottom edge in
+    // screen space is simply maxY minus the current content offset.
+    let heroBottomY = tableHeaderView.frame.maxY - scrollView.contentOffset.y
     let barBottomY = viewController.view.safeAreaInsets.top
-    // Title fades in over the last 20pt of the hero sliding under the bar.
-    let progress = max(0, min(1, (barBottomY + 20 - heroBottomY) / 20))
+    // Patch 108: start later + gentler. The title stays absent until the hero
+    // is essentially under the bar, then cross-fades in over `fadeDistance` pt
+    // of scroll (was a ~20pt near-snap). progress is monotonic in
+    // -heroBottomY, so once it reaches 1 it stays 1 for the rest of the scroll.
+    let fadeDistance: CGFloat = 100
+    let progress = max(0, min(1, (barBottomY + fadeDistance - heroBottomY) / fadeDistance))
     stickyHeader.alpha = progress
+    // Patch 109: fade the bar background in lockstep with the title. Without
+    // this UIKit snaps the opaque standardAppearance in the instant the user
+    // scrolls (offset > 0), covering the still-visible artwork. The detail VCs
+    // keep every appearance slot transparent at rest; here we paint a flat bg
+    // whose alpha rides `progress`, so the bar surface and the title arrive
+    // together only once the hero has slid under the bar. Reassigning a nav-bar
+    // appearance forces a re-render, so skip it outside the fade window where
+    // the alpha has already settled at 0 or 1.
+    let item = viewController.navigationItem
+    let currentBarAlpha = item.standardAppearance?.backgroundColor?.cgColor.alpha ?? 0
+    if abs(currentBarAlpha - progress) > 0.01 {
+      let barAppearance = UINavigationBarAppearance()
+      barAppearance.configureWithTransparentBackground()
+      barAppearance.backgroundColor = CassetteTheme.UIColors.bg.withAlphaComponent(progress)
+      barAppearance.shadowColor = CassetteTheme.UIColors.ink4.withAlphaComponent(progress)
+      item.standardAppearance = barAppearance
+      item.scrollEdgeAppearance = barAppearance
+      item.compactAppearance = barAppearance
+      item.compactScrollEdgeAppearance = barAppearance
+    }
     // Reveal the bar-level play action once the hero's own play CTA has
     // scrolled out from under the bar (midpoint of the title fade).
     collapsedPlayItem?.isHidden = progress < 0.5

@@ -87,6 +87,15 @@ open class EntityImageView: UIView {
     layer.masksToBounds = true
     self.view.backgroundColor = .clear
     self.view.layoutMargins = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+    // cassette Patch 107: the inner nib view's xib pins the artwork with a
+    // required `top >= topMargin`. With the default
+    // insetsLayoutMarginsFromSafeArea the topMargin inflates to
+    // safeAreaInsets.top whenever this view sits under a bar (the
+    // extendsUnderNavigationBar detail header), collapsing the artwork to
+    // ~2×(radius − safeAreaTop) at rest and defeating the @999 edge-fill.
+    // Zeroing it mirrors the header fix; it is a no-op for row/list thumbnails
+    // (no safe-area overlap), so only the under-bar header case changes.
+    self.view.insetsLayoutMarginsFromSafeArea = false
     quadImages[0].layer.maskedCorners = [
       .layerMinXMinYCorner,
       .layerMaxXMinYCorner,

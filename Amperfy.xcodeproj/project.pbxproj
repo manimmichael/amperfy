@@ -513,6 +513,7 @@
 		50DEEE0A265E392C0073FF20 /* IndexesVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DEEE09265E392C0073FF20 /* IndexesVC.swift */; };
 		50DEEE0C265E3F9D0073FF20 /* DirectoriesVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DEEE0B265E3F9D0073FF20 /* DirectoriesVC.swift */; };
 		50DF1E5628DDE3FA00F3EA00 /* AlbumCollectionCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DF1E5428DDE3FA00F3EA00 /* AlbumCollectionCell.swift */; };
+		CA1100AC0BABE0000000BEEF /* AlbumCarousel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA1100AC0BABE0000000FEED /* AlbumCarousel.swift */; };
 		50DF1E5A28DDECEA00F3EA00 /* AlbumCollectionCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = 50DF1E5928DDECEA00F3EA00 /* AlbumCollectionCell.xib */; };
 		50E1D3982B8A82BB0001A572 /* KeyCommandTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E1D3972B8A82BA0001A572 /* KeyCommandTableViewController.swift */; };
 		50E1D39A2B8BEA540001A572 /* SplitVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E1D3992B8BEA540001A572 /* SplitVC.swift */; };
@@ -1119,6 +1120,7 @@
 		50DEEE15265ED5790073FF20 /* MusicFolderMO+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MusicFolderMO+CoreDataProperties.swift"; sourceTree = "<group>"; };
 		50DEEE1A265ED65B0073FF20 /* MusicFolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicFolder.swift; sourceTree = "<group>"; };
 		50DF1E5428DDE3FA00F3EA00 /* AlbumCollectionCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumCollectionCell.swift; sourceTree = "<group>"; };
+		CA1100AC0BABE0000000FEED /* AlbumCarousel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumCarousel.swift; sourceTree = "<group>"; };
 		50DF1E5928DDECEA00F3EA00 /* AlbumCollectionCell.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = AlbumCollectionCell.xib; sourceTree = "<group>"; };
 		50DF56C727C7753A00F106BA /* Amperfy v21.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v21.xcdatamodel"; sourceTree = "<group>"; };
 		50E15407261311590021F47D /* Amperfy v6.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v6.xcdatamodel"; sourceTree = "<group>"; };
@@ -1355,6 +1357,7 @@
 				5005938A28E2D4FB008C8DF6 /* CommonCollectionSectionHeader.swift */,
 				50DF1E5928DDECEA00F3EA00 /* AlbumCollectionCell.xib */,
 				50DF1E5428DDE3FA00F3EA00 /* AlbumCollectionCell.swift */,
+				CA1100AC0BABE0000000FEED /* AlbumCarousel.swift */,
 				8D7D8806CBF78E2B38817681 /* ArtistCircleCollectionCell.swift */,
 				CA55E0E1000000080000CAFE /* ResumeCardCell.swift */,
 			);
@@ -2617,6 +2620,7 @@
 				50E936D92F0FF9F200C1C504 /* AmperfyAppShortcuts.swift in Sources */,
 				50CFB59A28D5009200A47D44 /* ArtworkDownloadSettingsView.swift in Sources */,
 				50DF1E5628DDE3FA00F3EA00 /* AlbumCollectionCell.swift in Sources */,
+				CA1100AC0BABE0000000BEEF /* AlbumCarousel.swift in Sources */,
 				8DE488341404A4275A1C3020 /* ArtistCircleCollectionCell.swift in Sources */,
 				CA55E0E1000000180000CAFE /* ResumeCardCell.swift in Sources */,
 				502B98ED2D03A02D000FE187 /* PlaylistEditVC.swift in Sources */,

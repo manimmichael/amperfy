@@ -84,9 +84,22 @@ class AlbumCollectionCell: BasicCollectionCell {
     )
   }
 
+  /// Patch 110 (3b): standalone use (e.g. AlbumCarouselTableCell) with a fixed
+  /// item width and no hosting UICollectionViewController. The artwork is sized
+  /// from `itemWidth`, so no rootView/flow-layout callback is needed.
+  func display(container: PlayableContainable, itemWidth: CGFloat) {
+    self.itemWidth = itemWidth
+    rootFlowLayout = nil
+    apply(
+      container: container,
+      rootView: nil,
+      initialIndexPath: IndexPath(item: 0, section: 0)
+    )
+  }
+
   private func apply(
     container: PlayableContainable,
-    rootView: UICollectionViewController,
+    rootView: UICollectionViewController?,
     initialIndexPath: IndexPath
   ) {
     self.container = container
@@ -129,6 +142,9 @@ class AlbumCollectionCell: BasicCollectionCell {
   override func layoutSubviews() {
     if let indexPath = rootView?.collectionView.indexPath(for: self) {
       updateArtworkImageConstraint(indexPath: indexPath)
+    } else if itemWidth != nil {
+      // Standalone (no hosting collection-view controller): width is fixed.
+      updateArtworkImageConstraint(indexPath: IndexPath(item: 0, section: 0))
     }
     super.layoutSubviews()
   }
@@ -172,8 +188,7 @@ class AlbumCollectionCell: BasicCollectionCell {
   }
 
   func updateArtworkImageConstraint(indexPath: IndexPath) {
-    guard let rootView else { return }
-    if let rootFlowLayout = rootFlowLayout,
+    if let rootView, let rootFlowLayout = rootFlowLayout,
        let itemSize = rootFlowLayout.collectionView?(
          rootView.collectionView,
          layout: rootView.collectionView.collectionViewLayout,
