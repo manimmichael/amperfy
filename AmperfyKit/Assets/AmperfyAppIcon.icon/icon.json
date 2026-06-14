@@ -6,26 +6,32 @@
     {
       "layers" : [
         {
-          "glass-specializations" : [
-            {
-              "value" : false
-            },
-            {
-              "idiom" : "square",
-              "value" : false
-            }
-          ],
+          "fill" : "none",
+          "glass" : false,
           "hidden" : false,
-          "image-name" : "Unknown.jpg",
-          "name" : "Unknown",
+          "image-name" : "Gemini_Generated_Image_ql2sthql2sthql2s.png",
+          "name" : "Gemini_Generated_Image_ql2sthql2sthql2s",
           "position" : {
-            "scale" : 1.25,
+            "scale" : 1.64,
             "translation-in-points" : [
               0,
-              1.1368683772161603e-13
+              0
             ]
           }
         }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+
       ],
       "shadow" : {
         "kind" : "neutral",

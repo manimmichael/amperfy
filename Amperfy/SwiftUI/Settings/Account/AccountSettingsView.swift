@@ -70,48 +70,9 @@ struct AccountSettingsView: View {
   }
 
   private func logout(accountInfo: AccountInfo) {
-    appDelegate.closeAllButActiveMainTabs()
-    if appDelegate.storage.settings.accounts.allAccounts.count <= 1 {
-      appDelegate.stopForInit()
-    }
-
-    let meta = appDelegate.getMeta(accountInfo)
-    meta.stopManager()
-    appDelegate.resetMeta(accountInfo)
-
-    // delete cached files
-    CacheFileManager.shared.deleteAccountCache(accountInfo: accountInfo)
-    // reset login credentials -> at new start the login view is presented to auth and resync library
-    appDelegate.storage.settings.accounts.logout(accountInfo)
-    appDelegate.notificationHandler.post(name: .accountDeleted, object: nil, userInfo: nil)
-    appDelegate.notificationHandler.post(name: .accountActiveChanged, object: nil, userInfo: nil)
-
-    // reset quick actions
-    appDelegate.quickActionsManager.configureQuickActions()
-    appDelegate.configureMainMenu()
-
-    appDelegate.storage.settings.user.isOfflineMode = false
-    let account = appDelegate.storage.main.library.getAccount(info: accountInfo)
-    appDelegate.player.logout(account: account)
-    if let newActiveAccountInfo = appDelegate.storage.settings.accounts.active {
-      let newActiveAccount = appDelegate.storage.main.library.getAccount(info: newActiveAccountInfo)
-      appDelegate.closeAllButActiveMainTabs()
-      // cassette Patch 052 (Phase G): see setThemePreference rationale.
-      appDelegate.setAppTheme(color: CassetteTheme.UIColors.ink)
-      appDelegate.applyAppThemeToAlreadyLoadedViews()
-      guard let mainScene = AppDelegate.mainSceneDelegate else { return }
-      mainScene
-        .replaceMainRootViewController(
-          vc: AppStoryboard.Main
-            .segueToMainWindow(account: newActiveAccount)
-        )
-    } else {
-      // No other account: Behave like initial App start
-      // force resync after login
-      appDelegate.storage.settings.app.isLibrarySynced = false
-      let loginVC = AppStoryboard.Main.segueToLogin()
-      AppDelegate.mainSceneDelegate?.replaceMainRootViewController(vc: loginVC)
-    }
+    // Patch 111 (5): teardown extracted to AppDelegate.logoutAccount so the
+    // profile menu's "Log Out" reuses the exact same flow.
+    appDelegate.logoutAccount(accountInfo)
   }
 
   var body: some View {

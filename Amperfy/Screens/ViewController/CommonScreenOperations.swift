@@ -75,13 +75,15 @@ extension UIViewController {
 
     for accountInfo in appDelegate.storage.settings.accounts.allAccounts {
       let isActiveAccount = (accountInfo == appDelegate.storage.settings.accounts.active)
+      // Patch 111 (5): show only account-based identity — never the raw
+      // Subsonic host:port (the ownership model keeps that plumbing hidden).
+      // The friendliest name the app actually holds is the account's username;
+      // no cassette.digital email/display-name is persisted on device. The old
+      // `subtitle: displayServerUrl` ("…MacBook-Pro.local:4533") is dropped.
       let action = UIAction(
         title: appDelegate.storage.settings.accounts.getSetting(accountInfo).read
           .loginCredentials?
-          .username ?? "Unknown",
-        subtitle: appDelegate.storage.settings.accounts.getSetting(accountInfo).read
-          .loginCredentials?
-          .displayServerUrl ?? "",
+          .username ?? "Account",
         image: .userCircle(withConfiguration: UIImage.SymbolConfiguration(
           pointSize: 30,
           weight: .regular
@@ -122,7 +124,22 @@ extension UIViewController {
         #endif
       }
     )
-    let settingsMenu = UIMenu(options: [.displayInline], children: [openAddAccount, openSettings])
+    // Patch 111 (5): "Log Out" for the active account, reusing the shared
+    // teardown (AppDelegate.logoutAccount) with a confirmation.
+    var settingsChildren: [UIMenuElement] = [openAddAccount]
+    if let activeAccountInfo = appDelegate.storage.settings.accounts.active {
+      let logoutAction = UIAction(
+        title: "Log Out",
+        image: UIImage(systemName: "rectangle.portrait.and.arrow.right"),
+        attributes: .destructive,
+        handler: { [weak self] _ in
+          self?.confirmLogout(accountInfo: activeAccountInfo)
+        }
+      )
+      settingsChildren.append(logoutAction)
+    }
+    settingsChildren.append(openSettings)
+    let settingsMenu = UIMenu(options: [.displayInline], children: settingsChildren)
     accountActions.append(settingsMenu)
 
     return UIMenu(
@@ -131,6 +148,22 @@ extension UIViewController {
       options: [.displayInline],
       children: accountActions
     )
+  }
+
+  /// Patch 111 (5): confirm before the destructive account logout.
+  private func confirmLogout(accountInfo: AccountInfo) {
+    let username = appDelegate.storage.settings.accounts.getSetting(accountInfo).read
+      .loginCredentials?.username ?? "this account"
+    let alert = UIAlertController(
+      title: "Log Out",
+      message: "Log out of \(username)? Downloaded files for this account will be removed from this device.",
+      preferredStyle: .alert
+    )
+    alert.addAction(UIAlertAction(title: "Log Out", style: .destructive, handler: { _ in
+      self.appDelegate.logoutAccount(accountInfo)
+    }))
+    alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+    present(alert, animated: true)
   }
 
   public func setupUserNavButton(

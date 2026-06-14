@@ -54,6 +54,47 @@ extension AppDelegate {
     }
   }
 
+  /// Patch 111 (5): full account teardown, extracted from AccountSettingsView
+  /// so the profile menu's "Log Out" can reuse it. Stops the account's manager,
+  /// deletes its cache, drops credentials, then either switches to the next
+  /// account or returns to the login screen.
+  public func logoutAccount(_ accountInfo: AccountInfo) {
+    closeAllButActiveMainTabs()
+    if storage.settings.accounts.allAccounts.count <= 1 {
+      stopForInit()
+    }
+
+    let meta = getMeta(accountInfo)
+    meta.stopManager()
+    resetMeta(accountInfo)
+
+    CacheFileManager.shared.deleteAccountCache(accountInfo: accountInfo)
+    storage.settings.accounts.logout(accountInfo)
+    notificationHandler.post(name: .accountDeleted, object: nil, userInfo: nil)
+    notificationHandler.post(name: .accountActiveChanged, object: nil, userInfo: nil)
+
+    quickActionsManager.configureQuickActions()
+    configureMainMenu()
+
+    storage.settings.user.isOfflineMode = false
+    let account = storage.main.library.getAccount(info: accountInfo)
+    player.logout(account: account)
+    if let newActiveAccountInfo = storage.settings.accounts.active {
+      let newActiveAccount = storage.main.library.getAccount(info: newActiveAccountInfo)
+      closeAllButActiveMainTabs()
+      setAppTheme(color: CassetteTheme.UIColors.ink)
+      applyAppThemeToAlreadyLoadedViews()
+      guard let mainScene = AppDelegate.mainSceneDelegate else { return }
+      mainScene.replaceMainRootViewController(
+        vc: AppStoryboard.Main.segueToMainWindow(account: newActiveAccount)
+      )
+    } else {
+      storage.settings.app.isLibrarySynced = false
+      let loginVC = AppStoryboard.Main.segueToLogin()
+      AppDelegate.mainSceneDelegate?.replaceMainRootViewController(vc: loginVC)
+    }
+  }
+
   private func terminateScene(_ scene: UIScene) {
     UIApplication.shared.requestSceneSessionDestruction(
       scene.session,
