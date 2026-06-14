@@ -111,7 +111,14 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
       repeatMode: playerStatus.repeatMode,
       isShuffle: playerStatus.isShuffle
     )
-    playable.countPlayed()
+    // Patch 113 (step 3a): defer the play-count write off the synchronous skip
+    // path. countPlayed mutates lastTimePlayed/playCount on the main Core Data
+    // context, which cascades NSFetchedResultsController reloads (Home
+    // "Recent", ArtistDetail "Popular", library lists) — that must not block
+    // the tap. Counting a beat later (next main-actor turn) is fine: the write
+    // and the resulting shelf updates still happen, just not inline with the
+    // skip. Stays on the main context (no cross-context races).
+    Task { @MainActor in playable.countPlayed() }
     backendAudioPlayer.requestToPlay(
       playable: playable,
       playbackRate: playerStatus.playbackRate,
