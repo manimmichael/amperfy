@@ -252,6 +252,11 @@ class MiniPlayerView: UIView {
   @IBAction
   func previousButtonPushed(_ sender: Any) {
     playerHandler?.previousButtonPushed()
+    // Patch 113: optimistic label/cover update — the queue pointer advances
+    // synchronously, so refresh from the new currently-playing item now rather
+    // than waiting for the (async) didStartPlaying callback. Cover loads via
+    // LibraryEntityImage (cache hit / placeholder + async swap; never blocks).
+    refreshPlayer()
   }
 
   fileprivate lazy var nextButton: UIButton = {
@@ -266,6 +271,8 @@ class MiniPlayerView: UIView {
   @IBAction
   func nextButtonPushed(_ sender: Any) {
     playerHandler?.nextButtonPushed()
+    // Patch 113: optimistic label/cover update (see previousButtonPushed).
+    refreshPlayer()
   }
 
   fileprivate lazy var repeatButton: UIButton = {
