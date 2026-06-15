@@ -44,6 +44,22 @@ struct HomeItem: Hashable, @unchecked Sendable {
   }
 }
 
+// MARK: - ShelfScore
+
+/// cassette Home Shelves v1 foundation. Read-time play signals aggregated for
+/// a container (album or artist) from a bounded sample of its songs. The
+/// per-song `playCount` / `lastTimePlayed` are maintained on the play path;
+/// album/artist counts are not, so we derive them here with no new writes.
+///
+/// Structured for reuse by the v2 themed rows: "all-time favorites" is
+/// `playCount`, "recent favorites" / "this time last year" layer a windowed
+/// `ScrobbleEntryMO` query on top of the same shape.
+struct ShelfScore {
+  var lastPlayed: Date? // max song.lastTimePlayed → recency
+  var playCount: Int // sum song.playCount → affinity
+  var newestAdded: Date? // max song.addedDate → recency-of-addition (backfill)
+}
+
 // MARK: - HomeManager
 
 /// cassette Patch 042: drives the four-shelf Cassette home IA
@@ -55,7 +71,19 @@ struct HomeItem: Hashable, @unchecked Sendable {
 /// twice on Home.
 @MainActor
 class HomeManager: NSObject {
+  // Remote-sync batch size (newest / recent album sync). Distinct from the
+  // on-screen shelf sizing below.
   public static let sectionMaxItemCount = 20
+
+  // cassette Home Shelves v1. Two distinct ideas: a *target* fill (the
+  // minimum so a shelf is never sparse) and a *cap* (the max shown in the
+  // carousel; the remainder routes to "See all"). `songSampleLimit` bounds
+  // every song fetch so read-time aggregation never scans the whole library;
+  // `libraryBackfillLimit` bounds the stable at-large fallback.
+  private static let shelfTargetCount = 10
+  private static let shelfCarouselCap = 12
+  private static let songSampleLimit = 100
+  private static let libraryBackfillLimit = 60
 
   public var orderedVisibleSections: [HomeSection]
   public var data: [HomeSection: [HomeItem]] = [:]
@@ -71,24 +99,28 @@ class HomeManager: NSObject {
     storage.settings.user.isOfflineMode
   }
 
-  // Recent shelf merges these fetch controllers' results by
-  // interaction date desc, then optionally prepends the player's
-  // currently-playing album so the first card always reflects the
-  // live queue.
-  private var albumsRecentFetch: AlbumFetchedResultsController?
+  // cassette Home Shelves v1: rank albums & artists from maintained *song*
+  // play data (the per-song playCount / lastTimePlayed are bumped on the play
+  // path; album/artist counts and the server-assigned recentIndex/newestIndex
+  // are not). We sample three bounded song fetches and aggregate per container
+  // at read time — the proven Artists-shelf pattern, now applied to albums too.
+  private var recentSongsFetch: SongsFetchedResultsController? // lastPlayedDate desc → recency
+  private var topSongsFetch: SongsFetchedResultsController? // playCount desc → affinity
+  private var newestSongsFetch: SongsFetchedResultsController? // addedDate desc → newest-added
   private var playlistsLastPlayedFetch: PlaylistFetchedResultsController?
-  private var albumsNewestFetch: AlbumFetchedResultsController?
 
-  // cassette Patch 038: Artists shelf. ArtistMO.lastPlayedDate
-  // isn't bumped per song-play, so we fetch the most-recently-played
-  // songs and dedupe by song.artist. fetchLimit caps Core Data round-
-  // trip cost; we keep it generous (100) so a heavy rotation of
-  // ~10 songs each across many artists still surfaces 15 unique
-  // artists.
-  private static let recentArtistsSongFetchLimit = 100
-  private static let recentArtistsCap = 15
-  private static let recentArtistsMinUnique = 3
-  private var recentArtistsSongFetch: SongsFetchedResultsController?
+  // Stable library-at-large backfill (alphabetical; no dependency on the
+  // server-assigned indices) so a shelf never renders below target when the
+  // items exist.
+  private var albumsAllFetch: AlbumFetchedResultsController?
+  private var artistsAllFetch: ArtistFetchedResultsController?
+
+  // Transient per-recompute scoring, rebuilt at the top of
+  // `recomputeAllShelves` and consumed by the shelf builders in that pass.
+  private var albumScores: [String: (container: Album, score: ShelfScore)] = [:]
+  private var artistScores: [String: (container: Artist, score: ShelfScore)] = [:]
+  private var rankedAlbumIDs: [String] = []
+  private var rankedArtistIDs: [String] = []
 
   init(
     account: Account,
@@ -136,24 +168,11 @@ class HomeManager: NSObject {
   }
 
   func createFetchController() {
-    albumsRecentFetch = AlbumFetchedResultsController(
-      coreDataCompanion: storage.main, account: account,
-      sortType: .recent,
-      isGroupedInAlphabeticSections: false,
-      fetchLimit: Self.sectionMaxItemCount
-    )
-    albumsRecentFetch?.delegate = self
-    albumsRecentFetch?.search(
-      searchText: "",
-      onlyCached: isOfflineMode,
-      displayFilter: .recent
-    )
-
     playlistsLastPlayedFetch = PlaylistFetchedResultsController(
       coreDataCompanion: storage.main, account: account,
       sortType: .lastPlayed,
       isGroupedInAlphabeticSections: false,
-      fetchLimit: Self.sectionMaxItemCount
+      fetchLimit: Self.songSampleLimit
     )
     playlistsLastPlayedFetch?.delegate = self
     playlistsLastPlayedFetch?.search(
@@ -161,35 +180,48 @@ class HomeManager: NSObject {
       playlistSearchCategory: isOfflineMode ? .cached : .all
     )
 
-    albumsNewestFetch = AlbumFetchedResultsController(
-      coreDataCompanion: storage.main, account: account,
-      sortType: .newest,
-      isGroupedInAlphabeticSections: false,
-      fetchLimit: Self.sectionMaxItemCount
-    )
-    albumsNewestFetch?.delegate = self
-    albumsNewestFetch?.search(
-      searchText: "",
-      onlyCached: isOfflineMode,
-      displayFilter: .newest
-    )
+    // Bounded song samples — recency, affinity, newest-added. Aggregated per
+    // album/artist in memory (see scoreContainers); no writes on the play
+    // path. Reuses SongsFetchedResultsController so we inherit the per-account
+    // / exclude-server-deleted predicates and `keepAllResultsUpdated = false`.
+    recentSongsFetch = makeSongSample(sortType: .lastPlayedDate)
+    topSongsFetch = makeSongSample(sortType: .playCount)
+    newestSongsFetch = makeSongSample(sortType: .addedDate)
 
-    // cassette Patch 038: feeds the Artists shelf and the artist
-    // entries inside the Recent shelf. Reuses the shared
-    // SongsFetchedResultsController so we inherit the per-account /
-    // exclude-server-deleted predicates and the
-    // `keepAllResultsUpdated = false` CPU-load mitigation.
-    recentArtistsSongFetch = SongsFetchedResultsController(
-      coreDataCompanion: storage.main,
-      account: account,
-      sortType: .lastPlayedDate,
+    // Stable at-large backfill (alphabetical) so shelves fill to target on a
+    // tiny library without leaning on the unset server indices.
+    albumsAllFetch = AlbumFetchedResultsController(
+      coreDataCompanion: storage.main, account: account,
+      sortType: .name,
       isGroupedInAlphabeticSections: false,
-      fetchLimit: Self.recentArtistsSongFetchLimit
+      fetchLimit: Self.libraryBackfillLimit
     )
-    recentArtistsSongFetch?.delegate = self
-    recentArtistsSongFetch?.fetch()
+    albumsAllFetch?.delegate = self
+    albumsAllFetch?.search(searchText: "", onlyCached: isOfflineMode, displayFilter: .all)
+
+    artistsAllFetch = ArtistFetchedResultsController(
+      coreDataCompanion: storage.main, account: account,
+      sortType: .name,
+      isGroupedInAlphabeticSections: false,
+      fetchLimit: Self.libraryBackfillLimit
+    )
+    artistsAllFetch?.delegate = self
+    artistsAllFetch?.search(searchText: "", onlyCached: isOfflineMode, displayFilter: .all)
 
     recomputeAllShelves()
+  }
+
+  private func makeSongSample(sortType: SongElementSortType) -> SongsFetchedResultsController {
+    let frc = SongsFetchedResultsController(
+      coreDataCompanion: storage.main,
+      account: account,
+      sortType: sortType,
+      isGroupedInAlphabeticSections: false,
+      fetchLimit: Self.songSampleLimit
+    )
+    frc.delegate = self
+    frc.search(searchText: "", onlyCachedSongs: isOfflineMode, displayFilter: .all)
+    return frc
   }
 
   func updateFromRemote() {
@@ -261,14 +293,82 @@ class HomeManager: NSObject {
     return "obj-\(ObjectIdentifier(container as AnyObject).hashValue)"
   }
 
-  /// Drive every shelf in dependency order: Recent first (it sets
-  /// the dedupe baseline), then the three lower shelves which
-  /// filter against `data[.recent]`.
+  /// Drive every shelf in dependency order: rebuild the song-derived scores
+  /// once, then Recent first (it sets the dedupe baseline), then the three
+  /// lower shelves which filter against `data[.recent]`.
   private func recomputeAllShelves() {
+    let songs = sampledSongs()
+    albumScores = scoreContainers(from: songs) { $0.album }
+    artistScores = scoreContainers(from: songs) { $0.artist }
+    rankedAlbumIDs = rankedContainerIDs(albumScores)
+    rankedArtistIDs = rankedContainerIDs(artistScores)
+
     updateRecent()
     updatePlaylists()
     updateAlbums()
     updateRecentArtists()
+  }
+
+  // MARK: - Play scoring (Home Shelves v1 foundation)
+
+  /// Deduplicated union of the bounded song samples (recency + most-played +
+  /// newest-added). Each song is wrapped once so affinity sums aren't inflated
+  /// by a song appearing in more than one sample.
+  private func sampledSongs() -> [Song] {
+    var seen = Set<NSManagedObjectID>()
+    var songs: [Song] = []
+    for fetch in [recentSongsFetch, topSongsFetch, newestSongsFetch] {
+      for mo in (fetch?.fetchedObjects as? [SongMO]) ?? [] where seen.insert(mo.objectID).inserted {
+        songs.append(Song(managedObject: mo))
+      }
+    }
+    return songs
+  }
+
+  /// Fold a song sample into per-container scores keyed by stable id. `key`
+  /// extracts the album/artist for a song, or nil to skip it.
+  private func scoreContainers<C: PlayableContainable>(
+    from songs: [Song],
+    key: (Song) -> C?
+  )
+    -> [String: (container: C, score: ShelfScore)] {
+    var out: [String: (container: C, score: ShelfScore)] = [:]
+    for song in songs {
+      guard let container = key(song) else { continue }
+      let id = Self.stableID(for: container)
+      var entry = out[id] ??
+        (container: container, score: ShelfScore(lastPlayed: nil, playCount: 0, newestAdded: nil))
+      if let lastPlayed = song.lastTimePlayed,
+         entry.score.lastPlayed == nil || lastPlayed > entry.score.lastPlayed! {
+        entry.score.lastPlayed = lastPlayed
+      }
+      entry.score.playCount += song.playCount
+      if let added = song.addedDate,
+         entry.score.newestAdded == nil || added > entry.score.newestAdded! {
+        entry.score.newestAdded = added
+      }
+      out[id] = entry
+    }
+    return out
+  }
+
+  /// Rank container ids: played first (most-recent play, then affinity), then
+  /// unplayed by recency-of-addition, then a stable id tiebreak so the order
+  /// doesn't reshuffle across Home reloads.
+  private func rankedContainerIDs<C>(
+    _ scored: [String: (container: C, score: ShelfScore)]
+  )
+    -> [String] {
+    scored.keys.sorted { lhs, rhs in
+      guard let a = scored[lhs]?.score, let b = scored[rhs]?.score else { return lhs < rhs }
+      let aPlayed = a.lastPlayed != nil, bPlayed = b.lastPlayed != nil
+      if aPlayed != bPlayed { return aPlayed }
+      if aPlayed, let la = a.lastPlayed, let lb = b.lastPlayed, la != lb { return la > lb }
+      if a.playCount != b.playCount { return a.playCount > b.playCount }
+      let na = a.newestAdded ?? .distantPast, nb = b.newestAdded ?? .distantPast
+      if na != nb { return na > nb }
+      return lhs < rhs
+    }
   }
 
   /// `Set<String>` of stable IDs already surfaced in Resume + Recent —
@@ -285,32 +385,26 @@ class HomeManager: NSObject {
   /// new library still shows fresh content. Prepends the live
   /// queue's source album.
   func updateRecent() {
-    let distantPast = Date.distantPast
     var entries: [(date: Date, container: PlayableContainable, id: String)] = []
 
-    if let albumMOs = albumsRecentFetch?.fetchedObjects as? [AlbumMO] {
-      for mo in albumMOs.prefix(Self.sectionMaxItemCount) {
-        let album = Album(managedObject: mo)
-        let date = album.lastTimePlayed ?? distantPast
-        entries.append((date, album, Self.stableID(for: album)))
+    // cassette Home Shelves v1: albums are now eligible here via song-derived
+    // recency (album.lastTimePlayed is never written), so a played album
+    // actually appears in Recent — not just playlists and artists.
+    for (id, scored) in albumScores {
+      if let date = scored.score.lastPlayed {
+        entries.append((date, scored.container, id))
       }
     }
-
+    for (id, scored) in artistScores {
+      if let date = scored.score.lastPlayed {
+        entries.append((date, scored.container, id))
+      }
+    }
     if let playlistMOs = playlistsLastPlayedFetch?.fetchedObjects as? [PlaylistMO] {
-      for mo in playlistMOs.prefix(Self.sectionMaxItemCount) {
+      for mo in playlistMOs.prefix(Self.shelfCarouselCap) {
         let playlist = Playlist(library: storage.main.library, managedObject: mo)
-        let date = playlist.lastTimePlayed ?? distantPast
-        entries.append((date, playlist, Self.stableID(for: playlist)))
-      }
-    }
-
-    if let songMOs = recentArtistsSongFetch?.fetchedObjects as? [SongMO] {
-      var seenArtistIDs = Set<String>()
-      for mo in songMOs {
-        let song = Song(managedObject: mo)
-        guard let artist = song.artist, let date = song.lastTimePlayed else { continue }
-        if seenArtistIDs.insert(artist.id).inserted {
-          entries.append((date, artist, Self.stableID(for: artist)))
+        if let date = playlist.lastTimePlayed {
+          entries.append((date, playlist, Self.stableID(for: playlist)))
         }
       }
     }
@@ -319,21 +413,29 @@ class HomeManager: NSObject {
 
     var merged: [PlayableContainable] = []
     var seenIDs = Set<String>()
-    for entry in entries where entry.date > distantPast {
+    for entry in entries {
       if seenIDs.insert(entry.id).inserted {
         merged.append(entry.container)
       }
     }
 
-    // First-run fallback: if nothing has been played yet, fold in
-    // newest albums so the shelf isn't empty on a freshly synced
-    // library.
-    if merged.isEmpty, let albumMOs = albumsNewestFetch?.fetchedObjects as? [AlbumMO] {
-      for mo in albumMOs.prefix(Self.sectionMaxItemCount) {
-        let album = Album(managedObject: mo)
-        let id = Self.stableID(for: album)
-        if seenIDs.insert(id).inserted {
+    // First-run fallback: nothing played yet → fold in newest content (the
+    // song-derived ranking already leads with newest-added albums, then the
+    // stable at-large list) so a freshly synced library isn't empty.
+    if merged.isEmpty {
+      for id in rankedAlbumIDs {
+        guard let album = albumScores[id]?.container, seenIDs.insert(id).inserted else { continue }
+        merged.append(album)
+        if merged.count >= Self.shelfCarouselCap { break }
+      }
+      if merged.count < Self.shelfTargetCount,
+         let albumMOs = albumsAllFetch?.fetchedObjects as? [AlbumMO] {
+        for mo in albumMOs {
+          let album = Album(managedObject: mo)
+          let id = Self.stableID(for: album)
+          guard seenIDs.insert(id).inserted else { continue }
           merged.append(album)
+          if merged.count >= Self.shelfTargetCount { break }
         }
       }
     }
@@ -357,7 +459,7 @@ class HomeManager: NSObject {
     // recently played container) and drops out of the Recent shelf. On a
     // fresh library with no play history (first-run fallback only) there
     // is nothing to resume, so the card hides.
-    let hasPlayHistory = hasLiveAlbum || entries.contains { $0.date > distantPast }
+    let hasPlayHistory = hasLiveAlbum || !entries.isEmpty
     if hasPlayHistory, let resumeContainer = merged.first {
       // cassette Patch 104: namespace the Resume identity. With the raw
       // container stableID, a container moving between the Resume section
@@ -375,7 +477,7 @@ class HomeManager: NSObject {
       data[.resume] = []
     }
 
-    data[.recent] = merged.prefix(Self.sectionMaxItemCount).map {
+    data[.recent] = merged.prefix(Self.shelfCarouselCap).map {
       HomeItem(stableID: Self.stableID(for: $0), playableContainable: $0)
     }
     applySnapshotCB?()
@@ -390,100 +492,78 @@ class HomeManager: NSObject {
       return
     }
     let recentSet = recentStableIDs
-    let playlists = playlistMOs.prefix(Self.sectionMaxItemCount * 2)
+    let playlists = playlistMOs.prefix(Self.shelfCarouselCap * 2)
       .compactMap { Playlist(library: storage.main.library, managedObject: $0) }
     data[.yourPlaylists] = playlists
       .filter { !recentSet.contains(Self.stableID(for: $0)) }
-      .prefix(Self.sectionMaxItemCount)
+      .prefix(Self.shelfCarouselCap)
       .map { HomeItem(stableID: Self.stableID(for: $0), playableContainable: $0) }
     applySnapshotCB?()
   }
 
-  /// Recently-active albums: union of recently-played and recently-
-  /// added, weighted toward playing. Albums with a real
-  /// `lastTimePlayed` come first sorted by date desc; never-played
-  /// albums fill the remainder ordered newest-first. Filters out
-  /// anything already in Recent.
+  /// Albums ranked from maintained song play data: played first (recency then
+  /// affinity), then newest-added, then a stable at-large backfill — filled to
+  /// target so the shelf is never sparse, capped for the carousel. Filters out
+  /// anything already in Recent. No reliance on the unset server indices.
   func updateAlbums() {
-    let distantPast = Date.distantPast
-    var albumByID: [String: Album] = [:]
-    var playedDateByID: [String: Date] = [:]
-    var newestIdxByID: [String: Int] = [:]
-
-    if let recentMOs = albumsRecentFetch?.fetchedObjects as? [AlbumMO] {
-      for mo in recentMOs.prefix(Self.sectionMaxItemCount) {
-        let album = Album(managedObject: mo)
-        let id = Self.stableID(for: album)
-        albumByID[id] = album
-        playedDateByID[id] = album.lastTimePlayed ?? distantPast
-      }
-    }
-
-    if let newestMOs = albumsNewestFetch?.fetchedObjects as? [AlbumMO] {
-      for (idx, mo) in newestMOs.prefix(Self.sectionMaxItemCount).enumerated() {
-        let album = Album(managedObject: mo)
-        let id = Self.stableID(for: album)
-        if albumByID[id] == nil { albumByID[id] = album }
-        newestIdxByID[id] = idx
-        if playedDateByID[id] == nil {
-          playedDateByID[id] = album.lastTimePlayed ?? distantPast
-        }
-      }
-    }
-
-    let sortedIDs = albumByID.keys.sorted { lhs, rhs in
-      let lDate = playedDateByID[lhs] ?? distantPast
-      let rDate = playedDateByID[rhs] ?? distantPast
-      let lPlayed = lDate > distantPast
-      let rPlayed = rDate > distantPast
-      if lPlayed != rPlayed { return lPlayed }
-      if lPlayed { return lDate > rDate }
-      return (newestIdxByID[lhs] ?? .max) < (newestIdxByID[rhs] ?? .max)
-    }
-
-    let recentSet = recentStableIDs
-    data[.recentlyAdded] = sortedIDs
-      .filter { !recentSet.contains($0) }
-      .prefix(Self.sectionMaxItemCount)
-      .compactMap { id -> HomeItem? in
-        guard let album = albumByID[id] else { return nil }
-        return HomeItem(stableID: id, playableContainable: album)
-      }
+    data[.recentlyAdded] = filledShelf(
+      rankedIDs: rankedAlbumIDs,
+      containerForID: { albumScores[$0]?.container },
+      atLargeMOs: albumsAllFetch?.fetchedObjects as? [AlbumMO],
+      wrap: { Album(managedObject: $0) }
+    )
     applySnapshotCB?()
   }
 
-  /// Walk the most-recently-played songs in order and dedupe by
-  /// artist. Filters out artists already surfaced in Recent. If
-  /// fewer than `recentArtistsMinUnique` distinct artists have play
-  /// history, surface an empty list — HomeVC's applySnapshot filter
-  /// then hides the whole shelf.
+  /// Artists, same proven recency-then-affinity ranking the shelf already used,
+  /// now with the fill-to-N backfill. The old hard "hide below 3 played
+  /// artists" guard is dropped — backfill reaches the target, so a real shelf
+  /// renders whenever the library has artists at all.
   func updateRecentArtists() {
-    guard let songMOs = recentArtistsSongFetch?.fetchedObjects as? [SongMO] else {
-      data[.recentlyPlayedArtists] = []
-      applySnapshotCB?()
-      return
-    }
-    let recentSet = recentStableIDs
-    var seenArtistIDs = Set<String>()
-    var orderedArtists: [Artist] = []
-    for songMO in songMOs {
-      let song = Song(managedObject: songMO)
-      guard song.lastTimePlayed != nil, let artist = song.artist else { continue }
-      let id = Self.stableID(for: artist)
-      guard !recentSet.contains(id) else { continue }
-      if seenArtistIDs.insert(artist.id).inserted {
-        orderedArtists.append(artist)
-        if orderedArtists.count >= Self.recentArtistsCap { break }
-      }
-    }
-    if orderedArtists.count < Self.recentArtistsMinUnique {
-      data[.recentlyPlayedArtists] = []
-    } else {
-      data[.recentlyPlayedArtists] = orderedArtists.map {
-        HomeItem(stableID: Self.stableID(for: $0), playableContainable: $0)
-      }
-    }
+    data[.recentlyPlayedArtists] = filledShelf(
+      rankedIDs: rankedArtistIDs,
+      containerForID: { artistScores[$0]?.container },
+      atLargeMOs: artistsAllFetch?.fetchedObjects as? [ArtistMO],
+      wrap: { Artist(managedObject: $0) }
+    )
     applySnapshotCB?()
+  }
+
+  /// Shared fill-to-N builder for the album & artist shelves. Priority:
+  /// 1. the song-derived ranking (played, then newest-added),
+  /// 2. the stable at-large fetch until the target is reached,
+  /// excluding anything already in Resume/Recent, deduped, capped at the
+  /// carousel max.
+  private func filledShelf<C: PlayableContainable, MO: NSManagedObject>(
+    rankedIDs: [String],
+    containerForID: (String) -> C?,
+    atLargeMOs: [MO]?,
+    wrap: (MO) -> C
+  )
+    -> [HomeItem] {
+    let recentSet = recentStableIDs
+    var ordered: [PlayableContainable] = []
+    var seen = Set<String>()
+
+    for id in rankedIDs where !recentSet.contains(id) {
+      guard let container = containerForID(id), seen.insert(id).inserted else { continue }
+      ordered.append(container)
+      if ordered.count >= Self.shelfCarouselCap { break }
+    }
+
+    if ordered.count < Self.shelfTargetCount, let atLargeMOs {
+      for mo in atLargeMOs {
+        let container = wrap(mo)
+        let id = Self.stableID(for: container)
+        guard !recentSet.contains(id), seen.insert(id).inserted else { continue }
+        ordered.append(container)
+        if ordered.count >= Self.shelfTargetCount { break }
+      }
+    }
+
+    return ordered.prefix(Self.shelfCarouselCap).map {
+      HomeItem(stableID: Self.stableID(for: $0), playableContainable: $0)
+    }
   }
 
   // MARK: - Player observer
@@ -507,10 +587,12 @@ extension HomeManager: @preconcurrency NSFetchedResultsControllerDelegate {
       // dedupe membership (e.g. a newly-played album promotes from
       // Albums to Recent and must drop from the Albums shelf), so
       // recompute the full set rather than a single shelf.
-      if controller == albumsRecentFetch?.fetchResultsController
+      if controller == recentSongsFetch?.fetchResultsController
+        || controller == topSongsFetch?.fetchResultsController
+        || controller == newestSongsFetch?.fetchResultsController
         || controller == playlistsLastPlayedFetch?.fetchResultsController
-        || controller == albumsNewestFetch?.fetchResultsController
-        || controller == recentArtistsSongFetch?.fetchResultsController {
+        || controller == albumsAllFetch?.fetchResultsController
+        || controller == artistsAllFetch?.fetchResultsController {
         recomputeAllShelves()
       }
     }
