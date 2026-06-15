@@ -42,6 +42,16 @@ extension PopupPlayerVC {
     }
   }
 
+  /// Patch 113: optimistic now-playing refresh fired from a next/prev tap.
+  /// Updates only the hero title/artist/cover from the just-advanced queue
+  /// item (cover via LibraryEntityImage — cache hit or placeholder + async
+  /// swap, never blocking on a decode). Deliberately NOT the ambient backdrop
+  /// or the lockscreen (those reconcile on the trailing didStartPlaying), so
+  /// the tap is never blocked by an on-disk artwork decode.
+  func optimisticallyRefreshNowPlaying() {
+    largeCurrentlyPlayingView?.refresh()
+  }
+
   func refreshCurrentlyPlayingArtworks() {
     refreshBackgroundItemArtwork()
     largeCurrentlyPlayingView?.refreshArtwork()

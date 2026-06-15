@@ -119,6 +119,25 @@ public class NowPlayingInfoCenterHandler {
     ]
   }
 
+  /// Patch 113 (responsiveness, step 1): per-second elapsed updates must NOT
+  /// rebuild the whole dict or re-decode artwork. Mutate only the time/rate
+  /// keys on the existing nowPlayingInfo; fall back to a full build only if no
+  /// base dict exists yet (e.g. first tick before didStartPlaying).
+  private func updateElapsedTime() {
+    guard var info = nowPlayingInfoCenter.nowPlayingInfo else {
+      if let curPlayable = musicPlayer.currentlyPlaying {
+        updateNowPlayingInfo(playable: curPlayable)
+      }
+      return
+    }
+    info[MPMediaItemPropertyPlaybackDuration] = backendAudioPlayer.duration
+    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = backendAudioPlayer.elapsedTime
+    info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = NSNumber(value: 1.0)
+    info[MPNowPlayingInfoPropertyPlaybackRate] = NSNumber(value: backendAudioPlayer.playbackRate
+      .asDouble)
+    nowPlayingInfoCenter.nowPlayingInfo = info
+  }
+
   private func displayNowPlayingInfo(for playable: AbstractPlayable) -> RadioNowPlayingInfo {
     if playable.isRadio,
        let radioInfo = musicPlayer.currentRadioNowPlaying,
@@ -172,9 +191,8 @@ extension NowPlayingInfoCenterHandler: MusicPlayable {
   }
 
   public func didElapsedTimeChange() {
-    if let curPlayable = musicPlayer.currentlyPlaying {
-      updateNowPlayingInfo(playable: curPlayable)
-    }
+    // Patch 113 (step 1): elapsed-only update — no artwork decode / dict rebuild.
+    updateElapsedTime()
   }
 
   public func didPlaylistChange() {}

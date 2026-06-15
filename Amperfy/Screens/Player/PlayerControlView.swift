@@ -181,11 +181,18 @@ class PlayerControlView: UIView {
   @IBAction
   func previousButtonPushed(_ sender: Any) {
     playerHandler?.previousButtonPushed()
+    // Patch 113: optimistic now-playing update — refresh the hero
+    // (title/artist/cover) from the just-advanced queue item now, not on the
+    // trailing didStartPlaying callback. (This control bar refreshes its own
+    // transport buttons; the hero lives on the popup VC.)
+    rootView?.optimisticallyRefreshNowPlaying()
   }
 
   @IBAction
   func nextButtonPushed(_ sender: Any) {
     playerHandler?.nextButtonPushed()
+    // Patch 113: optimistic now-playing update (see previousButtonPushed).
+    rootView?.optimisticallyRefreshNowPlaying()
   }
 
   @IBAction
