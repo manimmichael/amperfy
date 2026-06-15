@@ -95,6 +95,9 @@ class HomeManager: NSObject {
   private let eventLogger: EventLogger
   private let player: PlayerFacade
 
+  // TEMP instrumentation (Home shelves runtime trace) — remove after fix.
+  private let shelfLog = OSLog(subsystem: "Amperfy", category: "HomeShelves")
+
   var isOfflineMode: Bool {
     storage.settings.user.isOfflineMode
   }
@@ -303,6 +306,21 @@ class HomeManager: NSObject {
     rankedAlbumIDs = rankedContainerIDs(albumScores)
     rankedArtistIDs = rankedContainerIDs(artistScores)
 
+    // TEMP instrumentation — remove after fix.
+    os_log(
+      "[recompute] offline=%{public}@ sampledSongs=%d (recent=%{public}@ top=%{public}@ newest=%{public}@) albumScores=%d artistScores=%d albumsAll=%{public}@ artistsAll=%{public}@",
+      log: shelfLog, type: .info,
+      isOfflineMode ? "Y" : "N",
+      songs.count,
+      (recentSongsFetch?.fetchedObjects?.count).map(String.init) ?? "nil",
+      (topSongsFetch?.fetchedObjects?.count).map(String.init) ?? "nil",
+      (newestSongsFetch?.fetchedObjects?.count).map(String.init) ?? "nil",
+      albumScores.count,
+      artistScores.count,
+      ((albumsAllFetch?.fetchedObjects?.count).map(String.init) ?? "nil"),
+      ((artistsAllFetch?.fetchedObjects?.count).map(String.init) ?? "nil")
+    )
+
     updateRecent()
     updatePlaylists()
     updateAlbums()
@@ -480,6 +498,12 @@ class HomeManager: NSObject {
     data[.recent] = merged.prefix(Self.shelfCarouselCap).map {
       HomeItem(stableID: Self.stableID(for: $0), playableContainable: $0)
     }
+    // TEMP instrumentation — remove after fix.
+    os_log(
+      "[recent] entries=%d resume=%d recent=%d",
+      log: shelfLog, type: .info,
+      entries.count, (data[.resume]?.count ?? 0), (data[.recent]?.count ?? 0)
+    )
     applySnapshotCB?()
   }
 
@@ -507,6 +531,7 @@ class HomeManager: NSObject {
   /// anything already in Recent. No reliance on the unset server indices.
   func updateAlbums() {
     data[.recentlyAdded] = filledShelf(
+      label: "albums→recentlyAdded",
       rankedIDs: rankedAlbumIDs,
       containerForID: { albumScores[$0]?.container },
       atLargeMOs: albumsAllFetch?.fetchedObjects as? [AlbumMO],
@@ -521,6 +546,7 @@ class HomeManager: NSObject {
   /// renders whenever the library has artists at all.
   func updateRecentArtists() {
     data[.recentlyPlayedArtists] = filledShelf(
+      label: "artists→recentlyPlayedArtists",
       rankedIDs: rankedArtistIDs,
       containerForID: { artistScores[$0]?.container },
       atLargeMOs: artistsAllFetch?.fetchedObjects as? [ArtistMO],
@@ -535,6 +561,7 @@ class HomeManager: NSObject {
   /// excluding anything already in Resume/Recent, deduped, capped at the
   /// carousel max.
   private func filledShelf<C: PlayableContainable, MO: NSManagedObject>(
+    label: String,
     rankedIDs: [String],
     containerForID: (String) -> C?,
     atLargeMOs: [MO]?,
@@ -550,6 +577,7 @@ class HomeManager: NSObject {
       ordered.append(container)
       if ordered.count >= Self.shelfCarouselCap { break }
     }
+    let afterRanked = ordered.count
 
     if ordered.count < Self.shelfTargetCount, let atLargeMOs {
       for mo in atLargeMOs {
@@ -560,6 +588,18 @@ class HomeManager: NSObject {
         if ordered.count >= Self.shelfTargetCount { break }
       }
     }
+
+    // TEMP instrumentation — remove after fix.
+    os_log(
+      "[shelf %{public}@] rankedIDs=%d recentSet=%d afterRanked=%d atLarge=%{public}@ final=%d",
+      log: shelfLog, type: .info,
+      label,
+      rankedIDs.count,
+      recentSet.count,
+      afterRanked,
+      (atLargeMOs?.count).map(String.init) ?? "nil",
+      ordered.count
+    )
 
     return ordered.prefix(Self.shelfCarouselCap).map {
       HomeItem(stableID: Self.stableID(for: $0), playableContainable: $0)
