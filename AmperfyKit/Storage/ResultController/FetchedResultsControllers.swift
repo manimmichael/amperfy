@@ -149,6 +149,11 @@ public enum SongElementSortType: Int, Sendable, Codable {
   // SongsFetchedResultsController + a bounded fetchLimit. New case
   // appended to keep existing Codable persistence stable.
   case lastPlayedDate = 5
+  // cassette Home Shelves v1: most-played songs first. Drives the
+  // affinity / all-time ordering and the backfill source for the Home
+  // album & artist shelves (deduped by container in HomeManager). New
+  // case appended to keep existing Codable persistence stable.
+  case playCount = 6
 
   public static let defaultValue: SongElementSortType = .name
   public static let defaultValueForFavorite: SongElementSortType = .starredDate
@@ -167,6 +172,8 @@ public enum SongElementSortType: Int, Sendable, Codable {
       return .none
     case .lastPlayedDate:
       return .none
+    case .playCount:
+      return .none
     }
   }
 
@@ -183,6 +190,8 @@ public enum SongElementSortType: Int, Sendable, Codable {
     case .starredDate:
       return false
     case .lastPlayedDate:
+      return false
+    case .playCount:
       return false
     }
   }
@@ -838,6 +847,9 @@ public class SongsFetchedResultsController: CachedFetchedResultsController<SongM
       // cassette Patch 038: feeds the Home Artists shelf; see
       // SongMO.lastPlayedDateSortedFetchRequest.
       fetchRequest = SongMO.lastPlayedDateSortedFetchRequest
+    case .playCount:
+      // cassette Home Shelves v1: most-played-first affinity source.
+      fetchRequest = SongMO.playCountSortedFetchRequest
     }
     fetchRequest.fetchLimit = fetchLimit ?? 0
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [

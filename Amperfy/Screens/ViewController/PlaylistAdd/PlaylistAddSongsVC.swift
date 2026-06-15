@@ -204,6 +204,9 @@ class PlaylistAddSongsVC: SingleFetchedResultsTableViewController<SongMO>, Playl
       // cassette Patch 038: not surfaced in playlist-add UI today;
       // future-proof to flat list with no section headers.
       return 0.0
+    case .playCount:
+      // cassette Home Shelves v1: Home-shelf affinity sort, not surfaced here.
+      return 0.0
     }
   }
 
@@ -229,6 +232,8 @@ class PlaylistAddSongsVC: SingleFetchedResultsTableViewController<SongMO>, Playl
     case .starredDate:
       return nil
     case .lastPlayedDate:
+      return nil
+    case .playCount:
       return nil
     }
   }

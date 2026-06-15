@@ -308,6 +308,10 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
       // Artists shelf today and isn't surfaced in SongsVC; if it
       // ever is, no section headers are wanted (pure recency list).
       return 0.0
+    case .playCount:
+      // cassette Home Shelves v1: affinity sort feeds the Home album/artist
+      // shelves only, not surfaced in SongsVC — no section headers.
+      return 0.0
     }
   }
 
@@ -333,6 +337,8 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
     case .starredDate:
       return nil
     case .lastPlayedDate:
+      return nil
+    case .playCount:
       return nil
     }
   }

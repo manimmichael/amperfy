@@ -189,4 +189,26 @@ extension SongMO: CoreDataIdentifyable {
     ]
     return fetchRequest
   }
+
+  // cassette Home Shelves v1: most-played songs first. Deduped by album /
+  // artist in HomeManager to rank the Home shelves on maintained play data
+  // (the per-song playCount is bumped on the play path; album/artist counts
+  // are not). Bounded by fetchLimit at the controller level.
+  static var playCountSortedFetchRequest: NSFetchRequest<SongMO> {
+    let fetchRequest: NSFetchRequest<SongMO> = SongMO.fetchRequest()
+    fetchRequest.sortDescriptors = [
+      NSSortDescriptor(key: #keyPath(SongMO.playCount), ascending: false),
+      NSSortDescriptor(
+        key: Self.identifierKeyString,
+        ascending: true,
+        selector: #selector(NSString.localizedStandardCompare)
+      ),
+      NSSortDescriptor(
+        key: "id",
+        ascending: true,
+        selector: #selector(NSString.localizedStandardCompare)
+      ),
+    ]
+    return fetchRequest
+  }
 }
