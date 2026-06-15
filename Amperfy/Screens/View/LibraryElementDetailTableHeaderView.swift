@@ -156,6 +156,7 @@ class LibraryElementDetailTableHeaderView: UIView {
       prominentHeartButton?.isHidden = !(config.favoriteEntity?.isFavoritable ?? false)
       refreshProminentHeartIcon()
     }
+    refreshPlayButtonState()
   }
 
   // cassette redesign (Surface 1): orange is reserved for live state — the
@@ -176,7 +177,7 @@ class LibraryElementDetailTableHeaderView: UIView {
   @IBAction
   func playAllButtonPressed(_ sender: Any) {
     Haptics.success.vibrate(isHapticsEnabled: appDelegate.storage.settings.user.isHapticsEnabled)
-    play(isShuffled: false)
+    handlePlayCTATap()
   }
 
   @IBAction
@@ -203,6 +204,80 @@ class LibraryElementDetailTableHeaderView: UIView {
     }
   }
 
+  // cassette: the detail Play CTA reflects live player state and binds to THIS
+  // album/artist context:
+  //   - a track from this context is playing -> Pause icon, tap pauses
+  //   - paused on this context               -> Play icon, tap resumes
+  //   - a different context (or nothing)     -> Play icon, tap replaces playback
+  // It stays in sync with playback started elsewhere (mini-player / lock screen)
+  // via the player notifications registered in prepare().
+
+  /// True when the player's current track belongs to this header's entity
+  /// (album → song's album; artist → song's artist / album-artist), whether
+  /// playing or paused.
+  private var isThisContextCurrent: Bool {
+    guard let current = config?.player.currentlyPlaying?.asSong else { return false }
+    if let album = config?.favoriteEntity as? Album {
+      return current.album == album
+    }
+    if let artist = config?.favoriteEntity as? Artist {
+      return current.artist == artist || current.album?.artist == artist
+    }
+    return false
+  }
+
+  private func handlePlayCTATap() {
+    guard let player = config?.player else { return }
+    if isThisContextCurrent {
+      // Pause if playing this context, resume if paused on it.
+      player.togglePlayPause()
+    } else {
+      // Different context (or nothing) → replace playback with this one.
+      play(isShuffled: false)
+    }
+    refreshPlayButtonState()
+  }
+
+  /// Swap the Play/Pause glyph + title on both the prominent CTA and the
+  /// bordered button to match live state.
+  func refreshPlayButtonState() {
+    let isPausable = isThisContextCurrent && (config?.player.isPlaying ?? false)
+    let symbolName = isPausable ? "pause.fill" : "play.fill"
+    let label = isPausable ? "Pause" : "Play"
+
+    prominentPlayButton?.configuration?.image = UIImage(systemName: symbolName)
+    prominentPlayButton?.accessibilityLabel = label
+
+    if playAllButton != nil {
+      playAllButton.configuration?.image = UIImage(systemName: symbolName)
+      playAllButton.configuration?.title = isPausable ? "Pause" : (config?.customPlayName ?? "Play")
+      playAllButton.accessibilityLabel = label
+    }
+  }
+
+  @objc
+  private func playerStateChangedForPlayCTA() {
+    refreshPlayButtonState()
+  }
+
+  private var didRegisterPlayerStateNotifications = false
+  private func registerPlayerStateNotificationsIfNeeded() {
+    guard !didRegisterPlayerStateNotifications else { return }
+    didRegisterPlayerStateNotifications = true
+    for name in [Notification.Name.playerPlay, .playerPause, .playerStop] {
+      appDelegate.notificationHandler.register(
+        self,
+        selector: #selector(playerStateChangedForPlayCTA),
+        name: name,
+        object: nil
+      )
+    }
+  }
+
+  deinit {
+    NotificationCenter.default.removeObserver(self)
+  }
+
   /// isShuffleOnContextNeccessary: In AlbumsVC the albums are shuffled, keep the order when shuffle button is pressed
   func prepare(configuration: PlayShuffleInfoConfiguration) {
     config = configuration
@@ -219,6 +294,8 @@ class LibraryElementDetailTableHeaderView: UIView {
     )
     setupProminentLayoutIfNeeded()
     activate()
+    registerPlayerStateNotificationsIfNeeded()
+    refreshPlayButtonState()
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
       handler: { (self: Self, previousTraitCollection: UITraitCollection) in
@@ -398,7 +475,7 @@ class LibraryElementDetailTableHeaderView: UIView {
   @objc
   private func prominentPlayPressed() {
     Haptics.medium.vibrate(isHapticsEnabled: appDelegate.storage.settings.user.isHapticsEnabled)
-    play(isShuffled: false)
+    handlePlayCTATap()
   }
 
   @objc

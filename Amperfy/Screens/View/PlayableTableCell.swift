@@ -95,6 +95,26 @@ class PlayableTableCell: BasicTableCell {
     return view
   }()
 
+  /// cassette now-playing legibility: on the currently-playing row of an
+  /// artwork-style list (e.g. artist popular songs) the orange waveform can
+  /// wash out over a bright cover. This darkens just that row's thumbnail
+  /// toward the warm near-black (`bg4`, not pure #000) with a light blur,
+  /// fading in/out with the indicator so the waveform always reads. Artwork
+  /// style only — the track-number style draws the indicator on a plain
+  /// background and needs no scrim.
+  private lazy var playingArtworkScrim: UIVisualEffectView = {
+    let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+    view.translatesAutoresizingMaskIntoConstraints = false
+    view.contentView.backgroundColor = CassetteTheme.UIColors.bg4.withAlphaComponent(0.55)
+    view.isUserInteractionEnabled = false
+    view.clipsToBounds = true
+    view.layer.cornerRadius = CornerRadius.small.asCGFloat
+    view.isHidden = true
+    view.alpha = 0
+    return view
+  }()
+
+  private var didInstallArtworkScrim = false
   private var didInstallPlayingSymbol = false
   private var isPlayingSymbolNotificationRegistered = false
 
@@ -241,6 +261,13 @@ class PlayableTableCell: BasicTableCell {
 
   func resetForReuse() {
     hidePlayingSymbol()
+    // Snap the scrim off instantly on reuse (the fade in hidePlayingSymbol is
+    // for the live track-change case, not a recycled cell about to re-bind).
+    if didInstallArtworkScrim {
+      playingArtworkScrim.layer.removeAllAnimations()
+      playingArtworkScrim.alpha = 0
+      playingArtworkScrim.isHidden = true
+    }
     deleteButton.isHidden = true
     playOverArtworkButton.isHidden = true
     playOverNumberButton.isHidden = true
@@ -390,7 +417,34 @@ class PlayableTableCell: BasicTableCell {
     // style path only, so the dimming pass can't resurrect the label.
     if replacingTrackNumber {
       trackNumberLabel.isHidden = true
+    } else {
+      // Artwork style: fade the scrim in under the waveform so it stays legible
+      // over bright covers.
+      showArtworkScrim()
     }
+  }
+
+  private func showArtworkScrim() {
+    installArtworkScrimIfNeeded()
+    contentView.bringSubviewToFront(playingSymbolView)
+    guard playingArtworkScrim.isHidden || playingArtworkScrim.alpha < 1 else { return }
+    playingArtworkScrim.layer.removeAllAnimations()
+    playingArtworkScrim.isHidden = false
+    UIView.animate(withDuration: 0.25) { self.playingArtworkScrim.alpha = 1 }
+  }
+
+  private func installArtworkScrimIfNeeded() {
+    guard !didInstallArtworkScrim, entityImage != nil else { return }
+    didInstallArtworkScrim = true
+    // Subview of the artwork so it inherits the rounded clip; under the
+    // waveform (which lives in contentView and is brought to front).
+    entityImage.addSubview(playingArtworkScrim)
+    NSLayoutConstraint.activate([
+      playingArtworkScrim.topAnchor.constraint(equalTo: entityImage.topAnchor),
+      playingArtworkScrim.bottomAnchor.constraint(equalTo: entityImage.bottomAnchor),
+      playingArtworkScrim.leadingAnchor.constraint(equalTo: entityImage.leadingAnchor),
+      playingArtworkScrim.trailingAnchor.constraint(equalTo: entityImage.trailingAnchor),
+    ])
   }
 
   private func hidePlayingSymbol() {
@@ -400,6 +454,15 @@ class PlayableTableCell: BasicTableCell {
     }
     if isDislayAlbumTrackNumberStyle {
       trackNumberLabel.isHidden = false
+    }
+    if didInstallArtworkScrim, !playingArtworkScrim.isHidden {
+      UIView.animate(
+        withDuration: 0.25,
+        animations: { self.playingArtworkScrim.alpha = 0 },
+        completion: { _ in
+          if self.playingArtworkScrim.alpha == 0 { self.playingArtworkScrim.isHidden = true }
+        }
+      )
     }
   }
 
@@ -428,10 +491,15 @@ class PlayableTableCell: BasicTableCell {
 
   @objc
   private func playingSymbolPlayerStateChanged(notification: Notification) {
-    guard !playingSymbolView.isHidden,
-          appDelegate.player.currentlyPlaying == playable
-    else { return }
-    updatePlayingSymbolAnimation()
+    // Re-evaluate which row owns the indicator against the LIVE current track,
+    // not just the animation. Previously this only restarted/stopped the
+    // animation when this row was already the playing one, so on a track change
+    // (auto-advance to the next track, or playback started elsewhere) the row
+    // that started playback kept its indicator (stale) and the newly-playing
+    // row never lit up. configurePlayIndicator shows the symbol only on the row
+    // whose track == player.currentlyPlaying and hides it everywhere else;
+    // updatePlayingSymbolAnimation (called within) then reflects play/pause.
+    configurePlayIndicator(playable: playable)
   }
 
   private func updatePlayingSymbolAnimation() {
