@@ -86,11 +86,21 @@ final class ArtistCircleCollectionCell: BasicCollectionCell {
     contentView.addSubview(nameLabel)
     contentView.addSubview(roleLabel)
 
+    // Dropped just below required so the compositional layout's first
+    // `.estimated`-height pass (which sizes the cell before it self-sizes to
+    // content) can't force an unsatisfiable conflict — the artwork region
+    // momentarily compresses instead of the required 160pt fighting a smaller
+    // estimate. At the self-sized steady state nothing competes, so it resolves
+    // at 160 exactly and the layout is unchanged.
+    let artworkHeight = artworkContainer.heightAnchor
+      .constraint(equalToConstant: Self.artworkRegionHeight)
+    artworkHeight.priority = UILayoutPriority(999)
+
     NSLayoutConstraint.activate([
       artworkContainer.topAnchor.constraint(equalTo: contentView.topAnchor),
       artworkContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
       artworkContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-      artworkContainer.heightAnchor.constraint(equalToConstant: Self.artworkRegionHeight),
+      artworkHeight,
 
       entityImage.centerXAnchor.constraint(equalTo: artworkContainer.centerXAnchor),
       entityImage.centerYAnchor.constraint(equalTo: artworkContainer.centerYAnchor),

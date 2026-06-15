@@ -261,11 +261,24 @@ class GenericDetailTableHeader: UIView {
       equalToConstant: LibraryElementDetailTableHeaderView.prominentPlayDiameter
     )
 
+    // The horizontal stack-to-margins pins are dropped just below required so
+    // the transient UITableView layout pass that sizes the header at width 0
+    // ('UIView-Encapsulated-Layout-Width == 0', before it knows the real
+    // width) can't force an unsatisfiable conflict against the 25pt side
+    // margins + the 240pt artwork. At the real width nothing competes with
+    // them, so they resolve exactly and layout is unchanged. The vertical
+    // pins stay required — they drive the self-sizing height and never
+    // conflict with a width-0 pass.
+    let leadingPin = mainStack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor)
+    let trailingPin = mainStack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor)
+    leadingPin.priority = UILayoutPriority(999)
+    trailingPin.priority = UILayoutPriority(999)
+
     NSLayoutConstraint.activate([
       mainStack.topAnchor.constraint(equalTo: layoutMarginsGuide.topAnchor),
       mainStack.bottomAnchor.constraint(equalTo: layoutMarginsGuide.bottomAnchor),
-      mainStack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
-      mainStack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
+      leadingPin,
+      trailingPin,
 
       entityImage.widthAnchor.constraint(equalTo: entityImage.heightAnchor),
       entityImage.topAnchor.constraint(equalTo: artworkWrap.topAnchor),
