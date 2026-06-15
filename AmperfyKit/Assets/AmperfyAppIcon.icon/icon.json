@@ -8,13 +8,13 @@
         {
           "glass" : false,
           "hidden" : false,
-          "image-name" : "Gemini_Generated_Image_grptjigrptjigrpt.png",
-          "name" : "Gemini_Generated_Image_grptjigrptjigrpt",
+          "image-name" : "Gemini_Generated_Image_4uk7vj4uk7vj4uk7.png",
+          "name" : "Gemini_Generated_Image_4uk7vj4uk7vj4uk7",
           "position" : {
-            "scale" : 0.82,
+            "scale" : 0.77,
             "translation-in-points" : [
               0,
-              0
+              -19
             ]
           }
         }
