@@ -67,6 +67,27 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     interfaceController?.carTraitCollection ?? UITraitCollection.maxDisplayScale
   }
 
+  /// CarPlay raises an uncaught exception when the navigation hierarchy grows
+  /// past its hard limit (~5 templates including the root). Route every
+  /// `pushTemplate` through this so a deep Library drill-down
+  /// (type → artist → album → songs) fails safe by declining the push instead
+  /// of crashing. `maxTreeDepth` caps the on-screen stack.
+  @discardableResult
+  func pushTemplateIfAllowed(_ template: CPTemplate, animated: Bool) -> Bool {
+    guard let interfaceController else { return false }
+    guard interfaceController.templates.count < Self.maxTreeDepth else {
+      os_log(
+        "CarPlay: push declined — navigation depth limit (%i) reached",
+        log: self.log,
+        type: .info,
+        Self.maxTreeDepth
+      )
+      return false
+    }
+    interfaceController.pushTemplate(template, animated: animated, completion: nil)
+    return true
+  }
+
   /// CarPlay connected
   nonisolated func templateApplicationScene(
     _ templateApplicationScene: CPTemplateApplicationScene,
@@ -245,6 +266,10 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
 
   var homeImageRows: [HomeSection: CPListImageRowItem] = [:]
   var homeRowData: [HomeSection: [HomeItem]] = [:]
+  /// Snapshot backing a pushed Home *detail* list, captured at build time so a
+  /// tap resolves against the items the user actually sees rather than
+  /// re-indexing live shelf data that `recomputeAllShelves()` may have changed.
+  var homeDetailRowData: [HomeSection: [HomeItem]] = [:]
   var homeArtworkUpdate: [String: EntityImageRowContainer] = [:] // String is Artwork.uniqueID
 
   lazy var cachedTab = {

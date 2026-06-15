@@ -93,8 +93,7 @@ extension CarPlaySceneDelegate {
           let detailListTemplate = CPListTemplate(title: section.title, sections: [
             CPListSection(items: detailSectionRow != nil ? [detailSectionRow!] : []),
           ])
-          let _ = try? await interfaceController?
-            .pushTemplate(detailListTemplate, animated: true)
+          self.pushTemplateIfAllowed(detailListTemplate, animated: true)
           completion()
         }
       } else {
@@ -107,9 +106,22 @@ extension CarPlaySceneDelegate {
     }
     // listImageRowHandler CB is called when user pressed on a image inside the row
     row.listImageRowHandler = { [weak self] item, index, completion in
-      guard let self,
-            let selectedPlayable = sharedHome.data[section]?[index].playableContainable
-      else { completion(); return }
+      guard let self else { completion(); return }
+      // Resolve the tap against the snapshot that backs the *visible* elements,
+      // not the live shelf data: recomputeAllShelves() rebuilds sharedHome.data
+      // on every play/pause/stop and FRC change, so re-indexing it can hit nil
+      // or the wrong item (the dead tap). For the home carousel that snapshot
+      // is homeRowData[section] (kept in lockstep with row.elements); for a
+      // pushed detail list it is homeDetailRowData[section], captured at build
+      // time. Match by stableID, preferring the live item so playback uses a
+      // current managed object when one still exists.
+      let renderedItems = isDetailTemplate
+        ? (self.homeDetailRowData[section] ?? [])
+        : (self.homeRowData[section] ?? [])
+      guard index >= 0, index < renderedItems.count else { completion(); return }
+      let tappedID = renderedItems[index].stableID
+      let liveItem = sharedHome.data[section]?.first { $0.stableID == tappedID }
+      let selectedPlayable = (liveItem ?? renderedItems[index]).playableContainable
       Task { @MainActor in
         if !isOfflineMode {
           do {
@@ -149,6 +161,7 @@ extension CarPlaySceneDelegate {
     if !isDetail {
       homeRowData[section] = requestedData
     } else {
+      homeDetailRowData[section] = requestedData
       for var container in homeArtworkUpdate {
         container.value.detailRow.removeAll()
       }

@@ -25,6 +25,15 @@ import CoreData
 import Foundation
 
 extension CarPlaySceneDelegate {
+  /// CarPlay raises an uncaught `NSInvalidArgumentException` when a pushed
+  /// `CPListTemplate` exceeds the connected vehicle's item limit. Leaf detail
+  /// lists prepend `reserved` action rows (Shuffle / All Songs), so clamp the
+  /// content to leave room for them — within both that limit and our own
+  /// `carPlayMaxElements` ceiling.
+  func carPlayLeafItemLimit(reserved: Int) -> Int {
+    max(0, min(LibraryStorage.carPlayMaxElements, CPListTemplate.maximumItemCount - reserved))
+  }
+
   func createArtistItems(
     from fetchedController: ArtistFetchedResultsController?,
     onlyCached: Bool
@@ -188,7 +197,8 @@ extension CarPlaySceneDelegate {
       CarPlayListUserInfoKeys.artworkOwnerType.rawValue: ArtworkType.artist as Any,
     ]
     section.handler = { [weak self] item, completion in
-      guard let self = self else { completion(); return }
+      guard let self = self, let activeAccount = self.activeAccount
+      else { completion(); return }
       var albumItems = [CPListItem]()
       albumItems.append(createPlayShuffledListItem(playContext: PlayContext(
         containable: artist,
@@ -199,7 +209,7 @@ extension CarPlaySceneDelegate {
         for: activeAccount,
         whichContainsSongsWithArtist: artist,
         onlyCached: onlyCached || isOfflineMode
-      ).prefix(LibraryStorage.carPlayMaxElements)
+      ).prefix(carPlayLeafItemLimit(reserved: albumItems.count))
       for album in artistAlbums {
         let listItem = createDetailTemplate(for: album, onlyCached: onlyCached)
         albumItems.append(listItem)
@@ -207,7 +217,7 @@ extension CarPlaySceneDelegate {
       let artistTemplate = CPListTemplate(title: artist.name, sections: [
         CPListSection(items: albumItems),
       ])
-      interfaceController?.pushTemplate(artistTemplate, animated: true, completion: nil)
+      pushTemplateIfAllowed(artistTemplate, animated: true)
       completion()
     }
     return section
@@ -235,7 +245,7 @@ extension CarPlaySceneDelegate {
         playables: artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
       )))
       let artistSongs = artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-        .sortByTitle().prefix(LibraryStorage.carPlayMaxElements)
+        .sortByTitle().prefix(carPlayLeafItemLimit(reserved: songItems.count))
       for (index, song) in artistSongs.enumerated() {
         let listItem = createDetailTemplate(
           for: song,
@@ -246,7 +256,7 @@ extension CarPlaySceneDelegate {
       let albumTemplate = CPListTemplate(title: artist.name, sections: [
         CPListSection(items: songItems),
       ])
-      interfaceController?.pushTemplate(albumTemplate, animated: true, completion: nil)
+      pushTemplateIfAllowed(albumTemplate, animated: true)
       completion()
     }
     return section
@@ -281,7 +291,7 @@ extension CarPlaySceneDelegate {
         playables: album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
       )))
       let albumSongs = album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-        .prefix(LibraryStorage.carPlayMaxElements)
+        .prefix(carPlayLeafItemLimit(reserved: songItems.count))
       for (index, song) in albumSongs.enumerated() {
         let listItem = createDetailTemplate(
           for: song,
@@ -293,7 +303,7 @@ extension CarPlaySceneDelegate {
       let albumTemplate = CPListTemplate(title: album.name, sections: [
         CPListSection(items: songItems),
       ])
-      interfaceController?.pushTemplate(albumTemplate, animated: true, completion: nil)
+      pushTemplateIfAllowed(albumTemplate, animated: true)
       completion()
     }
     return section
@@ -335,7 +345,7 @@ extension CarPlaySceneDelegate {
           ])
           playlistDetailSection = playlistDetailTemplate
           createPlaylistDetailFetchController(playlist: playlist)
-          interfaceController?.pushTemplate(playlistDetailTemplate, animated: true, completion: nil)
+          pushTemplateIfAllowed(playlistDetailTemplate, animated: true)
           completion()
         }
         items.append(item)
@@ -399,7 +409,7 @@ extension CarPlaySceneDelegate {
           ])
           podcastDetailSection = podcastDetailTemplate
           createPodcastDetailFetchController(podcast: podcast, onlyCached: onlyCached)
-          interfaceController?.pushTemplate(podcastDetailTemplate, animated: true, completion: nil)
+          pushTemplateIfAllowed(podcastDetailTemplate, animated: true)
           completion()
         }
         items.append(item)
@@ -422,7 +432,8 @@ extension CarPlaySceneDelegate {
     var itemCount = 0
     guard let fetchedController = fetchedController,
           let fetchSections = fetchedController.sections,
-          !fetchSections.isEmpty else { return sections }
+          !fetchSections.isEmpty,
+          let activeAccount = self.activeAccount else { return sections }
 
     for fetchSection in fetchSections {
       guard let fetchObjects = fetchSection.objects as? [GenreMO] else { continue }
@@ -611,8 +622,7 @@ extension CarPlaySceneDelegate {
     item.handler = { [weak self] item, completion in
       guard let self = self else { completion(); return }
       Task { @MainActor in
-        let _ = try? await interfaceController?
-          .pushTemplate(sectionToDisplay, animated: true)
+        self.pushTemplateIfAllowed(sectionToDisplay, animated: true)
         completion()
       }
     }
