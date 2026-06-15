@@ -153,12 +153,11 @@ extension PopupPlayerVC {
       .filter { $0 is CAGradientLayer }
       .forEach { $0.removeFromSuperlayer() }
 
-    // Patch 112: feed the ambient backlight. One path for cover + placeholder —
-    // getImageToDisplayImmediately returns the cover from cache/disk, or the
-    // on-brand generated placeholder when there's none. The cache key flips to
-    // the artwork file path only once that file actually exists, so a backdrop
-    // that started as the placeholder cross-fades to the real cover when the
-    // download lands (downloadFinishedSuccessful re-invokes this).
+    // Patch 112: feed the ambient backlight. One path for cover + placeholder.
+    // The cache key flips to the artwork file path only once that file exists,
+    // so a backdrop that started as the placeholder cross-fades to the real
+    // cover when the download lands (downloadFinishedSuccessful re-invokes
+    // this).
     guard let playable = player.currentlyPlaying else {
       ambientBackdropModel.image = nil
       return
@@ -166,16 +165,34 @@ extension PopupPlayerVC {
     let setting = appDelegate.storage.settings.accounts.getSetting(playable.account?.info).read
     let artworkPath = playable.imagePath(setting: setting.artworkDisplayPreference)
     let hasCover = artworkPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
-    ambientBackdropModel.coverID = hasCover
-      ? (artworkPath ?? "ambient-placeholder")
-      : "ambient-placeholder"
-    ambientBackdropModel.image = LibraryEntityImage.getImageToDisplayImmediately(
-      libraryEntity: playable,
-      themePreference: setting.themePreference,
-      artworkDisplayPreference: setting.artworkDisplayPreference,
-      useCache: true
-    )
+    let coverID = hasCover ? (artworkPath ?? "ambient-placeholder") : "ambient-placeholder"
+    ambientBackdropModel.coverID = coverID
     ambientBackdropModel.isPlaying = player.isPlaying
+
+    if hasCover, let artworkPath {
+      // cassette: decode the cover OFF the main thread as a capped-size
+      // thumbnail. Replaces the synchronous full-res getImageToDisplayImmediately
+      // decode that ran here on the main thread — an oversized cover can no
+      // longer block popup-open or starve the audio render thread. The ambient
+      // model further downsamples + blurs off-main (Patch 114).
+      Task { @MainActor [weak self] in
+        let thumb = await Task.detached(priority: .utility) {
+          AmbientSourceDecoder.thumbnail(contentsOfFile: artworkPath, maxPixelSize: 600)
+        }.value
+        guard let self, let thumb,
+              self.ambientBackdropModel.coverID == coverID else { return }
+        self.ambientBackdropModel.image = thumb
+      }
+    } else {
+      // No cover on disk → the on-brand generated placeholder is in-memory and
+      // cheap, so it stays synchronous.
+      ambientBackdropModel.image = LibraryEntityImage.getImageToDisplayImmediately(
+        libraryEntity: playable,
+        themePreference: setting.themePreference,
+        artworkDisplayPreference: setting.artworkDisplayPreference,
+        useCache: true
+      )
+    }
   }
 
   /// cassette Patch 029: the host view paints a flat `bg4` backdrop in

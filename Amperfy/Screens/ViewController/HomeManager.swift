@@ -572,31 +572,58 @@ class HomeManager: NSObject {
     var ordered: [PlayableContainable] = []
     var seen = Set<String>()
 
-    for id in rankedIDs where !recentSet.contains(id) {
-      guard let container = containerForID(id), seen.insert(id).inserted else { continue }
-      ordered.append(container)
-      if ordered.count >= Self.shelfCarouselCap { break }
-    }
-    let afterRanked = ordered.count
-
-    if ordered.count < Self.shelfTargetCount, let atLargeMOs {
+    // One ranked-then-backfill sweep. `allowRecent == false` prefers items not
+    // already in Resume/Recent; `allowRecent == true` lets Recent items through
+    // (still deduped via `seen`) purely to fill. `rankedLimit`/`backfillLimit`
+    // bound the running total at each stage.
+    func sweep(allowRecent: Bool, rankedLimit: Int, backfillLimit: Int) {
+      for id in rankedIDs {
+        if ordered.count >= rankedLimit { break }
+        if !allowRecent, recentSet.contains(id) { continue }
+        guard let container = containerForID(id), seen.insert(id).inserted else { continue }
+        ordered.append(container)
+      }
+      guard let atLargeMOs, ordered.count < backfillLimit else { return }
       for mo in atLargeMOs {
+        if ordered.count >= backfillLimit { break }
         let container = wrap(mo)
         let id = Self.stableID(for: container)
-        guard !recentSet.contains(id), seen.insert(id).inserted else { continue }
+        if !allowRecent, recentSet.contains(id) { continue }
+        guard seen.insert(id).inserted else { continue }
         ordered.append(container)
-        if ordered.count >= Self.shelfTargetCount { break }
       }
+    }
+
+    // Pass 1 (unchanged): non-Recent items preferred — ranked to the carousel
+    // cap, then backfill to the target.
+    sweep(
+      allowRecent: false,
+      rankedLimit: Self.shelfCarouselCap,
+      backfillLimit: Self.shelfTargetCount
+    )
+    let afterNonRecent = ordered.count
+
+    // Pass 2 (the small-library fix): a hard "minus Recent" skip empties the
+    // shelf when the whole small library is already in Recent. If still under
+    // target, re-run the same ranked-then-backfill order now *including* Recent
+    // items (still skipping `seen`), up to the cap. Net: non-Recent preferred,
+    // Recent included only to fill.
+    if ordered.count < Self.shelfTargetCount {
+      sweep(
+        allowRecent: true,
+        rankedLimit: Self.shelfCarouselCap,
+        backfillLimit: Self.shelfCarouselCap
+      )
     }
 
     // TEMP instrumentation — remove after fix.
     os_log(
-      "[shelf %{public}@] rankedIDs=%d recentSet=%d afterRanked=%d atLarge=%{public}@ final=%d",
+      "[shelf %{public}@] rankedIDs=%d recentSet=%d afterNonRecent=%d atLarge=%{public}@ final=%d",
       log: shelfLog, type: .info,
       label,
       rankedIDs.count,
       recentSet.count,
-      afterRanked,
+      afterNonRecent,
       (atLargeMOs?.count).map(String.init) ?? "nil",
       ordered.count
     )

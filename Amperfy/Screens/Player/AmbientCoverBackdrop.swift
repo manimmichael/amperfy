@@ -18,11 +18,40 @@
 
 import AmperfyKit
 import CoreImage
+import ImageIO
 import SwiftUI
 import UIKit
 
 // Patch 114: shared CIContext for the off-main pre-blur (Sendable + thread-safe).
 private let ambientBlurContext = CIContext(options: nil)
+
+// MARK: - AmbientSourceDecoder
+
+/// cassette: decode the ambient/cover source straight from disk as a
+/// downsampled thumbnail via ImageIO, OFF the main thread. Previously the
+/// popup fed the ambient model with `getImageToDisplayImmediately`, a
+/// synchronous full-res `UIImage(contentsOfFile:)` on the main thread — an
+/// oversized cover (e.g. a multi-thousand-pixel render) decoded there blocks
+/// popup-open and can starve the audio render thread on first open.
+/// `CGImageSourceCreateThumbnailAtIndex` caps the work to `maxPixelSize`
+/// regardless of the source's real dimensions, so the cost is bounded.
+enum AmbientSourceDecoder {
+  static func thumbnail(contentsOfFile path: String, maxPixelSize: Int) -> UIImage? {
+    guard let source = CGImageSourceCreateWithURL(
+      URL(fileURLWithPath: path) as CFURL, nil
+    ) else { return nil }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceShouldCacheImmediately: true,
+      kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+    ]
+    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(
+      source, 0, options as CFDictionary
+    ) else { return nil }
+    return UIImage(cgImage: cgImage)
+  }
+}
 
 // MARK: - AmbientBackdropCache
 
