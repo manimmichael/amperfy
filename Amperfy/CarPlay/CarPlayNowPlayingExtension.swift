@@ -92,7 +92,7 @@ extension CarPlaySceneDelegate {
         let playbackRateTemplate = CPListTemplate(title: "Playback Rate", sections: [
           CPListSection(items: availablePlaybackRates),
         ])
-        interfaceController?.pushTemplate(playbackRateTemplate, animated: true, completion: nil)
+        pushTemplateIfAllowed(playbackRateTemplate, animated: true)
 
       })
     )
@@ -122,7 +122,7 @@ extension CarPlaySceneDelegate {
 extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
   nonisolated func nowPlayingTemplateUpNextButtonTapped(_ nowPlayingTemplate: CPNowPlayingTemplate) {
     MainActor.assumeIsolated {
-      self.interfaceController?.pushTemplate(playerQueueSection, animated: true, completion: nil)
+      self.pushTemplateIfAllowed(playerQueueSection, animated: true)
     }
   }
 
