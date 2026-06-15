@@ -21,25 +21,29 @@
 
 import AmperfyKit
 import CoreData
-import OSLog
 import UIKit
 
 // MARK: - HomeItem
 
-/// cassette Patch 042: identity is now a stable composite key
-/// (`album-<id>`, `playlist-<id>`, `artist-<id>`, …) so diffable
-/// snapshot updates animate correctly across rebuilds and so the
-/// Recent shelf can dedupe items out of the lower shelves with a
-/// simple `Set<String>` lookup.
+/// cassette: diffable identity is **section-scoped** — the owning `HomeSection`
+/// is folded into Hashable/Equatable, so the diffable identifier is effectively
+/// `"\(section):\(stableID)"`. This lets the same underlying album/artist appear
+/// in Recent AND its typed shelf as two distinct items, with no diffable
+/// "identifiers already exist" collision and no expensive cross-section move.
+/// With this, no shelf needs to subtract any other shelf — the old cross-shelf
+/// dedup is fully retired (overlap is allowed everywhere). `stableID` stays the
+/// per-container key (`album-<id>` etc.) used for intra-shelf dedup and CarPlay.
 struct HomeItem: Hashable, @unchecked Sendable {
+  let section: HomeSection
   let stableID: String
   var playableContainable: PlayableContainable
 
   static func == (lhs: HomeItem, rhs: HomeItem) -> Bool {
-    lhs.stableID == rhs.stableID
+    lhs.section == rhs.section && lhs.stableID == rhs.stableID
   }
 
   func hash(into hasher: inout Hasher) {
+    hasher.combine(section)
     hasher.combine(stableID)
   }
 }
@@ -95,9 +99,6 @@ class HomeManager: NSObject {
   private let eventLogger: EventLogger
   private let player: PlayerFacade
 
-  // TEMP instrumentation (Home shelves runtime trace) — remove after fix.
-  private let shelfLog = OSLog(subsystem: "Amperfy", category: "HomeShelves")
-
   var isOfflineMode: Bool {
     storage.settings.user.isOfflineMode
   }
@@ -124,6 +125,13 @@ class HomeManager: NSObject {
   private var artistScores: [String: (container: Artist, score: ShelfScore)] = [:]
   private var rankedAlbumIDs: [String] = []
   private var rankedArtistIDs: [String] = []
+
+  // Part 2a: coalesce the FRC-change burst (~30 callbacks in 0.1s as Core Data
+  // settles after a play / sync) and player transitions into a single debounced
+  // recompute, so one snapshot is applied instead of a storm. The initial
+  // build in `createFetchController` runs immediately for first paint.
+  private var pendingRecompute: DispatchWorkItem?
+  private static let recomputeDebounce: TimeInterval = 0.12
 
   init(
     account: Account,
@@ -168,6 +176,8 @@ class HomeManager: NSObject {
 
   deinit {
     NotificationCenter.default.removeObserver(self)
+    // pendingRecompute uses [weak self], so a stale fire after dealloc no-ops;
+    // no explicit cancel needed (and deinit is nonisolated, can't touch it).
   }
 
   func createFetchController() {
@@ -296,30 +306,26 @@ class HomeManager: NSObject {
     return "obj-\(ObjectIdentifier(container as AnyObject).hashValue)"
   }
 
-  /// Drive every shelf in dependency order: rebuild the song-derived scores
-  /// once, then Recent first (it sets the dedupe baseline), then the three
-  /// lower shelves which filter against `data[.recent]`.
+  /// Debounced entry point (Part 2a): coalesce a burst of FRC-change / player-
+  /// transition callbacks into one recompute after the burst settles, so a play
+  /// action or library sync applies a single snapshot instead of ~30.
+  private func scheduleRecompute() {
+    pendingRecompute?.cancel()
+    let work = DispatchWorkItem { [weak self] in self?.recomputeAllShelves() }
+    pendingRecompute = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.recomputeDebounce, execute: work)
+  }
+
+  /// Rebuild the song-derived scores once, then every shelf. Order is Recent →
+  /// Resume → Playlists → Albums → Artists. Shelves no longer subtract one
+  /// another (section-scoped `HomeItem` identity allows overlap), so this is a
+  /// straight rebuild with no cross-shelf dedup.
   private func recomputeAllShelves() {
     let songs = sampledSongs()
     albumScores = scoreContainers(from: songs) { $0.album }
     artistScores = scoreContainers(from: songs) { $0.artist }
     rankedAlbumIDs = rankedContainerIDs(albumScores)
     rankedArtistIDs = rankedContainerIDs(artistScores)
-
-    // TEMP instrumentation — remove after fix.
-    os_log(
-      "[recompute] offline=%{public}@ sampledSongs=%d (recent=%{public}@ top=%{public}@ newest=%{public}@) albumScores=%d artistScores=%d albumsAll=%{public}@ artistsAll=%{public}@",
-      log: shelfLog, type: .info,
-      isOfflineMode ? "Y" : "N",
-      songs.count,
-      (recentSongsFetch?.fetchedObjects?.count).map(String.init) ?? "nil",
-      (topSongsFetch?.fetchedObjects?.count).map(String.init) ?? "nil",
-      (newestSongsFetch?.fetchedObjects?.count).map(String.init) ?? "nil",
-      albumScores.count,
-      artistScores.count,
-      ((albumsAllFetch?.fetchedObjects?.count).map(String.init) ?? "nil"),
-      ((artistsAllFetch?.fetchedObjects?.count).map(String.init) ?? "nil")
-    )
 
     updateRecent()
     updatePlaylists()
@@ -387,14 +393,6 @@ class HomeManager: NSObject {
       if na != nb { return na > nb }
       return lhs < rhs
     }
-  }
-
-  /// `Set<String>` of stable IDs already surfaced in Resume + Recent —
-  /// used by the lower shelves to skip duplicates (and to keep diffable
-  /// item identifiers unique across the whole snapshot).
-  private var recentStableIDs: Set<String> {
-    Set((data[.resume] ?? []).map { $0.stableID })
-      .union((data[.recent] ?? []).map { $0.stableID })
   }
 
   /// Heterogeneous merge: recently-played albums + playlists +
@@ -479,15 +477,13 @@ class HomeManager: NSObject {
     // is nothing to resume, so the card hides.
     let hasPlayHistory = hasLiveAlbum || !entries.isEmpty
     if hasPlayHistory, let resumeContainer = merged.first {
-      // cassette Patch 104: namespace the Resume identity. With the raw
-      // container stableID, a container moving between the Resume section
-      // and a shelf reads as a *move* to the diffable data source, so the
-      // old shelf AlbumCollectionCell gets recycled into the full-width
-      // Resume slot instead of dequeuing a ResumeCardCell. A distinct ID
-      // makes the transition a delete+insert, which re-runs the cell
-      // provider's section check.
+      // Section-scoped HomeItem identity already makes Resume vs a shelf a
+      // distinct item, so a container moving between them is a delete+insert
+      // that re-runs the cell provider — the Patch-104 "resume:" stableID
+      // prefix is no longer needed.
       data[.resume] = [HomeItem(
-        stableID: "resume:" + Self.stableID(for: resumeContainer),
+        section: .resume,
+        stableID: Self.stableID(for: resumeContainer),
         playableContainable: resumeContainer
       )]
       merged.removeFirst()
@@ -496,42 +492,32 @@ class HomeManager: NSObject {
     }
 
     data[.recent] = merged.prefix(Self.shelfCarouselCap).map {
-      HomeItem(stableID: Self.stableID(for: $0), playableContainable: $0)
+      HomeItem(section: .recent, stableID: Self.stableID(for: $0), playableContainable: $0)
     }
-    // TEMP instrumentation — remove after fix.
-    os_log(
-      "[recent] entries=%d resume=%d recent=%d",
-      log: shelfLog, type: .info,
-      entries.count, (data[.resume]?.count ?? 0), (data[.recent]?.count ?? 0)
-    )
     applySnapshotCB?()
   }
 
-  /// Recently-played playlists, with anything already in Recent
-  /// filtered out.
+  /// Recently-played playlists. Overlap with Recent is allowed (section-scoped
+  /// identity), so no cross-shelf subtraction.
   func updatePlaylists() {
     guard let playlistMOs = playlistsLastPlayedFetch?.fetchedObjects as? [PlaylistMO] else {
       data[.yourPlaylists] = []
       applySnapshotCB?()
       return
     }
-    let recentSet = recentStableIDs
-    let playlists = playlistMOs.prefix(Self.shelfCarouselCap * 2)
+    data[.yourPlaylists] = playlistMOs.prefix(Self.shelfCarouselCap)
       .compactMap { Playlist(library: storage.main.library, managedObject: $0) }
-    data[.yourPlaylists] = playlists
-      .filter { !recentSet.contains(Self.stableID(for: $0)) }
-      .prefix(Self.shelfCarouselCap)
-      .map { HomeItem(stableID: Self.stableID(for: $0), playableContainable: $0) }
+      .map { HomeItem(section: .yourPlaylists, stableID: Self.stableID(for: $0), playableContainable: $0) }
     applySnapshotCB?()
   }
 
   /// Albums ranked from maintained song play data: played first (recency then
   /// affinity), then newest-added, then a stable at-large backfill — filled to
-  /// target so the shelf is never sparse, capped for the carousel. Filters out
-  /// anything already in Recent. No reliance on the unset server indices.
+  /// target so the shelf is never sparse, capped for the carousel. No reliance
+  /// on the unset server indices; overlap with Recent is allowed.
   func updateAlbums() {
     data[.recentlyAdded] = filledShelf(
-      label: "albums→recentlyAdded",
+      section: .recentlyAdded,
       rankedIDs: rankedAlbumIDs,
       containerForID: { albumScores[$0]?.container },
       atLargeMOs: albumsAllFetch?.fetchedObjects as? [AlbumMO],
@@ -540,13 +526,12 @@ class HomeManager: NSObject {
     applySnapshotCB?()
   }
 
-  /// Artists, same proven recency-then-affinity ranking the shelf already used,
-  /// now with the fill-to-N backfill. The old hard "hide below 3 played
-  /// artists" guard is dropped — backfill reaches the target, so a real shelf
-  /// renders whenever the library has artists at all.
+  /// Artists, same recency-then-affinity ranking with the fill-to-N backfill.
+  /// The old hard "hide below 3 played artists" guard is gone — backfill reaches
+  /// the target, so a real shelf renders whenever the library has artists at all.
   func updateRecentArtists() {
     data[.recentlyPlayedArtists] = filledShelf(
-      label: "artists→recentlyPlayedArtists",
+      section: .recentlyPlayedArtists,
       rankedIDs: rankedArtistIDs,
       containerForID: { artistScores[$0]?.container },
       atLargeMOs: artistsAllFetch?.fetchedObjects as? [ArtistMO],
@@ -555,81 +540,40 @@ class HomeManager: NSObject {
     applySnapshotCB?()
   }
 
-  /// Shared fill-to-N builder for the album & artist shelves. Priority:
-  /// 1. the song-derived ranking (played, then newest-added),
-  /// 2. the stable at-large fetch until the target is reached,
-  /// excluding anything already in Resume/Recent, deduped, capped at the
-  /// carousel max.
+  /// Shared fill-to-N builder for the album & artist shelves: the song-derived
+  /// ranking (played → newest-added) first, then the stable at-large fetch
+  /// until the target is reached, deduped *within* the shelf and capped at the
+  /// carousel max. No cross-shelf subtraction — section-scoped identity lets an
+  /// item also live in Recent, so the old two-pass "minus Recent then add it
+  /// back" dance is gone.
   private func filledShelf<C: PlayableContainable, MO: NSManagedObject>(
-    label: String,
+    section: HomeSection,
     rankedIDs: [String],
     containerForID: (String) -> C?,
     atLargeMOs: [MO]?,
     wrap: (MO) -> C
   )
     -> [HomeItem] {
-    let recentSet = recentStableIDs
     var ordered: [PlayableContainable] = []
     var seen = Set<String>()
 
-    // One ranked-then-backfill sweep. `allowRecent == false` prefers items not
-    // already in Resume/Recent; `allowRecent == true` lets Recent items through
-    // (still deduped via `seen`) purely to fill. `rankedLimit`/`backfillLimit`
-    // bound the running total at each stage.
-    func sweep(allowRecent: Bool, rankedLimit: Int, backfillLimit: Int) {
-      for id in rankedIDs {
-        if ordered.count >= rankedLimit { break }
-        if !allowRecent, recentSet.contains(id) { continue }
-        guard let container = containerForID(id), seen.insert(id).inserted else { continue }
-        ordered.append(container)
-      }
-      guard let atLargeMOs, ordered.count < backfillLimit else { return }
+    for id in rankedIDs {
+      guard let container = containerForID(id), seen.insert(id).inserted else { continue }
+      ordered.append(container)
+      if ordered.count >= Self.shelfCarouselCap { break }
+    }
+
+    if ordered.count < Self.shelfTargetCount, let atLargeMOs {
       for mo in atLargeMOs {
-        if ordered.count >= backfillLimit { break }
         let container = wrap(mo)
-        let id = Self.stableID(for: container)
-        if !allowRecent, recentSet.contains(id) { continue }
-        guard seen.insert(id).inserted else { continue }
+        guard seen.insert(Self.stableID(for: container)).inserted else { continue }
         ordered.append(container)
+        if ordered.count >= Self.shelfTargetCount { break }
       }
     }
-
-    // Pass 1 (unchanged): non-Recent items preferred — ranked to the carousel
-    // cap, then backfill to the target.
-    sweep(
-      allowRecent: false,
-      rankedLimit: Self.shelfCarouselCap,
-      backfillLimit: Self.shelfTargetCount
-    )
-    let afterNonRecent = ordered.count
-
-    // Pass 2 (the small-library fix): a hard "minus Recent" skip empties the
-    // shelf when the whole small library is already in Recent. If still under
-    // target, re-run the same ranked-then-backfill order now *including* Recent
-    // items (still skipping `seen`), up to the cap. Net: non-Recent preferred,
-    // Recent included only to fill.
-    if ordered.count < Self.shelfTargetCount {
-      sweep(
-        allowRecent: true,
-        rankedLimit: Self.shelfCarouselCap,
-        backfillLimit: Self.shelfCarouselCap
-      )
-    }
-
-    // TEMP instrumentation — remove after fix.
-    os_log(
-      "[shelf %{public}@] rankedIDs=%d recentSet=%d afterNonRecent=%d atLarge=%{public}@ final=%d",
-      log: shelfLog, type: .info,
-      label,
-      rankedIDs.count,
-      recentSet.count,
-      afterNonRecent,
-      (atLargeMOs?.count).map(String.init) ?? "nil",
-      ordered.count
-    )
 
     return ordered.prefix(Self.shelfCarouselCap).map {
-      HomeItem(stableID: Self.stableID(for: $0), playableContainable: $0)
+      HomeItem(section: section, stableID: Self.stableID(for: $0), playableContainable: $0)
     }
   }
 
@@ -637,11 +581,13 @@ class HomeManager: NSObject {
 
   @objc
   private func handlePlayerChanged() {
+    // A play/pause/stop can move the live album to the top of Recent / Resume.
+    // This is a real play event (HomeManager does not observe per-tick elapsed
+    // time, and popup-open posts none of these), but the matching countPlayed
+    // write also fires an FRC-change burst — so coalesce both into one
+    // debounced recompute rather than recomputing per notification.
     Task { @MainActor in
-      // cassette Patch 042: live queue change can shuffle the live-
-      // album to the top of Recent and shift dedupe membership for
-      // the lower shelves, so recompute the full set.
-      recomputeAllShelves()
+      self.scheduleRecompute()
     }
   }
 }
@@ -650,17 +596,16 @@ extension HomeManager: @preconcurrency NSFetchedResultsControllerDelegate {
   func controllerDidChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
     // fetch controllers are created on Main thread -> Runtime Error if this function call is not on Main thread
     MainActor.assumeIsolated {
-      // cassette Patch 042: every FRC change can shift cross-shelf
-      // dedupe membership (e.g. a newly-played album promotes from
-      // Albums to Recent and must drop from the Albums shelf), so
-      // recompute the full set rather than a single shelf.
+      // Any of our FRCs changing means the play-data / library moved; coalesce
+      // the burst (~30 callbacks in 0.1s as Core Data settles) into a single
+      // debounced recompute.
       if controller == recentSongsFetch?.fetchResultsController
         || controller == topSongsFetch?.fetchResultsController
         || controller == newestSongsFetch?.fetchResultsController
         || controller == playlistsLastPlayedFetch?.fetchResultsController
         || controller == albumsAllFetch?.fetchResultsController
         || controller == artistsAllFetch?.fetchResultsController {
-        recomputeAllShelves()
+        scheduleRecompute()
       }
     }
   }
