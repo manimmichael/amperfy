@@ -51,8 +51,34 @@ class ArtistDetailVC: MultiSourceTableViewController {
   /// falls back to the FRC's secondary track order.
   private static let popularCollapsedLimit = 5
   private var isPopularExpanded = false
+
+  /// cassette: the Popular list is ranked by play count, and countPlayed bumps
+  /// it on every play — which live-reorders the FRC and shuffles the list under
+  /// the user. So the ranked order is SNAPSHOTTED on viewWillAppear and rendered
+  /// in that fixed order for the lifetime of the presentation; it re-ranks only
+  /// on the next appearance, never live. The now-playing row indicator stays
+  /// live (it's the cell's own state, keyed off the current track) — only the
+  /// row ORDER is frozen.
+  private var frozenPopularSongs: [Song] = []
+
+  private func frozenPopularSong(at row: Int) -> Song? {
+    guard row >= 0, row < frozenPopularSongs.count else { return nil }
+    return frozenPopularSongs[row]
+  }
+
+  /// Re-snapshot the FRC's current ranked order. Called on each viewWillAppear.
+  private func freezePopularOrder() {
+    let count = songsFetchedResultsController?.sections?[0].numberOfObjects ?? 0
+    frozenPopularSongs = (0 ..< count).compactMap {
+      songsFetchedResultsController?.getWrappedEntity(at: IndexPath(row: $0, section: 0))
+    }
+    if isViewLoaded, tableView.numberOfSections > BodySection.popular.rawValue {
+      tableView.reloadSections(IndexSet(integer: BodySection.popular.rawValue), with: .none)
+    }
+  }
+
   private var popularTotalCount: Int {
-    songsFetchedResultsController.sections?[0].numberOfObjects ?? 0
+    frozenPopularSongs.count
   }
 
   private var popularRowsShown: Int {
@@ -61,23 +87,6 @@ class ArtistDetailVC: MultiSourceTableViewController {
 
   private var showsPopularShowMore: Bool {
     !isPopularExpanded && popularTotalCount > Self.popularCollapsedLimit
-  }
-
-  private var popularReloadScheduled = false
-  /// Coalesce repeated FRC change events into a single Popular-section reload
-  /// (used while the list is capped — see `controller(_:didChange:)`).
-  private func schedulePopularReload() {
-    guard !popularReloadScheduled else { return }
-    popularReloadScheduled = true
-    DispatchQueue.main.async { [weak self] in
-      guard let self else { return }
-      self.popularReloadScheduled = false
-      guard self.tableView.numberOfSections > BodySection.popular.rawValue else { return }
-      self.tableView.reloadSections(
-        IndexSet(integer: BodySection.popular.rawValue),
-        with: .none
-      )
-    }
   }
 
   init(account: Account, artist: Artist) {
@@ -237,10 +246,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
         return nil
       case .popular:
         guard indexPath.row < self.popularRowsShown else { return nil }
-        return self.songsFetchedResultsController.getWrappedEntity(at: IndexPath(
-          row: indexPath.row,
-          section: 0
-        ))
+        return self.frozenPopularSong(at: indexPath.row)
       default:
         return nil
       }
@@ -265,12 +271,12 @@ class ArtistDetailVC: MultiSourceTableViewController {
         // Patch 110 (3b): no swipe actions on the carousel row.
         completionHandler(nil)
       case .popular:
-        guard indexPath.row < self.popularRowsShown else {
+        guard indexPath.row < self.popularRowsShown,
+              let song = self.frozenPopularSong(at: indexPath.row) else {
           completionHandler(nil)
           return
         }
         let songIndexPath = IndexPath(row: indexPath.row, section: 0)
-        let song = self.songsFetchedResultsController.getWrappedEntity(at: songIndexPath)
         let playContext = self.convertIndexPathToPlayContext(songIndexPath: songIndexPath)
         completionHandler(SwipeActionContext(containable: song, playContext: playContext))
       default:
@@ -282,6 +288,9 @@ class ArtistDetailVC: MultiSourceTableViewController {
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = false
+    // Snapshot the play-count ranking for this presentation so the list doesn't
+    // reorder live as tracks are played; re-ranks on the next appearance.
+    freezePopularOrder()
   }
 
   override func viewDidLayoutSubviews() {
@@ -410,12 +419,13 @@ class ArtistDetailVC: MultiSourceTableViewController {
   }
 
   func convertIndexPathToPlayContext(songIndexPath: IndexPath) -> PlayContext? {
-    guard let songs = songsFetchedResultsController
-      .getContextSongs(onlyCachedSongs: appDelegate.storage.settings.user.isOfflineMode)
-    else { return nil }
-    let selectedSong = songsFetchedResultsController.getWrappedEntity(at: songIndexPath)
-    guard let playContextIndex = songs.firstIndex(of: selectedSong) else { return nil }
-    return PlayContext(containable: artist, index: playContextIndex, playables: songs)
+    // Play from the frozen popular order so the queue matches what's on screen.
+    guard let selectedSong = frozenPopularSong(at: songIndexPath.row) else { return nil }
+    let contextSongs = appDelegate.storage.settings.user.isOfflineMode
+      ? frozenPopularSongs.filter { $0.isCached }
+      : frozenPopularSongs
+    guard let playContextIndex = contextSongs.firstIndex(of: selectedSong) else { return nil }
+    return PlayContext(containable: artist, index: playContextIndex, playables: contextSongs)
   }
 
   func convertCellViewToPlayContext(cell: UITableViewCell) -> PlayContext? {
@@ -576,10 +586,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
         return makePopularShowMoreCell()
       }
       let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
-      let song = songsFetchedResultsController.getWrappedEntity(at: IndexPath(
-        row: indexPath.row,
-        section: 0
-      ))
+      guard let song = frozenPopularSong(at: indexPath.row) else { return UITableViewCell() }
       cell.display(playable: song, playContextCb: convertCellViewToPlayContext, rootView: self)
       return cell
     default:
@@ -597,8 +604,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
       return albumsFetchedResultsController.sections?[0]
         .numberOfObjects ?? 0 > 0 ? CommonScreenOperations.tableSectionHeightLarge : 0
     case .popular:
-      return songsFetchedResultsController.sections?[0]
-        .numberOfObjects ?? 0 > 0 ? CommonScreenOperations.tableSectionHeightLarge : 0
+      return popularTotalCount > 0 ? CommonScreenOperations.tableSectionHeightLarge : 0
     default:
       return 0.0
     }
@@ -680,16 +686,12 @@ class ArtistDetailVC: MultiSourceTableViewController {
       scheduleAlbumsReload()
       return
     case songsFetchedResultsController.fetchResultsController:
-      // Patch 110 (3a): while the Popular list is capped, the FRC's row
-      // indices (full list) no longer match the table's visible rows, so a
-      // granular change beyond the cap (e.g. a play-count re-sort) would
-      // desync. Coalesce to a whole-section reload while collapsed; forward
-      // granular changes only when expanded (1:1 with the FRC).
-      if !isPopularExpanded {
-        schedulePopularReload()
-        return
-      }
-      section = BodySection.popular.rawValue
+      // cassette: the Popular order is frozen for the presentation (see
+      // frozenPopularSongs), so ignore live FRC reorders / play-count re-sorts
+      // here — applying them would shuffle the list under the user. The order
+      // re-ranks on the next appearance via freezePopularOrder(); the
+      // now-playing indicator stays live through the cell's own player observer.
+      return
     default:
       return
     }

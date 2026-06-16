@@ -160,38 +160,50 @@ extension PopupPlayerVC {
     // this).
     guard let playable = player.currentlyPlaying else {
       ambientBackdropModel.image = nil
+      ambientBackdropModel.coverID = "ambient-placeholder"
       return
     }
     let setting = appDelegate.storage.settings.accounts.getSetting(playable.account?.info).read
     let artworkPath = playable.imagePath(setting: setting.artworkDisplayPreference)
     let hasCover = artworkPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
-    let coverID = hasCover ? (artworkPath ?? "ambient-placeholder") : "ambient-placeholder"
-    ambientBackdropModel.coverID = coverID
     ambientBackdropModel.isPlaying = player.isPlaying
 
     if hasCover, let artworkPath {
+      let coverID = artworkPath
       // cassette: decode the cover OFF the main thread as a capped-size
-      // thumbnail. Replaces the synchronous full-res getImageToDisplayImmediately
-      // decode that ran here on the main thread — an oversized cover can no
-      // longer block popup-open or starve the audio render thread. The ambient
-      // model further downsamples + blurs off-main (Patch 114).
+      // thumbnail (an oversized cover can't block popup-open or starve audio),
+      // then feed image + coverID TOGETHER. AmbientCoverBackdrop's
+      // `.task(id: coverID)` regenerates the blurred backdrop from model.image,
+      // and it only re-fires when coverID CHANGES — so coverID must flip in the
+      // same step the image lands. (Task 2 set coverID synchronously while the
+      // image arrived later, so the task ran with a nil image and the soft blur
+      // never came back.) The downsample + blur still run off-main (Patch 114).
       Task { @MainActor [weak self] in
         let thumb = await Task.detached(priority: .utility) {
           AmbientSourceDecoder.thumbnail(contentsOfFile: artworkPath, maxPixelSize: 600)
         }.value
-        guard let self, let thumb,
-              self.ambientBackdropModel.coverID == coverID else { return }
+        guard let self, let thumb else { return }
+        // Staleness guard: only apply if the live track's cover is still this
+        // one (a newer track may have started while we decoded).
+        let currentPath = self.player.currentlyPlaying.flatMap { current -> String? in
+          let s = self.appDelegate.storage.settings.accounts
+            .getSetting(current.account?.info).read
+          return current.imagePath(setting: s.artworkDisplayPreference)
+        }
+        guard currentPath == artworkPath else { return }
         self.ambientBackdropModel.image = thumb
+        self.ambientBackdropModel.coverID = coverID
       }
     } else {
       // No cover on disk → the on-brand generated placeholder is in-memory and
-      // cheap, so it stays synchronous.
+      // cheap; set image + coverID together synchronously.
       ambientBackdropModel.image = LibraryEntityImage.getImageToDisplayImmediately(
         libraryEntity: playable,
         themePreference: setting.themePreference,
         artworkDisplayPreference: setting.artworkDisplayPreference,
         useCache: true
       )
+      ambientBackdropModel.coverID = "ambient-placeholder"
     }
   }
 
