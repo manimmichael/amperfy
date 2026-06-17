@@ -257,10 +257,12 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   }()
 
   lazy var rootBarTemplate = {
+    // D5: no "Cached" tab. The music is on the phone, not "cached" — offline
+    // filtering happens automatically inside the Library lists (onlyCached:
+    // isOfflineMode), so there's no separate surface and no "cache" wording.
     let bar = CPTabBarTemplate(templates: [
       homeTab,
       libraryTab,
-      cachedTab,
       playlistTab,
     ].prefix(upToAsArray: CPTabBarTemplate.maximumTabCount))
     return bar
@@ -301,11 +303,10 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   var homeDetailRowData: [HomeSection: [HomeItem]] = [:]
   var homeArtworkUpdate: [String: EntityImageRowContainer] = [:] // String is Artwork.uniqueID
 
-  lazy var cachedTab = {
-    let cachedTab = CPListTemplate(title: "Cached", sections: createCachedSections())
-    cachedTab.tabImage = UIImage.cache
-    return cachedTab
-  }()
+  // D5: the "Cached" tab is removed from the IA. CarPlayCachedTabExtension and
+  // the cached* section templates/fetch controllers are now unreferenced dead
+  // code (kept only to avoid a risky pbxproj file-removal in this pass) — slate
+  // them for deletion in a follow-up cleanup.
 
   lazy var accountSection = {
     let template = CPListTemplate(title: "Switch Account", sections: [
@@ -1171,9 +1172,6 @@ extension CarPlaySceneDelegate: CPInterfaceControllerDelegate {
       } else if aTemplate == libraryTab {
         os_log("CarPlay: templateWillAppear libraryTab", log: self.log, type: .info)
         libraryTab.updateSections(createLibrarySections())
-      } else if aTemplate == cachedTab {
-        os_log("CarPlay: templateWillAppear cachedTab", log: self.log, type: .info)
-        cachedTab.updateSections(createCachedSections())
       } else if aTemplate == playlistTab {
         os_log("CarPlay: templateWillAppear playlistTab", log: self.log, type: .info)
         Task { @MainActor in do {

@@ -72,64 +72,42 @@ extension CarPlaySceneDelegate {
     return element
   }
 
+  /// D5: mirror the mobile Library — a clean category LIST (one tappable row
+  /// per category, in the user's configured order from
+  /// `libraryDisplaySettings.inUse`) instead of the horizontal type-chooser
+  /// carousel with the folder-ish icons. Each row pushes the matching section
+  /// template; browse reads from local FRC data, so it never hangs when the
+  /// server is unreachable. Categories are filtered to `isVisibleInCarPlay`
+  /// (Songs/Directories/Downloads hidden; Playlists has its own tab).
   func createLibraryNavigationTypeSection() -> CPListSection {
-    var libDisplayItems = [CPListImageRowItemRowElement]()
-    for libDisplayType in appDelegate.storage.settings.accounts.getSetting(activeAccountInfo).read
+    var items = [CPListTemplateItem]()
+    for type in appDelegate.storage.settings.accounts.getSetting(activeAccountInfo).read
       .libraryDisplaySettings.inUse {
-      guard libDisplayType.isVisibleInCarPlay else { continue }
-      let element = createLibraryTypeImageRowElement(type: libDisplayType)
-      libDisplayItems.append(element)
+      guard type.isVisibleInCarPlay, let section = librarySection(for: type) else { continue }
+      items.append(createLibraryItem(
+        text: type.displayName,
+        icon: type.image,
+        sectionToDisplay: section
+      ))
     }
-    let libDisplayRow = CPListImageRowItem(
-      text: nil,
-      elements: libDisplayItems,
-      allowsMultipleLines: true
-    )
-    libDisplayRow.handler = { selectedRow, completion in completion() }
-    libDisplayRow.listImageRowHandler = { [weak self] item, index, completion in
-      guard let self,
-            let selectedTitle = libDisplayItems[index].title,
-            let displayType = LibraryDisplayType.createByDisplayName(name: selectedTitle)
-      else { completion(); return }
+    return CPListSection(items: items, header: "Library", sectionIndexTitle: nil)
+  }
 
-      var sectionToDisplay: CPListTemplate?
-      switch displayType {
-      case .genres:
-        sectionToDisplay = genresSection
-      case .artists:
-        sectionToDisplay = artistsSection
-      case .albums:
-        sectionToDisplay = albumsSection
-      case .podcasts:
-        sectionToDisplay = podcastSection
-      case .favoriteSongs:
-        sectionToDisplay = songsFavoriteSection
-      case .favoriteAlbums:
-        sectionToDisplay = albumsFavoriteSection
-      case .favoriteArtists:
-        sectionToDisplay = artistsFavoriteSection
-      case .newestAlbums:
-        sectionToDisplay = albumsNewestSection
-      case .recentAlbums:
-        sectionToDisplay = albumsRecentSection
-      case .radios:
-        sectionToDisplay = radioSection
-      case .directories, .downloads, .playlists, .songs:
-        break // do nothing
-      }
-      guard let sectionToDisplay else { completion(); return }
-
-      Task { @MainActor in
-        self.pushTemplateIfAllowed(sectionToDisplay, animated: true)
-      }
-      completion()
+  /// Maps a Library category to its CarPlay browse template.
+  private func librarySection(for type: LibraryDisplayType) -> CPListTemplate? {
+    switch type {
+    case .genres: return genresSection
+    case .artists: return artistsSection
+    case .albums: return albumsSection
+    case .podcasts: return podcastSection
+    case .favoriteSongs: return songsFavoriteSection
+    case .favoriteAlbums: return albumsFavoriteSection
+    case .favoriteArtists: return artistsFavoriteSection
+    case .newestAlbums: return albumsNewestSection
+    case .recentAlbums: return albumsRecentSection
+    case .radios: return radioSection
+    case .directories, .downloads, .playlists, .songs: return nil
     }
-    let libDisplaySection = CPListSection(
-      items: [libDisplayRow],
-      header: "Library",
-      sectionIndexTitle: nil
-    )
-    return libDisplaySection
   }
 
   func createPlayRandomSection() -> CPListSection {
