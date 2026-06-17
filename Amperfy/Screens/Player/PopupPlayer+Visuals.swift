@@ -115,7 +115,10 @@ extension PopupPlayerVC {
         config.baseForegroundColor = playableInfo.isFavorite
           ? CassetteTheme.UIColors.orange
           : CassetteTheme.UIColors.ink
-        button.isEnabled = appDelegate.storage.settings.user.isOnlineMode
+        // E6 (a): the heart is no longer gated on isOnlineMode — favoriting is
+        // local-first (remoteToggleFavorite keeps the flip when the server is
+        // unreachable), so it works away from home.
+        button.isEnabled = true
       } else if let playableInfo = player.currentlyPlaying,
                 let radio = playableInfo.asRadio {
         config.image = .followLink

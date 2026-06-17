@@ -475,6 +475,14 @@ extension AbstractPlayable: PlayableContainable {
     do {
       try await syncer.setFavorite(song: song, isFavorite: isFavorite)
     } catch {
+      // E6 (a): local-first favorite. Only roll back on a DEFINITIVE server-side
+      // rejection (the music server was reachable and returned an error —
+      // ResponseError). When the server is merely unreachable — the normal
+      // away-from-home case under the on-device ownership model — KEEP the
+      // optimistic local flip so the heart stays set, and don't surface an
+      // error; a later full library sync reconciles it. (Interim: there is no
+      // outbound favorite-sync queue yet — that's E6 (b).)
+      guard error is ResponseError else { return }
       isFavorite = originalValue
       library.saveContext()
       throw error
