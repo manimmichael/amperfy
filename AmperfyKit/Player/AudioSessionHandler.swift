@@ -35,6 +35,13 @@ public class AudioSessionHandler {
   /// reactivates explicitly.
   private var isSessionActive = false
 
+  /// A2: true between an interruption's `.began` and `.ended`. While set,
+  /// `configureBackgroundPlayback()` must NOT call `setActive(true)` — a late
+  /// stream insert or an auto-advance landing during a phone call would
+  /// otherwise slam our session active over the call (the over-call incident).
+  /// Reactivation happens only via the `.ended` + `.shouldResume` path.
+  private var isInterrupted = false
+
   func configureObserverForAudioSessionInterruption() {
     NotificationCenter.default.addObserver(
       self,
@@ -68,12 +75,16 @@ public class AudioSessionHandler {
       // The system deactivates our session during the interruption; mark it so
       // resume reactivates it (Patch 113 step 2).
       isSessionActive = false
+      isInterrupted = true
       musicPlayer?.pause()
     case AVAudioSession.InterruptionType.ended:
       // Make session active
       // Update user interface
       // AVAudioSessionInterruptionOptionShouldResume option
       os_log(.info, "Audio Session: Audio interruption ended")
+      // Interruption is over: clear the gate so the reactivation below (and any
+      // subsequent user-initiated play) can activate the session again.
+      isInterrupted = false
       if let interruptionOptionRaw: NSNumber = notification
         .userInfo?[AVAudioSessionInterruptionOptionKey] as? NSNumber {
         let interruptionOption = AVAudioSession
@@ -130,6 +141,11 @@ public class AudioSessionHandler {
   }
 
   func configureBackgroundPlayback() {
+    // A2: never (re)activate the session while an interruption is active. A
+    // late stream insert or auto-advance during a phone call would otherwise
+    // `setActive(true)` over the call. Reactivation is owned solely by the
+    // `.ended` + `.shouldResume` path, which clears `isInterrupted` first.
+    guard !isInterrupted else { return }
     // Patch 113 (step 2): activate once. Once active, this is a no-op so a skip
     // no longer pays for setActive(true). Reactivated after interruptions via
     // the isSessionActive reset above.

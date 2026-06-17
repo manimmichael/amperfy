@@ -123,21 +123,21 @@ extension CarPlaySceneDelegate {
       let liveItem = sharedHome.data[section]?.first { $0.stableID == tappedID }
       let selectedPlayable = (liveItem ?? renderedItems[index]).playableContainable
       Task { @MainActor in
-        if !isOfflineMode {
-          do {
-            try await selectedPlayable.fetch(
-              storage: self.appDelegate.storage,
-              librarySyncer: self.appDelegate.getMeta(activeAccountInfo).librarySyncer,
-              playableDownloadManager: self.appDelegate.getMeta(activeAccountInfo)
-                .playableDownloadManager
-            )
-          } catch {
-            // ignore online fetch in CarPlay
-          }
-        }
+        // A1: start the tapped container immediately from what's already local
+        // and surface Now Playing — never gate playback on a server sync. Any
+        // server-side refresh happens AFTER, off the critical path (and is now
+        // time-bounded by the A1 request timeout, so it can't hang the tap).
         self.appDelegate.player.play(context: PlayContext(containable: selectedPlayable))
         displayNowPlaying {
           completion()
+        }
+        if !isOfflineMode {
+          try? await selectedPlayable.fetch(
+            storage: self.appDelegate.storage,
+            librarySyncer: self.appDelegate.getMeta(activeAccountInfo).librarySyncer,
+            playableDownloadManager: self.appDelegate.getMeta(activeAccountInfo)
+              .playableDownloadManager
+          )
         }
       }
     }

@@ -88,6 +88,9 @@ final class AmpacheXmlServerApi: URLCleanser, Sendable {
   static let maxItemCountToPollAtOnce: Int = 500
   static let apiPathComponents = ["server", "xml.server.php"]
 
+  /// A1: fail fast instead of the 60s OS default (see SubsonicServerApi).
+  static let requestTimeoutSeconds: TimeInterval = 12
+
   internal let serverApiVersion = Atomic<String?>(wrappedValue: nil)
   internal let clientApiVersion = "500000"
 
@@ -742,7 +745,10 @@ final class AmpacheXmlServerApi: URLCleanser, Sendable {
 
   private func request(url: URL) async throws -> APIDataResponse {
     try await withUnsafeThrowingContinuation { continuation in
-      AF.request(url, method: .get).validate().responseData { response in
+      AF.request(url, method: .get) { urlRequest in
+        // A1: fail fast rather than inheriting the 60s OS default.
+        urlRequest.timeoutInterval = Self.requestTimeoutSeconds
+      }.validate().responseData { response in
 
         if let data = response.data {
           continuation.resume(returning: APIDataResponse(data: data, url: url))

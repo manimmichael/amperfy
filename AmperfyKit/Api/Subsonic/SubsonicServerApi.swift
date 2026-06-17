@@ -103,6 +103,13 @@ final class SubsonicServerApi: URLCleanser, Sendable {
   static let defaultClientApiVersionWithToken = SubsonicVersion(major: 1, minor: 13, patch: 0)
   static let defaultClientApiVersionPreToken = SubsonicVersion(major: 1, minor: 11, patch: 0)
 
+  /// A1: every Subsonic request fails fast instead of sitting on the
+  /// URLSessionConfiguration.default 60s timeout. Covers stream-URL / API-
+  /// version resolution and all metadata calls, so a stuck connection
+  /// (DNS, Wi-Fi↔cellular handoff, unreachable server away from home)
+  /// surfaces an error in seconds rather than a multi-minute silent hang.
+  static let requestTimeoutSeconds: TimeInterval = 12
+
   internal let serverApiVersion = Atomic<SubsonicVersion?>(wrappedValue: nil)
   internal let clientApiVersion = Atomic<SubsonicVersion?>(wrappedValue: nil)
   internal let authType = Atomic<SubsonicApiAuthType>(wrappedValue: .autoDetect)
@@ -958,7 +965,10 @@ final class SubsonicServerApi: URLCleanser, Sendable {
 
   private func request(url: URL) async throws -> APIDataResponse {
     try await withUnsafeThrowingContinuation { continuation in
-      let afRequest = AF.request(url, method: .get)
+      let afRequest = AF.request(url, method: .get) { urlRequest in
+        // A1: fail fast rather than inheriting the 60s OS default.
+        urlRequest.timeoutInterval = Self.requestTimeoutSeconds
+      }
       afRequest.validate().responseData { response in
         if response.response?.statusCode == 404 {
           let cleanedURL = self.cleanse(url: response.request?.url)
