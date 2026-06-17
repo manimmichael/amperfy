@@ -62,6 +62,13 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   var accountNotificationHandler: AccountNotificationHandler?
   var sharedHome: HomeManager?
 
+  /// B3: the active-account callback fires on every `.accountActiveChanged`,
+  /// including transient `nil`s from an auth blip. The first fire per
+  /// connection must bind a root template; after that we only tear down +
+  /// rebuild on a real account-identity change (so a mid-drive blip can't reset
+  /// CarPlay to Home and kill playback). Reset to false on each connect.
+  private var didApplyInitialRoot = false
+
   var interfaceController: CPInterfaceController?
   var traits: UITraitCollection {
     interfaceController?.carTraitCollection ?? UITraitCollection.maxDisplayScale
@@ -134,9 +141,31 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
       self.interfaceController?.delegate = self
       self.configureNowPlayingTemplate()
 
+      didApplyInitialRoot = false
       accountNotificationHandler?
         .registerCallbackForActiveAccountChange { [weak self] accountInfo in
           guard let self else { return }
+
+          // B3: after the first bind, only react to a real account-identity
+          // change. A repeat event for the same account, or a transient
+          // `.accountActiveChanged(nil)` (auth blip) while accounts still
+          // exist, must NOT resetFetchController / setRootTemplate — that's the
+          // mid-drive "reset to Home, audio off" symptom.
+          let current: AccountInfo? = self.activeAccountInfo
+          if self.didApplyInitialRoot {
+            if accountInfo == current { return }
+            if accountInfo == nil,
+               !appDelegate.storage.settings.accounts.allAccounts.isEmpty {
+              os_log(
+                "CarPlay: transient nil active account ignored (accounts remain)",
+                log: self.log,
+                type: .info
+              )
+              return
+            }
+          }
+          self.didApplyInitialRoot = true
+
           resetFetchController()
           activeAccountInfo = accountInfo
           guard let accountInfo else {
