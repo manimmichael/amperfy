@@ -83,6 +83,32 @@ public struct CassetteSyncTrack: Sendable, Decodable {
   }
 }
 
+// MARK: - CassetteSyncAlbumCover
+
+/// Album-level cover bundled into the tracks response so the phone can
+/// materialize the album art locally — no display-time getCoverArt fetch.
+/// `url` is the full original (faithful: full image, square, no crop);
+/// `thumbUrl` is an edge-resized grid size. Null when the album has no
+/// resolved catalog cover (the phone then falls back to its lazy fetch).
+public struct CassetteSyncAlbumCover: Sendable, Decodable {
+  public let url: String
+  public let thumbUrl: String?
+
+  enum CodingKeys: String, CodingKey {
+    case url
+    case thumbUrl = "thumb_url"
+  }
+}
+
+// MARK: - CassetteIntentTracksResponse
+
+/// The `/intents/:id/tracks` envelope: the resolvable track list plus the
+/// album's bundled cover (Fast Album Art).
+public struct CassetteIntentTracksResponse: Sendable, Decodable {
+  public let tracks: [CassetteSyncTrack]
+  public let cover: CassetteSyncAlbumCover?
+}
+
 // MARK: - CassetteSyncAPI
 
 public final class CassetteSyncAPI: @unchecked Sendable {
@@ -165,10 +191,9 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     return all.filter { actionable.contains($0.state) }
   }
 
-  public func getIntentTracks(intentId: String) async throws -> [CassetteSyncTrack] {
-    struct Envelope: Decodable { let tracks: [CassetteSyncTrack] }
+  public func getIntentTracks(intentId: String) async throws -> CassetteIntentTracksResponse {
     let data = try await get(path: "/api/sync/intents/\(intentId)/tracks")
-    return try JSONDecoder().decode(Envelope.self, from: data).tracks
+    return try JSONDecoder().decode(CassetteIntentTracksResponse.self, from: data)
   }
 
   public func updateIntent(

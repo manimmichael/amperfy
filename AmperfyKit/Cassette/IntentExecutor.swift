@@ -139,8 +139,11 @@ public final class IntentExecutor {
     }
 
     let tracks: [CassetteSyncTrack]
+    let albumCover: CassetteSyncAlbumCover?
     do {
-      tracks = try await api.getIntentTracks(intentId: intent.id)
+      let response = try await api.getIntentTracks(intentId: intent.id)
+      tracks = response.tracks
+      albumCover = response.cover
     } catch {
       print(
         "Cassette poll: intent \(intent.id) - track resolve failed: \(error.localizedDescription)"
@@ -197,6 +200,13 @@ public final class IntentExecutor {
     }
     print("Cassette poll: intent \(intent.id) - enqueued \(enqueued) new download(s)")
 
+    // Fast Album Art: bundle the album cover so it's on-device the moment the
+    // album is — no display-time getCoverArt fetch. Best-effort; on failure the
+    // existing lazy artwork path still applies. Idempotent (skips once local).
+    if let albumCover {
+      await materializeAlbumCover(albumCover, tracks: tracks, accountInfo: accountInfo)
+    }
+
     // Complete the intent once everything it covers is on disk. Otherwise
     // leave it `syncing`; a later poll (or the next foreground) finalizes it
     // as background downloads land.
@@ -207,6 +217,90 @@ public final class IntentExecutor {
     } else {
       print("Cassette poll: intent \(intent.id) - downloads in flight, leaving syncing")
     }
+  }
+
+  /// Download the album's bundled cover and wire it into the album's `Artwork`
+  /// so it displays locally with no network getCoverArt fetch — the same move
+  /// `SubsonicArtworkDownloadDelegate` makes on a successful fetch, but sourced
+  /// from the cassette.digital cover URL bundled in the tracks response.
+  ///
+  /// Best-effort and idempotent: honors the artwork-download preference, skips
+  /// when a local cover already exists, and silently falls back to the existing
+  /// lazy artwork path on any failure (album/artwork not yet in the library,
+  /// download error, etc.). The full original is stored verbatim — full image,
+  /// square, no crop.
+  private func materializeAlbumCover(
+    _ cover: CassetteSyncAlbumCover,
+    tracks: [CassetteSyncTrack],
+    accountInfo: AccountInfo
+  ) async {
+    // Honor the artwork-download preference (e.g. user set it to "never").
+    guard AmperKit.shared.storage.settings.accounts
+      .getSetting(accountInfo).read.artworkDownloadSetting != .never else { return }
+
+    let context = AmperKit.shared.storage.main.context
+    let subsonicIds = tracks.map(\.subsonicTrackId)
+
+    // 1. Resolve the album's Artwork from any of the intent's tracks
+    //    (SongMO.id == subsonic_track_id). Skip if a local cover already exists.
+    var artworkObjectID: NSManagedObjectID?
+    var remoteInfo: ArtworkRemoteInfo?
+    context.performAndWait {
+      let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
+      request.predicate = NSPredicate(format: "id IN %@", subsonicIds)
+      request.fetchLimit = 1
+      guard let songMO = try? context.fetch(request).first,
+            let artwork = Song(managedObject: songMO).album?.artwork else { return }
+      if artwork.status == .CustomImage,
+         let path = artwork.imagePath,
+         FileManager.default.fileExists(atPath: path) {
+        return // already local — nothing to do
+      }
+      artworkObjectID = artwork.managedObject.objectID
+      remoteInfo = artwork.remoteInfo
+    }
+    guard let artworkObjectID, let remoteInfo else { return }
+
+    // 2. Download the full cover (stored verbatim).
+    guard let url = URL(string: cover.url) else { return }
+    let data: Data
+    do {
+      let (downloaded, response) = try await URLSession.shared.data(from: url)
+      guard let http = response as? HTTPURLResponse,
+            (200 ..< 300).contains(http.statusCode), !downloaded.isEmpty
+      else { return }
+      data = downloaded
+    } catch {
+      print("Cassette poll: cover download failed - \(error.localizedDescription)")
+      return
+    }
+
+    // 3. Write the file into the artwork dir and flip the Artwork to
+    //    .CustomImage — identical to SubsonicArtworkDownloadDelegate, so
+    //    imagePath / LibraryEntityImage then serve it with zero network.
+    let fileManager = CacheFileManager.shared
+    guard let relFilePath = fileManager.createRelPath(for: remoteInfo, account: accountInfo),
+          let absFilePath = fileManager.getAbsoluteAmperfyPath(relFilePath: relFilePath)
+    else { return }
+    do {
+      try fileManager.writeDataExcludedFromBackup(
+        data: data,
+        to: absFilePath,
+        accountInfo: accountInfo
+      )
+    } catch {
+      print("Cassette poll: cover write failed - \(error.localizedDescription)")
+      return
+    }
+    context.performAndWait {
+      guard let artworkMO = try? context.existingObject(with: artworkObjectID) as? ArtworkMO
+      else { return }
+      let artwork = Artwork(managedObject: artworkMO)
+      artwork.status = .CustomImage
+      artwork.relFilePath = relFilePath
+      try? context.save()
+    }
+    print("Cassette poll: materialized album cover (\(data.count) bytes)")
   }
 
   private func executeRemoval(
