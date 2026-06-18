@@ -23,7 +23,6 @@ import AmperfyKit
 import CarPlay
 import CoreData
 import Foundation
-import OSLog
 
 extension CarPlaySceneDelegate {
   func updateHomeSections() {
@@ -88,12 +87,6 @@ extension CarPlaySceneDelegate {
     // handler CB is called when user pressed the section title
     row.handler = { [weak self] selectedRow, completion in
       guard let self else { completion(); return }
-      // TEMP (C4 confirm): which handler does an in-car cover tap invoke?
-      os_log(
-        "[C4] row.handler (title) fired: section=%{public}@ rendered=%d",
-        log: OSLog(subsystem: "Amperfy", category: "CarPlay"), type: .info,
-        "\(section)", (self.homeRowData[section]?.count ?? 0)
-      )
       if !isDetailTemplate {
         Task { @MainActor in
           let detailSectionRow = createHomeRow(section: section, isDetailTemplate: true)
@@ -125,13 +118,6 @@ extension CarPlaySceneDelegate {
       let renderedItems = isDetailTemplate
         ? (self.homeDetailRowData[section] ?? [])
         : (self.homeRowData[section] ?? [])
-      // TEMP (C4 confirm): does the image handler fire, and does the lookup
-      // resolve? Reveals render-source vs handler-source in the car.
-      os_log(
-        "[C4] row.listImageRowHandler (image) fired: section=%{public}@ index=%d rendered=%d detail=%{public}@",
-        log: OSLog(subsystem: "Amperfy", category: "CarPlay"), type: .info,
-        "\(section)", index, renderedItems.count, isDetailTemplate ? "Y" : "N"
-      )
       guard index >= 0, index < renderedItems.count else { completion(); return }
       let tappedID = renderedItems[index].stableID
       let liveItem = sharedHome.data[section]?.first { $0.stableID == tappedID }
