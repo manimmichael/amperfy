@@ -526,6 +526,8 @@ public final class IntentExecutor {
 
     print("Cassette poll: intent \(intent.id) - removed \(removed.count) owned track(s)")
     if !removed.isEmpty {
+      // Refresh the on-device-only library views now that these are gone.
+      CassetteOwnershipNotifier.shared.ownershipDidChange()
       let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? "unknown-device"
       try? await api.reportDeviceInventory(
         deviceId: deviceId,

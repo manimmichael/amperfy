@@ -63,3 +63,39 @@ public final class CassetteLibraryFilterProvider: LibraryFilterProvider, Sendabl
 
   public var isOnDeviceOnly: Bool { currentFilter == .onDeviceOnly }
 }
+
+// MARK: - CassetteOwnershipNotifier
+
+/// Coalesces device-ownership changes (a track downloaded or removed) into a
+/// single, debounced `filterChangedNotification`, so the on-device-only library
+/// views rebuild their fetched-results controllers and re-snapshot the owned
+/// set right after an add/remove — instead of going stale until the Server Mode
+/// toggle or an app relaunch. A 50-track album records 50 times; debouncing
+/// collapses that burst into one rebuild. Reuses filterChangedNotification
+/// because its observers already do exactly the right thing (rebuild the FRC).
+@MainActor
+public final class CassetteOwnershipNotifier {
+  public static let shared = CassetteOwnershipNotifier()
+
+  private var pending: DispatchWorkItem?
+  private let debounceInterval: TimeInterval = 0.4
+
+  private init() {}
+
+  /// Call after any DeviceOwnership add (record) or remove. Safe to call in a
+  /// tight loop — only the last call within the debounce window fires.
+  public func ownershipDidChange() {
+    pending?.cancel()
+    let work = DispatchWorkItem {
+      NotificationCenter.default.post(
+        name: CassetteLibraryFilterProvider.filterChangedNotification,
+        object: nil
+      )
+    }
+    pending = work
+    DispatchQueue.main.asyncAfter(
+      deadline: .now() + debounceInterval,
+      execute: work
+    )
+  }
+}

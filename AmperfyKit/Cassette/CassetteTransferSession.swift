@@ -236,6 +236,8 @@ extension CassetteTransferSession: URLSessionDownloadDelegate {
         fileExtension: meta.ext
       )
       print("Cassette transfer: recorded ownership for \(meta.cassetteLocalId)")
+      // Refresh the on-device-only library views now that this track is owned.
+      CassetteOwnershipNotifier.shared.ownershipDidChange()
     } catch {
       os_log(
         "failed to record ownership for %{public}@: %{public}@",
