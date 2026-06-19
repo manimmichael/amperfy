@@ -1299,6 +1299,8 @@ public class LibraryStorage: PlayableFileCachable {
       ids = manager.fetchOwnedAlbumIds()
     case .artist:
       ids = manager.fetchOwnedArtistIds()
+    case .genre:
+      ids = manager.fetchOwnedGenreIds()
     }
     return NSPredicate(format: "id IN %@", ids)
   }

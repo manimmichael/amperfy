@@ -228,6 +228,17 @@ public final class DeviceOwnershipManager {
     return result
   }
 
+  /// Ids of genres that have at least one owned track (for the Genres list).
+  public func fetchOwnedGenreIds() -> Set<String> {
+    var result = Set<String>()
+    context.performAndWait {
+      for song in ownedSongsInternal() {
+        if let id = song.genre?.id, !id.isEmpty { result.insert(id) }
+      }
+    }
+    return result
+  }
+
   // MARK: - Internal (must be called inside context.perform*)
 
   private func ownedSubsonicTrackIdsInternal() -> Set<String> {
@@ -250,6 +261,7 @@ public final class DeviceOwnershipManager {
     request.relationshipKeyPathsForPrefetching = [
       #keyPath(SongMO.album),
       #keyPath(SongMO.artist),
+      #keyPath(SongMO.genre),
     ]
     request.returnsObjectsAsFaults = false
     return (try? context.fetch(request)) ?? []

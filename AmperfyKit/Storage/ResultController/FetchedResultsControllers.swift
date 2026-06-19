@@ -31,6 +31,7 @@ enum CassetteOwnedScope {
   case song
   case album
   case artist
+  case genre
 }
 
 /// Returns the ownership predicate to AND into a library FRC, or nil when the
@@ -52,6 +53,8 @@ func makeCassetteOwnershipPredicate(
     ids = manager.fetchOwnedAlbumIds()
   case .artist:
     ids = manager.fetchOwnedArtistIds()
+  case .genre:
+    ids = manager.fetchOwnedGenreIds()
   }
   return NSPredicate(format: "id IN %@", ids)
 }
@@ -365,6 +368,15 @@ public class GenreFetchedResultsController: CachedFetchedResultsController<Genre
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
       coreDataCompanion.library.getFetchPredicate(forAccount: account),
     ])
+    // Cassette fork — Layer 3 Phase 3.2: constrain to owned genres in
+    // on-device-only mode (nil/no-op in Server Mode).
+    let cassetteOwned = makeCassetteOwnershipPredicate(.genre, coreDataCompanion: coreDataCompanion)
+    if let cassetteOwned, let base = fetchRequest.predicate {
+      fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+        base,
+        cassetteOwned,
+      ])
+    }
     fetchRequest.relationshipKeyPathsForPrefetching = GenreMO.relationshipKeyPathsForPrefetching
     fetchRequest.returnsObjectsAsFaults = false
     super.init(
@@ -372,6 +384,7 @@ public class GenreFetchedResultsController: CachedFetchedResultsController<Genre
       fetchRequest: fetchRequest, account: account,
       isGroupedInAlphabeticSections: isGroupedInAlphabeticSections
     )
+    cassetteOwnershipPredicate = cassetteOwned
   }
 
   public func search(searchText: String, onlyCached: Bool) {
@@ -701,6 +714,15 @@ public class ArtistSongsItemsFetchedResultsController: BasicFetchedResultsContro
         ]),
       ])
     }
+    // Cassette fork — Layer 3 Phase 3.2: constrain the artist-detail song list to
+    // owned tracks in on-device-only mode (nil/no-op in Server Mode).
+    let cassetteOwned = makeCassetteOwnershipPredicate(.song, coreDataCompanion: coreDataCompanion)
+    if let cassetteOwned, let base = fetchRequest.predicate {
+      fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+        base,
+        cassetteOwned,
+      ])
+    }
     fetchRequest.relationshipKeyPathsForPrefetching = SongMO.relationshipKeyPathsForPrefetching
     fetchRequest.returnsObjectsAsFaults = false
 
@@ -709,6 +731,7 @@ public class ArtistSongsItemsFetchedResultsController: BasicFetchedResultsContro
       fetchRequest: fetchRequest,
       isGroupedInAlphabeticSections: isGroupedInAlphabeticSections
     )
+    cassetteOwnershipPredicate = cassetteOwned
   }
 
   public func search(searchText: String, onlyCachedSongs: Bool) {

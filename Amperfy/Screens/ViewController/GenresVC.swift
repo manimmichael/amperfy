@@ -51,6 +51,15 @@ class GenresVC: SingleFetchedResultsTableViewController<GenreMO> {
     )
     singleFetchedResultsController = fetchedResultsController
 
+    // cassette Layer 3 Phase 3.2: rebuild the FRC when Server Mode toggles so
+    // the ownership predicate changes between on-device-only and full catalog.
+    appDelegate.notificationHandler.register(
+      self,
+      selector: #selector(cassetteLibraryFilterChanged),
+      name: CassetteLibraryFilterProvider.filterChangedNotification,
+      object: nil
+    )
+
     // cassette Polish 2 (B1): per-category search removed; use the global Search tab.
     setNavBarTitle(title: "Genres")
     tableView.register(nibName: GenericTableCell.typeName)
@@ -98,6 +107,25 @@ class GenresVC: SingleFetchedResultsTableViewController<GenreMO> {
     resultUpdateHandler?.changesDidEnd = {
       self.updateContentUnavailable()
     }
+  }
+
+  // cassette Layer 3 Phase 3.2: rebuild the genre FRC so its ownership
+  // predicate flips between on-device-only and full catalog when the library
+  // filter toggles. Mirrors ArtistsVC.change(sortType:); GenresVC's delegate is
+  // resultUpdateHandler (set by SingleFetchedResultsTableViewController).
+  @objc
+  private func cassetteLibraryFilterChanged() {
+    singleFetchedResultsController?.clearResults()
+    tableView.reloadData()
+    fetchedResultsController = GenreFetchedResultsController(
+      coreDataCompanion: appDelegate.storage.main, account: account,
+      isGroupedInAlphabeticSections: true
+    )
+    singleFetchedResultsController = fetchedResultsController
+    singleFetchedResultsController?.delegate = resultUpdateHandler
+    singleFetchedResultsController?.fetch()
+    tableView.reloadData()
+    updateContentUnavailable()
   }
 
   func updateContentUnavailable() {
