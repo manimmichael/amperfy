@@ -62,12 +62,24 @@ public class AbstractPlayable: AbstractLibraryEntity, Downloadable {
     case .id3TagOnly:
       return embeddedArtwork?.imagePath
     case .serverArtworkOnly:
-      return super.imagePath(setting: setting)
+      return super.imagePath(setting: setting) ?? albumCoverFallbackPath
     case .preferServerArtwork:
-      return artwork?.imagePath ?? embeddedArtwork?.imagePath
+      return artwork?.imagePath ?? embeddedArtwork?.imagePath ?? albumCoverFallbackPath
     case .preferId3Tag:
-      return embeddedArtwork?.imagePath ?? artwork?.imagePath
+      return embeddedArtwork?.imagePath ?? artwork?.imagePath ?? albumCoverFallbackPath
     }
+  }
+
+  /// Fast Album Art fallback: a song's own cover is a distinct Artwork row
+  /// from its album's (Navidrome uses `mf-…` vs `al-…` ids) and is only
+  /// fetched lazily over the network, so away from the Cassette Player it
+  /// stays imageless. The album's cover is materialized locally (transfer or
+  /// backfill), so when the song's own art has no local image we resolve to
+  /// the album's cover — one resolution point shared by every now-playing
+  /// surface, no duplicated per-track copy. Not used in `.id3TagOnly`
+  /// (embedded-only by intent).
+  private var albumCoverFallbackPath: String? {
+    asSong?.album?.artwork?.imagePath
   }
 
   public var embeddedArtwork: EmbeddedArtwork? {

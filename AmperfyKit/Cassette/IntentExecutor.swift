@@ -104,6 +104,65 @@ public final class IntentExecutor {
     for intent in intents {
       await executeIntent(intent)
     }
+
+    // Fast Album Art: fill covers for albums already on the device — not just
+    // fresh transfers. Off-main, throttled, idempotent; reconciles every sync
+    // so existing albums get and keep their art.
+    if let accountInfo = AmperKit.shared.storage.settings.accounts.active {
+      await backfillOwnedAlbumCovers(accountInfo: accountInfo)
+    }
+  }
+
+  /// Fast Album Art backfill: albums already on the device whose cover was
+  /// never fetched (transferred before cover-bundling, or never viewed) get
+  /// filled here. Idempotent and cheap — enumerate owned albums off-main, skip
+  /// any that already have a local cover, and hand the rest to the artwork
+  /// download manager: an actor-based, 2-wide-throttled, off-main queue that
+  /// pulls the materialized cover.jpg from the LAN Player's getCoverArt and
+  /// lands the same `.CustomImage` end-state as a transfer (honoring
+  /// artworkDownloadSetting and de-duping in-flight).
+  private func backfillOwnedAlbumCovers(accountInfo: AccountInfo) async {
+    // Enumerate + gate OFF the main thread, on a background context.
+    let artworkIDs: [NSManagedObjectID]
+    do {
+      artworkIDs = try await AmperKit.shared.storage.async.performAndGet { asyncCompanion in
+        let context = asyncCompanion.context
+        let albumIds = DeviceOwnershipManager(context: context).fetchOwnedAlbumIds()
+        guard !albumIds.isEmpty else { return [NSManagedObjectID]() }
+
+        let request: NSFetchRequest<AlbumMO> = AlbumMO.fetchRequest()
+        request.predicate = NSPredicate(format: "id IN %@", Array(albumIds))
+        request.returnsObjectsAsFaults = false
+        let albumMOs = (try? context.fetch(request)) ?? []
+
+        var ids = [NSManagedObjectID]()
+        for albumMO in albumMOs {
+          guard let artwork = Album(managedObject: albumMO).artwork else { continue }
+          // Cheap gate: skip albums that already have a local cover.
+          if artwork.status == .CustomImage,
+             let path = artwork.imagePath,
+             FileManager.default.fileExists(atPath: path) {
+            continue
+          }
+          ids.append(artwork.managedObject.objectID)
+        }
+        return ids
+      }
+    } catch {
+      return
+    }
+    guard !artworkIDs.isEmpty else { return }
+
+    // Re-wrap on the main context (cheap object-id lookups) and enqueue. The
+    // download manager itself runs the fetches off-main, throttled, idempotent.
+    let mainContext = AmperKit.shared.storage.main.context
+    let artworks = artworkIDs.compactMap { id -> Artwork? in
+      guard let mo = try? mainContext.existingObject(with: id) as? ArtworkMO else { return nil }
+      return Artwork(managedObject: mo)
+    }
+    guard !artworks.isEmpty else { return }
+    print("Cassette poll: backfilling covers for \(artworks.count) owned album(s)")
+    AmperKit.shared.getMeta(accountInfo).artworkDownloadManager.download(objects: artworks)
   }
 
   private func executeIntent(_ intent: CassetteSyncIntent) async {
