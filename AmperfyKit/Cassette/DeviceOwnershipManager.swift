@@ -124,6 +124,34 @@ public final class DeviceOwnershipManager {
     return result
   }
 
+  /// Plain-value snapshot of every owned item — safe to hand to the sync layer
+  /// off the Core Data queue (no managed objects escape the context). This is
+  /// the device's COMPLETE owned-set, the basis of the full-state inventory
+  /// report. `downloadedAt` is carried so a full report preserves the real
+  /// download time instead of letting the server default it to "now".
+  /// `cassetteLocalId` is coerced through String? so this compiles whatever
+  /// nullability Core Data codegen gives the (model-non-optional) attribute.
+  public func fetchAllInventory() throws
+    -> [(cassetteLocalId: String, mbid: String?, downloadedAt: Date)] {
+    var result: [(cassetteLocalId: String, mbid: String?, downloadedAt: Date)] = []
+    var caught: Error?
+    context.performAndWait {
+      let request: NSFetchRequest<DeviceOwnershipMO> = DeviceOwnershipMO.fetchRequest()
+      do {
+        result = try context.fetch(request).compactMap {
+          mo -> (cassetteLocalId: String, mbid: String?, downloadedAt: Date)? in
+          let lid: String? = mo.cassetteLocalId
+          guard let lid, !lid.isEmpty else { return nil }
+          let mbid: String? = mo.mbid
+          let downloadedAt: Date? = mo.downloadedAt
+          return (cassetteLocalId: lid, mbid: mbid, downloadedAt: downloadedAt ?? Date())
+        }
+      } catch { caught = error }
+    }
+    if let caught { throw caught }
+    return result
+  }
+
   public func exists(cassetteLocalId: String) -> Bool {
     ((try? fetchOne(cassetteLocalId: cassetteLocalId)) ?? nil) != nil
   }

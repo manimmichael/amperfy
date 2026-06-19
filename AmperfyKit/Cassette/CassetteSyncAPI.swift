@@ -252,6 +252,32 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     _ = try await send(method: "POST", path: "/api/sync/device-inventory", json: body)
   }
 
+  /// Full-state device-inventory report — the device's COMPLETE owned-set as a
+  /// true snapshot (not a delta). The server replaces every row for this device
+  /// with `items` and stamps `inventory_as_of`, the freshness signal the
+  /// reconciler gates removes on. Unlike the differential report, an empty
+  /// device is meaningful here (`items: []` == "I hold nothing"), so this never
+  /// early-returns on an empty list.
+  public func reportFullInventory(
+    deviceId: String,
+    deviceLabel: String?,
+    items: [(cassetteLocalId: String, mbid: String?, downloadedAt: Date)]
+  ) async throws {
+    var body: [String: Any] = ["device_id": deviceId, "full_state": true]
+    if let deviceLabel { body["device_label"] = deviceLabel }
+
+    let iso = ISO8601DateFormatter()
+    body["items"] = items.map { entry -> [String: Any] in
+      var row: [String: Any] = [
+        "cassette_local_id": entry.cassetteLocalId,
+        "downloaded_at": iso.string(from: entry.downloadedAt),
+      ]
+      row["mbid"] = entry.mbid as Any? ?? NSNull()
+      return row
+    }
+    _ = try await send(method: "POST", path: "/api/sync/device-inventory", json: body)
+  }
+
   // MARK: HTTP plumbing
 
   private func get(path: String) async throws -> Data {

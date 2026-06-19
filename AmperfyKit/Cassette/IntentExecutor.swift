@@ -50,6 +50,14 @@ public final class IntentExecutor {
   // platform/model/app_version.
   private var hasRegisteredDevice = false
 
+  // Sync Reconciliation (Phase 1): throttle for the periodic full-state
+  // inventory report — the device's complete owned-set, posted on poll so the
+  // server's "actual" self-heals. The per-transfer differential report keeps
+  // things live during active sync; this corrects drift (missed reports,
+  // out-of-band deletions). nil until the first report this launch.
+  private var lastFullInventoryReportAt: Date?
+  private let fullInventoryReportMinInterval: TimeInterval = 120
+
   public init() {}
 
   /// Entry point for polling (foreground + 30s timer). No-op if no account or
@@ -110,6 +118,58 @@ public final class IntentExecutor {
     // so existing albums get and keep their art.
     if let accountInfo = AmperKit.shared.storage.settings.accounts.active {
       await backfillOwnedAlbumCovers(accountInfo: accountInfo)
+    }
+
+    // Sync Reconciliation (Phase 1): report the device's COMPLETE owned-set so
+    // the server's "actual" inventory self-heals from any missed differential
+    // report or out-of-band deletion. Throttled — see fullInventoryReportMinInterval.
+    await reportFullInventoryIfDue()
+  }
+
+  /// Post the device's complete owned-set (full-state inventory) to the server,
+  /// throttled so the 30s foreground timer doesn't spam it — a background poll
+  /// always exceeds the interval. The server replaces this device's rows with
+  /// the snapshot and stamps `inventory_as_of` (the reconciler's freshness
+  /// signal). Best-effort: a failure just retries on the next poll, and the
+  /// per-transfer differential report keeps the server live in the meantime.
+  private func reportFullInventoryIfDue() async {
+    if let last = lastFullInventoryReportAt,
+       Date().timeIntervalSince(last) < fullInventoryReportMinInterval {
+      return
+    }
+
+    let manager = DeviceOwnershipManager(context: AmperKit.shared.storage.main.context)
+    let items: [(cassetteLocalId: String, mbid: String?, downloadedAt: Date)]
+    do {
+      items = try manager.fetchAllInventory()
+    } catch {
+      print("Cassette poll: full-inventory snapshot failed - \(error.localizedDescription)")
+      return
+    }
+
+    // A full-state report is a complete snapshot; the server replaces the
+    // device's rows with exactly what we send. The inventory endpoint caps a
+    // request at 5000 items, so for a larger library we must NOT send a
+    // truncated list — that would read as a smaller "actual" and (once removes
+    // go live) orphan the rest. Skip instead; the differential report keeps the
+    // server live, and the freshness gate treats a missing snapshot as stale.
+    if items.count > 5000 {
+      print("Cassette poll: skipping full-state inventory — \(items.count) items exceeds the 5000 server cap")
+      return
+    }
+
+    let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? "unknown-device"
+    let deviceLabel = UIDevice.current.name
+    do {
+      try await api.reportFullInventory(
+        deviceId: deviceId,
+        deviceLabel: deviceLabel,
+        items: items
+      )
+      lastFullInventoryReportAt = Date()
+      print("Cassette poll: reported full-state inventory (\(items.count) item(s))")
+    } catch {
+      print("Cassette poll: full-state inventory report failed - \(error.localizedDescription)")
     }
   }
 
