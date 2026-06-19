@@ -579,13 +579,13 @@ extension CarPlaySceneDelegate {
   }
 
   func createDetailTemplate(for episode: PodcastEpisode) -> CPListItem {
-    let accessoryType: CPListItemAccessoryType = episode.isCached ? .cloud : .none
+    // Cassette CarPlay: no cloud/download badge — see the song-row variant.
     let listItem = CPListItem(
       text: episode.title,
       detailText: nil,
       image: nil,
       accessoryImage: nil,
-      accessoryType: accessoryType
+      accessoryType: .none
     )
     listItem.handler = { [weak self] item, completion in
       guard let self = self else { completion(); return }
@@ -643,7 +643,10 @@ extension CarPlaySceneDelegate {
     isTrackDisplayed: Bool = false
   )
     -> CPListItem {
-    let accessoryType: CPListItemAccessoryType = playable.isCached ? .cloud : .none
+    // Cassette CarPlay: no cloud/download badge. Everything browsable in-car is
+    // already on the device, so a "cached" accessory is pure noise — keep rows
+    // clean (the artwork/track number is the only leading visual).
+    let accessoryType: CPListItemAccessoryType = .none
     let image = getImage(for: playable, isTrackDisplayed: isTrackDisplayed)
     if let artwork = playable.artwork, let accountInfo = artwork.account?.info {
       appDelegate.getMeta(accountInfo).artworkDownloadManager.download(object: artwork)

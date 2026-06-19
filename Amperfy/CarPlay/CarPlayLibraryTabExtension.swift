@@ -24,21 +24,13 @@ import CarPlay
 import CoreData
 import Foundation
 
-extension LibraryDisplayType {
-  fileprivate var isVisibleInCarPlay: Bool {
-    switch self {
-    case .albums, .artists, .favoriteAlbums, .favoriteArtists, .favoriteSongs, .genres,
-         .newestAlbums,
-         .podcasts,
-         .radios, .recentAlbums:
-      return true
-    case .directories, .downloads, .songs:
-      return false
-    case .playlists:
-      return false // playlists have their own tab
-    }
-  }
-}
+// Cassette CarPlay trim: the in-car Library is a fixed, driving-safe set —
+// exactly Albums, Artists, Playlists and Favorite Songs (see
+// `carPlayLibraryRows`). Home shelves (Newest / Recently Played Albums), flat
+// Songs, Directories, Podcasts and Radios are intentionally dropped to keep the
+// category list short and glanceable, so there is no longer a per-type
+// visibility predicate here — `carPlayLibraryRows` is the single source of
+// truth for what the Library shows.
 
 extension CarPlaySceneDelegate {
   static let switchAccountTitle = "Switch Account"
@@ -72,18 +64,33 @@ extension CarPlaySceneDelegate {
     return element
   }
 
-  /// D5: mirror the mobile Library — a clean category LIST (one tappable row
-  /// per category, in the user's configured order from
-  /// `libraryDisplaySettings.inUse`) instead of the horizontal type-chooser
-  /// carousel with the folder-ish icons. Each row pushes the matching section
-  /// template; browse reads from local FRC data, so it never hangs when the
-  /// server is unreachable. Categories are filtered to `isVisibleInCarPlay`
-  /// (Songs/Directories/Downloads hidden; Playlists has its own tab).
+  /// Cassette CarPlay trim: a fixed, driving-safe Library — exactly Albums,
+  /// Artists, Playlists and Favorite Songs, in that order. We deliberately
+  /// ignore the user's full mobile `libraryDisplaySettings` order here: the
+  /// in-car list must stay short and predictable (category -> list -> play),
+  /// so Home shelves (Newest / Recently Played Albums), flat Songs,
+  /// Directories, Podcasts and Radios are not offered. Each row pushes a local
+  /// FRC-backed browse template, so it never hangs when the server is
+  /// unreachable.
+  static let carPlayLibraryRows: [LibraryDisplayType] = [
+    .albums,
+    .artists,
+    .playlists,
+    .favoriteSongs,
+  ]
+
   func createLibraryNavigationTypeSection() -> CPListSection {
     var items = [CPListTemplateItem]()
-    for type in appDelegate.storage.settings.accounts.getSetting(activeAccountInfo).read
-      .libraryDisplaySettings.inUse {
-      guard type.isVisibleInCarPlay, let section = librarySection(for: type) else { continue }
+    for type in Self.carPlayLibraryRows {
+      if type == .playlists {
+        // Playlists already exists as a top-level tab whose template instance
+        // lives in the tab bar; pushing that same instance onto the Library
+        // nav stack would duplicate it in the hierarchy (CarPlay throws). So
+        // the Playlists *row* pushes a fresh, FRC-backed list instead.
+        items.append(createPlaylistsLibraryRow())
+        continue
+      }
+      guard let section = librarySection(for: type) else { continue }
       items.append(createLibraryItem(
         text: type.displayName,
         icon: type.image,
@@ -93,20 +100,54 @@ extension CarPlaySceneDelegate {
     return CPListSection(items: items, header: "Library", sectionIndexTitle: nil)
   }
 
-  /// Maps a Library category to its CarPlay browse template.
+  /// A Library row that opens the Playlists browse on a fresh `CPListTemplate`
+  /// (see `createLibraryNavigationTypeSection` for why we don't reuse the tab
+  /// instance). Mirrors the playlist tab's appear behavior: ensure the fetch
+  /// controller exists, then populate from local data.
+  private func createPlaylistsLibraryRow() -> CPListItem {
+    let item = CPListItem(
+      text: LibraryDisplayType.playlists.displayName,
+      detailText: nil,
+      image: UIImage
+        .createArtwork(
+          with: LibraryDisplayType.playlists.image,
+          iconSizeType: .small,
+          theme: getPreference(activeAccountInfo).theme,
+          lightDarkMode: traits.userInterfaceStyle.asModeType,
+          switchColors: true
+        )
+        .carPlayImage(carTraitCollection: traits),
+      accessoryImage: nil,
+      accessoryType: .disclosureIndicator
+    )
+    item.handler = { [weak self] _, completion in
+      guard let self = self else { completion(); return }
+      Task { @MainActor in
+        if self.playlistFetchController == nil { self.createPlaylistFetchController() }
+        let template = CPListTemplate(
+          title: LibraryDisplayType.playlists.displayName,
+          sections: self.createPlaylistsSections()
+        )
+        self.playlistDetailSection = nil
+        self.pushTemplateIfAllowed(template, animated: true)
+        completion()
+      }
+    }
+    return item
+  }
+
+  /// Maps a Library category to its CarPlay browse template. Only the
+  /// driving-safe categories in `carPlayLibraryRows` resolve to a template
+  /// here; Playlists is handled separately (see `createPlaylistsLibraryRow`),
+  /// and everything else returns nil and is skipped.
   private func librarySection(for type: LibraryDisplayType) -> CPListTemplate? {
     switch type {
-    case .genres: return genresSection
-    case .artists: return artistsSection
     case .albums: return albumsSection
-    case .podcasts: return podcastSection
+    case .artists: return artistsSection
     case .favoriteSongs: return songsFavoriteSection
-    case .favoriteAlbums: return albumsFavoriteSection
-    case .favoriteArtists: return artistsFavoriteSection
-    case .newestAlbums: return albumsNewestSection
-    case .recentAlbums: return albumsRecentSection
-    case .radios: return radioSection
-    case .directories, .downloads, .playlists, .songs: return nil
+    case .directories, .downloads, .favoriteAlbums, .favoriteArtists, .genres, .newestAlbums,
+         .playlists, .podcasts, .radios, .recentAlbums, .songs:
+      return nil
     }
   }
 

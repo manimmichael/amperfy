@@ -75,27 +75,35 @@ extension CarPlaySceneDelegate {
         )
       }
     }
-    buttons.append(
-      CPNowPlayingPlaybackRateButton(handler: { [weak self] button in
-        guard let self = self else { return }
-        let availablePlaybackRates: [CPListItem] = PlaybackRate.allCases
-          .compactMap { playbackRate in
-            let listItem = CPListItem(text: playbackRate.description, detailText: nil)
-            listItem.handler = { [weak self] item, completion in
-              guard let self = self else { completion(); return }
-              appDelegate.player.setPlaybackRate(playbackRate)
-              interfaceController?.popTemplate(animated: true) { _, _ in }
-              completion()
+    // Cassette CarPlay: the playback-speed multiplier only makes sense for
+    // spoken-word content. Cassette surfaces podcasts as a real, playable
+    // content type (separate `.podcast` player mode with its own persisted
+    // `podcastPlaybackRate`), so expose the rate control ONLY while a podcast /
+    // audiobook is the current Now Playing item — never for music, where a
+    // speed control is just clutter that risks an accidental pitch-shift.
+    if appDelegate.player.playerMode == .podcast {
+      buttons.append(
+        CPNowPlayingPlaybackRateButton(handler: { [weak self] button in
+          guard let self = self else { return }
+          let availablePlaybackRates: [CPListItem] = PlaybackRate.allCases
+            .compactMap { playbackRate in
+              let listItem = CPListItem(text: playbackRate.description, detailText: nil)
+              listItem.handler = { [weak self] item, completion in
+                guard let self = self else { completion(); return }
+                appDelegate.player.setPlaybackRate(playbackRate)
+                interfaceController?.popTemplate(animated: true) { _, _ in }
+                completion()
+              }
+              return listItem
             }
-            return listItem
-          }
-        let playbackRateTemplate = CPListTemplate(title: "Playback Rate", sections: [
-          CPListSection(items: availablePlaybackRates),
-        ])
-        pushTemplateIfAllowed(playbackRateTemplate, animated: true)
+          let playbackRateTemplate = CPListTemplate(title: "Playback Rate", sections: [
+            CPListSection(items: availablePlaybackRates),
+          ])
+          pushTemplateIfAllowed(playbackRateTemplate, animated: true)
 
-      })
-    )
+        })
+      )
+    }
     CPNowPlayingTemplate.shared.updateNowPlayingButtons(buttons)
     CPNowPlayingTemplate.shared.isUpNextButtonEnabled = true
   }
@@ -180,7 +188,8 @@ extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
     playerIndex: PlayerIndex
   )
     -> CPListItem {
-    let accessoryType: CPListItemAccessoryType = playable.isCached ? .cloud : .none
+    // Cassette CarPlay: no cloud/download badge on queue rows either — the
+    // queue is on-device content, so the "cached" accessory is just noise.
     let image = LibraryEntityImage.getImageToDisplayImmediately(
       libraryEntity: playable,
       themePreference: getPreference(playable.account?.info).theme,
@@ -192,7 +201,7 @@ extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
       detailText: playable.subtitle,
       image: image.carPlayImage(carTraitCollection: traits),
       accessoryImage: nil,
-      accessoryType: accessoryType
+      accessoryType: .none
     )
     listItem.handler = { [weak self] item, completion in
       guard let self = self else { completion(); return }
