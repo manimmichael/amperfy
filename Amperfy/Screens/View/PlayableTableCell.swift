@@ -348,7 +348,10 @@ class PlayableTableCell: BasicTableCell {
       configureTrackNumberLabel()
       trackNumberLabel.isHidden = false
       entityImage.isHidden = true
-      titleContainerLeadingConstraint.constant = 10 + 21 + 16 // heart + track lable width + offset
+      // cassette polish: 2-digit track column (18pt) + tightened trailing gap
+      // (8pt, was 16) so the number sits close to the title. Right-aligned
+      // within the narrow column keeps 9/10/11 lined up.
+      titleContainerLeadingConstraint.constant = 10 + 18 + 8 // heart + track label width + offset
     case .artwork:
       trackNumberLabel.isHidden = true
       entityImage.isHidden = false

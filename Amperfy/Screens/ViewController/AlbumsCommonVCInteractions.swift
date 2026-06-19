@@ -85,6 +85,37 @@ class SliderMenuView: UIView {
   }
 }
 
+// MARK: - CassetteAlbumGrouping
+
+/// cassette: adaptive album-grid grouping. Small owned collections read better
+/// as a flat grid (no A/B/C section headers, no alpha scrubber index); large
+/// ones keep the sectioned + indexed layout. `auto` decides by album count
+/// against `CassetteAlbumGroupingProvider.threshold`; `flat` / `sectioned` are
+/// manual overrides surfaced in the Sort/Style menu. Persisted in raw
+/// UserDefaults (kept out of the Codable Settings blob to avoid migration
+/// churn) — mirrors how CassetteLibraryFilterProvider stores its flag.
+enum CassetteAlbumGrouping: String, CaseIterable {
+  case auto
+  case flat
+  case sectioned
+}
+
+enum CassetteAlbumGroupingProvider {
+  /// Below this owned-album count, `auto` flattens the grid. Tunable.
+  static let threshold = 60
+
+  private static let key = "cassetteAlbumGroupingOverride"
+
+  static var current: CassetteAlbumGrouping {
+    get {
+      guard let raw = UserDefaults.standard.string(forKey: key),
+            let value = CassetteAlbumGrouping(rawValue: raw) else { return .auto }
+      return value
+    }
+    set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
+  }
+}
+
 // MARK: - AlbumsCommonVCInteractions
 
 @MainActor
@@ -119,6 +150,12 @@ class AlbumsCommonVCInteractions {
       isIndexTitelsHiddenCB?()
     }
   }
+
+  /// cassette: whether the current fetch is grouped into alphabetic sections.
+  /// Drives the collection grid's section-header suppression so a flattened
+  /// small collection shows no letter headers (the FRC is a single section and
+  /// would otherwise render the first album's letter as a lone header).
+  public private(set) var isGroupedInAlphabeticSections = false
 
   private let account: Account
 
@@ -193,15 +230,52 @@ class AlbumsCommonVCInteractions {
     rootVC?.setNavBarTitle(title: filterTitle)
   }
 
+  /// Albums currently in scope: the owned set in the default on-device mode,
+  /// the full available catalog in Server Mode. Used to decide adaptive
+  /// grouping. A cheap COUNT / id-set fetch — not the full object graph.
+  private var inScopeAlbumCount: Int {
+    if CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
+      return DeviceOwnershipManager(context: appDelegate.storage.main.context)
+        .fetchOwnedAlbumIds().count
+    }
+    return appDelegate.storage.main.library.getAlbumCount(for: account)
+  }
+
+  /// cassette: resolve the adaptive-grouping decision. `baseEligible` is whether
+  /// the sort type even supports alphabetic sections (newest/recent never do).
+  /// Newest/Recent stay flat regardless. Otherwise the manual override wins;
+  /// `auto` groups only once the in-scope album count reaches the threshold.
+  private func shouldGroupInAlphabeticSections(baseEligible: Bool) -> Bool {
+    guard baseEligible else { return false }
+    switch CassetteAlbumGroupingProvider.current {
+    case .flat:
+      return false
+    case .sectioned:
+      return true
+    case .auto:
+      return inScopeAlbumCount >= CassetteAlbumGroupingProvider.threshold
+    }
+  }
+
   func change(sortType: AlbumElementSortType) {
     self.sortType = sortType
     fetchedResultsController?.clearResults()
-    var isGroupedInAlphabeticSections = false
+    var baseEligible = false
     switch sortType {
     case .artist, .duration, .name, .rating, .year:
-      isGroupedInAlphabeticSections = true
+      baseEligible = true
     case .newest, .recent:
-      isGroupedInAlphabeticSections = false
+      baseEligible = false
+    }
+    // cassette: adaptive grouping — flatten small collections (no section
+    // headers, no alpha index). For .all / .favorites filters applyFilter()
+    // seeds isIndexTitelsHidden=false; here we refine it to match the actual
+    // grouping decision so the scrubber index disappears when flat.
+    let isGroupedInAlphabeticSections =
+      shouldGroupInAlphabeticSections(baseEligible: baseEligible)
+    self.isGroupedInAlphabeticSections = isGroupedInAlphabeticSections
+    if baseEligible {
+      isIndexTitelsHidden = !isGroupedInAlphabeticSections
     }
 
     fetchedResultsController = AlbumFetchedResultsController(
@@ -303,7 +377,13 @@ class AlbumsCommonVCInteractions {
     }
     actions.append(createStyleButtonMenu())
 
-    if appDelegate.storage.settings.user.isOnlineMode {
+    // cassette: "Download <filter>" is gated to Server Mode (the Navidrome
+    // streaming experience). In the default on-device-only mode everything in
+    // the library is already on the phone, so bulk-download is a no-op — hide
+    // it. It returns in Server Mode (still also requiring online mode, since it
+    // hits the download manager).
+    if !CassetteLibraryFilterProvider.shared.isOnDeviceOnly,
+       appDelegate.storage.settings.user.isOnlineMode {
       actions.append(createActionButtonMenu())
     }
 
@@ -483,7 +563,38 @@ class AlbumsCommonVCInteractions {
       title: "Style",
       image: .grid,
       options: [],
-      children: [tableStyle, gridStyle, changeGridSize]
+      children: [tableStyle, gridStyle, changeGridSize, createGroupingMenu()]
+    )
+  }
+
+  /// cassette: adaptive-grouping override, surfaced inline in the Style menu.
+  /// Auto = decide by album count (flat below the threshold); Grouped /
+  /// Ungrouped force the layout regardless of count. Changing it rebuilds the
+  /// fetch for the current sort and reloads the list.
+  private func createGroupingMenu() -> UIMenu {
+    let current = CassetteAlbumGroupingProvider.current
+    func makeAction(_ title: String, _ value: CassetteAlbumGrouping) -> UIAction {
+      UIAction(
+        title: title,
+        image: current == value ? .check : nil,
+        handler: { _ in
+          CassetteAlbumGroupingProvider.current = value
+          // Rebuild the FRC for the active sort with the new grouping decision,
+          // then reload the grid + refresh the menu check state.
+          self.change(sortType: self.sortType)
+          self.reloadListViewCB?()
+        }
+      )
+    }
+    return UIMenu(
+      title: "Grouping",
+      image: UIImage(systemName: "textformat.abc.dottedunderline"),
+      options: [.displayInline],
+      children: [
+        makeAction("Auto", .auto),
+        makeAction("Grouped", .sectioned),
+        makeAction("Ungrouped", .flat),
+      ]
     )
   }
 

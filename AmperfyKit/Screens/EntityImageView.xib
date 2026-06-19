@@ -22,7 +22,7 @@
             <rect key="frame" x="0.0" y="0.0" width="518" height="379"/>
             <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
             <subviews>
-                <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="L2a-k6-g8X" userLabel="Single" customClass="LibraryEntityImage" customModule="AmperfyKit" customModuleProvider="target">
+                <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="L2a-k6-g8X" userLabel="Single" customClass="LibraryEntityImage" customModule="AmperfyKit" customModuleProvider="target">
                     <rect key="frame" x="113.5" y="44" width="291" height="291"/>
                     <constraints>
                         <constraint firstAttribute="width" secondItem="L2a-k6-g8X" secondAttribute="height" multiplier="1:1" id="1xB-u6-yjz"/>

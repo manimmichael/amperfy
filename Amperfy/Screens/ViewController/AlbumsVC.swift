@@ -27,6 +27,10 @@ import UIKit
 
 class AlbumsDiffableDataSource: BasicUITableViewDiffableDataSource {
   var sortType: AlbumElementSortType = .name
+  /// cassette: mirrors AlbumsCommonVCInteractions.isGroupedInAlphabeticSections
+  /// (synced alongside sortType) so the table suppresses section headers when a
+  /// small collection is flattened by the adaptive-grouping decision.
+  var isGroupedInAlphabeticSections = false
 
   func getAlbum(at indexPath: IndexPath) -> Album? {
     guard let objectID = itemIdentifier(for: indexPath) else { return nil }
@@ -47,6 +51,9 @@ class AlbumsDiffableDataSource: BasicUITableViewDiffableDataSource {
     titleForHeaderInSection section: Int
   )
     -> String? {
+    // cassette: adaptive grouping — when flattened, suppress section titles so
+    // a small collection shows no lone letter header (mirrors the grid style).
+    guard isGroupedInAlphabeticSections else { return nil }
     switch sortType {
     case .name:
       guard let album = getFirstAlbum(in: section) else { return nil }
@@ -185,7 +192,9 @@ class AlbumsVC: SingleSnapshotFetchedResultsTableViewController<AlbumMO> {
       self.refreshControl?.endRefreshing()
     }
     common.updateFetchDataSourceCB = {
-      (self.diffableDataSource as? AlbumsDiffableDataSource)?.sortType = self.common.sortType
+      let albumsSource = self.diffableDataSource as? AlbumsDiffableDataSource
+      albumsSource?.sortType = self.common.sortType
+      albumsSource?.isGroupedInAlphabeticSections = self.common.isGroupedInAlphabeticSections
       self.singleFetchedResultsController = self.common.fetchedResultsController
       self.singleFetchedResultsController?.delegate = self
     }

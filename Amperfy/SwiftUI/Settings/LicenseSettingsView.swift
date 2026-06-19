@@ -33,8 +33,8 @@ struct LicenseSettingsView: View {
 
   __________________________________
 
+  Copyright © 2026 Maximilian Bauer. All rights reserved.
   Copyright © 2019-2026 Maximilian Bauer
-  All rights reserved.
   GPLv3 Licensed
 
   __________________________________

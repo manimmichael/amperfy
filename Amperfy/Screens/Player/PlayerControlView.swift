@@ -85,6 +85,15 @@ class PlayerControlView: UIView {
   /// Heart - Queue). Created in code and inserted into `optionsStackView`.
   private var heartButton: UIButton?
 
+  /// cassette transport polish: the previous/play/next buttons are re-pinned to
+  /// the SAME equidistant quarter-point distribution the album action row uses
+  /// (LibraryElementDetailTableHeaderView.setupProminentLayoutIfNeeded):
+  /// centerX multipliers 0.5 / 1.0 / 1.5 against the full view width, so
+  /// back/play/forward sit centered between the play disc and each screen edge
+  /// — instead of the old fixed-width `fillEqually` cluster. Skip buttons (off
+  /// by default in Cassette) flank at the eighth points (0.25 / 1.75). Set once.
+  private var didSetupCassetteTransportLayout = false
+
   required init?(coder aDecoder: NSCoder) {
     #if targetEnvironment(macCatalyst) // ok
       self.airplayVolume = MPVolumeView(frame: .zero)
@@ -148,6 +157,7 @@ class PlayerControlView: UIView {
     volumeButton?.removeFromSuperview()
     optionsButton?.removeFromSuperview()
     setupBottomRowHeart()
+    setupCassetteTransportLayout()
     refreshPlayer()
 
     registerForTraitChanges(
@@ -237,6 +247,52 @@ class PlayerControlView: UIView {
   // preserves the XIB action connection and does nothing.
   @IBAction
   func volumeButtonPressed(_ sender: Any) {}
+
+  /// cassette transport polish: re-pin back/play/forward to the album action
+  /// row's equidistant distribution (centerX multipliers 0.5 / 1.0 / 1.5 of the
+  /// full view width). The transport buttons ship inside a fixed-width
+  /// `fillEqually` stack (`SoI-ny-Hw0`); that clusters them more tightly than
+  /// the album row's heart/play/shuffle and isn't a true equidistant-around-
+  /// center layout once the skip buttons toggle. We lift the 5 buttons out of
+  /// that stack into `self` and pin each by centerX multiplier, keeping the now-
+  /// empty stack as the (unchanged) vertical anchor so the time row above and
+  /// the AirPlay/heart/queue row below keep their existing spacing.
+  private func setupCassetteTransportLayout() {
+    guard !didSetupCassetteTransportLayout else { return }
+    guard let transportStack = playButton.superview else { return }
+    didSetupCassetteTransportLayout = true
+
+    // The stack stays in the hierarchy (its top/centerX/width/height constraints
+    // anchor the row vertically) but no longer lays out the buttons.
+    let rowCenterY = transportStack.centerYAnchor
+
+    func pin(_ button: UIButton?, centerXMultiplier: CGFloat) {
+      guard let button else { return }
+      button.removeFromSuperview()
+      button.translatesAutoresizingMaskIntoConstraints = false
+      addSubview(button)
+      NSLayoutConstraint.activate([
+        NSLayoutConstraint(
+          item: button,
+          attribute: .centerX,
+          relatedBy: .equal,
+          toItem: self,
+          attribute: .centerX,
+          multiplier: centerXMultiplier,
+          constant: 0
+        ),
+        button.centerYAnchor.constraint(equalTo: rowCenterY),
+      ])
+    }
+
+    // Primary three — identical multipliers to the album action row.
+    pin(previousButton, centerXMultiplier: 0.5)
+    pin(playButton, centerXMultiplier: 1.0)
+    pin(nextButton, centerXMultiplier: 1.5)
+    // Skip buttons (default-hidden in Cassette) flank symmetrically further out.
+    pin(skipBackwardButton, centerXMultiplier: 0.25)
+    pin(skipForwardButton, centerXMultiplier: 1.75)
+  }
 
   private func setupBottomRowHeart() {
     let heart = UIButton(type: .system)

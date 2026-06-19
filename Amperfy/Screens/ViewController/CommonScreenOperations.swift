@@ -73,44 +73,31 @@ extension UIViewController {
       accountActions.append(extras)
     }
 
-    for accountInfo in appDelegate.storage.settings.accounts.allAccounts {
-      let isActiveAccount = (accountInfo == appDelegate.storage.settings.accounts.active)
-      // Patch 111 (5): show only account-based identity — never the raw
-      // Subsonic host:port (the ownership model keeps that plumbing hidden).
-      // The friendliest name the app actually holds is the account's username;
-      // no cassette.digital email/display-name is persisted on device. The old
-      // `subtitle: displayServerUrl` ("…MacBook-Pro.local:4533") is dropped.
-      let action = UIAction(
-        title: appDelegate.storage.settings.accounts.getSetting(accountInfo).read
-          .loginCredentials?
-          .username ?? "Account",
+    // cassette: de-jargoned account identity. The only handle the app holds is
+    // the Subsonic `username` minted by the pairing flow ("cassette-qsvdgam0")
+    // — a machine token, never a human name; the /api/player/me payload that
+    // pairs a phone carries no display name or email (LoginVC). And multi-
+    // account is not a Cassette concept: pairing binds ONE phone to ONE player
+    // account (CassetteSyncAPI.registerDevice), so the upstream Amperfy
+    // account-switcher / "Add Account" surface doesn't apply. We therefore show
+    // a single, clean static "Cassette account" row (disabled, checked) for the
+    // active account and drop both the account loop and "Add Account". (The
+    // multi-account plumbing — allAccounts / switchAccount — stays in the
+    // codebase for upstream parity; it's just not surfaced in this menu.)
+    if appDelegate.storage.settings.accounts.active != nil {
+      let accountLabel = UIAction(
+        title: "Cassette account",
         image: .userCircle(withConfiguration: UIImage.SymbolConfiguration(
           pointSize: 30,
           weight: .regular
         )),
-        attributes: isActiveAccount ? [UIMenuElement.Attributes.disabled] : [],
-        state: isActiveAccount ? .on : .off,
-        handler: { _ in
-          self.appDelegate.switchAccount(accountInfo: accountInfo)
-        }
+        attributes: [UIMenuElement.Attributes.disabled],
+        state: .on,
+        handler: { _ in }
       )
-      accountActions.append(action)
+      accountActions.append(accountLabel)
     }
 
-    #if targetEnvironment(macCatalyst)
-      let addAccountImage = UIImage.plus
-    #else
-      let addAccountImage = UIImage.userCirclePlus
-    #endif
-    let openAddAccount = UIAction(
-      title: "Add Account",
-      image: addAccountImage,
-      handler: { _ in
-        let loginVC = AppStoryboard.Main.segueToLogin()
-        loginVC.modalPresentationStyle = .formSheet
-        self.present(loginVC, animated: true)
-      }
-    )
     let openSettings = UIAction(
       title: "Settings",
       image: .settings,
@@ -126,7 +113,9 @@ extension UIViewController {
     )
     // Patch 111 (5): "Log Out" for the active account, reusing the shared
     // teardown (AppDelegate.logoutAccount) with a confirmation.
-    var settingsChildren: [UIMenuElement] = [openAddAccount]
+    // cassette: "Add Account" removed (see above) — this inline group is now
+    // Log Out + Settings.
+    var settingsChildren: [UIMenuElement] = []
     if let activeAccountInfo = appDelegate.storage.settings.accounts.active {
       let logoutAction = UIAction(
         title: "Log Out",

@@ -178,9 +178,15 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     titleLabel.applyAmperfyStyle()
     albumLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
+    // cassette polish: now-playing metadata is song + artist only — the album
+    // line is dropped. The album container is an arranged subview of the
+    // vertical metadata stack, so hiding it collapses the row with no gap.
+    // refresh() also stops feeding the album outlets so nothing un-hides it.
+    albumContainerView.isHidden = true
     // cassette polish Part 3: intentionally composed metadata stack.
-    // Title -> heroTitle (28pt Barlow Bold, ink); album -> metadata (12pt
-    // DM Mono, ink2); artist -> miniTitle (14pt Barlow Semibold, ink).
+    // Title -> heroTitle (28pt Barlow Bold, ink); artist -> miniTitle (14pt
+    // Barlow Semibold, ink). (Album style retained for completeness though the
+    // album row is hidden above.)
     titleLabel.font = UIFont.cassette(.heroTitle)
     titleLabel.textColor = CassetteTheme.UIColors.ink
     albumLabel.font = UIFont.cassette(.metadata)
@@ -409,13 +415,13 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   func refresh() {
+    // cassette polish: the album outlets are intentionally NOT passed so the
+    // hidden album row (see prepare()) is never re-shown by the shared refresh
+    // (which would otherwise un-hide albumContainerView for songs).
     rootView?.playerHandler?.refreshCurrentlyPlayingInfo(
       artworkImage: artworkImage,
       titleLabel: titleLabel,
-      artistLabel: artistLabel,
-      albumLabel: albumLabel,
-      albumButton: albumButton,
-      albumContainerView: albumContainerView
+      artistLabel: artistLabel
     )
     rootView?.refreshFavoriteButton(button: favoriteButton)
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)

@@ -227,9 +227,16 @@ class SearchVC: BasicTableViewController {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
     appDelegate.userStatistics.visited(.search)
+    // cassette: the All/Cached scope is gated to Server Mode. In the default
+    // on-device experience everything is already on the phone, so "All" already
+    // means "Downloaded" and the toggle is a no-op — hide it (nil scope titles).
+    // In Server Mode it returns, with "Cached" relabeled to "Downloaded".
+    let scopeButtonTitles: [String]? = CassetteLibraryFilterProvider.shared.isOnDeviceOnly
+      ? nil
+      : ["All", "Downloaded"]
     configureSearchController(
       placeholder: "Search in \"Library\"",
-      scopeButtonTitles: ["All", "Cached"]
+      scopeButtonTitles: scopeButtonTitles
     )
   }
 

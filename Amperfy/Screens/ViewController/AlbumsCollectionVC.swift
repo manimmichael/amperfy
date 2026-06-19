@@ -76,6 +76,12 @@ class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSourc
         for: indexPath
       ) as! CommonCollectionSectionHeader
 
+    // cassette: adaptive grouping — when flattened, show no section title (the
+    // header is also 0-height; this keeps it empty rather than a lone letter).
+    guard vc.common.isGroupedInAlphabeticSections else {
+      sectionHeader.display(title: nil)
+      return sectionHeader
+    }
     switch vc.common.sortType {
     case .artist, .name:
       sectionHeader
@@ -417,6 +423,11 @@ extension AlbumsCollectionVC: UICollectionViewDelegateFlowLayout {
     // cassette Polish 2 (B2): Play/Shuffle header removed, so reserve no extra
     // top height for section 0.
     let headerTopHeight = 0.0
+    // cassette: adaptive grouping — a flattened (un-grouped) small collection is
+    // one section; reserve no header height so no lone letter header shows.
+    guard common.isGroupedInAlphabeticSections else {
+      return CGSize(width: collectionView.bounds.size.width, height: headerTopHeight)
+    }
     switch common.sortType {
     case .artist, .name, .rating, .year:
       return CGSize(

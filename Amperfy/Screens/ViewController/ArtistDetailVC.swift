@@ -26,13 +26,18 @@ import UIKit
 class ArtistDetailVC: MultiSourceTableViewController {
   override var sceneTitle: String? { artist.name }
 
-  /// cassette Patch 104: artist detail body — "Popular" (songs by play
-  /// count) leads, "Albums" follow. Section 0 stays the empty spacer the
-  /// legacy layout needs (see numberOfSections).
+  /// cassette: artist detail body — "Albums" now LEADS (this is the owned-
+  /// library artist view; albums are what the user owns and came here for), and
+  /// "Popular" (songs by play count) is the demoted secondary section below it.
+  /// Section 0 stays the empty spacer the legacy layout needs (see
+  /// numberOfSections). FLAG: a single ArtistDetailVC serves BOTH the owned-
+  /// library and (in Server Mode) the broader-catalog artist context — there is
+  /// no distinct discovery screen — so per the brief the owned-library order
+  /// (albums-first) is applied to this shared view.
   private enum BodySection: Int {
     case spacer = 0
-    case popular = 1
-    case albums = 2
+    case albums = 1
+    case popular = 2
   }
 
   private var artist: Artist
@@ -466,15 +471,17 @@ class ArtistDetailVC: MultiSourceTableViewController {
     viewForHeaderInSection section: Int
   )
     -> UIView? {
+    // cassette: Albums leads (no top divider — it's the first content section);
+    // the single kept hairline divider now sits atop the demoted Popular header.
     switch BodySection(rawValue: section) {
-    case .popular:
-      guard popularTotalCount > 0 else { return nil }
-      return makeSectionHeaderView(title: "Popular", showTopDivider: false)
     case .albums:
       guard (albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0) > 0 else {
         return nil
       }
-      return makeSectionHeaderView(title: "Albums", showTopDivider: true)
+      return makeSectionHeaderView(title: "Albums", showTopDivider: false)
+    case .popular:
+      guard popularTotalCount > 0 else { return nil }
+      return makeSectionHeaderView(title: "Popular", showTopDivider: true)
     default:
       return nil
     }
