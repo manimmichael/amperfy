@@ -199,10 +199,12 @@ public final class IntentExecutor {
 
     let tracks: [CassetteSyncTrack]
     let albumCover: CassetteSyncAlbumCover?
+    let albumArtist: CassetteSyncArtist?
     do {
       let response = try await api.getIntentTracks(intentId: intent.id)
       tracks = response.tracks
       albumCover = response.cover
+      albumArtist = response.artist
     } catch {
       print(
         "Cassette poll: intent \(intent.id) - track resolve failed: \(error.localizedDescription)"
@@ -264,6 +266,9 @@ public final class IntentExecutor {
     // existing lazy artwork path still applies. Idempotent (skips once local).
     if let albumCover {
       await materializeAlbumCover(albumCover, tracks: tracks, accountInfo: accountInfo)
+    }
+    if let albumArtist {
+      await materializeArtistImage(albumArtist, tracks: tracks, accountInfo: accountInfo)
     }
 
     // Complete the intent once everything it covers is on disk. Otherwise
@@ -360,6 +365,81 @@ public final class IntentExecutor {
       try? context.save()
     }
     print("Cassette poll: materialized album cover (\(data.count) bytes)")
+  }
+
+  /// Download the album artist's bundled image and wire it into the artist's
+  /// `Artwork` — the same move as `materializeAlbumCover`, for the album
+  /// artist (the artist list + detail already render `Artist.artwork`, so once
+  /// it's `.CustomImage` they show it with no network fetch). Best-effort and
+  /// idempotent: honors the artwork-download preference, skips when a local
+  /// artist image already exists, and no-ops on any failure.
+  private func materializeArtistImage(
+    _ artistImage: CassetteSyncArtist,
+    tracks: [CassetteSyncTrack],
+    accountInfo: AccountInfo
+  ) async {
+    guard AmperKit.shared.storage.settings.accounts
+      .getSetting(accountInfo).read.artworkDownloadSetting != .never else { return }
+
+    let context = AmperKit.shared.storage.main.context
+    let subsonicIds = tracks.map(\.subsonicTrackId)
+
+    // Resolve the album artist's Artwork from any of the intent's tracks (the
+    // catalog artist is the album's artist). Skip if already local.
+    var artworkObjectID: NSManagedObjectID?
+    var remoteInfo: ArtworkRemoteInfo?
+    context.performAndWait {
+      let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
+      request.predicate = NSPredicate(format: "id IN %@", subsonicIds)
+      request.fetchLimit = 1
+      guard let songMO = try? context.fetch(request).first,
+            let artwork = Song(managedObject: songMO).album?.artist?.artwork else { return }
+      if artwork.status == .CustomImage,
+         let path = artwork.imagePath,
+         FileManager.default.fileExists(atPath: path) {
+        return
+      }
+      artworkObjectID = artwork.managedObject.objectID
+      remoteInfo = artwork.remoteInfo
+    }
+    guard let artworkObjectID, let remoteInfo else { return }
+
+    guard let url = URL(string: artistImage.imageUrl) else { return }
+    let data: Data
+    do {
+      let (downloaded, response) = try await URLSession.shared.data(from: url)
+      guard let http = response as? HTTPURLResponse,
+            (200 ..< 300).contains(http.statusCode), !downloaded.isEmpty
+      else { return }
+      data = downloaded
+    } catch {
+      print("Cassette poll: artist image download failed - \(error.localizedDescription)")
+      return
+    }
+
+    let fileManager = CacheFileManager.shared
+    guard let relFilePath = fileManager.createRelPath(for: remoteInfo, account: accountInfo),
+          let absFilePath = fileManager.getAbsoluteAmperfyPath(relFilePath: relFilePath)
+    else { return }
+    do {
+      try fileManager.writeDataExcludedFromBackup(
+        data: data,
+        to: absFilePath,
+        accountInfo: accountInfo
+      )
+    } catch {
+      print("Cassette poll: artist image write failed - \(error.localizedDescription)")
+      return
+    }
+    context.performAndWait {
+      guard let artworkMO = try? context.existingObject(with: artworkObjectID) as? ArtworkMO
+      else { return }
+      let artwork = Artwork(managedObject: artworkMO)
+      artwork.status = .CustomImage
+      artwork.relFilePath = relFilePath
+      try? context.save()
+    }
+    print("Cassette poll: materialized artist image (\(data.count) bytes)")
   }
 
   private func executeRemoval(

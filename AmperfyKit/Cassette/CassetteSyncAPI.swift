@@ -100,13 +100,30 @@ public struct CassetteSyncAlbumCover: Sendable, Decodable {
   }
 }
 
+// MARK: - CassetteSyncArtist
+
+/// The album artist's catalog image, bundled into the tracks response so the
+/// phone materializes the artist's artwork locally too (matching the web).
+/// `imageUrl` is the full original; `thumbUrl` is edge-resized. Null when the
+/// artist has no catalog image.
+public struct CassetteSyncArtist: Sendable, Decodable {
+  public let imageUrl: String
+  public let thumbUrl: String?
+
+  enum CodingKeys: String, CodingKey {
+    case imageUrl = "image_url"
+    case thumbUrl = "thumb_url"
+  }
+}
+
 // MARK: - CassetteIntentTracksResponse
 
 /// The `/intents/:id/tracks` envelope: the resolvable track list plus the
-/// album's bundled cover (Fast Album Art).
+/// album's bundled cover + artist image (Fast Album Art).
 public struct CassetteIntentTracksResponse: Sendable, Decodable {
   public let tracks: [CassetteSyncTrack]
   public let cover: CassetteSyncAlbumCover?
+  public let artist: CassetteSyncArtist?
 }
 
 // MARK: - CassetteSyncAPI
