@@ -132,6 +132,11 @@ public struct CassetteIntentTracksResponse: Sendable, Decodable {
 /// catalog image and the album's catalog cover, keyed by (artistName,
 /// albumName) so the phone can match it to a local album. All four image
 /// fields are nullable — only an already-stored catalog image is returned.
+///
+/// `contentVersion` is a short, deterministic hash of the four artwork URLs:
+/// same URLs ⇒ same version, any change ⇒ a new version. The phone records the
+/// last-applied version per album and refreshes the artwork on-device when it
+/// changes (content reconciliation increment 2) — not just when it's missing.
 public struct CassetteDeviceArtworkAlbum: Sendable, Decodable {
   public let artistName: String
   public let albumName: String
@@ -139,6 +144,7 @@ public struct CassetteDeviceArtworkAlbum: Sendable, Decodable {
   public let artistThumbUrl: String?
   public let coverUrl: String?
   public let coverThumbUrl: String?
+  public let contentVersion: String
 
   enum CodingKeys: String, CodingKey {
     case artistName = "artist_name"
@@ -147,6 +153,7 @@ public struct CassetteDeviceArtworkAlbum: Sendable, Decodable {
     case artistThumbUrl = "artist_thumb_url"
     case coverUrl = "cover_url"
     case coverThumbUrl = "cover_thumb_url"
+    case contentVersion = "content_version"
   }
 }
 

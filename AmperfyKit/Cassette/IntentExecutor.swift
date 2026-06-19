@@ -228,43 +228,67 @@ public final class IntentExecutor {
     AmperKit.shared.getMeta(accountInfo).artworkDownloadManager.download(objects: artworks)
   }
 
-  /// Fast Album Art (artists) backfill: the album-cover backfill's sibling for
-  /// artist images. Albums already on the device — synced before artist-image
-  /// bundling, or whose artist image was never materialized — get the album
-  /// artist's catalog photo here, with no remove/re-add. Strictly READ-ONLY:
+  /// Fast Album Art backfill + refresh-on-change (content reconciliation
+  /// increment 2): the album-cover backfill's sibling for both the album
+  /// ARTIST image and the album COVER. Albums already on the device — synced
+  /// before artist-image bundling, or whose artwork was never materialized, or
+  /// whose catalog artwork has since CHANGED — get the album artist's catalog
+  /// photo and the album cover here, with no remove/re-add. Strictly READ-ONLY:
   /// it reads only the already-stored manifest the server returns for the
   /// device's owned albums and never triggers an upstream enrichment.
   ///
-  /// Off the main actor, throttled the same way (once per poll, after the cover
-  /// backfill), and idempotent: enumerate owned albums on a background context,
-  /// skip any whose artist image is already local, and materialize the rest via
-  /// the Task-A path (which itself resolves/provisions the artist + artwork and
-  /// no-ops when nothing changed). Skips cleanly with no bearer token / account.
+  /// Change detection is driven by the manifest's `content_version` (a hash of
+  /// the artwork URLs), compared against a small per-album applied-version store
+  /// in UserDefaults (see `appliedArtworkVersion`). For each manifest album we
+  /// compute its albumKey and read the stored version:
+  ///   - stored == nil (first run): materialize once, record the version.
+  ///   - stored != manifest.contentVersion (changed): force-materialize BOTH
+  ///     the artist image and the cover (bypassing the on-disk idempotent gate
+  ///     so the changed bytes overwrite the old file), then record the version.
+  ///   - stored == manifest.contentVersion (unchanged): skip entirely — cheap.
+  ///
+  /// Off the main actor for the enumeration/matching, throttled the same way
+  /// (once per poll, after the cover backfill). Skips cleanly with no bearer
+  /// token / account.
   private func backfillOwnedArtistImages(accountInfo: AccountInfo) async {
     guard CassetteSyncAPI.bearerToken != nil else { return }
 
     // Sendable value types so the @Sendable background closure captures only
-    // immutable, concurrency-safe state.
-    struct ManifestArtistImage: Sendable { let artist: String; let imageUrl: String }
+    // immutable, concurrency-safe state. A candidate carries the manifest's
+    // artwork URLs (either may be nil) + the album's content version.
+    struct ManifestCandidate: Sendable {
+      let artist: String
+      let albumKey: String
+      let artistImageUrl: String?
+      let coverUrl: String?
+      let contentVersion: String
+    }
 
-    // 1. Server manifest: the album artist's catalog image per owned album.
-    //    Keyed by normalized album name → [(normalized artist, imageUrl)] so a
+    // 1. Server manifest: the album artist's catalog image + the album cover,
+    //    per owned album. Keyed by normalized album name → [candidate] so a
     //    device album resolves even when its local artist string differs from
-    //    the catalog one we keyed the image on.
+    //    the catalog one we keyed the image on. We keep EVERY album (even one
+    //    with no image URLs) so a cover-only change still refreshes and the
+    //    version is recorded.
     let manifest: CassetteDeviceArtworkResponse
     do {
       manifest = try await api.getDeviceArtwork(deviceId: CassetteSyncAPI.deviceId)
     } catch {
-      print("Cassette poll: artist-image manifest fetch failed - \(error.localizedDescription)")
+      print("Cassette poll: artwork manifest fetch failed - \(error.localizedDescription)")
       return
     }
-    var manifestByAlbum = [String: [ManifestArtistImage]]()
+    var manifestByAlbum = [String: [ManifestCandidate]]()
     for album in manifest.albums {
-      guard let imageUrl = album.artistImageUrl, !imageUrl.isEmpty else { continue }
-      let key = album.albumName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-      manifestByAlbum[key, default: []].append(ManifestArtistImage(
-        artist: album.artistName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines),
-        imageUrl: imageUrl
+      let albumNorm = Self.normalizeForVersionKey(album.albumName)
+      let artistNorm = Self.normalizeForVersionKey(album.artistName)
+      let imageUrl = (album.artistImageUrl?.isEmpty == false) ? album.artistImageUrl : nil
+      let coverUrl = (album.coverUrl?.isEmpty == false) ? album.coverUrl : nil
+      manifestByAlbum[albumNorm, default: []].append(ManifestCandidate(
+        artist: artistNorm,
+        albumKey: Self.albumVersionKey(artist: album.artistName, album: album.albumName),
+        artistImageUrl: imageUrl,
+        coverUrl: coverUrl,
+        contentVersion: album.contentVersion
       ))
     }
     guard !manifestByAlbum.isEmpty else { return }
@@ -272,16 +296,24 @@ public final class IntentExecutor {
     // (and Sendable) value rather than a captured `var`.
     let byAlbum = manifestByAlbum
 
-    // 2. Off-main: group owned songs by album, resolve the target artist's
-    //    image from the manifest, gate out albums whose artist image is already
-    //    local, and collect a worklist of (imageUrl, subsonicIds).
-    struct ArtistImageJob: Sendable { let imageUrl: String; let subsonicIds: [String] }
-    let jobs: [ArtistImageJob]
+    // 2. Off-main: group owned songs by album, match each device album to its
+    //    manifest candidate (same album-name lookup + artist disambiguation as
+    //    before), and collect a worklist carrying the manifest's artwork URLs,
+    //    version, and albumKey alongside the resolved subsonicIds. No on-disk
+    //    gate here — change detection is the version compare on the main actor.
+    struct ArtworkJob: Sendable {
+      let albumKey: String
+      let contentVersion: String
+      let artistImageUrl: String?
+      let coverUrl: String?
+      let subsonicIds: [String]
+    }
+    let jobs: [ArtworkJob]
     do {
       jobs = try await AmperKit.shared.storage.async.performAndGet { asyncCompanion in
         let context = asyncCompanion.context
         let trackIds = DeviceOwnershipManager(context: context).fetchAllSubsonicTrackIds()
-        guard !trackIds.isEmpty else { return [ArtistImageJob]() }
+        guard !trackIds.isEmpty else { return [ArtworkJob]() }
 
         let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
         request.predicate = NSPredicate(format: "id IN %@", Array(trackIds))
@@ -292,7 +324,6 @@ public final class IntentExecutor {
         var subsonicIdsByAlbum = [String: [String]]()
         var albumNameByKey = [String: String]()
         var artistNamesByKey = [String: Set<String>]()
-        var artistHasLocalImageByKey = [String: Bool]()
         for songMO in songMOs {
           let song = Song(managedObject: songMO)
           let songId = songMO.id
@@ -308,28 +339,12 @@ public final class IntentExecutor {
           albumNameByKey[key] = albumName
           artistNamesByKey[key, default: []].insert(artistName.lowercased())
           artistNamesByKey[key]?.insert(albumArtist.lowercased())
-
-          // Gate: is the target artist's image already local? Prefer the
-          // album's artist, else the song's artist (the Task-A target order).
-          if artistHasLocalImageByKey[key] == nil {
-            let targetArtist = song.album?.artist ?? song.artist
-            if let artwork = targetArtist?.artwork,
-               artwork.status == .CustomImage,
-               let path = artwork.imagePath,
-               FileManager.default.fileExists(atPath: path) {
-              artistHasLocalImageByKey[key] = true
-            } else {
-              artistHasLocalImageByKey[key] = false
-            }
-          }
         }
 
-        var result = [ArtistImageJob]()
+        var result = [ArtworkJob]()
         for (key, subsonicIds) in subsonicIdsByAlbum {
-          if artistHasLocalImageByKey[key] == true { continue } // already local
           guard let albumName = albumNameByKey[key] else { continue }
-          let lookupKey = albumName.lowercased()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+          let lookupKey = Self.normalizeForVersionKey(albumName)
           guard let candidates = byAlbum[lookupKey], !candidates.isEmpty else { continue }
 
           // Prefer a candidate whose artist matches one of this album's artist
@@ -339,7 +354,13 @@ public final class IntentExecutor {
           let chosen = candidates.first(where: { artists.contains($0.artist) })
             ?? (candidates.count == 1 ? candidates.first : nil)
           guard let chosen else { continue }
-          result.append(ArtistImageJob(imageUrl: chosen.imageUrl, subsonicIds: subsonicIds))
+          result.append(ArtworkJob(
+            albumKey: chosen.albumKey,
+            contentVersion: chosen.contentVersion,
+            artistImageUrl: chosen.artistImageUrl,
+            coverUrl: chosen.coverUrl,
+            subsonicIds: subsonicIds
+          ))
         }
         return result
       }
@@ -348,14 +369,78 @@ public final class IntentExecutor {
     }
     guard !jobs.isEmpty else { return }
 
-    print("Cassette poll: backfilling artist images for \(jobs.count) owned album(s)")
+    // 3. Main actor: version-gate each job. Unchanged → skip (cheap). Changed
+    //    or first-run → force-materialize both artworks, then record the
+    //    version so the next poll no-ops. De-dupe by albumKey in case two
+    //    device buckets resolved to the same manifest album.
+    var appliedThisPass = Set<String>()
+    var refreshed = 0
     for job in jobs {
-      await materializeArtistImage(
-        imageUrl: job.imageUrl,
-        subsonicIds: job.subsonicIds,
-        accountInfo: accountInfo
-      )
+      if appliedThisPass.contains(job.albumKey) { continue }
+      let stored = appliedArtworkVersion(forAlbumKey: job.albumKey)
+      guard stored != job.contentVersion else { continue } // unchanged
+      let force = stored != nil // first-run materializes once (no force needed)
+
+      if let imageUrl = job.artistImageUrl {
+        await materializeArtistImage(
+          imageUrl: imageUrl,
+          subsonicIds: job.subsonicIds,
+          accountInfo: accountInfo,
+          force: force
+        )
+      }
+      if let coverUrl = job.coverUrl {
+        await materializeAlbumCover(
+          coverUrl: coverUrl,
+          subsonicIds: job.subsonicIds,
+          accountInfo: accountInfo,
+          force: force
+        )
+      }
+      setAppliedArtworkVersion(job.contentVersion, forAlbumKey: job.albumKey)
+      appliedThisPass.insert(job.albumKey)
+      refreshed += 1
     }
+    if refreshed > 0 {
+      print("Cassette poll: refreshed artwork for \(refreshed) owned album(s)")
+    }
+  }
+
+  // MARK: - Applied-artwork-version store (refresh-on-change)
+
+  /// Per-album last-applied `content_version`, persisted in UserDefaults as a
+  /// `[albumKey: version]` map. Lets the backfill detect when an album's
+  /// catalog artwork has CHANGED (version differs) versus is merely absent, so
+  /// a changed cover/artist photo refreshes on-device without a remove/re-add.
+  private static let appliedArtworkVersionsKey = "cassette.appliedArtworkVersions"
+
+  /// The version-store key for a manifest album. Reuses the same per-field
+  /// normalization the manifest↔device matching uses (lowercased + whitespace-
+  /// trimmed), joined with a NUL so "<artist><NUL><album>" can't collide with a
+  /// differently-split pair. Same (artist, album) ⇒ same key on every poll.
+  /// `nonisolated` so the off-main enumeration closure can call it.
+  nonisolated private static func albumVersionKey(artist: String, album: String) -> String {
+    "\(normalizeForVersionKey(artist))\u{0}\(normalizeForVersionKey(album))"
+  }
+
+  /// Lowercase + whitespace-trim — the exact normalization the manifest lookup
+  /// already applies to album/artist names. `nonisolated` so the off-main
+  /// enumeration closure can call it.
+  nonisolated private static func normalizeForVersionKey(_ value: String) -> String {
+    value.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func appliedArtworkVersion(forAlbumKey albumKey: String) -> String? {
+    let map = UserDefaults.standard
+      .dictionary(forKey: Self.appliedArtworkVersionsKey) as? [String: String]
+    return map?[albumKey]
+  }
+
+  private func setAppliedArtworkVersion(_ version: String, forAlbumKey albumKey: String) {
+    var map = (UserDefaults.standard
+      .dictionary(forKey: Self.appliedArtworkVersionsKey) as? [String: String]) ?? [:]
+    map[albumKey] = version
+    UserDefaults.standard.set(map, forKey: Self.appliedArtworkVersionsKey)
   }
 
   private func executeIntent(_ intent: CassetteSyncIntent) async {
@@ -458,7 +543,11 @@ public final class IntentExecutor {
     // album is — no display-time getCoverArt fetch. Best-effort; on failure the
     // existing lazy artwork path still applies. Idempotent (skips once local).
     if let albumCover {
-      await materializeAlbumCover(albumCover, tracks: tracks, accountInfo: accountInfo)
+      await materializeAlbumCover(
+        coverUrl: albumCover.url,
+        subsonicIds: tracks.map(\.subsonicTrackId),
+        accountInfo: accountInfo
+      )
     }
     if let albumArtist {
       await materializeArtistImage(
@@ -483,27 +572,36 @@ public final class IntentExecutor {
   /// Download the album's bundled cover and wire it into the album's `Artwork`
   /// so it displays locally with no network getCoverArt fetch — the same move
   /// `SubsonicArtworkDownloadDelegate` makes on a successful fetch, but sourced
-  /// from the cassette.digital cover URL bundled in the tracks response.
+  /// from the cassette.digital cover URL (bundled in the tracks response on a
+  /// fresh transfer, or carried by the artwork manifest on a refresh).
   ///
   /// Best-effort and idempotent: honors the artwork-download preference, skips
   /// when a local cover already exists, and silently falls back to the existing
   /// lazy artwork path on any failure (album/artwork not yet in the library,
   /// download error, etc.). The full original is stored verbatim — full image,
   /// square, no crop.
+  ///
+  /// Resolves the album's `Artwork` via any of `subsonicIds` (one hop:
+  /// `SongMO.id == subsonic_track_id` → `song.album?.artwork`). Pass `force:
+  /// true` to BYPASS the "already .CustomImage on disk" gate so a CHANGED cover
+  /// overwrites the old file (content reconciliation increment 2); the default
+  /// preserves the absence-only transfer behavior.
   private func materializeAlbumCover(
-    _ cover: CassetteSyncAlbumCover,
-    tracks: [CassetteSyncTrack],
-    accountInfo: AccountInfo
+    coverUrl: String,
+    subsonicIds: [String],
+    accountInfo: AccountInfo,
+    force: Bool = false
   ) async {
     // Honor the artwork-download preference (e.g. user set it to "never").
     guard AmperKit.shared.storage.settings.accounts
       .getSetting(accountInfo).read.artworkDownloadSetting != .never else { return }
+    guard !subsonicIds.isEmpty else { return }
 
     let context = AmperKit.shared.storage.main.context
-    let subsonicIds = tracks.map(\.subsonicTrackId)
 
     // 1. Resolve the album's Artwork from any of the intent's tracks
-    //    (SongMO.id == subsonic_track_id). Skip if a local cover already exists.
+    //    (SongMO.id == subsonic_track_id). Skip if a local cover already exists,
+    //    UNLESS forcing a refresh (the cover changed in the catalog).
     var artworkObjectID: NSManagedObjectID?
     var remoteInfo: ArtworkRemoteInfo?
     context.performAndWait {
@@ -512,7 +610,8 @@ public final class IntentExecutor {
       request.fetchLimit = 1
       guard let songMO = try? context.fetch(request).first,
             let artwork = Song(managedObject: songMO).album?.artwork else { return }
-      if artwork.status == .CustomImage,
+      if !force,
+         artwork.status == .CustomImage,
          let path = artwork.imagePath,
          FileManager.default.fileExists(atPath: path) {
         return // already local — nothing to do
@@ -523,7 +622,7 @@ public final class IntentExecutor {
     guard let artworkObjectID, let remoteInfo else { return }
 
     // 2. Download the full cover (stored verbatim).
-    guard let url = URL(string: cover.url) else { return }
+    guard let url = URL(string: coverUrl) else { return }
     let data: Data
     do {
       let (downloaded, response) = try await URLSession.shared.data(from: url)
@@ -590,10 +689,17 @@ public final class IntentExecutor {
   /// Takes the raw `imageUrl` + the owned tracks' `subsonicIds` so both the
   /// transfer path (a fresh intent) and the backfill path (already-synced
   /// albums) drive the identical end-state.
+  ///
+  /// Pass `force: true` to BYPASS the "already .CustomImage on disk" gate so a
+  /// CHANGED artist image overwrites the old file (content reconciliation
+  /// increment 2). The artist/artwork resolution + provisioning still runs; only
+  /// the on-disk skip is suppressed. The default preserves the absence-only
+  /// behavior of every existing caller.
   private func materializeArtistImage(
     imageUrl: String,
     subsonicIds: [String],
-    accountInfo: AccountInfo
+    accountInfo: AccountInfo,
+    force: Bool = false
   ) async {
     guard AmperKit.shared.storage.settings.accounts
       .getSetting(accountInfo).read.artworkDownloadSetting != .never else { return }
@@ -680,8 +786,10 @@ public final class IntentExecutor {
         songArtist.artwork = artwork
       }
 
-      // Idempotent gate: nothing to do if the image is already on disk.
-      if artwork.status == .CustomImage,
+      // Idempotent gate: nothing to do if the image is already on disk —
+      // UNLESS forcing a refresh (the artist image changed in the catalog).
+      if !force,
+         artwork.status == .CustomImage,
          let path = artwork.imagePath,
          FileManager.default.fileExists(atPath: path) {
         return
