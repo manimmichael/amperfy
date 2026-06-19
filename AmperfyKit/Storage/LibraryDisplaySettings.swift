@@ -152,12 +152,21 @@ public enum LibraryDisplayType: Int, CaseIterable, Sendable, Codable {
 public struct LibraryDisplaySettings: Sendable, Codable {
   public var combined: [[LibraryDisplayType]]
 
+  // cassette: Podcasts is hidden as a browse surface app-wide. Filtering it
+  // out of BOTH `inUse` and `notUsed` (the only lists the iOS tab bar, the
+  // Mac/iPad sidebar, and the Edit/reorder picker read from) hard-hides it
+  // from the active library AND the picker, without touching the persisted
+  // `combined` storage — so podcast playback/data stay intact and a future
+  // re-enable is a one-line revert. `LibraryContainerVC.dropdownCategories`
+  // (the mobile dropdown) is filtered separately since it's a fixed list.
+  private static let hiddenBrowseTypes: Set<LibraryDisplayType> = [.podcasts]
+
   public var inUse: [LibraryDisplayType] {
-    combined[0]
+    combined[0].filter { !Self.hiddenBrowseTypes.contains($0) }
   }
 
   public var notUsed: [LibraryDisplayType] {
-    combined[1]
+    combined[1].filter { !Self.hiddenBrowseTypes.contains($0) }
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -209,7 +218,8 @@ public struct LibraryDisplaySettings: Sendable, Codable {
         .favoriteSongs,
         .directories,
         .playlists,
-        .podcasts,
+        // cassette: Podcasts intentionally omitted — hidden as a browse
+        // surface (also filtered out of inUse/notUsed accessors above).
         .radios,
       ]
     )

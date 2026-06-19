@@ -118,13 +118,13 @@ class PodcastEpisodeTableCell: BasicTableCell {
       progressText += " \(CommonString.oneMiddleDot) \(episode.userStatus.description)"
     }
     playProgressLabel.text = progressText
-    if episode.isCached {
-      cacheIconImage.isHidden = false
-      playProgressLabel.textColor = CassetteTheme.UIColors.ink2
-    } else {
-      cacheIconImage.isHidden = true
-      playProgressLabel.textColor = CassetteTheme.UIColors.ink2
-    }
+    // cassette: the cache/cloud icon is gated to Server Mode (Navidrome native
+    // streaming). In the default on-device-only experience the phone IS the
+    // storage device, so "cached" is meaningless — keep the row clean. The icon
+    // only surfaces in streaming mode, where it distinguishes cached episodes.
+    let showCacheIcon = episode.isCached && !CassetteLibraryFilterProvider.shared.isOnDeviceOnly
+    cacheIconImage.isHidden = !showCacheIcon
+    playProgressLabel.textColor = CassetteTheme.UIColors.ink2
     backgroundColor = CassetteTheme.UIColors.bg
   }
 

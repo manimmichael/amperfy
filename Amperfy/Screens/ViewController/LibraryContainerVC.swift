@@ -45,13 +45,15 @@ final class LibraryContainerVC: UIViewController {
   /// iOS dropdown only (the Mac sidebar configurator is untouched). A
   /// stale persisted `.radios` selection falls back to Artists via the
   /// allow-list check in `init`.
+  /// cassette: Podcasts is hidden as a browse surface — dropped from the
+  /// iOS dropdown. A stale persisted `.podcasts` selection falls back to
+  /// Artists via the same allow-list check in `init` / `showCategory`.
   private static let dropdownCategories: [LibraryDisplayType] = [
     .artists,
     .albums,
     .songs,
     .playlists,
     .genres,
-    .podcasts,
   ]
 
   // MARK: - State

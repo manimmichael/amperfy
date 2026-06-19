@@ -218,19 +218,10 @@ extension CarPlaySceneDelegate {
       )
       quickActionItems.append(item)
     }
-    if appDelegate.player.podcastItemCount > 0 {
-      let item = CPListImageRowItemRowElement(
-        image: UIImage.createArtwork(
-          with: UIImage.podcast,
-          iconSizeType: .small,
-          theme: getPreference(activeAccountInfo).theme,
-          lightDarkMode: traits.userInterfaceStyle.asModeType,
-          switchColors: true
-        ).carPlayImage(carTraitCollection: traits),
-        title: Self.continuePlaybackPodcastTitle, subtitle: nil
-      )
-      quickActionItems.append(item)
-    }
+    // cassette: "Continue Podcasts" quick action removed — podcasts are hidden
+    // as a browse/quick-action surface in-car (the Podcasts library row is also
+    // gone). Podcast *playback* itself is untouched; the shared handler below
+    // still tolerates the podcast title (now unreachable) via continuePlaybackPodcastTitle.
     if appDelegate.storage.settings.accounts.allAccounts.count > 1 {
       let switchAccountItem = CPListImageRowItemRowElement(
         image: UIImage.createArtwork(

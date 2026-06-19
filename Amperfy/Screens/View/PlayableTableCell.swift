@@ -689,6 +689,15 @@ class PlayableTableCell: BasicTableCell {
     }
 
     durationTrailingCellConstraint.constant = durationTrailing
+    // cassette: stays hard-hidden — NOT gated to Server Mode here on purpose.
+    // Patch 104 retired the per-row `cacheIconImage` marker in favor of the
+    // `downloadButton` affordance (also flag-gated off via isDownloadButtonEnabled).
+    // `cacheIconImage` now only serves as a layout anchor for that button; the
+    // trailing-slot width math (showsDownloadAffordance / lableTrailing above)
+    // reserves no space for it and nothing configures its image/isCached state.
+    // Un-hiding it for Server Mode would render a stale, unpositioned icon, so a
+    // correct streaming-mode badge belongs in the v2 download-button path, not a
+    // one-line gate here. Podcast-episode rows ARE gated (PodcastEpisodeTableCell).
     cacheIconImage.isHidden = true
     cacheTrailingCellConstaint
       .constant = durationTrailing + (isDurationVisible ? (4.0 + durationWidth) : 0.0)

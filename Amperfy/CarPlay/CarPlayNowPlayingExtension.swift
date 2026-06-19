@@ -188,8 +188,11 @@ extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
     playerIndex: PlayerIndex
   )
     -> CPListItem {
-    // Cassette CarPlay: no cloud/download badge on queue rows either — the
-    // queue is on-device content, so the "cached" accessory is just noise.
+    // Cassette CarPlay: cloud/"cached" badge on queue rows gated to Server Mode.
+    // In the default on-device-only experience the queue is local content, so
+    // the badge is noise; in streaming mode it marks cached rows.
+    let accessoryType: CPListItemAccessoryType = CassetteLibraryFilterProvider.shared
+      .isOnDeviceOnly ? .none : (playable.isCached ? .cloud : .none)
     let image = LibraryEntityImage.getImageToDisplayImmediately(
       libraryEntity: playable,
       themePreference: getPreference(playable.account?.info).theme,
@@ -201,7 +204,7 @@ extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
       detailText: playable.subtitle,
       image: image.carPlayImage(carTraitCollection: traits),
       accessoryImage: nil,
-      accessoryType: .none
+      accessoryType: accessoryType
     )
     listItem.handler = { [weak self] item, completion in
       guard let self = self else { completion(); return }

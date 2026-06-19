@@ -579,13 +579,16 @@ extension CarPlaySceneDelegate {
   }
 
   func createDetailTemplate(for episode: PodcastEpisode) -> CPListItem {
-    // Cassette CarPlay: no cloud/download badge — see the song-row variant.
+    // Cassette CarPlay: cloud/"cached" badge gated to Server Mode — see the
+    // song-row variant. Hidden in the default on-device-only experience.
+    let accessoryType: CPListItemAccessoryType = CassetteLibraryFilterProvider.shared
+      .isOnDeviceOnly ? .none : (episode.isCached ? .cloud : .none)
     let listItem = CPListItem(
       text: episode.title,
       detailText: nil,
       image: nil,
       accessoryImage: nil,
-      accessoryType: .none
+      accessoryType: accessoryType
     )
     listItem.handler = { [weak self] item, completion in
       guard let self = self else { completion(); return }
@@ -643,10 +646,12 @@ extension CarPlaySceneDelegate {
     isTrackDisplayed: Bool = false
   )
     -> CPListItem {
-    // Cassette CarPlay: no cloud/download badge. Everything browsable in-car is
-    // already on the device, so a "cached" accessory is pure noise — keep rows
-    // clean (the artwork/track number is the only leading visual).
-    let accessoryType: CPListItemAccessoryType = .none
+    // Cassette CarPlay: the cloud/"cached" badge is gated to Server Mode
+    // (Navidrome native streaming). In the default on-device-only experience
+    // everything browsable in-car is already local, so the badge is pure noise
+    // — keep rows clean. In streaming mode it marks which rows are cached.
+    let accessoryType: CPListItemAccessoryType = CassetteLibraryFilterProvider.shared
+      .isOnDeviceOnly ? .none : (playable.isCached ? .cloud : .none)
     let image = getImage(for: playable, isTrackDisplayed: isTrackDisplayed)
     if let artwork = playable.artwork, let accountInfo = artwork.account?.info {
       appDelegate.getMeta(accountInfo).artworkDownloadManager.download(object: artwork)

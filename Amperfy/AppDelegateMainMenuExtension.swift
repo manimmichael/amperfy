@@ -234,20 +234,10 @@ extension AppDelegate {
       ),
     ]
 
-    var section2 = [
-      UIMenu(
-        title: "Playback Rate",
-        image: .playbackRate,
-        children: PlaybackRate.allCases.map { rate in
-          UIAction(
-            title: rate.description,
-            state: rate == self.player.playbackRate ? .on : .off
-          ) { _ in
-            self.player.setPlaybackRate(rate)
-          }
-        }
-      ),
-    ]
+    // cassette: the playback-rate control is CarPlay-only now (podcast-gated
+    // rate button in the car). Removed from the Mac menu bar — section2 still
+    // hosts Repeat/Shuffle, inserted below.
+    var section2 = [UIMenuElement]()
 
     if appDelegate.player.playerMode == .music {
       let repeatMenu = UIMenu(
