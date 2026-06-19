@@ -475,8 +475,17 @@ class HomeManager: NSObject {
     // recently played container) and drops out of the Recent shelf. On a
     // fresh library with no play history (first-run fallback only) there
     // is nothing to resume, so the card hides.
+    //
+    // cassette (Resume on-device gate): in the default on-device-only mode the
+    // phone shows only downloaded content, so the Resume card must not point at
+    // an album that's been removed from the device. We pick the first container
+    // in the recency-ordered `merged` list that is still on-device, falling
+    // through to the next owned one (and hiding the card entirely if none
+    // remain). In Server Mode the gate is bypassed — Resume shows the
+    // most-recent container regardless of local ownership, unchanged behavior.
     let hasPlayHistory = hasLiveAlbum || !entries.isEmpty
-    if hasPlayHistory, let resumeContainer = merged.first {
+    if hasPlayHistory, let resumeIndex = firstResumeEligibleIndex(in: merged) {
+      let resumeContainer = merged[resumeIndex]
       // Section-scoped HomeItem identity already makes Resume vs a shelf a
       // distinct item, so a container moving between them is a delete+insert
       // that re-runs the cell provider — the Patch-104 "resume:" stableID
@@ -486,7 +495,7 @@ class HomeManager: NSObject {
         stableID: Self.stableID(for: resumeContainer),
         playableContainable: resumeContainer
       )]
-      merged.removeFirst()
+      merged.remove(at: resumeIndex)
     } else {
       data[.resume] = []
     }
@@ -495,6 +504,38 @@ class HomeManager: NSObject {
       HomeItem(section: .recent, stableID: Self.stableID(for: $0), playableContainable: $0)
     }
     applySnapshotCB?()
+  }
+
+  /// cassette (Resume on-device gate): index of the first container in the
+  /// recency-ordered list that may surface as the Resume card.
+  ///
+  /// In Server Mode the head is always eligible (catalog-wide), so this is just
+  /// `0` when the list is non-empty. In the default on-device-only mode it
+  /// returns the first container whose content is still on the device, so a
+  /// removed album falls through to the next owned one (or the card hides when
+  /// nothing owned remains).
+  ///
+  /// The owned-album / owned-artist id sets are resolved ONCE here — not per
+  /// container — so this is one Core Data pass per recompute, not one per item.
+  /// Albums and Artists are gated by their owned-id sets; Playlists (and any
+  /// other container type) are treated as eligible because device-ownership is
+  /// tracked per track, not per playlist — gating them here would surprise-hide
+  /// a playlist whose tracks are partially on-device, so we leave the existing
+  /// behavior for those.
+  private func firstResumeEligibleIndex(in merged: [PlayableContainable]) -> Int? {
+    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else {
+      return merged.isEmpty ? nil : 0
+    }
+    let ownership = DeviceOwnershipManager(context: storage.main.context)
+    let ownedAlbumIds = ownership.fetchOwnedAlbumIds()
+    let ownedArtistIds = ownership.fetchOwnedArtistIds()
+    return merged.firstIndex { container in
+      if let album = container as? Album { return ownedAlbumIds.contains(album.id) }
+      if let artist = container as? Artist { return ownedArtistIds.contains(artist.id) }
+      // Non-album/artist containers (e.g. playlists): ownership is per-track,
+      // not per-container, so don't hide them — keep prior behavior.
+      return true
+    }
   }
 
   /// Recently-played playlists. Overlap with Recent is allowed (section-scoped
