@@ -118,6 +118,9 @@ public final class IntentExecutor {
     // so existing albums get and keep their art.
     if let accountInfo = AmperKit.shared.storage.settings.accounts.active {
       await backfillOwnedAlbumCovers(accountInfo: accountInfo)
+      // Fast Album Art (artists): heal already-synced albums whose artist image
+      // was never materialized — READ-ONLY manifest, off-main, idempotent.
+      await backfillOwnedArtistImages(accountInfo: accountInfo)
     }
 
     // Sync Reconciliation (Phase 1): report the device's COMPLETE owned-set so
@@ -225,6 +228,136 @@ public final class IntentExecutor {
     AmperKit.shared.getMeta(accountInfo).artworkDownloadManager.download(objects: artworks)
   }
 
+  /// Fast Album Art (artists) backfill: the album-cover backfill's sibling for
+  /// artist images. Albums already on the device — synced before artist-image
+  /// bundling, or whose artist image was never materialized — get the album
+  /// artist's catalog photo here, with no remove/re-add. Strictly READ-ONLY:
+  /// it reads only the already-stored manifest the server returns for the
+  /// device's owned albums and never triggers an upstream enrichment.
+  ///
+  /// Off the main actor, throttled the same way (once per poll, after the cover
+  /// backfill), and idempotent: enumerate owned albums on a background context,
+  /// skip any whose artist image is already local, and materialize the rest via
+  /// the Task-A path (which itself resolves/provisions the artist + artwork and
+  /// no-ops when nothing changed). Skips cleanly with no bearer token / account.
+  private func backfillOwnedArtistImages(accountInfo: AccountInfo) async {
+    guard CassetteSyncAPI.bearerToken != nil else { return }
+
+    // Sendable value types so the @Sendable background closure captures only
+    // immutable, concurrency-safe state.
+    struct ManifestArtistImage: Sendable { let artist: String; let imageUrl: String }
+
+    // 1. Server manifest: the album artist's catalog image per owned album.
+    //    Keyed by normalized album name → [(normalized artist, imageUrl)] so a
+    //    device album resolves even when its local artist string differs from
+    //    the catalog one we keyed the image on.
+    let manifest: CassetteDeviceArtworkResponse
+    do {
+      manifest = try await api.getDeviceArtwork(deviceId: CassetteSyncAPI.deviceId)
+    } catch {
+      print("Cassette poll: artist-image manifest fetch failed - \(error.localizedDescription)")
+      return
+    }
+    var manifestByAlbum = [String: [ManifestArtistImage]]()
+    for album in manifest.albums {
+      guard let imageUrl = album.artistImageUrl, !imageUrl.isEmpty else { continue }
+      let key = album.albumName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+      manifestByAlbum[key, default: []].append(ManifestArtistImage(
+        artist: album.artistName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines),
+        imageUrl: imageUrl
+      ))
+    }
+    guard !manifestByAlbum.isEmpty else { return }
+    // Bind to a `let` so the @Sendable background closure captures an immutable
+    // (and Sendable) value rather than a captured `var`.
+    let byAlbum = manifestByAlbum
+
+    // 2. Off-main: group owned songs by album, resolve the target artist's
+    //    image from the manifest, gate out albums whose artist image is already
+    //    local, and collect a worklist of (imageUrl, subsonicIds).
+    struct ArtistImageJob: Sendable { let imageUrl: String; let subsonicIds: [String] }
+    let jobs: [ArtistImageJob]
+    do {
+      jobs = try await AmperKit.shared.storage.async.performAndGet { asyncCompanion in
+        let context = asyncCompanion.context
+        let trackIds = DeviceOwnershipManager(context: context).fetchAllSubsonicTrackIds()
+        guard !trackIds.isEmpty else { return [ArtistImageJob]() }
+
+        let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
+        request.predicate = NSPredicate(format: "id IN %@", Array(trackIds))
+        request.returnsObjectsAsFaults = false
+        let songMOs = (try? context.fetch(request)) ?? []
+
+        // Group the owned tracks by their album's identity.
+        var subsonicIdsByAlbum = [String: [String]]()
+        var albumNameByKey = [String: String]()
+        var artistNamesByKey = [String: Set<String>]()
+        var artistHasLocalImageByKey = [String: Bool]()
+        for songMO in songMOs {
+          let song = Song(managedObject: songMO)
+          let songId = songMO.id
+          guard !songId.isEmpty,
+                let albumName = songMO.album?.name, !albumName.isEmpty else { continue }
+          let artistName = songMO.artist?.name ?? ""
+          // Album bucket key: album name + the album's own artist if linked,
+          // else the track artist — enough to keep distinct albums apart while
+          // matching the manifest's album-name lookup.
+          let albumArtist = song.album?.artist?.name ?? artistName
+          let key = "\(albumName.lowercased())\u{0}\(albumArtist.lowercased())"
+          subsonicIdsByAlbum[key, default: []].append(songId)
+          albumNameByKey[key] = albumName
+          artistNamesByKey[key, default: []].insert(artistName.lowercased())
+          artistNamesByKey[key]?.insert(albumArtist.lowercased())
+
+          // Gate: is the target artist's image already local? Prefer the
+          // album's artist, else the song's artist (the Task-A target order).
+          if artistHasLocalImageByKey[key] == nil {
+            let targetArtist = song.album?.artist ?? song.artist
+            if let artwork = targetArtist?.artwork,
+               artwork.status == .CustomImage,
+               let path = artwork.imagePath,
+               FileManager.default.fileExists(atPath: path) {
+              artistHasLocalImageByKey[key] = true
+            } else {
+              artistHasLocalImageByKey[key] = false
+            }
+          }
+        }
+
+        var result = [ArtistImageJob]()
+        for (key, subsonicIds) in subsonicIdsByAlbum {
+          if artistHasLocalImageByKey[key] == true { continue } // already local
+          guard let albumName = albumNameByKey[key] else { continue }
+          let lookupKey = albumName.lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+          guard let candidates = byAlbum[lookupKey], !candidates.isEmpty else { continue }
+
+          // Prefer a candidate whose artist matches one of this album's artist
+          // strings; otherwise, if there's exactly one candidate for the album
+          // name, use it (unambiguous).
+          let artists = artistNamesByKey[key] ?? []
+          let chosen = candidates.first(where: { artists.contains($0.artist) })
+            ?? (candidates.count == 1 ? candidates.first : nil)
+          guard let chosen else { continue }
+          result.append(ArtistImageJob(imageUrl: chosen.imageUrl, subsonicIds: subsonicIds))
+        }
+        return result
+      }
+    } catch {
+      return
+    }
+    guard !jobs.isEmpty else { return }
+
+    print("Cassette poll: backfilling artist images for \(jobs.count) owned album(s)")
+    for job in jobs {
+      await materializeArtistImage(
+        imageUrl: job.imageUrl,
+        subsonicIds: job.subsonicIds,
+        accountInfo: accountInfo
+      )
+    }
+  }
+
   private func executeIntent(_ intent: CassetteSyncIntent) async {
     print(
       "Cassette poll: executing intent \(intent.id) " +
@@ -328,7 +461,11 @@ public final class IntentExecutor {
       await materializeAlbumCover(albumCover, tracks: tracks, accountInfo: accountInfo)
     }
     if let albumArtist {
-      await materializeArtistImage(albumArtist, tracks: tracks, accountInfo: accountInfo)
+      await materializeArtistImage(
+        imageUrl: albumArtist.imageUrl,
+        subsonicIds: tracks.map(\.subsonicTrackId),
+        accountInfo: accountInfo
+      )
     }
 
     // Complete the intent once everything it covers is on disk. Otherwise
@@ -428,43 +565,137 @@ public final class IntentExecutor {
   }
 
   /// Download the album artist's bundled image and wire it into the artist's
-  /// `Artwork` — the same move as `materializeAlbumCover`, for the album
-  /// artist (the artist list + detail already render `Artist.artwork`, so once
-  /// it's `.CustomImage` they show it with no network fetch). Best-effort and
-  /// idempotent: honors the artwork-download preference, skips when a local
-  /// artist image already exists, and no-ops on any failure.
+  /// `Artwork` — the same end-state as `materializeAlbumCover`, for the album
+  /// artist. Best-effort and idempotent: honors the artwork-download
+  /// preference, skips when a local artist image already exists, and no-ops on
+  /// any failure.
+  ///
+  /// Unlike covers (one hop: `song.album?.artwork`), the artist image must NOT
+  /// depend on the inherited `album → artist → artwork` graph. Cassette
+  /// downloads build no Core Data graph and `SsSongParserDelegate` never links
+  /// `album → artist`, so `song.album?.artist` is almost always nil — the old
+  /// implementation dead-ended at its nil guard even though the server sent a
+  /// URL. We instead resolve the artist the on-device library UI actually
+  /// renders: the Artists list / Artist detail are keyed on the song→artist
+  /// relationship (`DeviceOwnershipManager.fetchOwnedArtistIds` collects
+  /// `song.artist?.id`; the FRC predicate is `id IN <thatSet>`), i.e.
+  /// `song.artist`, which `SsSongParserDelegate` DOES populate. We:
+  ///   1. resolve the target `Artist` robustly (`song.album?.artist`, else
+  ///      `song.artist`, else create/link one by the song's artist name),
+  ///   2. ensure it has an `Artwork` (create + attach one when nil), and
+  ///   3. write the bytes + flip it to `.CustomImage`, exactly as the cover path.
+  /// We attach to `song.artist` (the proven UI source) and, when present and
+  /// distinct, also to `song.album?.artist` so either display path renders.
+  ///
+  /// Takes the raw `imageUrl` + the owned tracks' `subsonicIds` so both the
+  /// transfer path (a fresh intent) and the backfill path (already-synced
+  /// albums) drive the identical end-state.
   private func materializeArtistImage(
-    _ artistImage: CassetteSyncArtist,
-    tracks: [CassetteSyncTrack],
+    imageUrl: String,
+    subsonicIds: [String],
     accountInfo: AccountInfo
   ) async {
     guard AmperKit.shared.storage.settings.accounts
       .getSetting(accountInfo).read.artworkDownloadSetting != .never else { return }
+    guard !subsonicIds.isEmpty else { return }
 
     let context = AmperKit.shared.storage.main.context
-    let subsonicIds = tracks.map(\.subsonicTrackId)
 
-    // Resolve the album artist's Artwork from any of the intent's tracks (the
-    // catalog artist is the album's artist). Skip if already local.
+    // Resolve (or provision) the artist's Artwork from any of the intent's
+    // tracks, attaching to the entity the UI reads (song.artist). Capture the
+    // artwork's objectID + remoteInfo; skip if a local image already exists.
     var artworkObjectID: NSManagedObjectID?
     var remoteInfo: ArtworkRemoteInfo?
     context.performAndWait {
+      let library = LibraryStorage(context: context)
+      let account = library.getAccount(info: accountInfo)
+
       let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
       request.predicate = NSPredicate(format: "id IN %@", subsonicIds)
       request.fetchLimit = 1
-      guard let songMO = try? context.fetch(request).first,
-            let artwork = Song(managedObject: songMO).album?.artist?.artwork else { return }
+      guard let songMO = try? context.fetch(request).first else { return }
+      let song = Song(managedObject: songMO)
+
+      // 1. Target artist: prefer the album's artist (matches the catalog
+      //    artist the server keyed the image on), else the song's own artist
+      //    (populated by SsSongParserDelegate), else create/link one by name.
+      //    The last branch is a defensive net — on device `song.artist` is the
+      //    populated relationship, and when it's nil there's no on-device name
+      //    string to key on, so provisioning only fires if the raw MO somehow
+      //    still carries an artist name.
+      let artist: Artist
+      if let albumArtist = song.album?.artist {
+        artist = albumArtist
+      } else if let songArtist = song.artist {
+        artist = songArtist
+      } else {
+        guard let artistName = songMO.artist?.name, !artistName.isEmpty else { return }
+        let resolved = library.getArtistByExactName(for: account, name: artistName)
+          ?? {
+            let created = library.createArtist(account: account)
+            created.name = artistName
+            return created
+          }()
+        // Link it onto the song so the on-device Artists list (keyed on
+        // song.artist) actually surfaces this artist.
+        song.artist = resolved
+        artist = resolved
+      }
+
+      // 2. Ensure the artist has an Artwork. Reuse the existing one (real
+      //    Subsonic coverArt id) when present; otherwise create one with a
+      //    stable synthetic remoteInfo — type "artist" nests it under its own
+      //    artwork subdir, so the file path never collides with album covers
+      //    (whose remoteInfo type is empty), and is stable across re-runs so
+      //    the idempotent gate holds.
+      let artwork: Artwork
+      if let existing = artist.artwork {
+        artwork = existing
+      } else {
+        let created = library.createArtwork(account: account)
+        // Sanitize the name into a single safe path component (no separators).
+        let safeName = artist.name
+          .replacingOccurrences(of: "/", with: "_")
+          .replacingOccurrences(of: ":", with: "_")
+        let syntheticId = !artist.id.isEmpty
+          ? artist.id
+          : "cassette-artist-\(safeName)"
+        created.remoteInfo = ArtworkRemoteInfo(id: syntheticId, type: "artist")
+        created.status = .NotChecked
+        artist.artwork = created
+        artwork = created
+      }
+
+      // Cheap dual-attach: when both the song's artist and the album's artist
+      // exist, are distinct, and the other lacks artwork, point it at the same
+      // Artwork so whichever entity a surface reads still renders the image.
+      if let albumArtist = song.album?.artist,
+         albumArtist.managedObject != artist.managedObject,
+         albumArtist.artwork == nil {
+        albumArtist.artwork = artwork
+      }
+      if let songArtist = song.artist,
+         songArtist.managedObject != artist.managedObject,
+         songArtist.artwork == nil {
+        songArtist.artwork = artwork
+      }
+
+      // Idempotent gate: nothing to do if the image is already on disk.
       if artwork.status == .CustomImage,
          let path = artwork.imagePath,
          FileManager.default.fileExists(atPath: path) {
         return
       }
+
+      // Persist the (possibly newly created) artist/artwork + links before the
+      // download so the objectID resolves afterward.
+      try? context.save()
       artworkObjectID = artwork.managedObject.objectID
       remoteInfo = artwork.remoteInfo
     }
     guard let artworkObjectID, let remoteInfo else { return }
 
-    guard let url = URL(string: artistImage.imageUrl) else { return }
+    guard let url = URL(string: imageUrl) else { return }
     let data: Data
     do {
       let (downloaded, response) = try await URLSession.shared.data(from: url)

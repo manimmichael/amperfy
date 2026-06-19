@@ -126,6 +126,38 @@ public struct CassetteIntentTracksResponse: Sendable, Decodable {
   public let artist: CassetteSyncArtist?
 }
 
+// MARK: - CassetteDeviceArtworkAlbum
+
+/// One owned album in the artwork backfill manifest: the album artist's
+/// catalog image and the album's catalog cover, keyed by (artistName,
+/// albumName) so the phone can match it to a local album. All four image
+/// fields are nullable — only an already-stored catalog image is returned.
+public struct CassetteDeviceArtworkAlbum: Sendable, Decodable {
+  public let artistName: String
+  public let albumName: String
+  public let artistImageUrl: String?
+  public let artistThumbUrl: String?
+  public let coverUrl: String?
+  public let coverThumbUrl: String?
+
+  enum CodingKeys: String, CodingKey {
+    case artistName = "artist_name"
+    case albumName = "album_name"
+    case artistImageUrl = "artist_image_url"
+    case artistThumbUrl = "artist_thumb_url"
+    case coverUrl = "cover_url"
+    case coverThumbUrl = "cover_thumb_url"
+  }
+}
+
+// MARK: - CassetteDeviceArtworkResponse
+
+/// The `/devices/:device_id/artwork` envelope: the artwork backfill manifest
+/// for every album the device owns (read-only — heals already-synced albums).
+public struct CassetteDeviceArtworkResponse: Sendable, Decodable {
+  public let albums: [CassetteDeviceArtworkAlbum]
+}
+
 // MARK: - CassetteSyncAPI
 
 public final class CassetteSyncAPI: @unchecked Sendable {
@@ -211,6 +243,18 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   public func getIntentTracks(intentId: String) async throws -> CassetteIntentTracksResponse {
     let data = try await get(path: "/api/sync/intents/\(intentId)/tracks")
     return try JSONDecoder().decode(CassetteIntentTracksResponse.self, from: data)
+  }
+
+  /// Read-only artwork backfill manifest for a device's owned albums — the
+  /// album artist's catalog image + the album's catalog cover, per owned
+  /// album. Used to heal already-synced libraries without a remove/re-add.
+  public func getDeviceArtwork(deviceId: String) async throws
+    -> CassetteDeviceArtworkResponse {
+    let encoded = deviceId.addingPercentEncoding(
+      withAllowedCharacters: .urlPathAllowed
+    ) ?? deviceId
+    let data = try await get(path: "/api/sync/devices/\(encoded)/artwork")
+    return try JSONDecoder().decode(CassetteDeviceArtworkResponse.self, from: data)
   }
 
   public func updateIntent(
