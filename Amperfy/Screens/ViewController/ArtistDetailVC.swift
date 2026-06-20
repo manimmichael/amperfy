@@ -402,7 +402,15 @@ class ArtistDetailVC: MultiSourceTableViewController {
 
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
-    stickyHeader.alpha = 0
+    // Reset the collapsed title only when PUSHING a child (this VC stays in the
+    // stack, so the child's bar starts clean). On a POP — including the
+    // interactive edge-swipe — `isMovingFromParent` is true; zeroing alpha here
+    // would snap the bar title off mid-swipe ("header re-expands"). Leave it so
+    // the title slides away continuously with the content. A cancelled swipe
+    // self-heals: viewIsAppearing recomputes alpha from the scroll offset.
+    if !isMovingFromParent {
+      stickyHeader.alpha = 0
+    }
     albumsFetchedResultsController?.delegate = nil
     songsFetchedResultsController?.delegate = nil
   }

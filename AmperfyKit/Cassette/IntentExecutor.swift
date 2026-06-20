@@ -109,6 +109,11 @@ public final class IntentExecutor {
     }
 
     print("Cassette poll: received \(intents.count) actionable intent(s)")
+    // The fetch above round-tripped to cassette.digital with a valid bearer
+    // token, so the device is paired and reachable: stamp the freshness signal
+    // the account menu reads ("Synced 5m ago"). Persisted (not just the
+    // in-memory lastFullInventoryReportAt) so it survives relaunch.
+    Self.recordSuccessfulSync()
     for intent in intents {
       await executeIntent(intent)
     }
@@ -404,6 +409,25 @@ public final class IntentExecutor {
     if refreshed > 0 {
       print("Cassette poll: refreshed artwork for \(refreshed) owned album(s)")
     }
+  }
+
+  // MARK: - Sync freshness (account-menu status line)
+
+  /// Wall-clock time of the last successful poll round-trip to cassette.digital,
+  /// persisted in UserDefaults so it survives relaunch (unlike the per-launch
+  /// in-memory `lastFullInventoryReportAt`). The account menu renders this as a
+  /// relative "Synced 5m ago" line. `nonisolated`/`static` so a UI surface can
+  /// read it cheaply and synchronously off the main actor without touching the
+  /// executor's actor-isolated state.
+  nonisolated private static let lastSyncAtKey = "cassette.lastSyncAt"
+
+  nonisolated public static var lastSyncAt: Date? {
+    let t = UserDefaults.standard.double(forKey: lastSyncAtKey)
+    return t > 0 ? Date(timeIntervalSince1970: t) : nil
+  }
+
+  nonisolated static func recordSuccessfulSync() {
+    UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastSyncAtKey)
   }
 
   // MARK: - Applied-artwork-version store (refresh-on-change)

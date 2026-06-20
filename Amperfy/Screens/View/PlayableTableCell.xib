@@ -188,7 +188,7 @@
                     </button>
                 </subviews>
                 <constraints>
-                    <constraint firstItem="HnA-Bb-1UQ" firstAttribute="left" secondItem="ZTB-B7-OZR" secondAttribute="right" id="0uP-N3-DaP"/>
+                    <constraint firstItem="HnA-Bb-1UQ" firstAttribute="left" secondItem="WOq-tb-OTF" secondAttribute="leftMargin" id="0uP-N3-DaP"/>
                     <constraint firstItem="mUX-sN-oa8" firstAttribute="centerY" secondItem="WOq-tb-OTF" secondAttribute="centerY" id="1M6-yt-wX0"/>
                     <constraint firstAttribute="rightMargin" secondItem="mUX-sN-oa8" secondAttribute="right" id="46w-nK-8d4"/>
                     <constraint firstItem="4NS-Qv-02y" firstAttribute="leading" secondItem="mUX-sN-oa8" secondAttribute="leading" id="4Fr-bx-vmN"/>

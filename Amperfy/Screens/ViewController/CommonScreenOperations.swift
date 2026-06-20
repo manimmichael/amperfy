@@ -80,22 +80,33 @@ extension UIViewController {
     // account is not a Cassette concept: pairing binds ONE phone to ONE player
     // account (CassetteSyncAPI.registerDevice), so the upstream Amperfy
     // account-switcher / "Add Account" surface doesn't apply. We therefore show
-    // a single, clean static "Cassette account" row (disabled, checked) for the
-    // active account and drop both the account loop and "Add Account". (The
-    // multi-account plumbing — allAccounts / switchAccount — stays in the
-    // codebase for upstream parity; it's just not surfaced in this menu.)
+    // a single, non-interactive STATUS row for the active account and drop both
+    // the account loop and "Add Account". (The multi-account plumbing —
+    // allAccounts / switchAccount — stays in the codebase for upstream parity;
+    // it's just not surfaced in this menu.)
+    //
+    // The row replaces the old static "Cassette account" string with a live
+    // status: the Player's LAN host (the only human-ish identity we hold,
+    // derived from loginCredentials.serverUrl / lanHostname) leads, followed by
+    // connection state and sync freshness, e.g. "Michael's Mac · Synced 5m ago"
+    // — or just "Connected" before the first poll lands.
     if appDelegate.storage.settings.accounts.active != nil {
-      let accountLabel = UIAction(
-        title: "Cassette account",
-        image: .userCircle(withConfiguration: UIImage.SymbolConfiguration(
-          pointSize: 30,
-          weight: .regular
-        )),
-        attributes: [UIMenuElement.Attributes.disabled],
-        state: .on,
-        handler: { _ in }
-      )
-      accountActions.append(accountLabel)
+      // Deferred so the relative sync time ("5m ago") is recomputed each time
+      // the menu opens, not frozen at the moment the nav button was built.
+      let accountStatusRow = UIDeferredMenuElement.uncached { [weak self] completion in
+        guard let self else { completion([]); return }
+        let accountLabel = UIAction(
+          title: self.cassetteAccountStatusLine(),
+          image: .userCircle(withConfiguration: UIImage.SymbolConfiguration(
+            pointSize: 30,
+            weight: .regular
+          )),
+          attributes: [UIMenuElement.Attributes.disabled],
+          handler: { _ in }
+        )
+        completion([accountLabel])
+      }
+      accountActions.append(accountStatusRow)
     }
 
     let openSettings = UIAction(
@@ -137,6 +148,71 @@ extension UIViewController {
       options: [.displayInline],
       children: accountActions
     )
+  }
+
+  // MARK: - Account status line (cassette)
+
+  /// The non-interactive account-row status: "<Player> · Synced <rel>", e.g.
+  /// "Michael's Mac · Synced 5m ago". Falls back to "Connected" as the lead
+  /// when no human-ish Player name can be derived, and omits the sync clause
+  /// until the first successful poll has stamped `IntentExecutor.lastSyncAt`.
+  /// Composed synchronously from cheap, already-on-device state (no network);
+  /// connection here means "paired + bearer-token present" — the live sync
+  /// timestamp is what conveys recent reachability.
+  private func cassetteAccountStatusLine() -> String {
+    let isConnected = appDelegate.storage.settings.accounts.active != nil
+      && CassetteSyncAPI.bearerToken != nil
+    let connectionWord = isConnected ? "Connected" : "Not connected"
+    let playerName = cassetteFriendlyPlayerName()
+    let lead = playerName ?? connectionWord
+
+    guard let lastSyncAt = IntentExecutor.lastSyncAt else {
+      // No poll has landed yet this install — no freshness to show. If a Player
+      // name led the row, append the bare connection state so it still reads as
+      // a status; otherwise the lead already IS the connection state.
+      return playerName != nil ? "\(lead) · \(connectionWord)" : lead
+    }
+    return "\(lead) · Synced \(cassetteRelativeSyncString(from: lastSyncAt))"
+  }
+
+  /// Best-effort human-readable Player name from the paired LAN server URL.
+  /// `loginCredentials.serverUrl` is `http://<lanHostname>:<lanPort>` (LoginVC);
+  /// `lanHostname` is a Bonjour host like "Michaels-MacBook-Pro.local" or a bare
+  /// IP. We strip the scheme/port and a trailing ".local", and for a Bonjour
+  /// name turn hyphens into spaces ("Michaels MacBook Pro"). A bare IP carries
+  /// no human identity, so we return nil and the caller leads with "Connected".
+  private func cassetteFriendlyPlayerName() -> String? {
+    guard let serverUrl = appDelegate.storage.settings.accounts.activeSetting.read
+      .loginCredentials?.serverUrl,
+      let host = URL(string: serverUrl)?.host, !host.isEmpty
+    else { return nil }
+
+    // Bare IPv4/IPv6 hosts aren't human-readable identities.
+    let isIPv4 = host.split(separator: ".").count == 4
+      && host.allSatisfy { $0.isNumber || $0 == "." }
+    if isIPv4 || host.contains(":") { return nil }
+
+    var name = host
+    if name.lowercased().hasSuffix(".local") {
+      name = String(name.dropLast(".local".count))
+    }
+    // Bonjour hostnames use hyphens for spaces; restore them for display.
+    name = name.replacingOccurrences(of: "-", with: " ")
+      .trimmingCharacters(in: .whitespaces)
+    return name.isEmpty ? nil : name
+  }
+
+  /// Compact relative time for the sync line: "just now", "5m ago", "1h ago",
+  /// "3d ago". Future/identical timestamps read as "just now".
+  private func cassetteRelativeSyncString(from date: Date) -> String {
+    let seconds = max(0, Date().timeIntervalSince(date))
+    if seconds < 60 { return "just now" }
+    let minutes = Int(seconds / 60)
+    if minutes < 60 { return "\(minutes)m ago" }
+    let hours = Int(seconds / 3600)
+    if hours < 24 { return "\(hours)h ago" }
+    let days = Int(seconds / 86400)
+    return "\(days)d ago"
   }
 
   /// Patch 111 (5): confirm before the destructive account logout.

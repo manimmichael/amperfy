@@ -348,10 +348,14 @@ class PlayableTableCell: BasicTableCell {
       configureTrackNumberLabel()
       trackNumberLabel.isHidden = false
       entityImage.isHidden = true
-      // cassette polish: 2-digit track column (18pt) + tightened trailing gap
-      // (8pt, was 16) so the number sits close to the title. Right-aligned
-      // within the narrow column keeps 9/10/11 lined up.
-      titleContainerLeadingConstraint.constant = 10 + 18 + 8 // heart + track label width + offset
+      // cassette polish: the track number now starts at the cell's STANDARD
+      // content margin (its leading is pinned to contentView.leftMargin in the
+      // xib — no heart-slot gutter ahead of it). It's a tight 18pt box,
+      // right-aligned within itself, so 9/10/11 stay column-aligned. The title
+      // sits 10pt past the box's right edge. titleContainerLeadingConstraint is
+      // measured from leftMargin and the title's inner stack adds 4pt before
+      // the text, so: 18 (box) + 10 (gap) − 4 (inner inset) = 24.
+      titleContainerLeadingConstraint.constant = 18 + 10 - 4
     case .artwork:
       trackNumberLabel.isHidden = true
       entityImage.isHidden = false
