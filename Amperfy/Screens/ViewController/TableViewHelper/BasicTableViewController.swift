@@ -150,33 +150,27 @@ class BasicTableViewController: KeyCommandTableViewController {
   /// non-animated pop), the flag still clears synchronously.
   func freezeCollapsingHeaderForPopTransition(restoreOnCancel: @escaping () -> Void) {
     isHeaderTransitionFrozen = true
-    // round 6: DETACH BOTH the styled titleView AND the plain string title for
-    // the whole pop. UIKit re-presents the nav title during the large-title bar
-    // transition regardless of alpha; nil-ing only the titleView (round 5) just
-    // made UIKit fall back to navigationItem.title — the album name in the SYSTEM
-    // font with no header behind it. Clearing both leaves nothing for UIKit to
-    // bring back over the cover; both are restored if the swipe is cancelled.
-    let savedTitleView = navigationItem.titleView
-    let savedTitle = navigationItem.title
-    navigationItem.titleView = nil
-    navigationItem.title = nil
-    HeaderPopDebug.event("FREEZE detach title", in: self)
+    // round 7b: freeze the LAYOUT ONLY — do NOT touch the nav title here. Round 6
+    // detached the titleView (and string) for the pop, but re-attaching the
+    // titleView on a cancelled swipe made UIKit FADE IT BACK IN over the hero — the
+    // residual "flash". With navigationItem.title cleared at install
+    // (DetailStickyHeaderSupport.install) there is no plain string to leak, and the
+    // styled stickyHeader is already at alpha 0 at the top and is held there by the
+    // frozen-layout early-returns (it never animates because nothing re-presents
+    // it). So there is nothing to detach and nothing to restore: freezing the
+    // layout is the whole job.
+    HeaderPopDebug.event("FREEZE (layout only)", in: self)
     guard let coordinator = transitionCoordinator else {
-      // No interactive/animated transition — nothing to ride off; release now.
+      // No interactive/animated transition — release the freeze now.
       isHeaderTransitionFrozen = false
-      navigationItem.titleView = savedTitleView
-      navigationItem.title = savedTitle
       return
     }
     coordinator.animate(alongsideTransition: nil) { [weak self] context in
       guard let self else { return }
       self.isHeaderTransitionFrozen = false
-      HeaderPopDebug.event(context.isCancelled ? "DONE cancelled→restore" : "DONE popped", in: self)
+      HeaderPopDebug.event(context.isCancelled ? "DONE cancelled" : "DONE popped", in: self)
       if context.isCancelled {
-        // The swipe was reversed — this VC stays. Restore both and resume normal
-        // behavior so the hero/title reflect the (preserved) scroll offset.
-        self.navigationItem.titleView = savedTitleView
-        self.navigationItem.title = savedTitle
+        // The swipe was reversed — resume normal scroll-driven layout/alpha.
         restoreOnCancel()
       }
     }
