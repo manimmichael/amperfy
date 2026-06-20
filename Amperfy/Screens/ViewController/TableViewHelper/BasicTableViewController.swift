@@ -150,21 +150,17 @@ class BasicTableViewController: KeyCommandTableViewController {
   /// non-animated pop), the flag still clears synchronously.
   func freezeCollapsingHeaderForPopTransition(restoreOnCancel: @escaping () -> Void) {
     isHeaderTransitionFrozen = true
-    // round 7d: DETACH the styled titleView for the pop. The HUD proved the bar
-    // title that appears mid-swipe is NOT a string (navigationItem.title and
-    // self.title both read nil) and NOT the styled title at a stale alpha (its
-    // alpha is 0) — it's UIKit RENDERING the alpha-0 titleView anyway as it
-    // cross-fades the nav bar through the interactive pop. The only way to stop
-    // that is to remove the titleView for the duration of the pop. Round 6 did
-    // exactly this and the swipe WAS clean; what round 6 got wrong was the
-    // re-attach (see the cancel branch).
-    let savedTitleView = navigationItem.titleView
-    navigationItem.titleView = nil
-    HeaderPopDebug.event("FREEZE detach titleView", in: self)
+    // round 7f: freeze the LAYOUT ONLY. The title needs no pop-specific handling
+    // anymore — updateAlpha hides the titleView (isHidden) whenever it is fully
+    // transparent, so at the top it is genuinely ABSENT from the render tree and
+    // UIKit has nothing to cross-fade during the pop. No detach, no re-attach, no
+    // alpha fight (all of which UIKit kept overriding). Freezing the hero layout
+    // (via the early-returns keyed on this flag) is the whole job; a cancelled
+    // swipe just resumes normal scroll-driven updates.
+    HeaderPopDebug.event("FREEZE (layout only)", in: self)
     guard let coordinator = transitionCoordinator else {
-      // No interactive/animated transition — restore + release now.
+      // No interactive/animated transition — release the freeze now.
       isHeaderTransitionFrozen = false
-      navigationItem.titleView = savedTitleView
       return
     }
     coordinator.animate(alongsideTransition: nil) { [weak self] context in
@@ -172,16 +168,8 @@ class BasicTableViewController: KeyCommandTableViewController {
       self.isHeaderTransitionFrozen = false
       HeaderPopDebug.event(context.isCancelled ? "DONE cancelled" : "DONE popped", in: self)
       if context.isCancelled {
-        // The HUD caught the real flash: the instant the titleView is re-attached,
-        // UIKit RESETS its alpha to 1.0 (tv=1.0), and the deferred recompute (6b)
-        // didn't pull it back to 0 until a frame later. Fix: re-attach AND re-derive
-        // the alpha synchronously in the same non-animated block (restoreOnCancel is
-        // synchronous now), so the correct value — 0 at the top → invisible — lands
-        // before the next render. No fade, no alpha-reset frame, no flash.
-        UIView.performWithoutAnimation {
-          self.navigationItem.titleView = savedTitleView
-          restoreOnCancel()
-        }
+        // The swipe was reversed — resume normal scroll-driven layout/alpha.
+        restoreOnCancel()
       }
     }
   }

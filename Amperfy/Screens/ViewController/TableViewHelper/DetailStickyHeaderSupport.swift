@@ -43,6 +43,9 @@ enum DetailStickyHeaderSupport {
     viewController.title = nil
     viewController.navigationItem.title = nil
     stickyHeader.alpha = 0
+    // round 7f: start genuinely hidden (not just alpha 0) — see updateAlpha. The
+    // title is absent from the render tree until scroll brings it on.
+    stickyHeader.isHidden = true
     collapsedPlayItem?.isHidden = true
     let trailingItems = [overflowItem, collapsedPlayItem].compactMap { $0 }
     if !trailingItems.isEmpty {
@@ -92,6 +95,7 @@ enum DetailStickyHeaderSupport {
           tableHeaderView.frame.height >= minimumHeroHeight else {
       HeaderPopDebug.event("upd h<min →α0", in: viewController)
       stickyHeader.alpha = 0
+      stickyHeader.isHidden = true
       collapsedPlayItem?.isHidden = true
       return
     }
@@ -119,6 +123,16 @@ enum DetailStickyHeaderSupport {
       in: viewController
     )
     stickyHeader.alpha = progress
+    // round 7f: also drive isHidden from the scroll position, not just alpha.
+    // alpha 0 is "transparent but PRESENT" — UIKit composites the titleView during
+    // the interactive-pop cross-fade and resets its alpha to 1.0 along the way, so
+    // the title surfaced mid- and post-swipe no matter what alpha we wrote (the HUD
+    // caught UIKit putting tv back to 1.0 the layout pass after we set it to 0).
+    // isHidden removes the view from the render tree entirely whenever it is fully
+    // transparent, so at the top there is nothing for UIKit to cross-fade or
+    // un-hide: the title is genuinely ABSENT until scroll brings it on. This is the
+    // whole header-pop fix — no pop-specific detach / re-attach / alpha juggling.
+    stickyHeader.isHidden = progress <= 0
     // Patch 109: fade the bar background in lockstep with the title. Without
     // this UIKit snaps the opaque standardAppearance in the instant the user
     // scrolls (offset > 0), covering the still-visible artwork. The detail VCs

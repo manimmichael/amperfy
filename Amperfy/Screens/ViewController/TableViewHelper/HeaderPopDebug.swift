@@ -96,12 +96,14 @@ enum HeaderPopDebug {
     let frozen = (viewController as? BasicTableViewController)?.isHeaderTransitionFrozen ?? false
     _ = header
     let off = scrollView?.contentOffset.y ?? 0
-    // nT = navigationItem.title (string), tv = titleView alpha or "nil" when
-    // detached. nT should read "·" (cleared); tv should read "nil" through the pop
-    // (detached) and "0.0" at rest/after cancel (attached, invisible). If a title
-    // shows while tv=nil, the leak isn't the titleView at all.
+    // nT = navigationItem.title (string), tv = titleView alpha + "H" when isHidden.
+    // nT should read "·". tv should read "…H" (hidden → invisible no matter the
+    // alpha) at the top and through the pop, and a bare alpha like "1.0" only once
+    // scrolled. A bare "1.0" at the top is the bug.
     let nT = viewController.navigationItem.title.map { String($0.prefix(5)) } ?? "·"
-    let tv = viewController.navigationItem.titleView.map { String(format: "%.1f", $0.alpha) } ?? "nil"
+    let tv = viewController.navigationItem.titleView.map {
+      String(format: "%.1f%@", $0.alpha, $0.isHidden ? "H" : "")
+    } ?? "nil"
     push(String(
       format: "[%@] %@ frz=%@ off=%.0f tv=%@ nT=%@",
       short(viewController), label, frozen ? "Y" : "N", off, tv, nT
