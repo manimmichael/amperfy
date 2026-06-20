@@ -259,10 +259,32 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     // self-heals: viewIsAppearing recomputes alpha from the scroll offset.
     if !isMovingFromParent {
       stickyHeader.alpha = 0
+    } else {
+      // cassette (header-pop fix, round 3): playlist detail does NOT extend
+      // under the nav bar, so it's far less prone to the pop re-expand than
+      // album/artist — but it shares GenericDetailTableHeader, so apply the same
+      // whole-transition freeze for consistency and safety.
+      HeaderPopDebug.snapshot(
+        "viewWillDisappear(pop)",
+        header: tableView.tableHeaderView,
+        scrollView: tableView,
+        in: self
+      )
+      freezeCollapsingHeaderForPopTransition { [weak self] in
+        guard let self else { return }
+        detailOperationsView?.resizeToFit()
+        updateStickyHeaderAlpha()
+      }
     }
   }
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    HeaderPopDebug.snapshot(
+      "scrollViewDidScroll",
+      header: tableView.tableHeaderView,
+      scrollView: scrollView,
+      in: self
+    )
     updateStickyHeaderAlpha()
   }
 

@@ -332,6 +332,14 @@ class GenericDetailTableHeader: UIView {
   /// "Unable to simultaneously satisfy constraints" from Auto Layout.
   func resizeToFit() {
     guard let config else { return }
+    // cassette (header-pop fix, round 3): hard freeze for the whole pop. While
+    // the host VC is mid-transition out of the stack, ANY re-measure here would
+    // reset the table's content layout and snap the scrolled-collapsed hero back
+    // to expanded ("pops in"). The reassignment guard below (round 2) covered
+    // only one trigger; this covers all of them for the transition's duration.
+    if (config.rootView as? BasicTableViewController)?.isHeaderTransitionFrozen == true {
+      return
+    }
     let tableWidth = config.tableView.bounds.width > 0
       ? config.tableView.bounds.width
       : config.rootView.view.bounds.width

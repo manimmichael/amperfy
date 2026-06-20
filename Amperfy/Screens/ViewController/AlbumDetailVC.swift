@@ -223,6 +223,19 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
+    HeaderPopDebug.snapshot(
+      "viewDidLayoutSubviews",
+      header: tableView.tableHeaderView,
+      scrollView: tableView,
+      in: self
+    )
+    // cassette (header-pop fix, round 3): while popping, skip ALL of the
+    // inset-driven re-layout. With contentInsetAdjustmentBehavior == .never the
+    // insets/indicator insets are derived from safeAreaInsets, which SHIFT as
+    // the bar transitions toward the destination's large-title layout; writing
+    // them (and re-measuring the header) mid-pop is one of the triggers that
+    // re-expands the hero. Leave everything as-is until the transition settles.
+    guard !isHeaderTransitionFrozen else { return }
     // Patch 104 (Root 2): with contentInsetAdjustmentBehavior == .never the
     // safe areas are mirrored manually (bottom = tab bar + mini player).
     tableView.contentInset.bottom = view.safeAreaInsets.bottom
@@ -241,10 +254,30 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     // self-heals: viewIsAppearing recomputes alpha from the scroll offset.
     if !isMovingFromParent {
       stickyHeader.alpha = 0
+    } else {
+      // cassette (header-pop fix, round 3): freeze the collapsing header for the
+      // whole pop so it rides off-screen instead of re-expanding.
+      HeaderPopDebug.snapshot(
+        "viewWillDisappear(pop)",
+        header: tableView.tableHeaderView,
+        scrollView: tableView,
+        in: self
+      )
+      freezeCollapsingHeaderForPopTransition { [weak self] in
+        guard let self else { return }
+        detailOperationsView?.resizeToFit()
+        updateStickyHeaderAlpha()
+      }
     }
   }
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    HeaderPopDebug.snapshot(
+      "scrollViewDidScroll",
+      header: tableView.tableHeaderView,
+      scrollView: scrollView,
+      in: self
+    )
     updateStickyHeaderAlpha()
   }
 

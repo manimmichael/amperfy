@@ -44,6 +44,25 @@ enum DetailStickyHeaderSupport {
     in viewController: UIViewController,
     collapsedPlayItem: UIBarButtonItem? = nil
   ) {
+    // cassette (header-pop fix, round 3): while the host VC is popping out
+    // (interactive edge-swipe back) hold the title/bar exactly as they are.
+    // The scrollViewDidScroll / viewIsAppearing paths still fire mid-transition
+    // (UIKit nudges contentOffset and the inset as the bar animates toward the
+    // destination's large-title layout); recomputing here would re-fade the
+    // title and, via the bar-appearance reassignment, force a re-render that
+    // contributes to the hero re-expanding. Freeze; the completion handler (or a
+    // cancelled-swipe restore) resumes normal updates.
+    if (viewController as? BasicTableViewController)?.isHeaderTransitionFrozen == true {
+      // round 4: HIDE the title for the duration of the pop rather than HOLDING
+      // it. Round 3 froze the alpha at its pre-pop value, so a title that was
+      // visible in the collapsed state stayed visible and overlapped the
+      // (frozen) hero as the VC rode off. Forcing alpha 0 means the title
+      // neither appears nor overlaps during the swipe; a cancelled swipe
+      // restores the correct alpha via restoreOnCancel → updateAlpha (unfrozen).
+      stickyHeader.alpha = 0
+      collapsedPlayItem?.isHidden = true
+      return
+    }
     // cassette Patch 104 (Root 2): the header self-sizes now, so the hero
     // height is read from the actual table header frame (no canonical
     // constants), and the threshold is computed by converting the hero's

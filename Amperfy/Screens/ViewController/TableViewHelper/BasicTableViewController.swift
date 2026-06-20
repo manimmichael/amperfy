@@ -128,6 +128,44 @@ class BasicTableViewController: KeyCommandTableViewController {
   var isEditLockedDueToActiveSwipe = false
   var isSingleCellEditingModeActive = false
 
+  /// cassette (header-pop fix, round 3): true for the WHOLE duration of an
+  /// interactive pop (edge-swipe back) of a collapsing-header detail screen.
+  /// While set, the collapsing-header layout is a NO-OP — the hero keeps its
+  /// current (scrolled-collapsed) frame and the sticky-title alpha is held —
+  /// so the hero rides off-screen with the transition instead of re-expanding
+  /// ("popping in"). Re-expansion has MULTIPLE triggers during the pop (header
+  /// re-layout as `adjustedContentInset` animates with the nav bar's large-title
+  /// change, a `resizeToFit` re-measure, a `contentOffset` reset). Freezing for
+  /// the entire transition is immune to which one fires. Only the collapsing-
+  /// header detail VCs set this; every other screen ignores it.
+  var isHeaderTransitionFrozen = false
+
+  /// cassette (header-pop fix, round 3): call from `viewWillDisappear` of a
+  /// collapsing-header detail VC when `isMovingFromParent` (an actual pop,
+  /// including the interactive edge-swipe). Freezes the header for the whole
+  /// transition and clears the flag in the transition-coordinator completion.
+  /// On CANCELLATION (a reversed partial swipe), `restoreOnCancel` is invoked
+  /// so the normal scroll-driven layout/alpha resumes and a cancelled swipe
+  /// behaves exactly as before. If there is no transition coordinator (a
+  /// non-animated pop), the flag still clears synchronously.
+  func freezeCollapsingHeaderForPopTransition(restoreOnCancel: @escaping () -> Void) {
+    isHeaderTransitionFrozen = true
+    guard let coordinator = transitionCoordinator else {
+      // No interactive/animated transition — nothing to ride off; release now.
+      isHeaderTransitionFrozen = false
+      return
+    }
+    coordinator.animate(alongsideTransition: nil) { [weak self] context in
+      guard let self else { return }
+      self.isHeaderTransitionFrozen = false
+      if context.isCancelled {
+        // The swipe was reversed — this VC stays. Resume normal behavior so the
+        // hero/title reflect the (preserved) scroll offset again.
+        restoreOnCancel()
+      }
+    }
+  }
+
   override func viewDidLoad() {
     super.viewDidLoad()
     tableView.keyboardDismissMode = .onDrag
