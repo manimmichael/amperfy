@@ -150,26 +150,31 @@ class BasicTableViewController: KeyCommandTableViewController {
   /// non-animated pop), the flag still clears synchronously.
   func freezeCollapsingHeaderForPopTransition(restoreOnCancel: @escaping () -> Void) {
     isHeaderTransitionFrozen = true
-    // round 5: DETACH the nav-bar title for the whole pop. Forcing its alpha to 0
-    // wasn't enough — UIKit re-presents the titleView during the large-title bar
-    // transition regardless of alpha, so the collapsed title reappeared over the
-    // hero. Removing the titleView outright leaves nothing to re-present; it's
-    // restored only if the swipe is cancelled (the VC stays).
+    // round 6: DETACH BOTH the styled titleView AND the plain string title for
+    // the whole pop. UIKit re-presents the nav title during the large-title bar
+    // transition regardless of alpha; nil-ing only the titleView (round 5) just
+    // made UIKit fall back to navigationItem.title — the album name in the SYSTEM
+    // font with no header behind it. Clearing both leaves nothing for UIKit to
+    // bring back over the cover; both are restored if the swipe is cancelled.
     let savedTitleView = navigationItem.titleView
+    let savedTitle = navigationItem.title
     navigationItem.titleView = nil
+    navigationItem.title = nil
     guard let coordinator = transitionCoordinator else {
       // No interactive/animated transition — nothing to ride off; release now.
       isHeaderTransitionFrozen = false
       navigationItem.titleView = savedTitleView
+      navigationItem.title = savedTitle
       return
     }
     coordinator.animate(alongsideTransition: nil) { [weak self] context in
       guard let self else { return }
       self.isHeaderTransitionFrozen = false
       if context.isCancelled {
-        // The swipe was reversed — this VC stays. Restore the title and resume
-        // normal behavior so the hero/title reflect the (preserved) scroll offset.
+        // The swipe was reversed — this VC stays. Restore both and resume normal
+        // behavior so the hero/title reflect the (preserved) scroll offset.
         self.navigationItem.titleView = savedTitleView
+        self.navigationItem.title = savedTitle
         restoreOnCancel()
       }
     }
