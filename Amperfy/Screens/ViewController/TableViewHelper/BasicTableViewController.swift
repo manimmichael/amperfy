@@ -172,15 +172,16 @@ class BasicTableViewController: KeyCommandTableViewController {
       self.isHeaderTransitionFrozen = false
       HeaderPopDebug.event(context.isCancelled ? "DONE cancelled" : "DONE popped", in: self)
       if context.isCancelled {
-        // Re-attach WITHOUT animation. Round 6's plain re-assignment let UIKit
-        // FADE the titleView back in (it animates titleView changes, driving the
-        // alpha 0→1), which was the residual "flash" on a cancelled swipe.
-        // Suppressing the implicit animation re-attaches it instantly at its real
-        // alpha (0 at the top → invisible); restoreOnCancel re-derives the value.
+        // The HUD caught the real flash: the instant the titleView is re-attached,
+        // UIKit RESETS its alpha to 1.0 (tv=1.0), and the deferred recompute (6b)
+        // didn't pull it back to 0 until a frame later. Fix: re-attach AND re-derive
+        // the alpha synchronously in the same non-animated block (restoreOnCancel is
+        // synchronous now), so the correct value — 0 at the top → invisible — lands
+        // before the next render. No fade, no alpha-reset frame, no flash.
         UIView.performWithoutAnimation {
           self.navigationItem.titleView = savedTitleView
+          restoreOnCancel()
         }
-        restoreOnCancel()
       }
     }
   }

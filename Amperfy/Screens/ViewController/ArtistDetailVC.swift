@@ -437,16 +437,12 @@ class ArtistDetailVC: MultiSourceTableViewController {
       )
       freezeCollapsingHeaderForPopTransition { [weak self] in
         guard let self else { return }
-        // round 6: defer the re-measure + alpha recompute one runloop so it reads
-        // SETTLED layout. Synchronously in the completion the layout is still
-        // restoring (the bar animates back from the destination's large-title
-        // height), which measures the hero as collapsed and snaps the title to
-        // full opacity. The re-attached titleView already carries its correct
-        // pre-pop alpha; this pass just confirms it.
-        DispatchQueue.main.async {
-          self.detailOperationsView?.resizeToFit()
-          self.updateStickyHeaderAlpha()
-        }
+        // round 7d: run synchronously — the freeze invokes this inside
+        // performWithoutAnimation right after re-attaching the titleView (which
+        // UIKit resets to alpha 1.0), so the re-derived alpha lands before the next
+        // render. Deferring it (6b) is what let the re-attached title flash.
+        self.detailOperationsView?.resizeToFit()
+        self.updateStickyHeaderAlpha()
       }
     }
     albumsFetchedResultsController?.delegate = nil

@@ -266,18 +266,14 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       )
       freezeCollapsingHeaderForPopTransition { [weak self] in
         guard let self else { return }
-        // round 6: defer the re-measure + alpha recompute one runloop. Running
-        // them synchronously in the transition-coordinator completion reads a
-        // still-settling layout (inset / contentOffset / hero frame mid-restore as
-        // the bar animates back from the destination's large-title height),
-        // measuring the hero as collapsed and snapping the title to full opacity
-        // for a frame. The re-attached titleView already carries its correct
-        // pre-pop alpha; this pass just confirms it against the settled layout.
-        DispatchQueue.main.async {
-          HeaderPopDebug.event("→restoreCancel(async)", in: self)
-          self.detailOperationsView?.resizeToFit()
-          self.updateStickyHeaderAlpha()
-        }
+        // round 7d: run synchronously — the freeze invokes this inside
+        // performWithoutAnimation right after re-attaching the titleView (which
+        // UIKit resets to alpha 1.0), so re-deriving the alpha here lands the
+        // correct value (0 at the top) before the next render. Deferring it (6b)
+        // is what let the re-attached title flash at full alpha for a frame.
+        HeaderPopDebug.event("→restoreCancel", in: self)
+        self.detailOperationsView?.resizeToFit()
+        self.updateStickyHeaderAlpha()
       }
     }
   }
