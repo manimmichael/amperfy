@@ -265,8 +265,17 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       )
       freezeCollapsingHeaderForPopTransition { [weak self] in
         guard let self else { return }
-        detailOperationsView?.resizeToFit()
-        updateStickyHeaderAlpha()
+        // round 6: defer the re-measure + alpha recompute one runloop. Running
+        // them synchronously in the transition-coordinator completion reads a
+        // still-settling layout (inset / contentOffset / hero frame mid-restore as
+        // the bar animates back from the destination's large-title height),
+        // measuring the hero as collapsed and snapping the title to full opacity
+        // for a frame. The re-attached titleView already carries its correct
+        // pre-pop alpha; this pass just confirms it against the settled layout.
+        DispatchQueue.main.async {
+          self.detailOperationsView?.resizeToFit()
+          self.updateStickyHeaderAlpha()
+        }
       }
     }
   }

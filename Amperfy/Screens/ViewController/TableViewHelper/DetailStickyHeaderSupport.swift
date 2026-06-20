@@ -53,13 +53,17 @@ enum DetailStickyHeaderSupport {
     // contributes to the hero re-expanding. Freeze; the completion handler (or a
     // cancelled-swipe restore) resumes normal updates.
     if (viewController as? BasicTableViewController)?.isHeaderTransitionFrozen == true {
-      // round 4: HIDE the title for the duration of the pop rather than HOLDING
-      // it. Round 3 froze the alpha at its pre-pop value, so a title that was
-      // visible in the collapsed state stayed visible and overlapped the
-      // (frozen) hero as the VC rode off. Forcing alpha 0 means the title
-      // neither appears nor overlaps during the swipe; a cancelled swipe
-      // restores the correct alpha via restoreOnCancel → updateAlpha (unfrozen).
-      stickyHeader.alpha = 0
+      // round 6: the nav title is DETACHED outright during the pop
+      // (freezeCollapsingHeaderForPopTransition nils both the styled titleView
+      // and the plain string title), so the title cannot render regardless of the
+      // stickyHeader's alpha. Do NOT force alpha to 0 here — round 4 did, which
+      // clobbered the pre-pop opacity, so a cancelled swipe re-attached the
+      // titleView at the wrong alpha and the title "snapped on" at full opacity at
+      // the top. Leaving alpha untouched lets the cancelled-swipe restore show the
+      // title at exactly its pre-pop opacity — already correct for the frozen
+      // (unchanged) scroll position. Still hide the collapsed play bar-button for
+      // the duration of the pop; restoreOnCancel re-derives it once the layout
+      // settles.
       collapsedPlayItem?.isHidden = true
       return
     }
