@@ -29,6 +29,17 @@ enum DetailStickyHeaderSupport {
     collapsedPlayItem: UIBarButtonItem? = nil
   ) {
     viewController.navigationItem.titleView = stickyHeader
+    // cassette (header-pop fix, round 7): the stickyHeader IS the sole visual
+    // title for these collapsing-header detail screens. The superclass
+    // (KeyCommandTableViewController.viewDidLoad) also sets navigationItem.title
+    // to the scene name for key-command / back purposes; clear it so UIKit never
+    // renders that plain string in its default gray system font when the styled
+    // titleView is hidden (alpha 0) or momentarily detached during a pop. That
+    // stray string — NOT the styled title, whose alpha is correctly 0 throughout
+    // (proven on-device via the debug HUD) — was the "title popping in" on the
+    // interactive back-swipe. The back buttons here are icon-only, so dropping the
+    // string title costs nothing visible.
+    viewController.navigationItem.title = nil
     stickyHeader.alpha = 0
     collapsedPlayItem?.isHidden = true
     let trailingItems = [overflowItem, collapsedPlayItem].compactMap { $0 }
