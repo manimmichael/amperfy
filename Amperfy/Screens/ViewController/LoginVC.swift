@@ -247,8 +247,14 @@ class LoginVC: UIViewController {
         // (/api/sync/*), which runs long after this login flow ends.
         self.appDelegate.storage.settings.cassetteBearerToken = token
         // Register this phone in the first-class device registry so it shows
-        // on the dashboard immediately — independent of any download.
-        Task { try? await CassetteSyncAPI.shared.registerDevice() }
+        // on the dashboard immediately — independent of any download. Also
+        // fetch the account identity (name/email) so the account menu leads
+        // with the user's Cassette account from the first launch, not the
+        // paired Player's hostname. Both best-effort; the poll loop retries.
+        Task {
+          try? await CassetteSyncAPI.shared.registerDevice()
+          try? await CassetteSyncAPI.shared.getAccount()
+        }
         self.loginWithCredentials(credentials)
       }
     }.resume()

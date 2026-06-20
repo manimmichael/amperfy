@@ -382,6 +382,20 @@ class GenericDetailTableHeader: UIView {
     // VCs land the deferred size once the scroll settles.
     if config.tableView.isDragging || config.tableView.isDecelerating { return }
 
+    // cassette: do NOT re-measure while the host VC is leaving the stack (a pop,
+    // including the interactive edge-swipe). For the screens that extend under
+    // the nav bar, `topInset` is derived from the nav bar's minY / the view's
+    // top safe-area inset (see above) — both of which SHIFT mid-pop as UIKit
+    // transitions the bar toward the destination's large-title layout. That
+    // makes `newHeight` differ, and re-assigning `tableHeaderView` here resets
+    // the table's content layout, snapping the scrolled-collapsed hero back to
+    // expanded ("pops in") for the duration of the swipe. The VC is leaving, so
+    // its header never needs a new size; skip. (Push-in sizing is unaffected —
+    // the pushed VC is moving TO, not FROM, its parent. A cancelled pop
+    // self-heals: viewIsAppearing recomputes the sticky-title alpha from the
+    // preserved offset, and the next settled layout re-measures if needed.)
+    if config.rootView.isMovingFromParent || config.rootView.isBeingDismissed { return }
+
     lastLayoutWidth = tableWidth
     UIView.performWithoutAnimation {
       frame = CGRect(x: 0, y: 0, width: tableWidth, height: newHeight)

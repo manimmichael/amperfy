@@ -152,10 +152,15 @@ extension UIViewController {
 
   // MARK: - Account status line (cassette)
 
-  /// The non-interactive account-row status: "<Player> · Synced <rel>", e.g.
-  /// "Michael's Mac · Synced 5m ago". Falls back to "Connected" as the lead
-  /// when no human-ish Player name can be derived, and omits the sync clause
-  /// until the first successful poll has stamped `IntentExecutor.lastSyncAt`.
+  /// The non-interactive account-row status: "<Account> · Synced <rel>", e.g.
+  /// "michaelin3d@icloud.com · Synced 5m ago". The lead is the user's Cassette
+  /// ACCOUNT identity — the display NAME if the server returned one, else the
+  /// account EMAIL — fetched by the sync poll (`CassetteSyncAPI.getAccount`)
+  /// and persisted in UserDefaults. This is the account the bearer token
+  /// authenticates as, NOT the paired Player's computer (its LAN hostname is
+  /// only a last-ditch fallback for a never-synced install). Falls back to
+  /// "Connected" when nothing is known yet, and omits the sync clause until
+  /// the first successful poll has stamped `IntentExecutor.lastSyncAt`.
   /// Composed synchronously from cheap, already-on-device state (no network);
   /// connection here means "paired + bearer-token present" — the live sync
   /// timestamp is what conveys recent reachability.
@@ -163,14 +168,21 @@ extension UIViewController {
     let isConnected = appDelegate.storage.settings.accounts.active != nil
       && CassetteSyncAPI.bearerToken != nil
     let connectionWord = isConnected ? "Connected" : "Not connected"
-    let playerName = cassetteFriendlyPlayerName()
-    let lead = playerName ?? connectionWord
+    // Prefer the server-resolved ACCOUNT identity: name, else email. Only when
+    // neither has been fetched yet do we fall back to the paired Player's
+    // hostname (better than a bare "Connected" on a freshly paired, not-yet-
+    // synced install), and finally to the connection word.
+    let accountIdentity = CassetteSyncAPI.accountName ?? CassetteSyncAPI.accountEmail
+    let lead = accountIdentity ?? cassetteFriendlyPlayerName() ?? connectionWord
+    // Whether the lead is a real identity (name/email/hostname) or just the
+    // bare connection state — drives whether we append the connection word.
+    let leadIsIdentity = accountIdentity != nil || cassetteFriendlyPlayerName() != nil
 
     guard let lastSyncAt = IntentExecutor.lastSyncAt else {
-      // No poll has landed yet this install — no freshness to show. If a Player
-      // name led the row, append the bare connection state so it still reads as
-      // a status; otherwise the lead already IS the connection state.
-      return playerName != nil ? "\(lead) · \(connectionWord)" : lead
+      // No poll has landed yet this install — no freshness to show. If an
+      // identity led the row, append the bare connection state so it still
+      // reads as a status; otherwise the lead already IS the connection state.
+      return leadIsIdentity ? "\(lead) · \(connectionWord)" : lead
     }
     return "\(lead) · Synced \(cassetteRelativeSyncString(from: lastSyncAt))"
   }

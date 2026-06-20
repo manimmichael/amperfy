@@ -49,6 +49,9 @@ public final class IntentExecutor {
   // keep-alive rides every request; this full registration also refreshes
   // platform/model/app_version.
   private var hasRegisteredDevice = false
+  // Once-per-launch account-identity refresh (name/email for the account
+  // menu). Reset only on relaunch; the persisted copy carries between runs.
+  private var hasRefreshedAccountIdentity = false
 
   // Sync Reconciliation (Phase 1): throttle for the periodic full-state
   // inventory report — the device's complete owned-set, posted on poll so the
@@ -114,6 +117,13 @@ public final class IntentExecutor {
     // the account menu reads ("Synced 5m ago"). Persisted (not just the
     // in-memory lastFullInventoryReportAt) so it survives relaunch.
     Self.recordSuccessfulSync()
+
+    // Refresh the caller's ACCOUNT identity (name/email) so the account menu
+    // shows the user's Cassette account — not the paired Player's LAN
+    // hostname. Best-effort, once per launch (the 30s foreground timer must
+    // not hammer it); the persisted copy survives relaunch, so a missed fetch
+    // just keeps the last-known label. Off the critical path of intent work.
+    await refreshAccountIdentityIfNeeded()
     for intent in intents {
       await executeIntent(intent)
     }
@@ -428,6 +438,23 @@ public final class IntentExecutor {
 
   nonisolated static func recordSuccessfulSync() {
     UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastSyncAtKey)
+  }
+
+  /// Fetch + persist the caller's account identity (name/email) once per
+  /// launch, so the account menu leads with the user's Cassette account name
+  /// (or email) instead of the paired Player's hostname. Best-effort: a
+  /// failure just leaves the last-persisted value (or "Connected" before any
+  /// fetch) and retries next launch. `getAccount()` persists internally.
+  private func refreshAccountIdentityIfNeeded() async {
+    guard !hasRefreshedAccountIdentity else { return }
+    do {
+      let account = try await api.getAccount()
+      hasRefreshedAccountIdentity = true
+      print("Cassette poll: account identity refreshed (\(account.name ?? account.email))")
+    } catch {
+      // Leave hasRefreshedAccountIdentity false so the next poll retries.
+      print("Cassette poll: account identity fetch failed - \(error.localizedDescription)")
+    }
   }
 
   // MARK: - Applied-artwork-version store (refresh-on-change)

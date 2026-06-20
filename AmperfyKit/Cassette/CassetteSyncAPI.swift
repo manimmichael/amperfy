@@ -165,6 +165,18 @@ public struct CassetteDeviceArtworkResponse: Sendable, Decodable {
   public let albums: [CassetteDeviceArtworkAlbum]
 }
 
+// MARK: - CassetteAccount
+
+/// The authenticated caller's OWN account identity from `/api/sync/account`.
+/// `name` is the (nullable) Cassette display name; `email` is the account
+/// email the user signs in with. The account menu prefers `name`, falls back
+/// to `email`, so the status row shows the user's ACCOUNT — not the paired
+/// Player's LAN hostname.
+public struct CassetteAccount: Sendable, Decodable {
+  public let email: String
+  public let name: String?
+}
+
 // MARK: - CassetteSyncAPI
 
 public final class CassetteSyncAPI: @unchecked Sendable {
@@ -190,6 +202,38 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   public static var bearerToken: String? {
     UserDefaults.standard
       .string(forKey: PersistentStorage.UserDefaultsKey.CassetteBearerToken.rawValue)
+  }
+
+  // MARK: Account identity (account-menu status line)
+
+  /// The caller's Cassette ACCOUNT identity, cached from `/api/sync/account`.
+  /// Persisted to UserDefaults (raw keys, mirroring `lastSyncAt`) so the
+  /// account menu reads it synchronously, off the main actor, surviving
+  /// relaunch and offline opens. `nil` until the first successful fetch.
+  nonisolated private static let accountNameKey = "cassette.accountName"
+  nonisolated private static let accountEmailKey = "cassette.accountEmail"
+
+  public static var accountName: String? {
+    let value = UserDefaults.standard.string(forKey: accountNameKey)
+    return (value?.isEmpty == false) ? value : nil
+  }
+
+  public static var accountEmail: String? {
+    let value = UserDefaults.standard.string(forKey: accountEmailKey)
+    return (value?.isEmpty == false) ? value : nil
+  }
+
+  /// Store the fetched account so the menu can render it without a network
+  /// round-trip. A `nil`/empty name clears the stored name (so a later
+  /// name removal upstream doesn't leave a stale label).
+  nonisolated static func persistAccount(_ account: CassetteAccount) {
+    let defaults = UserDefaults.standard
+    defaults.set(account.email, forKey: accountEmailKey)
+    if let name = account.name, !name.isEmpty {
+      defaults.set(name, forKey: accountNameKey)
+    } else {
+      defaults.removeObject(forKey: accountNameKey)
+    }
   }
 
   // MARK: Device identity
@@ -250,6 +294,18 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   public func getIntentTracks(intentId: String) async throws -> CassetteIntentTracksResponse {
     let data = try await get(path: "/api/sync/intents/\(intentId)/tracks")
     return try JSONDecoder().decode(CassetteIntentTracksResponse.self, from: data)
+  }
+
+  /// The authenticated caller's OWN account identity (name + email), resolved
+  /// server-side from the bearer token. Read-only and self-scoped. The result
+  /// is persisted to UserDefaults (`Self.persistAccount`) so the account menu
+  /// can render it synchronously, surviving relaunch and offline opens.
+  @discardableResult
+  public func getAccount() async throws -> CassetteAccount {
+    let data = try await get(path: "/api/sync/account")
+    let account = try JSONDecoder().decode(CassetteAccount.self, from: data)
+    Self.persistAccount(account)
+    return account
   }
 
   /// Read-only artwork backfill manifest for a device's owned albums — the
