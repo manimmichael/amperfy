@@ -160,6 +160,7 @@ class BasicTableViewController: KeyCommandTableViewController {
     let savedTitle = navigationItem.title
     navigationItem.titleView = nil
     navigationItem.title = nil
+    HeaderPopDebug.event("FREEZE detach title", in: self)
     guard let coordinator = transitionCoordinator else {
       // No interactive/animated transition — nothing to ride off; release now.
       isHeaderTransitionFrozen = false
@@ -170,6 +171,7 @@ class BasicTableViewController: KeyCommandTableViewController {
     coordinator.animate(alongsideTransition: nil) { [weak self] context in
       guard let self else { return }
       self.isHeaderTransitionFrozen = false
+      HeaderPopDebug.event(context.isCancelled ? "DONE cancelled→restore" : "DONE popped", in: self)
       if context.isCancelled {
         // The swipe was reversed — this VC stays. Restore both and resume normal
         // behavior so the hero/title reflect the (preserved) scroll offset.

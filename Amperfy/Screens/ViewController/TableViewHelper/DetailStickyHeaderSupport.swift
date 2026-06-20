@@ -64,6 +64,7 @@ enum DetailStickyHeaderSupport {
       // (unchanged) scroll position. Still hide the collapsed play bar-button for
       // the duration of the pop; restoreOnCancel re-derives it once the layout
       // settles.
+      HeaderPopDebug.event("upd FROZEN skip", in: viewController)
       collapsedPlayItem?.isHidden = true
       return
     }
@@ -76,6 +77,7 @@ enum DetailStickyHeaderSupport {
     // screens that still lay out below it.
     guard let tableHeaderView,
           tableHeaderView.frame.height >= minimumHeroHeight else {
+      HeaderPopDebug.event("upd h<min →α0", in: viewController)
       stickyHeader.alpha = 0
       collapsedPlayItem?.isHidden = true
       return
@@ -96,6 +98,13 @@ enum DetailStickyHeaderSupport {
     // -heroBottomY, so once it reaches 1 it stays 1 for the rest of the scroll.
     let fadeDistance: CGFloat = 100
     let progress = max(0, min(1, (barBottomY + fadeDistance - heroBottomY) / fadeDistance))
+    HeaderPopDebug.event(
+      String(
+        format: "upd α=%.2f hbY=%.0f barY=%.0f off=%.0f h=%.0f",
+        progress, heroBottomY, barBottomY, scrollView.contentOffset.y, tableHeaderView.frame.height
+      ),
+      in: viewController
+    )
     stickyHeader.alpha = progress
     // Patch 109: fade the bar background in lockstep with the title. Without
     // this UIKit snaps the opaque standardAppearance in the instant the user

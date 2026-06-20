@@ -219,6 +219,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = false
+    HeaderPopDebug.event("→viewWillAppear", in: self)
   }
 
   override func viewDidLayoutSubviews() {
@@ -273,6 +274,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
         // for a frame. The re-attached titleView already carries its correct
         // pre-pop alpha; this pass just confirms it against the settled layout.
         DispatchQueue.main.async {
+          HeaderPopDebug.event("→restoreCancel(async)", in: self)
           self.detailOperationsView?.resizeToFit()
           self.updateStickyHeaderAlpha()
         }
@@ -330,6 +332,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     extendSafeAreaToAccountForMiniPlayer()
     // Restore the correct alpha when popping back to a scrolled screen —
     // viewWillDisappear resets alpha to 0 for the push transition.
+    HeaderPopDebug.event("→viewIsAppearing", in: self)
     updateStickyHeaderAlpha()
 
     Task { @MainActor in

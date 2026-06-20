@@ -2,38 +2,90 @@
 //  HeaderPopDebug.swift
 //  Amperfy
 //
-//  cassette (header-pop fix, round 3): TEMPORARY instrumentation used to PROVE,
-//  on a live simulator gesture, that the collapsing detail hero holds its frame
-//  through an interactive pop instead of re-expanding ("popping in"). Logs the
-//  header view frame, the scroll view contentOffset, and adjustedContentInset
-//  at transition start, every layout pass, and the transition completion.
-//
-//  Capture with either:
-//    xcrun simctl spawn booted log stream --level debug \
-//      --predicate 'subsystem == "Amperfy"' > /tmp/hdrlog.txt &
-//  or just grep stdout for the "HDR:" prefix.
-//
-//  Gated behind #if DEBUG and intended to be deleted after verification.
+//  cassette (header-pop fix): TEMPORARY instrumentation for the collapsing
+//  detail-header pop bug. The physical-device console is unreachable (the
+//  IDEPseudoTerminalDomain attach error), so os_log/print never make it back to
+//  the bench. Instead this renders an ON-SCREEN HUD — a translucent green-on-black
+//  label pinned to the window centre showing the last N events — so the live
+//  values can be captured with a screenshot. Gated behind #if DEBUG; delete the
+//  whole file (and its call sites) once the pop bug is closed.
 //
 
-import os
 import UIKit
 
+@MainActor
 enum HeaderPopDebug {
   #if DEBUG
-  private static let log = OSLog(subsystem: "Amperfy", category: "HeaderDebug")
+  private static var lines: [String] = []
+  private static let maxLines = 16
+  private static weak var overlay: UILabel?
+  private static var seq = 0
+
+  private static func activeWindow() -> UIWindow? {
+    for scene in UIApplication.shared.connectedScenes {
+      guard let ws = scene as? UIWindowScene else { continue }
+      if let key = ws.windows.first(where: { $0.isKeyWindow }) { return key }
+      if let any = ws.windows.last { return any }
+    }
+    return nil
+  }
+
+  private static func ensureOverlay() -> UILabel? {
+    if let o = overlay, o.window != nil { return o }
+    guard let win = activeWindow() else { return nil }
+    let label = UILabel()
+    label.numberOfLines = 0
+    label.font = .monospacedSystemFont(ofSize: 9, weight: .regular)
+    label.textColor = .green
+    label.backgroundColor = UIColor.black.withAlphaComponent(0.72)
+    label.isUserInteractionEnabled = false
+    label.translatesAutoresizingMaskIntoConstraints = false
+    label.layer.zPosition = 100_000
+    win.addSubview(label)
+    NSLayoutConstraint.activate([
+      label.leadingAnchor.constraint(equalTo: win.leadingAnchor),
+      label.trailingAnchor.constraint(equalTo: win.trailingAnchor),
+      label.centerYAnchor.constraint(equalTo: win.centerYAnchor),
+    ])
+    overlay = label
+    return label
+  }
+
+  private static func push(_ line: String) {
+    seq += 1
+    lines.append(String(format: "%03d %@", seq, line))
+    if lines.count > maxLines { lines.removeFirst(lines.count - maxLines) }
+    guard let o = ensureOverlay() else { return }
+    o.text = lines.joined(separator: "\n")
+    o.superview?.bringSubviewToFront(o)
+  }
+
+  private static func short(_ vc: UIViewController) -> String {
+    String(describing: type(of: vc))
+      .replacingOccurrences(of: "DetailVC", with: "")
+      .replacingOccurrences(of: "ViewController", with: "")
+  }
   #endif
 
-  /// Free-form note (e.g. flag transitions, completion + isCancelled).
-  static func log(_ message: String, in viewController: UIViewController) {
+  /// Free-form event line (optional caller name + message) shown in the HUD.
+  static func event(_ message: String, in viewController: UIViewController? = nil) {
     #if DEBUG
-    let name = String(describing: type(of: viewController))
-    os_log("%{public}@", log: log, type: .debug, "HDR: [\(name)] \(message)")
+    if let viewController {
+      push("[\(short(viewController))] \(message)")
+    } else {
+      push(message)
+    }
     #endif
   }
 
-  /// The load-bearing measurement: header frame + scroll geometry at a labeled
-  /// point in the pop. This is what proves the frame holds (or moves).
+  /// Free-form note tagged with the caller VC.
+  static func log(_ message: String, in viewController: UIViewController) {
+    #if DEBUG
+    push("[\(short(viewController))] \(message)")
+    #endif
+  }
+
+  /// Header frame + scroll geometry at a labeled point in the pop.
   static func snapshot(
     _ label: String,
     header: UIView?,
@@ -41,20 +93,14 @@ enum HeaderPopDebug {
     in viewController: UIViewController
   ) {
     #if DEBUG
-    let name = String(describing: type(of: viewController))
     let frozen = (viewController as? BasicTableViewController)?.isHeaderTransitionFrozen ?? false
-    let f = header?.frame ?? .null
-    let offset = scrollView?.contentOffset ?? .zero
-    let inset = scrollView?.adjustedContentInset ?? .zero
-    let msg = String(
-      format: "HDR: [%@] %@ frozen=%@ headerFrame=(%.1f,%.1f,%.1f,%.1f) " +
-        "contentOffset=(%.1f,%.1f) adjustedInset=(t%.1f,b%.1f)",
-      name, label, frozen ? "Y" : "N",
-      f.origin.x, f.origin.y, f.size.width, f.size.height,
-      offset.x, offset.y,
-      inset.top, inset.bottom
-    )
-    os_log("%{public}@", log: log, type: .debug, msg)
+    let h = header?.frame.height ?? -1
+    let off = scrollView?.contentOffset.y ?? 0
+    let saTop = viewController.view.safeAreaInsets.top
+    push(String(
+      format: "[%@] %@ frz=%@ h=%.0f off=%.0f sa=%.0f",
+      short(viewController), label, frozen ? "Y" : "N", h, off, saTop
+    ))
     #endif
   }
 }
