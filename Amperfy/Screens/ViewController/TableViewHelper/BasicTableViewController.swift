@@ -150,19 +150,21 @@ class BasicTableViewController: KeyCommandTableViewController {
   /// non-animated pop), the flag still clears synchronously.
   func freezeCollapsingHeaderForPopTransition(restoreOnCancel: @escaping () -> Void) {
     isHeaderTransitionFrozen = true
-    // round 7b: freeze the LAYOUT ONLY — do NOT touch the nav title here. Round 6
-    // detached the titleView (and string) for the pop, but re-attaching the
-    // titleView on a cancelled swipe made UIKit FADE IT BACK IN over the hero — the
-    // residual "flash". With navigationItem.title cleared at install
-    // (DetailStickyHeaderSupport.install) there is no plain string to leak, and the
-    // styled stickyHeader is already at alpha 0 at the top and is held there by the
-    // frozen-layout early-returns (it never animates because nothing re-presents
-    // it). So there is nothing to detach and nothing to restore: freezing the
-    // layout is the whole job.
-    HeaderPopDebug.event("FREEZE (layout only)", in: self)
+    // round 7d: DETACH the styled titleView for the pop. The HUD proved the bar
+    // title that appears mid-swipe is NOT a string (navigationItem.title and
+    // self.title both read nil) and NOT the styled title at a stale alpha (its
+    // alpha is 0) — it's UIKit RENDERING the alpha-0 titleView anyway as it
+    // cross-fades the nav bar through the interactive pop. The only way to stop
+    // that is to remove the titleView for the duration of the pop. Round 6 did
+    // exactly this and the swipe WAS clean; what round 6 got wrong was the
+    // re-attach (see the cancel branch).
+    let savedTitleView = navigationItem.titleView
+    navigationItem.titleView = nil
+    HeaderPopDebug.event("FREEZE detach titleView", in: self)
     guard let coordinator = transitionCoordinator else {
-      // No interactive/animated transition — release the freeze now.
+      // No interactive/animated transition — restore + release now.
       isHeaderTransitionFrozen = false
+      navigationItem.titleView = savedTitleView
       return
     }
     coordinator.animate(alongsideTransition: nil) { [weak self] context in
@@ -170,7 +172,14 @@ class BasicTableViewController: KeyCommandTableViewController {
       self.isHeaderTransitionFrozen = false
       HeaderPopDebug.event(context.isCancelled ? "DONE cancelled" : "DONE popped", in: self)
       if context.isCancelled {
-        // The swipe was reversed — resume normal scroll-driven layout/alpha.
+        // Re-attach WITHOUT animation. Round 6's plain re-assignment let UIKit
+        // FADE the titleView back in (it animates titleView changes, driving the
+        // alpha 0→1), which was the residual "flash" on a cancelled swipe.
+        // Suppressing the implicit animation re-attaches it instantly at its real
+        // alpha (0 at the top → invisible); restoreOnCancel re-derives the value.
+        UIView.performWithoutAnimation {
+          self.navigationItem.titleView = savedTitleView
+        }
         restoreOnCancel()
       }
     }
