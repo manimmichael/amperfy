@@ -69,18 +69,13 @@ enum DetailStickyHeaderSupport {
     // contributes to the hero re-expanding. Freeze; the completion handler (or a
     // cancelled-swipe restore) resumes normal updates.
     if (viewController as? BasicTableViewController)?.isHeaderTransitionFrozen == true {
-      // round 6: the nav title is DETACHED outright during the pop
-      // (freezeCollapsingHeaderForPopTransition nils both the styled titleView
-      // and the plain string title), so the title cannot render regardless of the
-      // stickyHeader's alpha. Do NOT force alpha to 0 here — round 4 did, which
-      // clobbered the pre-pop opacity, so a cancelled swipe re-attached the
-      // titleView at the wrong alpha and the title "snapped on" at full opacity at
-      // the top. Leaving alpha untouched lets the cancelled-swipe restore show the
-      // title at exactly its pre-pop opacity — already correct for the frozen
-      // (unchanged) scroll position. Still hide the collapsed play bar-button for
-      // the duration of the pop; restoreOnCancel re-derives it once the layout
-      // settles.
-      HeaderPopDebug.event("upd FROZEN skip", in: viewController)
+      // While the host VC is popping out (interactive edge-swipe), skip the
+      // recompute and hold the title exactly as it is. Its visibility is driven by
+      // isHidden (set below from the scroll position), so at the top it is already
+      // hidden and stays hidden through the pop — there is nothing for UIKit to
+      // cross-fade. Recomputing here would also force the bar-appearance
+      // reassignment, a re-render that contributes to the hero re-expanding. A
+      // cancelled swipe resumes normal updates via restoreOnCancel.
       collapsedPlayItem?.isHidden = true
       return
     }
@@ -93,7 +88,6 @@ enum DetailStickyHeaderSupport {
     // screens that still lay out below it.
     guard let tableHeaderView,
           tableHeaderView.frame.height >= minimumHeroHeight else {
-      HeaderPopDebug.event("upd h<min →α0", in: viewController)
       stickyHeader.alpha = 0
       stickyHeader.isHidden = true
       collapsedPlayItem?.isHidden = true
@@ -115,13 +109,6 @@ enum DetailStickyHeaderSupport {
     // -heroBottomY, so once it reaches 1 it stays 1 for the rest of the scroll.
     let fadeDistance: CGFloat = 100
     let progress = max(0, min(1, (barBottomY + fadeDistance - heroBottomY) / fadeDistance))
-    HeaderPopDebug.event(
-      String(
-        format: "upd α=%.2f hbY=%.0f barY=%.0f off=%.0f h=%.0f",
-        progress, heroBottomY, barBottomY, scrollView.contentOffset.y, tableHeaderView.frame.height
-      ),
-      in: viewController
-    )
     stickyHeader.alpha = progress
     // round 7f: also drive isHidden from the scroll position, not just alpha.
     // alpha 0 is "transparent but PRESENT" — UIKit composites the titleView during

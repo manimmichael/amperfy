@@ -157,7 +157,6 @@ class BasicTableViewController: KeyCommandTableViewController {
     // alpha fight (all of which UIKit kept overriding). Freezing the hero layout
     // (via the early-returns keyed on this flag) is the whole job; a cancelled
     // swipe just resumes normal scroll-driven updates.
-    HeaderPopDebug.event("FREEZE (layout only)", in: self)
     guard let coordinator = transitionCoordinator else {
       // No interactive/animated transition — release the freeze now.
       isHeaderTransitionFrozen = false
@@ -166,7 +165,6 @@ class BasicTableViewController: KeyCommandTableViewController {
     coordinator.animate(alongsideTransition: nil) { [weak self] context in
       guard let self else { return }
       self.isHeaderTransitionFrozen = false
-      HeaderPopDebug.event(context.isCancelled ? "DONE cancelled" : "DONE popped", in: self)
       if context.isCancelled {
         // The swipe was reversed — resume normal scroll-driven layout/alpha.
         restoreOnCancel()

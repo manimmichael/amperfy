@@ -300,12 +300,6 @@ class ArtistDetailVC: MultiSourceTableViewController {
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
-    HeaderPopDebug.snapshot(
-      "viewDidLayoutSubviews",
-      header: tableView.tableHeaderView,
-      scrollView: tableView,
-      in: self
-    )
     // cassette (header-pop fix, round 3): while popping, skip ALL of the
     // inset-driven re-layout — see AlbumDetailVC for the full rationale (the
     // safe-area-derived insets shift as the bar animates and re-expand the hero).
@@ -319,12 +313,6 @@ class ArtistDetailVC: MultiSourceTableViewController {
   }
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
-    HeaderPopDebug.snapshot(
-      "scrollViewDidScroll",
-      header: tableView.tableHeaderView,
-      scrollView: scrollView,
-      in: self
-    )
     updateStickyHeaderAlpha()
   }
 
@@ -429,18 +417,9 @@ class ArtistDetailVC: MultiSourceTableViewController {
     } else {
       // cassette (header-pop fix, round 3): freeze the collapsing header for the
       // whole pop so it rides off-screen instead of re-expanding.
-      HeaderPopDebug.snapshot(
-        "viewWillDisappear(pop)",
-        header: tableView.tableHeaderView,
-        scrollView: tableView,
-        in: self
-      )
       freezeCollapsingHeaderForPopTransition { [weak self] in
         guard let self else { return }
-        // round 7d: run synchronously — the freeze invokes this inside
-        // performWithoutAnimation right after re-attaching the titleView (which
-        // UIKit resets to alpha 1.0), so the re-derived alpha lands before the next
-        // render. Deferring it (6b) is what let the re-attached title flash.
+        // On a cancelled swipe, resume normal scroll-driven layout/alpha.
         self.detailOperationsView?.resizeToFit()
         self.updateStickyHeaderAlpha()
       }

@@ -264,18 +264,9 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       // under the nav bar, so it's far less prone to the pop re-expand than
       // album/artist — but it shares GenericDetailTableHeader, so apply the same
       // whole-transition freeze for consistency and safety.
-      HeaderPopDebug.snapshot(
-        "viewWillDisappear(pop)",
-        header: tableView.tableHeaderView,
-        scrollView: tableView,
-        in: self
-      )
       freezeCollapsingHeaderForPopTransition { [weak self] in
         guard let self else { return }
-        // round 7d: run synchronously — the freeze invokes this inside
-        // performWithoutAnimation right after re-attaching the titleView (which
-        // UIKit resets to alpha 1.0), so the re-derived alpha lands before the next
-        // render. Deferring it (6b) is what let the re-attached title flash.
+        // On a cancelled swipe, resume normal scroll-driven layout/alpha.
         self.detailOperationsView?.resizeToFit()
         self.updateStickyHeaderAlpha()
       }
@@ -283,12 +274,6 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   }
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
-    HeaderPopDebug.snapshot(
-      "scrollViewDidScroll",
-      header: tableView.tableHeaderView,
-      scrollView: scrollView,
-      in: self
-    )
     updateStickyHeaderAlpha()
   }
 
