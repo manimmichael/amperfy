@@ -96,10 +96,14 @@ enum HeaderPopDebug {
     let frozen = (viewController as? BasicTableViewController)?.isHeaderTransitionFrozen ?? false
     let h = header?.frame.height ?? -1
     let off = scrollView?.contentOffset.y ?? 0
-    let saTop = viewController.view.safeAreaInsets.top
+    // nT = navigationItem.title, vT = UIViewController.title — both should read
+    // "·" (nil) for these detail screens; if either shows the album/artist name
+    // it's the source of the gray system-font title leaking through.
+    let nT = viewController.navigationItem.title.map { String($0.prefix(5)) } ?? "·"
+    let vT = viewController.title.map { String($0.prefix(5)) } ?? "·"
     push(String(
-      format: "[%@] %@ frz=%@ h=%.0f off=%.0f sa=%.0f",
-      short(viewController), label, frozen ? "Y" : "N", h, off, saTop
+      format: "[%@] %@ frz=%@ h=%.0f off=%.0f nT=%@ vT=%@",
+      short(viewController), label, frozen ? "Y" : "N", h, off, nT, vT
     ))
     #endif
   }

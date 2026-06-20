@@ -29,16 +29,18 @@ enum DetailStickyHeaderSupport {
     collapsedPlayItem: UIBarButtonItem? = nil
   ) {
     viewController.navigationItem.titleView = stickyHeader
-    // cassette (header-pop fix, round 7): the stickyHeader IS the sole visual
-    // title for these collapsing-header detail screens. The superclass
-    // (KeyCommandTableViewController.viewDidLoad) also sets navigationItem.title
-    // to the scene name for key-command / back purposes; clear it so UIKit never
-    // renders that plain string in its default gray system font when the styled
-    // titleView is hidden (alpha 0) or momentarily detached during a pop. That
-    // stray string — NOT the styled title, whose alpha is correctly 0 throughout
-    // (proven on-device via the debug HUD) — was the "title popping in" on the
-    // interactive back-swipe. The back buttons here are icon-only, so dropping the
-    // string title costs nothing visible.
+    // cassette (header-pop fix, round 7c): the stickyHeader IS the sole visual
+    // title. Clear BOTH UIViewController.title AND navigationItem.title. The
+    // superclass (KeyCommandTableViewController.viewDidLoad) set self.title to the
+    // scene name (album/artist); clearing only navigationItem.title (round 7) was
+    // not enough — UIViewController.title keeps its OWN copy, and UIKit re-syncs
+    // navigationItem.title FROM it during a nav transition, so the plain string
+    // reappeared (gray system font) mid-swipe even though at rest it was clean.
+    // Clearing self.title removes that source so nothing re-populates the bar title
+    // at rest, during the pop, or on cancel. The styled stickyHeader (alpha-driven)
+    // is the only title that shows; the back buttons here are icon-only, so the
+    // string title has no visible job.
+    viewController.title = nil
     viewController.navigationItem.title = nil
     stickyHeader.alpha = 0
     collapsedPlayItem?.isHidden = true
