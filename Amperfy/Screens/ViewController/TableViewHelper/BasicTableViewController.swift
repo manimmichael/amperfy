@@ -150,17 +150,26 @@ class BasicTableViewController: KeyCommandTableViewController {
   /// non-animated pop), the flag still clears synchronously.
   func freezeCollapsingHeaderForPopTransition(restoreOnCancel: @escaping () -> Void) {
     isHeaderTransitionFrozen = true
+    // round 5: DETACH the nav-bar title for the whole pop. Forcing its alpha to 0
+    // wasn't enough — UIKit re-presents the titleView during the large-title bar
+    // transition regardless of alpha, so the collapsed title reappeared over the
+    // hero. Removing the titleView outright leaves nothing to re-present; it's
+    // restored only if the swipe is cancelled (the VC stays).
+    let savedTitleView = navigationItem.titleView
+    navigationItem.titleView = nil
     guard let coordinator = transitionCoordinator else {
       // No interactive/animated transition — nothing to ride off; release now.
       isHeaderTransitionFrozen = false
+      navigationItem.titleView = savedTitleView
       return
     }
     coordinator.animate(alongsideTransition: nil) { [weak self] context in
       guard let self else { return }
       self.isHeaderTransitionFrozen = false
       if context.isCancelled {
-        // The swipe was reversed — this VC stays. Resume normal behavior so the
-        // hero/title reflect the (preserved) scroll offset again.
+        // The swipe was reversed — this VC stays. Restore the title and resume
+        // normal behavior so the hero/title reflect the (preserved) scroll offset.
+        self.navigationItem.titleView = savedTitleView
         restoreOnCancel()
       }
     }
