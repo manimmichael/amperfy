@@ -103,8 +103,17 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
         managedObject: asyncCompanion.context
           .object(with: downloadInfo.objectId) as! ArtworkMO
       )
-      artwork.status = .CustomImage
-      artwork.relFilePath = relFilePath
+      if let relFilePath {
+        artwork.status = .CustomImage
+        artwork.relFilePath = relFilePath
+      } else {
+        // Rule 1/2: the move/decode failed — never publish a blank .CustomImage
+        // (which would stick with no file and never retry). markErrorIfNeeded is
+        // retryable and never demotes an existing good cover, so the next sync
+        // re-attempts.
+        artwork.markErrorIfNeeded()
+      }
+      asyncCompanion.saveContext()
     }
   }
 
@@ -113,8 +122,16 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
           let relFilePath = fileManager.createRelPath(for: artworkRemoteInfo, account: account),
           let absFilePath = fileManager.getAbsoluteAmperfyPath(relFilePath: relFilePath)
     else { return nil }
+    // Rule 1/§5: verify the download fully decodes before it touches the cache.
+    // An undecodable/transient download returns nil so completedDownload leaves
+    // any existing cover untouched and keeps the artwork retryable.
+    guard CoverImageStore.isDecodable(fileURL: fileURL) else { return nil }
     do {
       try fileManager.moveExcludedFromBackupItem(at: fileURL, to: absFilePath, accountInfo: account)
+      // cassette §art-collapse: defensively square + generate the ~480px thumb
+      // tier beside the lazily-downloaded full cover, before the artwork's
+      // relFilePath is published, so the display path finds both tiers.
+      CoverImageStore.processStoredCover(fullFileURL: absFilePath)
       return relFilePath
     } catch {
       return nil

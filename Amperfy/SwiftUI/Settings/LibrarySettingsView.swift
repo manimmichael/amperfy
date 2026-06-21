@@ -22,9 +22,13 @@
 import AmperfyKit
 import SwiftUI
 
-// MARK: - LibrarySettingsView
+// MARK: - StorageSettingsView
 
-struct LibrarySettingsView: View {
+// cassette §G: the "Storage" screen (file name kept as LibrarySettingsView.swift
+// to avoid .pbxproj churn — rename deferred). Cache/cached wording is replaced
+// with download/storage language to match the on-device ethos; podcast rows are
+// dropped (not a Cassette feature).
+struct StorageSettingsView: View {
   @EnvironmentObject
   private var settings: Settings
 
@@ -155,30 +159,21 @@ struct LibrarySettingsView: View {
           SettingsRow(title: "Songs") {
             SecondaryText(songCount.description)
           }
-          SettingsRow(title: "Podcasts") {
-            SecondaryText(podcastCount.description)
-          }
-          SettingsRow(title: "Podcast Episodes") {
-            SecondaryText(podcastEpisodeCount.description)
-          }
         })
 
-        // cassette polish Part 6: Initial Sync status, Background song sync
-        // progress, Cache Size Limit, Download all, and Delete cache are
-        // hidden. The simple "Complete Cache Size" storage display stays
-        // (becomes the iTunes-style on-phone view in a later layer).
+        // cassette §A3/§G: download/storage language (no "cache/cached"); the
+        // absent size cap is intentional — the on-device owned library has no
+        // limit. Initial-sync status, background-sync progress, size cap,
+        // download-all and delete-cache remain off the listener-facing surface.
         SettingsSection(content: {
-          SettingsRow(title: "Cached Songs") { SecondaryText(cachedSongCount.description) }
-          SettingsRow(title: "Cached Podcast Episodes") {
-            SecondaryText(cachedPodcastEpisodesCount.description)
-          }
-          SettingsRow(title: "Complete Cache Size") {
+          SettingsRow(title: "Downloaded songs") { SecondaryText(cachedSongCount.description) }
+          SettingsRow(title: "Storage used") {
             SecondaryText(completeCacheSize.description)
           }
-        }, header: "Cache")
+        }, header: "Storage")
       }
     }
-    .navigationTitle("Library")
+    .navigationTitle("Storage")
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       updateValues()
@@ -193,13 +188,13 @@ struct LibrarySettingsView: View {
   }
 }
 
-// MARK: - LibrarySettingsView_Previews
+// MARK: - StorageSettingsView_Previews
 
-struct LibrarySettingsView_Previews: PreviewProvider {
+struct StorageSettingsView_Previews: PreviewProvider {
   @State
   static var settings = Settings()
 
   static var previews: some View {
-    LibrarySettingsView().environmentObject(settings)
+    StorageSettingsView().environmentObject(settings)
   }
 }

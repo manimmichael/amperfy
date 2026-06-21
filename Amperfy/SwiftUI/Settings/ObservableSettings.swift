@@ -88,8 +88,5 @@ final class Settings: ObservableObject {
   var equalizerSettings: [EqualizerSetting] = []
 
   @Published
-  var isReplayGainEnabled = true
-
-  @Published
   var isMiniPlayerAlwaysOnTop = false
 }

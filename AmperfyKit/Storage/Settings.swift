@@ -82,7 +82,8 @@ public struct UserSettings: Sendable, Codable {
     set { _isShowDetailedInfo = newValue }
   }
 
-  private var _isShowSongDuration: Bool = false
+  // cassette §B: toggle culled; song durations show in track lists by default.
+  private var _isShowSongDuration: Bool = true
   public var isShowSongDuration: Bool {
     get { _isShowSongDuration }
     set { _isShowSongDuration = newValue }
@@ -112,7 +113,8 @@ public struct UserSettings: Sendable, Codable {
     set { _isPlayerShuffleButtonEnabled = newValue }
   }
 
-  private var _isShowMusicPlayerSkipButtons: Bool = false
+  // cassette §B: toggle culled; skip-forward/backward buttons on by default.
+  private var _isShowMusicPlayerSkipButtons: Bool = true
   public var isShowMusicPlayerSkipButtons: Bool {
     get { _isShowMusicPlayerSkipButtons }
     set { _isShowMusicPlayerSkipButtons = newValue }
@@ -193,12 +195,6 @@ public struct UserSettings: Sendable, Codable {
   public var equalizerSettings: [EqualizerSetting] {
     get { _equalizerSettings }
     set { _equalizerSettings = newValue }
-  }
-
-  private var _isReplayGainEnabled: Bool = true
-  public var isReplayGainEnabled: Bool {
-    get { _isReplayGainEnabled }
-    set { _isReplayGainEnabled = newValue }
   }
 
   private var _isMiniPlayerAlwaysOnTop: Bool = false

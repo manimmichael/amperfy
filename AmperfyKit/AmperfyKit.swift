@@ -160,7 +160,6 @@ public class AmperKit {
     backendAudioPlayer.updateEqualizerEnabled(isEnabled: storage.settings.user.isEqualizerEnabled)
     backendAudioPlayer
       .updateEqualizerSetting(eqSetting: storage.settings.user.activeEqualizerSetting)
-    backendAudioPlayer.updateReplayGainEnabled(isEnabled: storage.settings.user.isReplayGainEnabled)
     backendAudioPlayer.volume = storage.settings.user.playerVolume
 
     playerDownloadPreparationHandler = PlayerDownloadPreparationHandler(
@@ -180,6 +179,12 @@ public class AmperKit {
       backendAudioPlayer: backendAudioPlayer,
       userStatistics: userStatistics
     )
+    // cassette §G: the manual "Offline Mode" toggle was removed from Settings.
+    // Clear any persisted value at launch so no one is stranded offline with no
+    // UI to exit. Owned-file playback still works without a network via the
+    // on-device path (see BackendAudioPlayer); streaming/sync resume when a
+    // network is available.
+    storage.settings.user.isOfflineMode = false
     facadeImpl.isOfflineMode = storage.settings.user.isOfflineMode
 
     playerNowPlayingInfoCenterHandler = NowPlayingInfoCenterHandler(

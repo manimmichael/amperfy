@@ -187,10 +187,11 @@ public struct SwipeActionSettings: Sendable, Codable {
         .insertContextQueue,
 
       ], trailing: [
+        // cassette §B: podcast-queue swipe actions removed (podcasts aren't a
+        // Cassette feature). The Swipe customization screen is also gone; these
+        // hardcoded defaults are what every install gets.
         .appendUserQueue,
         .insertUserQueue,
-        .appendPodcastQueue,
-        .insertPodcastQueue,
         .download,
       ]
     )

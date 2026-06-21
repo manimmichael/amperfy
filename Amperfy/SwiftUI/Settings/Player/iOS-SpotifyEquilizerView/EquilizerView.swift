@@ -67,7 +67,10 @@ extension EqualizerView {
         sliderSpacing: spacing,
         sliderWidth: sliderWidth
       )
-      .stroke(sliderTintColor, lineWidth: 3)
+      .stroke(sliderTintColor, lineWidth: 2.5)
+      // cassette §E polish: soft glow under the curve.
+      .shadow(color: sliderTintColor.opacity(0.55), radius: 6)
+      .animation(.easeInOut, value: sliderValues)
 
       EqualizerPath(
         sliderValues: sliderValues,
@@ -103,11 +106,11 @@ extension EqualizerView {
     HStack(spacing: 0) {
       ForEach(0 ... sliderLabel.count - 1, id: \.self) { i in
         Text(sliderLabel[i])
-          .fontWeight(.thin)
+          .font(.system(size: 11, weight: .regular, design: .monospaced))
+          .foregroundStyle(CassetteTheme.Colors.ink2)
           .lineLimit(1)
           .minimumScaleFactor(0.8)
           .frame(width: sliderWidth)
-          .font(.system(size: 14))
       }
     }
   }
@@ -116,26 +119,26 @@ extension EqualizerView {
     VStack {
       ForEach((-EqualizerSetting.rangeFromZero / 2) ... -1, id: \.self) { i in
         Text("\(i * -2) dB")
-          .fontWeight(.thin)
+          .font(.system(size: 11, weight: .regular, design: .monospaced))
+          .foregroundStyle(CassetteTheme.Colors.ink3)
           .lineLimit(1)
           .minimumScaleFactor(0.8)
-          .font(.system(size: 14))
           .frame(maxHeight: .infinity)
       }
 
       Text("0 dB")
-        .fontWeight(.bold)
+        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+        .foregroundStyle(CassetteTheme.Colors.ink2)
         .lineLimit(1)
         .minimumScaleFactor(0.8)
-        .font(.system(size: 14))
         .frame(maxHeight: .infinity)
 
       ForEach(1 ... (EqualizerSetting.rangeFromZero / 2), id: \.self) { i in
         Text("\(i * -2) dB")
-          .fontWeight(.thin)
+          .font(.system(size: 11, weight: .regular, design: .monospaced))
+          .foregroundStyle(CassetteTheme.Colors.ink3)
           .lineLimit(1)
           .minimumScaleFactor(0.8)
-          .font(.system(size: 14))
           .frame(maxHeight: .infinity)
       }
     }
@@ -146,24 +149,24 @@ extension EqualizerView {
       ForEach((-EqualizerSetting.rangeFromZero / 2) ... -1, id: \.self) { i in
         VStack {
           Rectangle()
-            .fill(Color.quaternaryLabel)
-            .frame(height: 1.5)
+            .fill(CassetteTheme.Colors.ink3.opacity(0.18))
+            .frame(height: 1.0)
             .edgesIgnoringSafeArea(.horizontal)
         }.frame(maxHeight: .infinity)
       }
 
       VStack {
         Rectangle()
-          .fill(Color.secondaryLabel)
-          .frame(height: 1.5)
+          .fill(CassetteTheme.Colors.ink2.opacity(0.35))
+          .frame(height: 1.0)
           .edgesIgnoringSafeArea(.horizontal)
       }.frame(maxHeight: .infinity)
 
       ForEach(1 ... (EqualizerSetting.rangeFromZero / 2), id: \.self) { i in
         VStack {
           Rectangle()
-            .fill(Color.quaternaryLabel)
-            .frame(height: 1.5)
+            .fill(CassetteTheme.Colors.ink3.opacity(0.18))
+            .frame(height: 1.0)
             .edgesIgnoringSafeArea(.horizontal)
         }.frame(maxHeight: .infinity)
       }

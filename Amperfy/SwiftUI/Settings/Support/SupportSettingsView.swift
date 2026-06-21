@@ -28,6 +28,9 @@ import SwiftUI
 struct SupportSettingsView: View {
   let splitPercentage = 0.15
 
+  // Cassette support address (was upstream Amperfy's `amperfy@familie-zimba.de`).
+  static let cassetteSupportEmail = "hello@cassette.digital"
+
   @State
   var result: Result<MFMailComposeResult, Error>? = nil
   @State
@@ -37,16 +40,11 @@ struct SupportSettingsView: View {
     ZStack {
       SettingsList {
         SettingsSection {
+          // cassette §A1: upstream Amperfy GitHub-issues row dropped (no public
+          // Cassette repo to point listeners at). Feedback-by-mail routes to the
+          // Cassette address below.
           SettingsButtonRow(
-            title: "Report an issue on GitHub",
-            splitPercentage: splitPercentage
-          ) {
-            if let url = URL(string: "https://github.com/BLeeEZ/amperfy/issues") {
-              UIApplication.shared.open(url)
-            }
-          }
-          SettingsButtonRow(
-            title: "Send issue or feedback to developer",
+            title: "Send feedback",
             splitPercentage: splitPercentage
           ) {
             if MFMailComposeViewController.canSendMail() {
@@ -61,12 +59,7 @@ struct SupportSettingsView: View {
             }
           }
         }
-
-        SettingsSection {
-          NavigationLink(destination: EventLogSettingsView()) {
-            Text("Event Log")
-          }
-        }
+        // cassette §G: Event Log moved to the Advanced screen.
       }
       .sheet(isPresented: $isShowingMailView) {
         MailView(
@@ -79,7 +72,7 @@ struct SupportSettingsView: View {
           \n
           --- Please don't remove the attachment ---
           """,
-          recipients: ["amperfy@familie-zimba.de"],
+          recipients: [Self.cassetteSupportEmail],
           attachments: [MailAttachment(
             data: LogData.collectInformation(amperfyData: AmperKit.shared).asJSONData(),
             mimeType: "application/json",

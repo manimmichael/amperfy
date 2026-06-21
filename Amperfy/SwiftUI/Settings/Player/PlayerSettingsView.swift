@@ -22,60 +22,50 @@
 import AmperfyKit
 import SwiftUI
 
-// MARK: - PlayerSettingsView
+// MARK: - PlaybackSettingsView
 
-struct PlayerSettingsView: View {
+// cassette §G/§E: this is the "Playback" screen (file name kept as
+// PlayerSettingsView.swift to avoid .pbxproj churn — rename deferred). It hosts
+// the Equalizer entry (tucked here rather than as a top-level peer) plus the few
+// playback prefs a normal listener would plausibly change. ReplayGain, Manual
+// Playback, and Song Playback Resume were culled (§B/§D).
+struct PlaybackSettingsView: View {
   @EnvironmentObject
   private var settings: Settings
 
   var body: some View {
     ZStack {
       SettingsList {
-        // ReplayGain Settings
-        SettingsSection(
-          content: {
-            SettingsCheckBoxRow(
-              title: "Enable ReplayGain",
-              isOn: Binding(
-                get: { settings.isReplayGainEnabled },
-                set: { isEnabled in
-                  settings.isReplayGainEnabled = isEnabled
-                }
-              )
-            )
-          },
-          footer: "Automatically normalize track volume based on replay gain information for consistent loudness."
-        )
-
-        // General Settings
         SettingsSection {
-          SettingsCheckBoxRow(
-            title: "Auto cache played Songs",
-            isOn: $settings.isPlayerAutoCachePlayedItems
-          )
+          NavigationLink(destination: EqualizerSettingsView()) {
+            Text("Equalizer")
+          }
         }
 
-        SettingsSection(
-          content: {
-            SettingsCheckBoxRow(
-              title: "Song Playback Resume",
-              isOn: $settings.isPlayerSongPlaybackResumeEnabled
-            )
-          },
-          footer: "Keeps track of song progress so playback continues from the previously saved position."
-        )
-
         SettingsSection(content: {
-          SettingsCheckBoxRow(title: "Manual Playback", isOn: $settings.isPlaybackStartOnlyOnPlay)
-        }, footer: "Enable to start playback only when the Play button is pressed.")
+          SettingsCheckBoxRow(
+            title: "Keep songs you stream",
+            isOn: $settings.isPlayerAutoCachePlayedItems
+          )
+        }, footer: "Save a copy on this device of anything you stream in Server Mode, so it's there next time without using data.")
 
-        // cassette polish Part 6: transcoding/bitrate rows (Cellular/WiFi
-        // Format + Bitrate, Cache Format) are hidden — Cassette plays files
-        // as-is. The underlying defaults are now `.raw` (see
-        // SettingEnumerations), so the hidden settings mean no transcoding.
+        // cassette §2 (decision answer): the Mac-only "Mini Player Always on
+        // Top" control was collateral when the Display screen was removed.
+        // Mac is shipping, so resurface it here — macCatalyst only.
+        #if targetEnvironment(macCatalyst)
+          SettingsSection(
+            content: {
+              SettingsCheckBoxRow(
+                title: "Mini Player Always on Top",
+                isOn: $settings.isMiniPlayerAlwaysOnTop
+              )
+            },
+            footer: "Keep the mini player window floating above all other windows."
+          )
+        #endif
       }
     }
-    .navigationTitle("Player")
+    .navigationTitle("Playback")
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       appDelegate.userStatistics.visited(.settingsPlayer)
@@ -83,13 +73,13 @@ struct PlayerSettingsView: View {
   }
 }
 
-// MARK: - PlayerSettingsView_Previews
+// MARK: - PlaybackSettingsView_Previews
 
-struct PlayerSettingsView_Previews: PreviewProvider {
+struct PlaybackSettingsView_Previews: PreviewProvider {
   @State
   static var settings = Settings()
 
   static var previews: some View {
-    PlayerSettingsView().environmentObject(settings)
+    PlaybackSettingsView().environmentObject(settings)
   }
 }

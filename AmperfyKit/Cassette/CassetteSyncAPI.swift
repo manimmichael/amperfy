@@ -175,6 +175,21 @@ public struct CassetteDeviceArtworkResponse: Sendable, Decodable {
 public struct CassetteAccount: Sendable, Decodable {
   public let email: String
   public let name: String?
+  /// Cassette §C: account-sourced Server Mode (browse/stream filter). Optional
+  /// decode so a server that doesn't yet emit the field — or an older deploy —
+  /// decodes cleanly as `false` (on-device-only) instead of failing.
+  public let serverMode: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case email, name, serverMode
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    email = try c.decode(String.self, forKey: .email)
+    name = try c.decodeIfPresent(String.self, forKey: .name)
+    serverMode = try c.decodeIfPresent(Bool.self, forKey: .serverMode) ?? false
+  }
 }
 
 // MARK: - CassetteSyncAPI
@@ -233,6 +248,23 @@ public final class CassetteSyncAPI: @unchecked Sendable {
       defaults.set(name, forKey: accountNameKey)
     } else {
       defaults.removeObject(forKey: accountNameKey)
+    }
+
+    // Cassette §C: persist the account-sourced Server Mode so the library filter
+    // reads it synchronously (immediately on launch/offline). The server value
+    // is authoritative — no phone-side toggle, no local override. If it changed
+    // since the last fetch, post filterChangedNotification so library views
+    // re-filter without a relaunch.
+    let serverModeKey = CassetteLibraryFilterProvider.serverModeDefaultsKey
+    let previousServerMode = defaults.bool(forKey: serverModeKey)
+    defaults.set(account.serverMode, forKey: serverModeKey)
+    if previousServerMode != account.serverMode {
+      DispatchQueue.main.async {
+        NotificationCenter.default.post(
+          name: CassetteLibraryFilterProvider.filterChangedNotification,
+          object: nil
+        )
+      }
     }
   }
 

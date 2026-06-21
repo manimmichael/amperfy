@@ -180,3 +180,152 @@ struct EqualizerSettingsView_Previews: PreviewProvider {
     EqualizerSettingsView().environmentObject(settings)
   }
 }
+
+// MARK: - EqualizerPanelView
+
+// cassette §E: the now-playing Equalizer panel. Presented as a slide-up sheet
+// from PopupPlayerVC (entry: the player "…" overflow, only when EQ is enabled)
+// and backed by the same ambient-backlight treatment as the player, so it reads
+// as the same dim room with the cover glowing behind it. Preset chips lead (the
+// 90% action); the 10-band sliders fine-tune; the bypass control A/Bs EQ vs
+// flat. Every change applies to the playing track in real time. The bypass is
+// session-local — the persisted enabled-state is restored on dismiss.
+struct EqualizerPanelView: View {
+  @ObservedObject
+  var ambientModel: AmbientBackdropModel
+  var onDone: () -> Void
+
+  @State private var active: EqualizerSetting = .off
+  @State private var gains: [CGFloat] = EqualizerSetting.frequencies.map { _ in 0.0 }
+  @State private var bypassed = false
+
+  private var labels: [String] {
+    EqualizerSetting.frequencies.map { $0 < 1000 ? "\(Int($0))" : "\(Int($0 / 1000))k" }
+  }
+
+  /// The built-in preset whose curve matches the active gains, if any (else the
+  /// active curve is a hand-tuned "Custom" and no chip is lit).
+  private var activePreset: EqualizerPreset? {
+    EqualizerPreset.allCases.first { $0.gains == active.gains }
+  }
+
+  var body: some View {
+    ZStack {
+      AmbientCoverBackdrop(model: ambientModel)
+
+      VStack(spacing: 18) {
+        HStack {
+          Text("Equalizer")
+            .font(.headline)
+            .foregroundStyle(CassetteTheme.Colors.ink)
+          Spacer()
+          Button("Done", action: onDone)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(CassetteTheme.Colors.ink)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 20)
+
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 10) {
+            ForEach(EqualizerPreset.allCases, id: \.self) { preset in
+              presetChip(preset)
+            }
+          }
+          .padding(.horizontal, 20)
+        }
+
+        EqualizerView(
+          sliderLabels: .constant(labels),
+          sliderValues: $gains,
+          sliderTintColor: CassetteTheme.Colors.ink2,
+          gradientColors: [CassetteTheme.Colors.ink3, .clear]
+        )
+        .padding(.horizontal, 16)
+        .opacity(bypassed ? 0.3 : 1)
+        .animation(.easeInOut(duration: 0.2), value: bypassed)
+        .onChange(of: gains) { _, newGains in
+          guard !bypassed else { return }
+          applyGains(newGains)
+        }
+
+        bypassButton
+
+        Spacer(minLength: 12)
+      }
+    }
+    .preferredColorScheme(.dark)
+    .onAppear(perform: load)
+    .onDisappear {
+      // Undo any A/B bypass: restore the persisted enabled-state on the player.
+      appDelegate.player.updateEqualizerEnabled(
+        isEnabled: appDelegate.storage.settings.user.isEqualizerEnabled
+      )
+    }
+  }
+
+  private var bypassButton: some View {
+    Button {
+      bypassed.toggle()
+      appDelegate.player.updateEqualizerEnabled(isEnabled: !bypassed)
+    } label: {
+      HStack(spacing: 8) {
+        Image(systemName: bypassed ? "speaker.wave.2" : "speaker.wave.2.fill")
+        Text(bypassed ? "Bypassed — hearing it flat" : "Bypass to compare")
+      }
+      .font(.subheadline.weight(.medium))
+      .padding(.horizontal, 18)
+      .padding(.vertical, 10)
+      .background(bypassed ? CassetteTheme.Colors.orange : CassetteTheme.Colors.bg3)
+      .foregroundStyle(bypassed ? CassetteTheme.Colors.bg : CassetteTheme.Colors.ink)
+      .clipShape(Capsule())
+    }
+    .buttonStyle(.plain)
+  }
+
+  @ViewBuilder
+  private func presetChip(_ preset: EqualizerPreset) -> some View {
+    let isActive = (activePreset == preset) && !bypassed
+    Button { selectPreset(preset) } label: {
+      Text(preset.description)
+        .font(.subheadline.weight(.medium))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(isActive ? CassetteTheme.Colors.ink : CassetteTheme.Colors.bg3)
+        .foregroundStyle(isActive ? CassetteTheme.Colors.bg : CassetteTheme.Colors.ink)
+        .clipShape(Capsule())
+    }
+    .buttonStyle(.plain)
+  }
+
+  private func load() {
+    active = appDelegate.storage.settings.user.activeEqualizerSetting
+    gains = active.gains.map { CGFloat($0) }
+    bypassed = false
+  }
+
+  private func selectPreset(_ preset: EqualizerPreset) {
+    // Keep a stable identity across edits this session so chip highlighting and
+    // the active setting stay coherent; only the gains/name follow the preset.
+    active = EqualizerSetting(id: active.id, name: preset.description, gains: preset.gains)
+    gains = active.gains.map { CGFloat($0) }
+    if bypassed {
+      bypassed = false
+      appDelegate.player.updateEqualizerEnabled(isEnabled: true)
+    }
+    persistAndApply()
+  }
+
+  private func applyGains(_ newGains: [CGFloat]) {
+    active.gains = newGains.map { Float($0) }
+    if !EqualizerPreset.allCases.contains(where: { $0.gains == active.gains }) {
+      active.name = "Custom"
+    }
+    persistAndApply()
+  }
+
+  private func persistAndApply() {
+    appDelegate.storage.settings.user.activeEqualizerSetting = active
+    appDelegate.player.updateEqualizerSetting(eqSetting: active)
+  }
+}

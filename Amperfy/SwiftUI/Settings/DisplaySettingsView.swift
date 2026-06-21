@@ -22,162 +22,134 @@
 import AmperfyKit
 import SwiftUI
 
-// MARK: - DisplaySettingsView
+// MARK: - AppIconSettingsView
 
-struct DisplaySettingsView: View {
-  @EnvironmentObject
-  private var settings: Settings
+// cassette §F: the App Icon picker (file name kept as DisplaySettingsView.swift
+// to avoid .pbxproj churn — rename deferred). Replaces the old System/Light/Dark
+// Appearance picker; the app is dark-locked at the Info.plist level (handled in
+// the §F asset pass). The grid auto-discovers the primary icon plus any
+// alternates declared in Info.plist (CFBundleIcons → CFBundleAlternateIcons),
+// so dropping the founder's PNGs into the asset catalog + declaring them is all
+// that's needed — no code change here.
+struct AppIconSettingsView: View {
+  @State
+  private var selectedIconName: String? = nil // nil == primary icon
 
-  func setAppearanceMode(style: UIUserInterfaceStyle) {
-    settings.appearanceMode = style
-    appDelegate.setAppAppearanceMode(style: style)
-  }
+  private let columns = [GridItem(.adaptive(minimum: 84), spacing: 16)]
 
   var body: some View {
     ZStack {
       SettingsList {
-        SettingsSection {
-          SettingsRow(title: "Appearance") {
-            Menu(
-              settings.appearanceMode == .unspecified ? "System" :
-                (settings.appearanceMode == .light ? "Light" : "Dark")
-            ) {
-              Button("System") {
-                setAppearanceMode(style: .unspecified)
-              }
-              Button("Light") {
-                setAppearanceMode(style: .light)
-              }
-              Button("Dark") {
-                setAppearanceMode(style: .dark)
+        SettingsSection(
+          content: {
+            LazyVGrid(columns: columns, spacing: 16) {
+              ForEach(AppIconOption.all) { option in
+                iconCell(option)
               }
             }
-          }
-        }
-
-        #if !targetEnvironment(macCatalyst)
-          SettingsSection(
-            content: {
-              SettingsCheckBoxRow(title: "Haptic Feedback", isOn: $settings.isHapticsEnabled)
-            },
-            footer:
-            "Certain interactions provide haptic feedback. Long pressing to display the details menu will always trigger haptic feedback."
-          )
-        #endif
-
-        #if targetEnvironment(macCatalyst)
-          SettingsSection(
-            content: {
-              SettingsCheckBoxRow(
-                title: "Mini Player Always on Top",
-                isOn: $settings.isMiniPlayerAlwaysOnTop
-              )
-            },
-            footer:
-            "Keep the mini player window floating above all other windows."
-          )
-        #endif
-
-        SettingsSection(
-          content: {
-            SettingsCheckBoxRow(
-              title: "Music Player Skip Buttons",
-              isOn: $settings.isShowMusicPlayerSkipButtons
-            )
+            .padding(.vertical, 8)
           },
-          footer:
-          "Add skip forward and skip backward buttons to the music player, along with the previous/next buttons."
-        )
-
-        if let activeAccountInfo = settings.activeAccountInfo,
-           let credentials = appDelegate.storage.settings.accounts.getSetting(activeAccountInfo)
-           .read.loginCredentials,
-           credentials.backendApi.asServerApiType != .ampache {
-          SettingsSection(
-            content: {
-              SettingsCheckBoxRow(
-                title: "Lyrics Smooth Scrolling",
-                isOn: $settings.isLyricsSmoothScrolling
-              )
-            },
-            footer:
-            "Lyrics are smoothly scrolled to next line. Deactivating will result in jumping from line to line."
-          )
-        }
-
-        SettingsSection(
-          content: {
-            SettingsCheckBoxRow(
-              title: "Detailed Information",
-              isOn: $settings.isShowDetailedInfo
-            )
-          },
-          footer:
-          "Display detailed information (bitrate, ID) and button \"Copy ID to Clipboard\"."
-        )
-
-        SettingsSection(
-          content: {
-            SettingsCheckBoxRow(title: "Song Duration", isOn: $settings.isShowSongDuration)
-          },
-          footer:
-          "Display song duration in table rows."
-        )
-
-        SettingsSection(
-          content: {
-            SettingsCheckBoxRow(title: "Album Duration", isOn: $settings.isShowAlbumDuration)
-          },
-          footer:
-          "Display album duration in table rows."
-        )
-
-        SettingsSection(
-          content: {
-            SettingsCheckBoxRow(title: "Artist Duration", isOn: $settings.isShowArtistDuration)
-          },
-          footer:
-          "Display artist duration in table rows."
-        )
-
-        SettingsSection(
-          content: {
-            SettingsCheckBoxRow(title: "Show Star Rating", isOn: $settings.isShowRating)
-          },
-          footer:
-          "Display star rating in song cells and the currently playing view."
-        )
-
-        SettingsSection(
-          content: {
-            SettingsCheckBoxRow(
-              title: "Disable Player Shuffle Button",
-              isOn: Binding<Bool>(
-                get: { !settings.isPlayerShuffleButtonEnabled },
-                set: {
-                  settings.isPlayerShuffleButtonEnabled = !$0
-                  UIMenuSystem.main.setNeedsRebuild()
-                }
-              )
-            )
-          },
-          footer:
-          "The player shuffle button is displayed but non-interactive."
+          footer: AppIconOption.all.count > 1
+            ? "Choose how Cassette looks on your Home Screen. iOS shows a brief confirmation when the icon changes."
+            : "More icons are on the way."
         )
       }
     }
-    .navigationTitle("Display")
+    .navigationTitle("App Icon")
     .navigationBarTitleDisplayMode(.inline)
+    .onAppear {
+      selectedIconName = UIApplication.shared.alternateIconName
+    }
+  }
+
+  @ViewBuilder
+  private func iconCell(_ option: AppIconOption) -> some View {
+    let isSelected = option.alternateName == selectedIconName
+    Button {
+      setIcon(option.alternateName)
+    } label: {
+      VStack(spacing: 6) {
+        Group {
+          if let image = option.previewImage {
+            Image(uiImage: image).resizable().scaledToFill()
+          } else {
+            RoundedRectangle(cornerRadius: 14).fill(CassetteTheme.Colors.bg3)
+          }
+        }
+        .frame(width: 64, height: 64)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+          RoundedRectangle(cornerRadius: 14)
+            .stroke(isSelected ? CassetteTheme.Colors.ink : Color.clear, lineWidth: 2)
+        )
+        Text(option.label)
+          .font(.caption)
+          .foregroundStyle(isSelected ? CassetteTheme.Colors.ink : CassetteTheme.Colors.ink3)
+          .lineLimit(1)
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+  }
+
+  private func setIcon(_ name: String?) {
+    guard UIApplication.shared.supportsAlternateIcons else { return }
+    guard name != UIApplication.shared.alternateIconName else { return }
+    UIApplication.shared.setAlternateIconName(name) { error in
+      Task { @MainActor in
+        if error == nil {
+          selectedIconName = name
+        }
+      }
+    }
   }
 }
 
-// MARK: - DisplaySettingsView_Previews
+// MARK: - AppIconOption
 
-struct DisplaySettingsView_Previews: PreviewProvider {
-  @State
-  static var settings = Settings()
+private struct AppIconOption: Identifiable {
+  let alternateName: String? // nil == primary
+  let label: String
+  let iconFileName: String?
 
+  var id: String { alternateName ?? "__primary__" }
+
+  var previewImage: UIImage? {
+    guard let iconFileName else { return nil }
+    return UIImage(named: iconFileName)
+  }
+
+  /// Auto-discovered from Info.plist: primary first, then each alternate.
+  static var all: [AppIconOption] {
+    var options: [AppIconOption] = []
+    let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any]
+
+    let primaryFiles = (icons?["CFBundlePrimaryIcon"] as? [String: Any])?["CFBundleIconFiles"]
+      as? [String]
+    options.append(AppIconOption(
+      alternateName: nil,
+      label: "Classic",
+      iconFileName: primaryFiles?.last
+    ))
+
+    if let alternates = icons?["CFBundleAlternateIcons"] as? [String: Any] {
+      for key in alternates.keys.sorted() {
+        let files = (alternates[key] as? [String: Any])?["CFBundleIconFiles"] as? [String]
+        options.append(AppIconOption(
+          alternateName: key,
+          label: key,
+          iconFileName: files?.last
+        ))
+      }
+    }
+    return options
+  }
+}
+
+// MARK: - AppIconSettingsView_Previews
+
+struct AppIconSettingsView_Previews: PreviewProvider {
   static var previews: some View {
-    DisplaySettingsView().environmentObject(settings)
+    AppIconSettingsView()
   }
 }

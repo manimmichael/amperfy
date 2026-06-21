@@ -20,6 +20,7 @@
 //
 
 import AmperfyKit
+import SwiftUI
 import UIKit
 
 extension PopupPlayerVC {
@@ -83,12 +84,47 @@ extension PopupPlayerVC {
        let rootView = rootView {
       button.showsMenuAsPrimaryAction = true
       button.menu = UIMenu.lazyMenu {
-        EntityPreviewActionBuilder(container: currentlyPlaying, on: rootView).createMenuActions()
+        var actions: [UIMenuElement] = EntityPreviewActionBuilder(
+          container: currentlyPlaying,
+          on: rootView
+        ).createMenuActions()
+        // cassette §E: Equalizer entry — present only when EQ is enabled.
+        // Opens the now-playing EQ panel as a slide-up sheet over the cover.
+        // Routed through `rootView` (the player VC) to avoid implicit self
+        // capture in this escaping menu closure.
+        if rootView.appDelegate.storage.settings.user.isEqualizerEnabled {
+          let eqAction = UIAction(
+            title: "Equalizer",
+            image: UIImage(systemName: "slider.vertical.3")
+          ) { [weak rootView] _ in
+            (rootView as? PopupPlayerVC)?.presentEqualizerPanel()
+          }
+          actions.insert(eqAction, at: 0)
+        }
+        return actions
       }
       button.isEnabled = true
     } else {
       button.isEnabled = false
     }
+  }
+
+  // cassette §E: present the now-playing Equalizer panel. Slides up over the
+  // player as a sheet, reusing this VC's ambient-backlight model so the panel
+  // shares the same dim-room backdrop and the cover glows behind it.
+  func presentEqualizerPanel() {
+    let panel = EqualizerPanelView(ambientModel: ambientBackdropModel) { [weak self] in
+      self?.dismiss(animated: true)
+    }
+    let host = UIHostingController(rootView: panel)
+    host.view.backgroundColor = CassetteTheme.UIColors.bg4
+    host.overrideUserInterfaceStyle = .dark
+    if let sheet = host.sheetPresentationController {
+      sheet.detents = [.large()]
+      sheet.prefersGrabberVisible = true
+      sheet.preferredCornerRadius = 28
+    }
+    present(host, animated: true)
   }
 
   func refreshFavoriteButton(button: UIButton) {

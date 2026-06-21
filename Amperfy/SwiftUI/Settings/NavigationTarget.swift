@@ -22,17 +22,24 @@ import SwiftUI
 
 @MainActor
 enum NavigationTarget: String, CaseIterable, @MainActor Identifiable {
+  // cassette §G: settings restructured to Account · Playback · App Icon ·
+  // Storage · Support · About · Advanced. Several destination views are
+  // repurposed in place (the file names still reflect their old role — a
+  // file-rename cleanup is deferred to avoid .pbxproj churn):
+  //   Playback  → PlaybackSettingsView   (Player/PlayerSettingsView.swift)
+  //   App Icon  → AppIconSettingsView    (DisplaySettingsView.swift)
+  //   Storage   → StorageSettingsView    (LibrarySettingsView.swift)
+  //   About     → AboutSettingsView      (LicenseSettingsView.swift)
+  //   Advanced  → AdvancedSettingsView   (XCallbackURLsSetttingsView.swift)
   case general
   case account
-  case displayAndInteraction
-  case library
-  case player
+  case playback
   case equalizer
-  case swipe
-  case artwork
+  case appIcon
+  case storage
   case support
-  case license
-  case xcallback
+  case about
+  case advanced
   #if DEBUG
     case developer = "developer"
   #endif
@@ -42,16 +49,14 @@ enum NavigationTarget: String, CaseIterable, @MainActor Identifiable {
   func view() -> any View {
     switch self {
     case .general: SettingsView()
-    case .displayAndInteraction: DisplaySettingsView()
     case .account: AccountSettingsView()
-    case .library: LibrarySettingsView()
-    case .player: PlayerSettingsView()
+    case .playback: PlaybackSettingsView()
     case .equalizer: EqualizerSettingsView()
-    case .swipe: SwipeSettingsView()
-    case .artwork: ArtworkSettingsView()
+    case .appIcon: AppIconSettingsView()
+    case .storage: StorageSettingsView()
     case .support: SupportSettingsView()
-    case .license: LicenseSettingsView()
-    case .xcallback: XCallbackURLsSetttingsView()
+    case .about: AboutSettingsView()
+    case .advanced: AdvancedSettingsView()
     #if DEBUG
       case .developer: DeveloperView()
     #endif
@@ -61,16 +66,14 @@ enum NavigationTarget: String, CaseIterable, @MainActor Identifiable {
   var displayName: String {
     switch self {
     case .general: "General"
-    case .displayAndInteraction: "Display & Interaction"
     case .account: "Account"
-    case .library: "Library"
-    case .swipe: "Swipe"
-    case .artwork: "Artwork"
-    case .support: "Support"
-    case .license: "License"
+    case .playback: "Playback"
     case .equalizer: "Equalizer"
-    case .player: "Player"
-    case .xcallback: "X-Callback-URL Documentation"
+    case .appIcon: "App Icon"
+    case .storage: "Storage"
+    case .support: "Support"
+    case .about: "About"
+    case .advanced: "Advanced"
     #if DEBUG
       case .developer: "Developer"
     #endif
@@ -81,16 +84,14 @@ enum NavigationTarget: String, CaseIterable, @MainActor Identifiable {
   var icon: UIImage {
     switch self {
     case .general: .settings
-    case .displayAndInteraction: .display
     case .account: .userPerson
-    case .library: .musicLibrary
-    case .player: .playCircle
+    case .playback: .playCircle
     case .equalizer: .equalizer
-    case .swipe: .arrowRight
-    case .artwork: .photo
+    case .appIcon: .photo
+    case .storage: .musicLibrary
     case .support: .person
-    case .license: .doc
-    case .xcallback: .arrowTurnUp
+    case .about: .doc
+    case .advanced: .settings
     #if DEBUG
       case .developer: .hammer
     #endif
@@ -100,16 +101,14 @@ enum NavigationTarget: String, CaseIterable, @MainActor Identifiable {
   var systemImage: String {
     switch self {
     case .general: "gear"
-    case .displayAndInteraction: "display"
     case .account: "person.fill"
-    case .library: "music.note.house"
-    case .player: "play.circle.fill"
+    case .playback: "play.circle.fill"
     case .equalizer: "chart.bar.xaxis"
-    case .swipe: "arrow.right.circle.fill"
-    case .artwork: "photo.fill"
+    case .appIcon: "app.badge.fill"
+    case .storage: "internaldrive.fill"
     case .support: "person.circle"
-    case .license: "doc.fill"
-    case .xcallback: "arrowshape.turn.up.backward.circle.fill"
+    case .about: "info.circle.fill"
+    case .advanced: "gearshape.2.fill"
     #if DEBUG
       case .developer: "hammer.circle.fill"
     #endif

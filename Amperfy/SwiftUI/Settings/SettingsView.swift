@@ -24,33 +24,17 @@ import SwiftUI
 
 // MARK: - SettingsView
 
+// cassette §G: the settings root. Structure is Account · Playback · App Icon ·
+// Storage, then Support · About · Advanced. Removed from this screen:
+//   • Offline Mode — gone; cleared at launch (see AmperfyKit init). Owned-file
+//     playback still works without a network.
+//   • Prevent Screen Lock — gone; normal system lock (audio keeps playing).
+//   • Server Mode toggle — gone; it becomes account-sourced (web owns the
+//     write path; the phone reads it from the account payload — §C).
+//   • Version / Build rows — moved to About.
 struct SettingsView: View {
   @EnvironmentObject
   private var settings: Settings
-
-  // cassette polish Part 6: Server Mode toggle. UI only this pass — the
-  // behavioral consequence (exposing non-downloaded music) is later-layer
-  // work. Backed by UserDefaults key `cassetteServerModeEnabled`, default off.
-  @AppStorage("cassetteServerModeEnabled")
-  private var isServerModeEnabled = false
-
-  func screenLockPreventionOffPressed() {
-    settings.screenLockPreventionPreference = .never
-    UIDevice.current.isBatteryMonitoringEnabled = false
-    appDelegate.configureLockScreenPrevention()
-  }
-
-  func screenLockPreventionOnPressed() {
-    settings.screenLockPreventionPreference = .always
-    UIDevice.current.isBatteryMonitoringEnabled = false
-    appDelegate.configureLockScreenPrevention()
-  }
-
-  func screenLockPreventionChargingPressed() {
-    settings.screenLockPreventionPreference = .onlyIfCharging
-    UIDevice.current.isBatteryMonitoringEnabled = true
-    appDelegate.configureLockScreenPrevention()
-  }
 
   func navigationLink(_ item: NavigationTarget) -> some View {
     NavigationLink(destination: AnyView(item.view())) {
@@ -62,84 +46,21 @@ struct SettingsView: View {
     let list =
       SettingsList {
         SettingsSection {
-          SettingsRow(title: "Version") {
-            SecondaryText(AppDelegate.version)
-          }
-          SettingsRow(title: "Build Number") {
-            SecondaryText(AppDelegate.buildNumber)
-          }
+          navigationLink(.account)
+          navigationLink(.playback)
+          navigationLink(.appIcon)
+          navigationLink(.storage)
         }
-
-        SettingsSection(
-          content: {
-            SettingsCheckBoxRow(title: "Offline Mode", isOn: $settings.isOfflineMode)
-          },
-          footer:
-          "Songs, podcasts, and artworks won’t download offline. Searches are limited to the device, and playlists won’t sync with the server."
-        )
 
         SettingsSection {
-          SettingsRow(title: "Prevent Screen Lock") {
-            Menu(settings.screenLockPreventionPreference.description) {
-              Button(
-                ScreenLockPreventionPreference.never.description,
-                action: screenLockPreventionOffPressed
-              )
-              Button(
-                ScreenLockPreventionPreference.always.description,
-                action: screenLockPreventionOnPressed
-              )
-              Button(
-                ScreenLockPreventionPreference.onlyIfCharging.description,
-                action: screenLockPreventionChargingPressed
-              )
-            }
-          }
+          navigationLink(.support)
+          navigationLink(.about)
+          navigationLink(.advanced)
+
+          #if DEBUG
+            navigationLink(.developer)
+          #endif
         }
-
-        SettingsSection(
-          content: {
-            SettingsCheckBoxRow(title: "Server Mode", isOn: $isServerModeEnabled)
-              .onChange(of: isServerModeEnabled) { _, _ in
-                // cassette Layer 3 Phase 3.2: flipping Server Mode changes the
-                // library filter (on-device-only <-> full catalog). Notify the
-                // list view controllers so they rebuild their fetched-results
-                // controllers with the new predicate.
-                NotificationCenter.default.post(
-                  name: CassetteLibraryFilterProvider.filterChangedNotification,
-                  object: nil
-                )
-              }
-            if let url = URL(string: "https://cassette.digital/help/server-mode") {
-              Link("Learn about Server Mode", destination: url)
-            }
-          },
-          footer: "Stream music from your Cassette Player when you're home.",
-          header: "Server Mode"
-        )
-
-        #if !targetEnvironment(macCatalyst) // ok
-          SettingsSection {
-            navigationLink(.account)
-            navigationLink(.displayAndInteraction)
-            navigationLink(.library)
-            navigationLink(.player)
-            navigationLink(.equalizer)
-            navigationLink(.swipe)
-            navigationLink(.artwork)
-          }
-
-          SettingsSection {
-            navigationLink(.support)
-            navigationLink(.license)
-            // cassette polish Part 6: X-Callback-URL Documentation hidden
-            // (developer/protocol chrome).
-
-            #if DEBUG
-              navigationLink(.developer)
-            #endif
-          }
-        #endif
       }
 
     #if targetEnvironment(macCatalyst) // ok

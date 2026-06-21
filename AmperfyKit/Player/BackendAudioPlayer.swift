@@ -110,9 +110,6 @@ class BackendAudioPlayer: NSObject {
   private var replayGainNode: AVAudioMixerNode?
   public private(set) var audioAnalyzer: AudioAnalyzer
 
-  // ReplayGain Settings
-  private var isReplayGainEnabled: Bool = true
-  private var currentReplayGainValue: Float = 0.0 // ReplayGain in dB
   // EQ Settings
   private var equalizerVolumeCompensation: Float = 1.0
   private var isEqualizerEnabled: Bool = true
@@ -437,8 +434,6 @@ class BackendAudioPlayer: NSObject {
       activeTranscodingFormat = preloadTranscodingFormat
       preloadTranscodingFormat = nil
       isPreviousPlaylableFinshed = false
-      currentReplayGainValue = nextPreloadedPlayable.replayGainTrackGain
-      applyReplayGain()
       self.nextPreloadedPlayable = nil
       nextPreloadedUrl = ""
       responder?.notifyItemPreparationFinished()
@@ -466,8 +461,6 @@ class BackendAudioPlayer: NSObject {
         return
       }
       os_log(.default, "Cassette playback: serving local file for %s", playable.id)
-      currentReplayGainValue = playable.replayGainTrackGain
-      applyReplayGain()
       insertOwnedPlayable(playable: playable, fileURL: ownedUrl)
       isPlaying = shouldPlaybackStart
       responder?.notifyItemPreparationFinished()
@@ -504,8 +497,6 @@ class BackendAudioPlayer: NSObject {
         )
         return
       }
-      currentReplayGainValue = playable.replayGainTrackGain
-      applyReplayGain()
       insertCachedPlayable(playable: playable)
       isPlaying = shouldPlaybackStart
       responder?.notifyItemPreparationFinished()
@@ -537,8 +528,6 @@ class BackendAudioPlayer: NSObject {
 
       Task { @MainActor in
         do {
-          currentReplayGainValue = playable.replayGainTrackGain
-          applyReplayGain()
           try await insertStreamPlayable(playable: playable)
           isPlaying = shouldPlaybackStart
           if self.isAutoCachePlayedItems, !playable.isRadio,
@@ -819,37 +808,15 @@ class BackendAudioPlayer: NSObject {
     os_log(.debug, "   Active EQ linear Volume Compensation: %.2f", equalizerVolumeCompensation)
   }
 
-  // MARK: - ReplayGain Implementation
+  // MARK: - Make-up Gain (formerly ReplayGain)
 
-  func updateReplayGainEnabled(isEnabled: Bool) {
-    isReplayGainEnabled = isEnabled
-    applyReplayGain()
-  }
-
+  // Cassette fork: ReplayGain was removed — 0% tag coverage made it inert and
+  // the toggle left the Settings pane. This mixer node is retained because it
+  // also carries the EQ make-up gain; without it the equalizer's level
+  // compensation has nowhere to apply. Album-gain normalization is deferred.
   private func applyReplayGain() {
     guard let replayGain = replayGainNode else { return }
-
-    let eqCompensation = isEqualizerEnabled ? equalizerVolumeCompensation : 1.0
-
-    if isReplayGainEnabled, currentReplayGainValue != 0.0 {
-      // Convert dB to linear scale: gain = pow(10, dB / 20)
-      let linearGain = pow(10.0, currentReplayGainValue / 20.0)
-      replayGain.outputVolume = linearGain * eqCompensation
-      os_log(
-        .debug,
-        "ReplayGain: %.2f dB → %.3f linear gain (EQ Compensation: %.2f)",
-        currentReplayGainValue,
-        linearGain,
-        eqCompensation
-      )
-    } else {
-      replayGain.outputVolume = eqCompensation
-      os_log(
-        .debug,
-        "ReplayGain: disabled or no gain data (EQ Compensation: %.2f)",
-        eqCompensation
-      )
-    }
+    replayGain.outputVolume = isEqualizerEnabled ? equalizerVolumeCompensation : 1.0
   }
 }
 

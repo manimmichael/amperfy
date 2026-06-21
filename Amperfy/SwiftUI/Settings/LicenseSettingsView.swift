@@ -21,9 +21,12 @@
 
 import SwiftUI
 
-// MARK: - LicenseSettingsView
+// MARK: - AboutSettingsView
 
-struct LicenseSettingsView: View {
+// cassette §G: the "About" screen (file name kept as LicenseSettingsView.swift
+// to avoid .pbxproj churn — rename deferred). Version + build as one line above
+// the acknowledgements / Amperfy attribution.
+struct AboutSettingsView: View {
   var licenseText = """
   Cassette Player iOS
   Based on Amperfy by Maximilian Bauer.
@@ -524,21 +527,30 @@ struct LicenseSettingsView: View {
   var body: some View {
     ZStack {
       ScrollView(.vertical) {
-        Text(licenseText)
-          .font(.caption)
-          .foregroundColor(.primary)
-          .padding([.leading, .trailing, .top, .bottom], 16)
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Cassette Player")
+            .font(.headline)
+          Text("Version \(AppDelegate.version) (Build \(AppDelegate.buildNumber))")
+            .font(.subheadline)
+            .foregroundColor(.secondary)
+          Divider()
+          Text(licenseText)
+            .font(.caption)
+            .foregroundColor(.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding([.leading, .trailing, .top, .bottom], 16)
       }
     }
-    .navigationTitle("Licenses")
+    .navigationTitle("About")
     .navigationBarTitleDisplayMode(.inline)
   }
 }
 
-// MARK: - LicenseSettingsView_Previews
+// MARK: - AboutSettingsView_Previews
 
-struct LicenseSettingsView_Previews: PreviewProvider {
+struct AboutSettingsView_Previews: PreviewProvider {
   static var previews: some View {
-    LicenseSettingsView()
+    AboutSettingsView()
   }
 }

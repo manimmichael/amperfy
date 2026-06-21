@@ -806,7 +806,6 @@ extension PersistentStorage {
     settings.user.isEqualizerEnabled = legacySettings.isEqualizerEnabled
     settings.user.activeEqualizerSetting = legacySettings.activeEqualizerSetting
     settings.user.equalizerSettings = legacySettings.equalizerSettings
-    settings.user.isReplayGainEnabled = legacySettings.isReplayGainEnabled
     settings.user.playerVolume = legacySettings.playerVolume
     settings.user.appearanceMode = legacySettings.appearanceMode
     settings.user.screenLockPreventionPreference = legacySettings.screenLockPreventionPreference

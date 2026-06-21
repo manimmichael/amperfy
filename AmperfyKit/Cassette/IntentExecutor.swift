@@ -136,6 +136,9 @@ public final class IntentExecutor {
       // Fast Album Art (artists): heal already-synced albums whose artist image
       // was never materialized — READ-ONLY manifest, off-main, idempotent.
       await backfillOwnedArtistImages(accountInfo: accountInfo)
+      // cassette §art-collapse: re-tier existing local covers (generate the
+      // ~480px thumb) for any that predate tiering. Idempotent + off-main.
+      await backfillCoverThumbnails(accountInfo: accountInfo)
     }
 
     // Sync Reconciliation (Phase 1): report the device's COMPLETE owned-set so
@@ -241,6 +244,35 @@ public final class IntentExecutor {
     guard !artworks.isEmpty else { return }
     print("Cassette poll: backfilling covers for \(artworks.count) owned album(s)")
     AmperKit.shared.getMeta(accountInfo).artworkDownloadManager.download(objects: artworks)
+  }
+
+  /// cassette §art-collapse: one-time re-tier heal. Walks the account's artworks
+  /// directory and generates the ~480px thumb for any full cover that predates
+  /// tiering. Idempotent (CoverImageStore.ensureThumb skips covers that already
+  /// have a thumb) and entirely off-main, so it's safe to reconcile every sync.
+  private func backfillCoverThumbnails(accountInfo: AccountInfo) async {
+    guard let artworksDir = CacheFileManager.shared
+      .getOrCreateAbsoluteArtworksDirectory(for: accountInfo)
+    else { return }
+    await Task.detached(priority: .utility) {
+      guard let entries = try? FileManager.default.contentsOfDirectory(
+        at: artworksDir,
+        includingPropertiesForKeys: nil
+      ) else { return }
+      var healed = 0
+      for url in entries {
+        let stem = (url.lastPathComponent as NSString).deletingPathExtension
+        if stem.hasSuffix("_thumb") { continue } // skip thumbs themselves
+        if FileManager.default.fileExists(atPath: CoverImageStore.thumbPath(forFullPath: url.path)) {
+          continue
+        }
+        CoverImageStore.ensureThumb(forFullPath: url.path)
+        healed += 1
+      }
+      if healed > 0 {
+        print("Cassette: re-tiered \(healed) existing cover(s)")
+      }
+    }.value
   }
 
   /// Fast Album Art backfill + refresh-on-change (content reconciliation
@@ -686,6 +718,17 @@ public final class IntentExecutor {
       return
     }
 
+    // Rule 1/§5: verify the bytes fully decode before they touch disk. A corrupt
+    // or truncated download (or a failed content-version refresh under force:)
+    // must never overwrite an existing good cover — bail and leave the current
+    // cover + status untouched; the next poll retries. The write itself is
+    // atomic (writeDataExcludedFromBackup uses .atomic), so verify + atomic =
+    // a new cover lands only on verified success.
+    guard CoverImageStore.isDecodable(data) else {
+      print("Cassette poll: cover download not decodable — leaving existing cover")
+      return
+    }
+
     // 3. Write the file into the artwork dir and flip the Artwork to
     //    .CustomImage — identical to SubsonicArtworkDownloadDelegate, so
     //    imagePath / LibraryEntityImage then serve it with zero network.
@@ -711,6 +754,11 @@ public final class IntentExecutor {
       artwork.relFilePath = relFilePath
       try? context.save()
     }
+    // cassette §art-collapse: defensively square + generate the ~480px thumb
+    // tier beside the stored full cover. Off-main — it decodes/encodes images.
+    await Task.detached(priority: .utility) {
+      CoverImageStore.processStoredCover(fullFileURL: absFilePath)
+    }.value
     print("Cassette poll: materialized album cover (\(data.count) bytes)")
   }
 

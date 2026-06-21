@@ -6,8 +6,16 @@
 //
 //  Single source of truth for what the iOS library surfaces show. By default
 //  the app is "on-phone-only": only music actually transferred to the device
-//  (a DeviceOwnership row) is visible. The existing Server Mode toggle
-//  (`cassetteServerModeEnabled`) flips this to the full Subsonic catalog.
+//  (a DeviceOwnership row) is visible. Server Mode flips this to the full
+//  Subsonic catalog.
+//
+//  Cassette §C: Server Mode is account-sourced. The web account owns the value
+//  (`users.server_mode`); the phone reads it from `GET /api/sync/account` and
+//  persists the last-known value to `UserDefaults[cassette.serverMode]`
+//  (written by CassetteSyncAPI.persistAccount). This provider reads that key
+//  synchronously, so the filter is available immediately on launch/offline
+//  (default false) and refreshes whenever the account is fetched. There is no
+//  phone-side toggle and no local override — the server value is authoritative.
 //
 //  The filter is consulted at fetch time (predicate composition), not at
 //  render time, to avoid dim-then-show flicker.
@@ -48,16 +56,20 @@ public protocol LibraryFilterProvider {
 public final class CassetteLibraryFilterProvider: LibraryFilterProvider, Sendable {
   public static let shared = CassetteLibraryFilterProvider()
 
-  /// Posted whenever the Server Mode toggle flips, so library views can
-  /// recreate their fetched-results controllers with the new predicate.
+  /// Posted whenever the account-sourced Server Mode value changes (on account
+  /// fetch), so library views can recreate their fetched-results controllers
+  /// with the new predicate.
   public static let filterChangedNotification = Notification.Name("CassetteLibraryFilterChanged")
 
-  private let serverModeKey = "cassetteServerModeEnabled"
+  /// UserDefaults key holding the last-known account-sourced Server Mode value.
+  /// Written by `CassetteSyncAPI.persistAccount`; read here. Default (absent)
+  /// reads as `false` → on-device-only.
+  public static let serverModeDefaultsKey = "cassette.serverMode"
 
   public init() {}
 
   public var currentFilter: LibraryFilter {
-    let serverMode = UserDefaults.standard.bool(forKey: serverModeKey)
+    let serverMode = UserDefaults.standard.bool(forKey: Self.serverModeDefaultsKey)
     return serverMode ? .everything : .onDeviceOnly
   }
 

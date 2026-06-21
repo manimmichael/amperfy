@@ -341,7 +341,10 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
   }
 
   public func getDisplayElementBasedOnConfig() -> LargeDisplayElement {
-    if appDelegate.storage.settings.user.isPlayerLyricsDisplayed {
+    // cassette: lyrics surface is hidden (Cassette.lyricsEnabled == false). Guard
+    // here too so a persisted isPlayerLyricsDisplayed can't reopen the player in
+    // lyrics mode while the feature is gated off. Feature stays wired in code.
+    if Cassette.lyricsEnabled, appDelegate.storage.settings.user.isPlayerLyricsDisplayed {
       return .lyrics
     } else if appDelegate.storage.settings.user.isPlayerVisualizerDisplayed {
       return .visualizer
