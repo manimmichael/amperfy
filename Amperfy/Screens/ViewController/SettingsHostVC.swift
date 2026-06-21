@@ -68,10 +68,14 @@ class SettingsHostVC: UIViewController {
     let hostingVC = UIHostingController(
       rootView: settingsRootView
     )
-    view.backgroundColor = .clear
+    // cassette: opaque warm background behind the hosted SwiftUI settings. With
+    // a .clear host view, UIKit navigation push/pop transitions reveal the black
+    // window underneath — the "flash to black" on open and the transient
+    // obscured rectangle when entering a sub-menu. An opaque bg removes it.
+    view.backgroundColor = CassetteTheme.UIColors.bg
     hostingVC.view.frame = view.bounds
     hostingVC.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    hostingVC.view.backgroundColor = .clear
+    hostingVC.view.backgroundColor = CassetteTheme.UIColors.bg
 
     hostingVC.willMove(toParent: self)
     addChild(hostingVC)

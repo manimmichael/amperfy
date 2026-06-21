@@ -75,7 +75,7 @@ enum NavigationTarget: String, CaseIterable, @MainActor Identifiable {
     case .about: "About"
     case .advanced: "Advanced"
     #if DEBUG
-      case .developer: "Developer"
+      case .developer: "Developer (debug)"
     #endif
     }
   }
