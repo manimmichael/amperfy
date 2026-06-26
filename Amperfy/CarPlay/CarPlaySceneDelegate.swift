@@ -102,6 +102,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   ) {
     Task { @MainActor in
       os_log("CarPlay: didConnect", log: self.log, type: .info)
+      DiagnosticLog.shared.log(.carplay, "CarPlay connected")
       appDelegate.notificationHandler.register(
         self,
         selector: #selector(refreshSort),
@@ -218,6 +219,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   ) {
     Task { @MainActor in
       os_log("CarPlay: didDisconnect", log: self.log, type: .info)
+      DiagnosticLog.shared.log(.carplay, "CarPlay disconnected")
       guard activeAccountInfo != nil, activeAccount != nil else {
         os_log("CarPlay: no account available -> do nothing", log: self.log, type: .info)
         return
@@ -1163,6 +1165,11 @@ extension CarPlaySceneDelegate: @preconcurrency NSFetchedResultsControllerDelega
 extension CarPlaySceneDelegate: CPInterfaceControllerDelegate {
   nonisolated func templateWillAppear(_ aTemplate: CPTemplate, animated: Bool) {
     Task { @MainActor in
+      DiagnosticLog.shared.log(
+        .carplay,
+        "template will appear",
+        context: ["template": String(describing: type(of: aTemplate))]
+      )
       if aTemplate == playerQueueSection {
         os_log("CarPlay: templateWillAppear playerQueueSection", log: self.log, type: .info)
         playerQueueSection.updateSections(createPlayerQueueSections())

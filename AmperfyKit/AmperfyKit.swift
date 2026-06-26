@@ -116,6 +116,9 @@ public class AmperKit {
   private var playerNowPlayingInfoCenterHandler: NowPlayingInfoCenterHandler?
   private var playerRemoteCommandCenterHandler: RemoteCommandCenterHandler?
   private var playerNotificationAdapter: PlayerNotificationAdapter?
+  // Cassette — Diagnostics Phase 1: retained so the player's weak notifier list
+  // keeps it alive (mirrors playback state transitions into DiagnosticLog).
+  private var playerDiagnosticObserver: DiagnosticPlayerObserver?
 
   @MainActor
   private func createPlayer() -> PlayerFacade {
@@ -213,6 +216,13 @@ public class AmperKit {
     curPlayer.addNotifier(notifier: playerRemoteCommandCenterHandler!)
     playerNotificationAdapter = PlayerNotificationAdapter(notificationHandler: notificationHandler)
     curPlayer.addNotifier(notifier: playerNotificationAdapter!)
+
+    // Cassette — Diagnostics Phase 1: passive playback breadcrumbs. Reads the
+    // current title best-effort on the main actor; drops the elapsed-time tick.
+    playerDiagnosticObserver = DiagnosticPlayerObserver(currentTitle: { [weak curPlayer] in
+      curPlayer?.currentlyPlaying?.title
+    })
+    curPlayer.addNotifier(notifier: playerDiagnosticObserver!)
 
     return facadeImpl
   }

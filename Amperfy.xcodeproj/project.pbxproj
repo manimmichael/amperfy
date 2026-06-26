@@ -95,6 +95,8 @@
 		507252E02EF9888200FFFA4D /* AccountNotificationHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507252DF2EF9888200FFFA4D /* AccountNotificationHandler.swift */; };
 		507361E02632BA3B005F151D /* GenresVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507361DF2632BA3B005F151D /* GenresVC.swift */; };
 		507414992EFFC62E007AEC5D /* PlayPausePlaybackIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507414982EFFC62E007AEC5D /* PlayPausePlaybackIntent.swift */; };
+		CA55D1A6000000110000CAFE /* MarkDiagnosticMomentIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55D1A6000000010000CAFE /* MarkDiagnosticMomentIntent.swift */; };
+		CA55D1A6000000120000CAFE /* DiagnosticsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55D1A6000000020000CAFE /* DiagnosticsSettingsView.swift */; };
 		5074149B2EFFC6D9007AEC5D /* ContinuePlaybackIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5074149A2EFFC6D9007AEC5D /* ContinuePlaybackIntent.swift */; };
 		5074149D2EFFC772007AEC5D /* PlaybackModeAppEnum.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5074149C2EFFC772007AEC5D /* PlaybackModeAppEnum.swift */; };
 		507414A12F004C07007AEC5D /* NextPreviousTrackIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507414A02F004C07007AEC5D /* NextPreviousTrackIntent.swift */; };
@@ -132,6 +134,11 @@
 		CA55E0E0000000120000CAFE /* DeviceOwnershipMO+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E0000000020000CAFE /* DeviceOwnershipMO+CoreDataProperties.swift */; };
 		CA55E0E1000000110000CAFE /* CassetteFileStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000010000CAFE /* CassetteFileStorage.swift */; };
 		CA55E0E1000000120000CAFE /* DeviceOwnershipManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000020000CAFE /* DeviceOwnershipManager.swift */; };
+		CA55E0E1000000190000CAFE /* DiagnosticEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000090000CAFE /* DiagnosticEntry.swift */; };
+		CA55E0E10000001A0000CAFE /* DiagnosticLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E10000000A0000CAFE /* DiagnosticLog.swift */; };
+		CA55E0E10000001B0000CAFE /* DiagnosticUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E10000000B0000CAFE /* DiagnosticUploader.swift */; };
+		CA55E0E10000001C0000CAFE /* DiagnosticCrashReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E10000000C0000CAFE /* DiagnosticCrashReporter.swift */; };
+		CA55E0E10000001D0000CAFE /* DiagnosticPlayerObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E10000000D0000CAFE /* DiagnosticPlayerObserver.swift */; };
 		CA55E0E1000000130000CAFE /* CassetteSyncAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000030000CAFE /* CassetteSyncAPI.swift */; };
 		CA55E0E1000000160000CAFE /* CassetteLocalID.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000060000CAFE /* CassetteLocalID.swift */; };
 		CA55E0E1000000170000CAFE /* CassetteLocalIDTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000070000CAFE /* CassetteLocalIDTest.swift */; };
@@ -796,6 +803,7 @@
 		507361CB2632AB91005F151D /* Genre.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Genre.swift; sourceTree = "<group>"; };
 		507361DF2632BA3B005F151D /* GenresVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenresVC.swift; sourceTree = "<group>"; };
 		507414982EFFC62E007AEC5D /* PlayPausePlaybackIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayPausePlaybackIntent.swift; sourceTree = "<group>"; };
+		CA55D1A6000000010000CAFE /* MarkDiagnosticMomentIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkDiagnosticMomentIntent.swift; sourceTree = "<group>"; };
 		5074149A2EFFC6D9007AEC5D /* ContinuePlaybackIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContinuePlaybackIntent.swift; sourceTree = "<group>"; };
 		5074149C2EFFC772007AEC5D /* PlaybackModeAppEnum.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackModeAppEnum.swift; sourceTree = "<group>"; };
 		507414A02F004C07007AEC5D /* NextPreviousTrackIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextPreviousTrackIntent.swift; sourceTree = "<group>"; };
@@ -841,6 +849,11 @@
 		CA55E0E0000000020000CAFE /* DeviceOwnershipMO+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DeviceOwnershipMO+CoreDataProperties.swift"; sourceTree = "<group>"; };
 		CA55E0E1000000010000CAFE /* CassetteFileStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteFileStorage.swift; sourceTree = "<group>"; };
 		CA55E0E1000000020000CAFE /* DeviceOwnershipManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceOwnershipManager.swift; sourceTree = "<group>"; };
+		CA55E0E1000000090000CAFE /* DiagnosticEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticEntry.swift; sourceTree = "<group>"; };
+		CA55E0E10000000A0000CAFE /* DiagnosticLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticLog.swift; sourceTree = "<group>"; };
+		CA55E0E10000000B0000CAFE /* DiagnosticUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticUploader.swift; sourceTree = "<group>"; };
+		CA55E0E10000000C0000CAFE /* DiagnosticCrashReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticCrashReporter.swift; sourceTree = "<group>"; };
+		CA55E0E10000000D0000CAFE /* DiagnosticPlayerObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticPlayerObserver.swift; sourceTree = "<group>"; };
 		CA55E0E1000000030000CAFE /* CassetteSyncAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteSyncAPI.swift; sourceTree = "<group>"; };
 		CA55E0E1000000060000CAFE /* CassetteLocalID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteLocalID.swift; sourceTree = "<group>"; };
 		CA55E0E1000000070000CAFE /* CassetteLocalIDTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Cases/Cassette/CassetteLocalIDTest.swift"; sourceTree = "<group>"; };
@@ -1134,6 +1147,7 @@
 		50E59A4C2ED7541900F2B65C /* HomeSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSection.swift; sourceTree = "<group>"; };
 		50E77DB328D1B63200BDF882 /* LibraryDisplaySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDisplaySettings.swift; sourceTree = "<group>"; };
 		50E77DB628D2163F00BDF882 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		CA55D1A6000000020000CAFE /* DiagnosticsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsSettingsView.swift; sourceTree = "<group>"; };
 		50E77DB828D21A9300BDF882 /* SettingsHostVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsHostVC.swift; sourceTree = "<group>"; };
 		50E936D82F0FF9F200C1C504 /* AmperfyAppShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmperfyAppShortcuts.swift; sourceTree = "<group>"; };
 		50E936DA2F100C7800C1C504 /* RatingAppEnum.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RatingAppEnum.swift; sourceTree = "<group>"; };
@@ -1467,6 +1481,7 @@
 				50791E8428D36F1F006CE6E5 /* LibrarySettingsView.swift */,
 				504B441828D6F0920033982C /* LicenseSettingsView.swift */,
 				504B441C28D7A6330033982C /* XCallbackURLsSetttingsView.swift */,
+				CA55D1A6000000020000CAFE /* DiagnosticsSettingsView.swift */,
 				502041962E2A37D6003CE29A /* Player */,
 				50CFB59828D5006100A47D44 /* Artwork */,
 				50CFB59528D4848300A47D44 /* Swipe */,
@@ -1970,6 +1985,11 @@
 				CA55E0E1000000040000CAFE /* CassetteTransferSession.swift */,
 				CA55E0E1000000050000CAFE /* IntentExecutor.swift */,
 				CA55E0E1000000060000CAFE /* CassetteLocalID.swift */,
+				CA55E0E1000000090000CAFE /* DiagnosticEntry.swift */,
+				CA55E0E10000000A0000CAFE /* DiagnosticLog.swift */,
+				CA55E0E10000000B0000CAFE /* DiagnosticUploader.swift */,
+				CA55E0E10000000C0000CAFE /* DiagnosticCrashReporter.swift */,
+				CA55E0E10000000D0000CAFE /* DiagnosticPlayerObserver.swift */,
 			);
 			path = Cassette;
 			sourceTree = "<group>";
@@ -2181,6 +2201,7 @@
 				50AB3B4A2F031D0C00556CE4 /* SetRatingForCurrentlyPlayingSongIntent.swift */,
 				507BA5C82F01CED000B4EA8B /* SetOnlineOfflineModeIntent.swift */,
 				50AB3B3B2F01D5AC00556CE4 /* OpenAppWithConfigurationIntent.swift */,
+				CA55D1A6000000010000CAFE /* MarkDiagnosticMomentIntent.swift */,
 			);
 			path = AppIntents;
 			sourceTree = "<group>";
@@ -2532,6 +2553,8 @@
 				50B136FC2EFC36D500738475 /* PlayRandomSongsIntent.swift in Sources */,
 				50B136FD2EFC36D500738475 /* PlayRandomSongsFilterTypeAppEnum.swift in Sources */,
 				507414992EFFC62E007AEC5D /* PlayPausePlaybackIntent.swift in Sources */,
+				CA55D1A6000000110000CAFE /* MarkDiagnosticMomentIntent.swift in Sources */,
+				CA55D1A6000000120000CAFE /* DiagnosticsSettingsView.swift in Sources */,
 				50B136FE2EFC36D500738475 /* RepeatTypeAppEnum.swift in Sources */,
 				50B136FF2EFC36D500738475 /* SearchAndPlayIntent.swift in Sources */,
 				50AB3B402F02BC8600556CE4 /* FavoriteTypeAppEnum.swift in Sources */,
@@ -2891,6 +2914,11 @@
 				CA55E0E0000000120000CAFE /* DeviceOwnershipMO+CoreDataProperties.swift in Sources */,
 				CA55E0E1000000110000CAFE /* CassetteFileStorage.swift in Sources */,
 				CA55E0E1000000120000CAFE /* DeviceOwnershipManager.swift in Sources */,
+				CA55E0E1000000190000CAFE /* DiagnosticEntry.swift in Sources */,
+				CA55E0E10000001A0000CAFE /* DiagnosticLog.swift in Sources */,
+				CA55E0E10000001B0000CAFE /* DiagnosticUploader.swift in Sources */,
+				CA55E0E10000001C0000CAFE /* DiagnosticCrashReporter.swift in Sources */,
+				CA55E0E10000001D0000CAFE /* DiagnosticPlayerObserver.swift in Sources */,
 				CA55E0E1000000130000CAFE /* CassetteSyncAPI.swift in Sources */,
 				CA55E0E1000000140000CAFE /* CassetteTransferSession.swift in Sources */,
 				CA55E0E1000000150000CAFE /* IntentExecutor.swift in Sources */,

@@ -287,6 +287,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     configureNotificationHandling()
     initEventLogger()
 
+    // Cassette — Diagnostics Phase 1: start on-device crash capture (MetricKit
+    // delivers crash/hang reports on the NEXT launch) and open the rolling
+    // diagnostic trace with a launch breadcrumb.
+    DiagnosticCrashReporter.shared.start()
+    DiagnosticLog.shared.log(.lifecycle, "app launching")
+
     // cassette Patch 046 (Phase A): default tint cascade is ink, not orange.
     // Orange survives only on three pinned surfaces (popup + mini scrubbers,
     // currently-playing waveform); every other control that honors tintColor
@@ -425,11 +431,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later.
     // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
     os_log("applicationDidEnterBackground", log: self.log, type: .info)
+    // Cassette — Diagnostics: NOT hooked here. This is a scene-based app, so
+    // UIKit calls SceneDelegate.sceneDidEnterBackground instead (that's where
+    // the rolling-buffer flush lives).
   }
 
   func applicationWillEnterForeground(_ application: UIApplication) {
     // Called as part of the transition from the background to the active state; here you can undo many of the changes made on entering the background.
     os_log("applicationWillEnterForeground", log: self.log, type: .info)
+    // Cassette — Diagnostics: see sceneWillEnterForeground (scene-based app).
   }
 
   func applicationDidBecomeActive(_ application: UIApplication) {
@@ -440,6 +450,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   func applicationWillTerminate(_ application: UIApplication) {
     // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     os_log("applicationWillTerminate", log: self.log, type: .info)
+    DiagnosticLog.shared.log(.lifecycle, "will terminate")
+    DiagnosticLog.shared.flushNow()
     for meta in AmperKit.shared.allActiveMetas {
       meta.value.backgroundLibrarySyncer.stop()
     }

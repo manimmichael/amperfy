@@ -32,16 +32,24 @@ struct AmperfyAppShortcuts: AppShortcutsProvider {
     //
     // Quick Actions
     //
+    // Cassette — Diagnostics Phase 1: the hands-free "flag this moment" trigger
+    // (the highest-value case while driving). Apple caps an app at 10 auto-
+    // provided App Shortcuts, and the provider was already at the cap. We reclaim
+    // the slot from the offline-mode shortcut below: the app force-disables
+    // offline mode at launch (cassette §G) and removed its Settings toggle, so a
+    // Siri phrase that toggles it drives a neutered feature. SetOnlineOfflineMode
+    // remains a full AppIntent (available in the Shortcuts app); only its
+    // auto-registered Siri phrase is dropped. To restore it, swap this entry back.
     AppShortcut(
-      intent: SetOnlineOfflineModeIntent(),
+      intent: MarkDiagnosticMomentIntent(),
       phrases: [
-        "Activate mode in \(.applicationName)",
-        "Switch mode in \(.applicationName)",
-        "Activate \(\.$mode) mode in \(.applicationName)",
-        "Switch to \(\.$mode) mode in \(.applicationName)",
+        "Flag this in \(.applicationName)",
+        "Flag this moment in \(.applicationName)",
+        "Mark this moment in \(.applicationName)",
+        "Log a diagnostic in \(.applicationName)",
       ],
-      shortTitle: "Switch Mode",
-      systemImageName: "arrowshape.forward"
+      shortTitle: "Flag a Moment",
+      systemImageName: "flag.fill"
     )
     AppShortcut(
       intent: SwitchAccountIntent(),

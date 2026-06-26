@@ -32,6 +32,9 @@ public struct LogData: Encodable {
   public var userSettings: UserSettingsLog?
   public var userStatistics: [UserStatisticsOverview]?
   public var eventInfo: EventInfo?
+  // Cassette — Diagnostics Phase 1: the full in-memory rolling trace, separate
+  // from `eventInfo` (which stays capped at the latest 30 CoreData entries).
+  public var rollingTrace: [DiagnosticEntry]?
 
   static let latestEventsCount = 30
 
@@ -90,6 +93,9 @@ public struct LogData: Encodable {
     eventInfo.events = Array(eventLogs.prefix(Self.latestEventsCount))
     eventInfo.attachedEventCount = eventInfo.events?.count ?? 0
     logData.eventInfo = eventInfo
+
+    // Cassette — Diagnostics Phase 1: attach the full rolling trace (no 30-cap).
+    logData.rollingTrace = DiagnosticLog.shared.snapshot()
 
     return logData
   }

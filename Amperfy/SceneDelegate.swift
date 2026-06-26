@@ -282,6 +282,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     // Called as the scene transitions from the background to the foreground.
     // Use this method to undo the changes made on entering the background.
     os_log("sceneWillEnterForeground", log: self.log, type: .info)
+    DiagnosticLog.shared.log(.lifecycle, "will enter foreground")
     AmperKit.shared.threadPerformanceMonitor.isInForeground = true
   }
 
@@ -292,6 +293,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     // Save changes in the application's managed object context when the application transitions to the background.
     os_log("sceneDidEnterBackground", log: self.log, type: .info)
+    // Cassette — Diagnostics Phase 1: this is a scene-based app, so the real
+    // background hook is here (NOT AppDelegate.applicationDidEnterBackground,
+    // which UIKit doesn't call once scenes are adopted). Flush immediately so
+    // the trace pairs with a crash report if we're killed while backgrounded.
+    DiagnosticLog.shared.log(.lifecycle, "entered background")
+    DiagnosticLog.shared.flushNow()
     AmperKit.shared.threadPerformanceMonitor.isInForeground = false
     stopCassetteIntentPolling()
     guard appDelegate.isNormalInteraction else {

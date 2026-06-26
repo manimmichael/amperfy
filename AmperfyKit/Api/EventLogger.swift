@@ -266,7 +266,15 @@ public class EventLogger {
     popupMessage: String,
     detailMessage: String
   ) {
-    os_log("%s", log: self.log, type: .error, logMessage)
+    os_log("%s", log: self.log, type: Self.osLogType(for: logType), logMessage)
+    // Cassette — Diagnostics Phase 1: mirror every reported event into the
+    // in-memory rolling trace. This is in addition to the CoreData write below
+    // (which is unchanged); the append is fire-and-return and never touches disk.
+    DiagnosticLog.shared.log(
+      DiagnosticCategory.forEventLog(topic: topic, isApiError: logType == .apiError),
+      logMessage,
+      context: statusCode != 0 ? ["statusCode": "\(statusCode)"] : nil
+    )
     Task { @MainActor in
       do {
         try await storage.async.perform { asynCompanion in
@@ -311,6 +319,17 @@ public class EventLogger {
         style: logType,
         notificationBanner: popupVC
       )
+    }
+  }
+
+  /// Cassette — Diagnostics Phase 1: the console line was hardcoded to `.error`
+  /// for every entry, so OSLog severity didn't match the stored `LogEntryType`.
+  /// Map it through so info/debug entries log at the right level.
+  private static func osLogType(for logType: LogEntryType) -> OSLogType {
+    switch logType {
+    case .error, .apiError: return .error
+    case .info: return .info
+    case .debug: return .debug
     }
   }
 }

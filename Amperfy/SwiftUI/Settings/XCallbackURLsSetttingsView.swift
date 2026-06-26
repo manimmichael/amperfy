@@ -39,6 +39,10 @@ struct AdvancedSettingsView: View {
             NavigationLink(destination: EventLogSettingsView()) {
               Text("Event Log")
             }
+            // Cassette — Diagnostics Phase 1: always-on rolling trace + export.
+            NavigationLink(destination: DiagnosticsSettingsView()) {
+              Text("Diagnostics")
+            }
           },
           footer: "A running log of sync and playback events, useful when reporting a problem."
         )
