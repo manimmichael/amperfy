@@ -21,7 +21,9 @@ struct MarkDiagnosticMomentIntent: AppIntent {
   static let intentClassName = "MarkDiagnosticMomentIntent"
   static let title: LocalizedStringResource = "Flag a Moment"
   static let description =
-    IntentDescription("Marks the current moment in Cassette's diagnostic log, making it easy to find what the app was doing.")
+    IntentDescription(
+      "Marks the current moment in Cassette's diagnostic log, making it easy to find what the app was doing."
+    )
 
   // Stay in the background — the point is to flag without interrupting playback
   // or pulling a driver into the app.

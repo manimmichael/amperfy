@@ -100,6 +100,8 @@ enum CassetteAlbumGrouping: String, CaseIterable {
   case sectioned
 }
 
+// MARK: - CassetteAlbumGroupingProvider
+
 enum CassetteAlbumGroupingProvider {
   /// Below this owned-album count, `auto` flattens the grid. Tunable.
   static let threshold = 60

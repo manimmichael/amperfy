@@ -148,7 +148,7 @@ class BasicTableViewController: KeyCommandTableViewController {
   /// so the normal scroll-driven layout/alpha resumes and a cancelled swipe
   /// behaves exactly as before. If there is no transition coordinator (a
   /// non-animated pop), the flag still clears synchronously.
-  func freezeCollapsingHeaderForPopTransition(restoreOnCancel: @escaping () -> Void) {
+  func freezeCollapsingHeaderForPopTransition(restoreOnCancel: @escaping () -> ()) {
     isHeaderTransitionFrozen = true
     // round 7f: freeze the LAYOUT ONLY. The title needs no pop-specific handling
     // anymore — updateAlpha hides the titleView (isHidden) whenever it is fully
@@ -164,7 +164,7 @@ class BasicTableViewController: KeyCommandTableViewController {
     }
     coordinator.animate(alongsideTransition: nil) { [weak self] context in
       guard let self else { return }
-      self.isHeaderTransitionFrozen = false
+      isHeaderTransitionFrozen = false
       if context.isCancelled {
         // The swipe was reversed — resume normal scroll-driven layout/alpha.
         restoreOnCancel()

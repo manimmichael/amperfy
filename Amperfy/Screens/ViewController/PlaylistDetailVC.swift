@@ -267,8 +267,8 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       freezeCollapsingHeaderForPopTransition { [weak self] in
         guard let self else { return }
         // On a cancelled swipe, resume normal scroll-driven layout/alpha.
-        self.detailOperationsView?.resizeToFit()
-        self.updateStickyHeaderAlpha()
+        detailOperationsView?.resizeToFit()
+        updateStickyHeaderAlpha()
       }
     }
   }

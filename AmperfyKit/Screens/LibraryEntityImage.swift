@@ -38,7 +38,10 @@ extension LibraryEntityImage {
     // thread (it fires on every track change via NowPlayingInfoCenterHandler).
     // Cache-first, so repeat calls are free.
     if let fullPath = libraryEntity.imagePath(setting: artworkDisplayPreference) {
-      let sourcePath = CoverImageStore.preferredSourcePath(forFullPath: fullPath, smallSurface: true)
+      let sourcePath = CoverImageStore.preferredSourcePath(
+        forFullPath: fullPath,
+        smallSurface: true
+      )
       if useCache, let cachedImg = Self.cache.object(forKey: sourcePath as NSString) {
         return cachedImg
       }
@@ -349,25 +352,41 @@ public enum CoverImageStore {
     return UIImage(cgImage: normalized)
   }
 
-  /// Whether raw bytes fully decode to an image. Forces an actual decode (not
-  /// just a header read) so truncated/corrupt data is rejected. Used to gate
+  /// Longest-side cap for the decodability probe below. An unbounded full decode
+  /// (`CGImageSourceCreateImageAtIndex(src, 0, nil)`) allocates the source's
+  /// entire bitmap — a 6000² cover ≈ 144MB RGBA — which can be jettisoned under
+  /// memory pressure and is exactly what dropped oversized covers on the phone.
+  /// Probing with a bounded thumbnail proves the bytes decode at a fraction of
+  /// the cost, so an oversized/hostile cover can never take the accept path down
+  /// regardless of what the server sends.
+  public static let decodeProbeMaxPixel = 2048
+
+  /// Whether `src` decodes to a real image WITHOUT ever allocating the full-
+  /// resolution bitmap. `kCGImageSourceCreateThumbnailFromImageAlways` forces a
+  /// genuine decode (so truncated/corrupt data is still rejected), bounded to
+  /// `decodeProbeMaxPixel`.
+  private static func sourceDecodes(_ src: CGImageSource) -> Bool {
+    guard CGImageSourceGetCount(src) > 0 else { return false }
+    let opts: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceThumbnailMaxPixelSize: decodeProbeMaxPixel,
+    ]
+    return CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) != nil
+  }
+
+  /// Whether raw bytes decode to an image. Forces an actual (bounded) decode, not
+  /// just a header read, so truncated/corrupt data is rejected. Used to gate
   /// every cover write — a download that doesn't decode must never overwrite a
   /// good cover (Rule 1) and falls to the placeholder, never a broken file (§5).
   public static func isDecodable(_ data: Data) -> Bool {
-    guard let src = CGImageSourceCreateWithData(data as CFData, nil),
-          CGImageSourceGetCount(src) > 0,
-          CGImageSourceCreateImageAtIndex(src, 0, nil) != nil
-    else { return false }
-    return true
+    guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
+    return sourceDecodes(src)
   }
 
-  /// Whether the file at `url` fully decodes to an image (forces a real decode).
+  /// Whether the file at `url` decodes to an image (forces a bounded real decode).
   public static func isDecodable(fileURL url: URL) -> Bool {
-    guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-          CGImageSourceGetCount(src) > 0,
-          CGImageSourceCreateImageAtIndex(src, 0, nil) != nil
-    else { return false }
-    return true
+    guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
+    return sourceDecodes(src)
   }
 
   /// Pixel dimensions of an image file via ImageIO (header only — no decode).

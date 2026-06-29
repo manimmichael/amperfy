@@ -41,6 +41,17 @@ public struct AppSettings: Sendable, Codable {
     get { _librarySyncVersion }
     set { _librarySyncVersion = newValue }
   }
+
+  // Cassette (Phase 1, Gap 1): the last device-album-grouping model version the
+  // regroup applied. Optional backing so existing installs (whose persisted blob
+  // predates this key) still decode cleanly via decodeIfPresent — a non-optional
+  // field would fail to decode and silently reset every app setting. Exposed as a
+  // plain Int (0 == never applied).
+  private var _appliedGroupingModelVersion: Int?
+  public var appliedGroupingModelVersion: Int {
+    get { _appliedGroupingModelVersion ?? 0 }
+    set { _appliedGroupingModelVersion = newValue }
+  }
 }
 
 // MARK: - UserSettings

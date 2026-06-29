@@ -193,11 +193,14 @@ struct EqualizerSettingsView_Previews: PreviewProvider {
 struct EqualizerPanelView: View {
   @ObservedObject
   var ambientModel: AmbientBackdropModel
-  var onDone: () -> Void
+  var onDone: () -> ()
 
-  @State private var active: EqualizerSetting = .off
-  @State private var gains: [CGFloat] = EqualizerSetting.frequencies.map { _ in 0.0 }
-  @State private var bypassed = false
+  @State
+  private var active: EqualizerSetting = .off
+  @State
+  private var gains: [CGFloat] = EqualizerSetting.frequencies.map { _ in 0.0 }
+  @State
+  private var bypassed = false
 
   private var labels: [String] {
     EqualizerSetting.frequencies.map { $0 < 1000 ? "\(Int($0))" : "\(Int($0 / 1000))k" }

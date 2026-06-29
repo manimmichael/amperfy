@@ -133,8 +133,10 @@ public class NowPlayingInfoCenterHandler {
     info[MPMediaItemPropertyPlaybackDuration] = backendAudioPlayer.duration
     info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = backendAudioPlayer.elapsedTime
     info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = NSNumber(value: 1.0)
-    info[MPNowPlayingInfoPropertyPlaybackRate] = NSNumber(value: backendAudioPlayer.playbackRate
-      .asDouble)
+    info[MPNowPlayingInfoPropertyPlaybackRate] = NSNumber(
+      value: backendAudioPlayer.playbackRate
+        .asDouble
+    )
     nowPlayingInfoCenter.nowPlayingInfo = info
   }
 

@@ -42,12 +42,15 @@ struct PlaybackSettingsView: View {
           }
         }
 
-        SettingsSection(content: {
-          SettingsCheckBoxRow(
-            title: "Keep songs you stream",
-            isOn: $settings.isPlayerAutoCachePlayedItems
-          )
-        }, footer: "Save a copy on this device of anything you stream in Server Mode, so it's there next time without using data.")
+        SettingsSection(
+          content: {
+            SettingsCheckBoxRow(
+              title: "Keep songs you stream",
+              isOn: $settings.isPlayerAutoCachePlayedItems
+            )
+          },
+          footer: "Save a copy on this device of anything you stream in Server Mode, so it's there next time without using data."
+        )
 
         // cassette §2 (decision answer): the Mac-only "Mini Player Always on
         // Top" control was collateral when the Display screen was removed.

@@ -116,8 +116,8 @@ extension CarPlaySceneDelegate {
       // time. Match by stableID, preferring the live item so playback uses a
       // current managed object when one still exists.
       let renderedItems = isDetailTemplate
-        ? (self.homeDetailRowData[section] ?? [])
-        : (self.homeRowData[section] ?? [])
+        ? (homeDetailRowData[section] ?? [])
+        : (homeRowData[section] ?? [])
       guard index >= 0, index < renderedItems.count else { completion(); return }
       let tappedID = renderedItems[index].stableID
       let liveItem = sharedHome.data[section]?.first { $0.stableID == tappedID }

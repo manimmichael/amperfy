@@ -86,7 +86,8 @@ class SsSongParserDelegate: SsPlayableParserDelegate {
           songBuffer.artist = guessedArtist
         } else if let prefetchedArtist = prefetch.prefetchedLocalArtistDict[artistName] {
           songBuffer.artist = prefetchedArtist
-        } else if let existingArtist = library.getArtistByExactName(for: account, name: artistName) {
+        } else if let existingArtist = library
+          .getArtistByExactName(for: account, name: artistName) {
           prefetch.prefetchedLocalArtistDict[artistName] = existingArtist
           songBuffer.artist = existingArtist
         } else {

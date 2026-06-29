@@ -77,8 +77,8 @@ enum AmbientBackdropCache {
   }
 }
 
-private extension UIImage {
-  func ambientDownsampled(maxDimension: CGFloat) -> UIImage {
+extension UIImage {
+  fileprivate func ambientDownsampled(maxDimension: CGFloat) -> UIImage {
     let longest = max(size.width, size.height)
     guard longest > maxDimension else { return self }
     let scale = maxDimension / longest
@@ -94,7 +94,7 @@ private extension UIImage {
   /// image off-main (CIGaussianBlur on a 32px source is trivial). The soft
   /// blur + the later bilinear upscale-to-fill reproduce the old `.blur(70)`
   /// lamp look without an on-main render-time blur.
-  func ambientDownsampledBlurred(maxDimension: CGFloat, blurRadius: Double) -> UIImage {
+  fileprivate func ambientDownsampledBlurred(maxDimension: CGFloat, blurRadius: Double) -> UIImage {
     let small = ambientDownsampled(maxDimension: maxDimension)
     guard let input = CIImage(image: small) else { return small }
     let cropExtent = input.extent
@@ -117,19 +117,25 @@ private extension UIImage {
 final class AmbientBackdropModel: ObservableObject {
   /// Stable id for the current artwork (artwork image path, or a placeholder
   /// key). Drives the cross-fade and the downsample cache key.
-  @Published var coverID: String = "ambient-placeholder"
+  @Published
+  var coverID: String = "ambient-placeholder"
   /// The resolved cover image, OR the on-brand placeholder image. One path.
-  @Published var image: UIImage?
-  @Published var isPlaying: Bool = false
+  @Published
+  var image: UIImage?
+  @Published
+  var isPlaying: Bool = false
 }
 
 // MARK: - AmbientCoverBackdrop
 
 struct AmbientCoverBackdrop: View {
-  @ObservedObject var model: AmbientBackdropModel
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ObservedObject
+  var model: AmbientBackdropModel
+  @Environment(\.accessibilityReduceMotion)
+  private var reduceMotion
 
-  @State private var tiny: UIImage?
+  @State
+  private var tiny: UIImage?
 
   /// Warm-dark base — the popup player's own background token, so the scrim
   /// and the dim areas blend seamlessly into the room.
@@ -158,8 +164,10 @@ struct AmbientCoverBackdrop: View {
         }
         .transition(.opacity)
         .id(model.coverID)
-        .animation(reduceMotion ? .easeInOut(duration: 0.3) : .easeInOut(duration: 0.6),
-                   value: model.coverID)
+        .animation(
+          reduceMotion ? .easeInOut(duration: 0.3) : .easeInOut(duration: 0.6),
+          value: model.coverID
+        )
       }
 
       // Warm scrim: keep the room dim and the title/controls legible. Radial

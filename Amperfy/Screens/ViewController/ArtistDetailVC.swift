@@ -420,8 +420,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
       freezeCollapsingHeaderForPopTransition { [weak self] in
         guard let self else { return }
         // On a cancelled swipe, resume normal scroll-driven layout/alpha.
-        self.detailOperationsView?.resizeToFit()
-        self.updateStickyHeaderAlpha()
+        detailOperationsView?.resizeToFit()
+        updateStickyHeaderAlpha()
       }
     }
     albumsFetchedResultsController?.delegate = nil
@@ -539,7 +539,10 @@ class ArtistDetailVC: MultiSourceTableViewController {
           equalTo: container.trailingAnchor,
           constant: -UIView.defaultMarginCellX
         ),
-        divider.heightAnchor.constraint(equalToConstant: 1.0 / max(traitCollection.displayScale, 1.0)),
+        divider.heightAnchor.constraint(equalToConstant: 1.0 / max(
+          traitCollection.displayScale,
+          1.0
+        )),
       ])
     }
     return container
@@ -570,9 +573,9 @@ class ArtistDetailVC: MultiSourceTableViewController {
     albumsReloadScheduled = true
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
-      self.albumsReloadScheduled = false
-      guard self.tableView.numberOfSections > BodySection.albums.rawValue else { return }
-      self.tableView.reloadSections(IndexSet(integer: BodySection.albums.rawValue), with: .none)
+      albumsReloadScheduled = false
+      guard tableView.numberOfSections > BodySection.albums.rawValue else { return }
+      tableView.reloadSections(IndexSet(integer: BodySection.albums.rawValue), with: .none)
     }
   }
 
@@ -603,8 +606,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
       ) as! AlbumCarouselTableCell
       cell.configure(albums: allArtistAlbums()) { [weak self] album in
         guard let self else { return }
-        self.navigationController?.pushViewController(
-          AppStoryboard.Main.segueToAlbumDetail(account: self.account, album: album),
+        navigationController?.pushViewController(
+          AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
           animated: true
         )
       }

@@ -412,6 +412,7 @@ extension PopupPlayerVC: MusicPlayable {
     // Patch 112: settle the ambient backlight intensity when paused.
     ambientBackdropModel.isPlaying = player.isPlaying
   }
+
   func didElapsedTimeChange() {}
 
   func didLyricsTimeChange(time: CMTime) {

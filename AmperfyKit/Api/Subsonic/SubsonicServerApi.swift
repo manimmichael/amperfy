@@ -375,11 +375,22 @@ final class SubsonicServerApi: URLCleanser, Sendable {
 
   public func generateUrl(forArtworkId id: String) async throws -> URL {
     let version = try await determineApiVersionToUse()
-    return try createUrl(from: try createAuthApiUrlComponent(
+    var urlComp = try createAuthApiUrlComponent(
       version: version,
       forAction: "getCoverArt",
       id: id
-    ))
+    )
+    // cassette: request a bounded cover instead of the full-resolution original.
+    // Navidrome clamps the requested size DOWN to the source's longest side and
+    // never upscales, so conforming covers are served byte-for-byte unchanged and
+    // only oversized imports (e.g. a 6000² cover that decodes to ~144MB and gets
+    // the phone jettisoned under memory pressure) are downsized on serve.
+    // heroMaxPixel is the largest size any surface renders — the album-detail hero
+    // and the now-playing/lock-screen image, which getImageToDisplayImmediately
+    // downsamples to ≤heroMaxPixel before handing it to MPMediaItemArtwork — so a
+    // larger request would buy no visible sharpness anywhere, only decode risk.
+    urlComp.addQueryItem(name: "size", value: CoverImageStore.heroMaxPixel)
+    return try createUrl(from: urlComp)
   }
 
   private func requestServerApiVersionPromise(

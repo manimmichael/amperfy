@@ -224,14 +224,14 @@ extension PopupPlayerVC {
         guard let self, let thumb else { return }
         // Staleness guard: only apply if the live track's cover is still this
         // one (a newer track may have started while we decoded).
-        let currentPath = self.player.currentlyPlaying.flatMap { current -> String? in
+        let currentPath = player.currentlyPlaying.flatMap { current -> String? in
           let s = self.appDelegate.storage.settings.accounts
             .getSetting(current.account?.info).read
           return current.imagePath(setting: s.artworkDisplayPreference)
         }
         guard currentPath == artworkPath else { return }
-        self.ambientBackdropModel.image = thumb
-        self.ambientBackdropModel.coverID = coverID
+        ambientBackdropModel.image = thumb
+        ambientBackdropModel.coverID = coverID
       }
     } else {
       // No cover on disk → the on-brand generated placeholder is in-memory and

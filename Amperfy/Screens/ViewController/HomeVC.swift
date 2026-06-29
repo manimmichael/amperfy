@@ -364,8 +364,8 @@ final class HomeVC: UICollectionViewController {
   /// card, set in DM Mono caps like the app's other data labels.
   private static func greetingText() -> String {
     switch Calendar.current.component(.hour, from: Date()) {
-    case 5..<12: return "GOOD MORNING"
-    case 12..<18: return "GOOD AFTERNOON"
+    case 5 ..< 12: return "GOOD MORNING"
+    case 12 ..< 18: return "GOOD AFTERNOON"
     default: return "GOOD EVENING"
     }
   }

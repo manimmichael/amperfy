@@ -50,7 +50,8 @@ struct AppIconSettingsView: View {
             .padding(.vertical, 8)
           },
           footer: AppIconOption.all.count > 1
-            ? "Choose how Cassette looks on your Home Screen. iOS shows a brief confirmation when the icon changes."
+            ?
+            "Choose how Cassette looks on your Home Screen. iOS shows a brief confirmation when the icon changes."
             : "More icons are on the way."
         )
       }

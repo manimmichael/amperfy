@@ -1,0 +1,186 @@
+//
+//  AlbumRegrouperTest.swift
+//  AmperfyKitTests
+//
+//  Cassette fork — Phase 1 (Gap 1): device album grouping. Proves the Job 4
+//  outcomes against the in-memory Core Data stack: a split album collapses to
+//  one group-key album, a box-set pair stays two albums (catalog-blind), the
+//  owned-track count is invariant, and an unowned "ghost" album is untouched.
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+
+@testable import AmperfyKit
+import CoreData
+import XCTest
+
+@MainActor
+class AlbumRegrouperTest: XCTestCase {
+  var cdHelper: CoreDataHelper!
+  var library: LibraryStorage!
+  var account: Account!
+  var context: NSManagedObjectContext!
+
+  override func setUp() async throws {
+    cdHelper = CoreDataHelper()
+    library = cdHelper.createSeededStorage()
+    account = library.getAccount(info: TestAccountInfo.create1())
+    context = cdHelper.persistentContainer.viewContext
+  }
+
+  // A library album as materialization produces it: keyed by a Subsonic id.
+  @discardableResult
+  private func seedAlbum(id: String, name: String) -> Album {
+    let a = library.createAlbum(account: account)
+    a.id = id
+    a.name = name
+    return a
+  }
+
+  // A song on `album`. When owned, a DeviceOwnership row carries its Subsonic id
+  // (SongMO.id == DeviceOwnership.subsonicTrackId). Returns the Subsonic id.
+  @discardableResult
+  private func seedSong(id: String, album: Album, owned: Bool) -> String {
+    let s = library.createSong(account: account)
+    s.id = id
+    s.album = album
+    if owned {
+      let mo = DeviceOwnershipMO(context: context)
+      mo.cassetteLocalId = "lid-\(id)"
+      mo.subsonicTrackId = id
+      mo.mbid = nil
+      mo.filePath = "lid-\(id).mp3"
+      mo.downloadedAt = Date()
+      mo.fileSizeBytes = 0
+    }
+    return id
+  }
+
+  // Build a grouping item directly. The group key carries a real NUL separator
+  // (as buildAlbumGroupKey emits) — fine in a Swift String, so the synthesized
+  // memberwise init (internal, reachable via @testable) is used rather than JSON
+  // (JSON rejects an unescaped control character).
+  private func item(
+    sid: String, key: String, album: String, artist: String
+  )
+    -> CassetteDeviceGroupingItem {
+    CassetteDeviceGroupingItem(
+      cassetteLocalId: "lid-\(sid)",
+      subsonicTrackId: sid,
+      groupKey: key,
+      displayAlbum: album,
+      displayArtist: artist,
+      albumArtRef: nil
+    )
+  }
+
+  // NUL-separated keys, exactly as buildAlbumGroupKey emits them.
+  private let laufeyKey = "laufey\u{0}a matter of time the final hour"
+  private let hybridKey = "linkin park\u{0}hybrid theory"
+  private let meteoraKey = "linkin park\u{0}meteora"
+
+  /// Seed the Job 4 scenario and return the grouping payload + the owned set.
+  private func seedScenario() -> [CassetteDeviceGroupingItem] {
+    var items: [CassetteDeviceGroupingItem] = []
+
+    // Laufey: TWO Subsonic albums (main 3 tracks + a 1-track "Clockwork" split)
+    // that share ONE group key.
+    let laMain = seedAlbum(id: "subs-la-main", name: "A Matter of Time: The Final Hour")
+    let laClock = seedAlbum(id: "subs-la-clock", name: "Clockwork")
+    for i in 1 ... 3 {
+      let sid = seedSong(id: "la-\(i)", album: laMain, owned: true)
+      items.append(item(
+        sid: sid,
+        key: laufeyKey,
+        album: "A Matter of Time: The Final Hour",
+        artist: "Laufey"
+      ))
+    }
+    let lc = seedSong(id: "la-clock", album: laClock, owned: true)
+    items.append(item(
+      sid: lc,
+      key: laufeyKey,
+      album: "A Matter of Time: The Final Hour",
+      artist: "Laufey"
+    ))
+
+    // Linkin Park: Hybrid Theory + Meteora → DISTINCT keys (must NOT merge).
+    let ht = seedAlbum(id: "subs-ht", name: "Hybrid Theory")
+    let me = seedAlbum(id: "subs-me", name: "Meteora")
+    let htS = seedSong(id: "ht-1", album: ht, owned: true)
+    items.append(item(sid: htS, key: hybridKey, album: "Hybrid Theory", artist: "Linkin Park"))
+    let meS = seedSong(id: "me-1", album: me, owned: true)
+    items.append(item(sid: meS, key: meteoraKey, album: "Meteora", artist: "LINKIN PARK"))
+
+    // Eve 6 GHOST: an album with an UNOWNED song, absent from the payload. The
+    // regroup must leave it entirely alone (Phase 2 prunes ghosts, not Phase 1).
+    let eve = seedAlbum(id: "subs-eve", name: "Horrorscope")
+    _ = seedSong(id: "eve-ghost", album: eve, owned: false)
+
+    try! context.save()
+    return items
+  }
+
+  func testRegroupCollapsesSplitKeepsBoxSetSeparatePreservesGhost() throws {
+    let items = seedScenario()
+    let manager = DeviceOwnershipManager(context: context)
+    let ownedBefore = manager.fetchAllSubsonicTrackIds()
+    XCTAssertEqual(ownedBefore.count, 6) // Laufey 4 + Hybrid 1 + Meteora 1
+    let songsBefore = library.getSongs(for: account).count
+
+    let summary = AlbumRegrouper(context: context).regroup(items: items, accountInfo: account.info)
+
+    // Laufey → ONE album, all 4 owned tracks (live tracklist + cached count),
+    // label == display_album.
+    let laufey = library.getAlbum(for: account, id: laufeyKey, isDetailFaultResolution: false)
+    XCTAssertNotNil(laufey, "Laufey group album exists")
+    XCTAssertEqual(laufey?.songs.count, 4, "all Laufey tracks collapse onto one album")
+    XCTAssertEqual(laufey?.songCount, 4, "cached song count refreshed")
+    XCTAssertEqual(laufey?.name, "A Matter of Time: The Final Hour")
+    // The split legacy albums are emptied and removed.
+    XCTAssertNil(library.getAlbum(for: account, id: "subs-la-main", isDetailFaultResolution: false))
+    XCTAssertNil(library.getAlbum(
+      for: account,
+      id: "subs-la-clock",
+      isDetailFaultResolution: false
+    ))
+
+    // Hybrid Theory and Meteora stay TWO separate albums.
+    let ht = library.getAlbum(for: account, id: hybridKey, isDetailFaultResolution: false)
+    let me = library.getAlbum(for: account, id: meteoraKey, isDetailFaultResolution: false)
+    XCTAssertNotNil(ht)
+    XCTAssertNotNil(me)
+    XCTAssertEqual(ht?.songCount, 1)
+    XCTAssertEqual(me?.songCount, 1)
+    XCTAssertNotEqual(hybridKey, meteoraKey)
+
+    // Eve 6 ghost untouched — proves nothing was removed.
+    XCTAssertNotNil(
+      library.getAlbum(for: account, id: "subs-eve", isDetailFaultResolution: false),
+      "Eve 6 ghost still present"
+    )
+
+    // Owned-track count + total song count invariant.
+    XCTAssertEqual(manager.fetchAllSubsonicTrackIds(), ownedBefore, "owned set unchanged")
+    XCTAssertEqual(library.getSongs(for: account).count, songsBefore, "no song added/removed")
+    XCTAssertEqual(summary.movedSongs, 6)
+    XCTAssertEqual(summary.groups, 3)
+    XCTAssertEqual(summary.deletedAlbums, 4) // 2 Laufey + Hybrid + Meteora legacy albums
+  }
+
+  func testRegroupIsIdempotent() throws {
+    let items = seedScenario()
+    let regrouper = AlbumRegrouper(context: context)
+    _ = regrouper.regroup(items: items, accountInfo: account.info)
+    let second = regrouper.regroup(items: items, accountInfo: account.info)
+    XCTAssertEqual(second.movedSongs, 0, "second run is a no-op")
+    XCTAssertEqual(second.deletedAlbums, 0)
+    XCTAssertEqual(
+      library.getAlbum(for: account, id: laufeyKey, isDetailFaultResolution: false)?.songCount,
+      4
+    )
+  }
+}

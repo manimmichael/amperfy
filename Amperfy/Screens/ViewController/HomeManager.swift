@@ -548,7 +548,11 @@ class HomeManager: NSObject {
     }
     data[.yourPlaylists] = playlistMOs.prefix(Self.shelfCarouselCap)
       .compactMap { Playlist(library: storage.main.library, managedObject: $0) }
-      .map { HomeItem(section: .yourPlaylists, stableID: Self.stableID(for: $0), playableContainable: $0) }
+      .map { HomeItem(
+        section: .yourPlaylists,
+        stableID: Self.stableID(for: $0),
+        playableContainable: $0
+      ) }
     applySnapshotCB?()
   }
 

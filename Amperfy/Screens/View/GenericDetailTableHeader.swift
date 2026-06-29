@@ -164,7 +164,7 @@ class GenericDetailTableHeader: UIView {
       x: 0,
       y: 0,
       width: configuration.rootView.view.bounds.size.width,
-      height: 1000  // corrected in viewDidLayoutSubviews once nav bar geometry is available
+      height: 1000 // corrected in viewDidLayoutSubviews once nav bar geometry is available
     ))
     header.prepare(configuration: configuration)
     configuration.tableView.tableHeaderView = header
@@ -270,7 +270,8 @@ class GenericDetailTableHeader: UIView {
     // pins stay required — they drive the self-sizing height and never
     // conflict with a width-0 pass.
     let leadingPin = mainStack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor)
-    let trailingPin = mainStack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor)
+    let trailingPin = mainStack.trailingAnchor
+      .constraint(equalTo: layoutMarginsGuide.trailingAnchor)
     leadingPin.priority = UILayoutPriority(999)
     trailingPin.priority = UILayoutPriority(999)
 

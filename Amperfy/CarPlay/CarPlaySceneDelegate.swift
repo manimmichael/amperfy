@@ -152,8 +152,8 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
           // `.accountActiveChanged(nil)` (auth blip) while accounts still
           // exist, must NOT resetFetchController / setRootTemplate — that's the
           // mid-drive "reset to Home, audio off" symptom.
-          let current: AccountInfo? = self.activeAccountInfo
-          if self.didApplyInitialRoot {
+          let current: AccountInfo? = activeAccountInfo
+          if didApplyInitialRoot {
             if accountInfo == current { return }
             if accountInfo == nil,
                !appDelegate.storage.settings.accounts.allAccounts.isEmpty {
@@ -165,7 +165,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
               return
             }
           }
-          self.didApplyInitialRoot = true
+          didApplyInitialRoot = true
 
           resetFetchController()
           activeAccountInfo = accountInfo

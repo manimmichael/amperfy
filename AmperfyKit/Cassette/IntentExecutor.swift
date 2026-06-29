@@ -144,7 +144,34 @@ public final class IntentExecutor {
     // Sync Reconciliation (Phase 1): report the device's COMPLETE owned-set so
     // the server's "actual" inventory self-heals from any missed differential
     // report or out-of-band deletion. Throttled — see fullInventoryReportMinInterval.
-    await reportFullInventoryIfDue()
+    // The response carries the catalog-blind album grouping (Phase 1, Gap 1) —
+    // apply it so the device's albums match the web.
+    let inventoryResponse = await reportFullInventoryIfDue()
+    if let inventoryResponse {
+      await applyAlbumGrouping(inventoryResponse)
+    }
+  }
+
+  /// Pull-to-refresh entry point (B2). Drives the full on-demand convergence
+  /// chain so the user's gesture reflects the Mac's CURRENT disk: (1) ask the
+  /// paired Player's sidecar to re-read the disk and push the refreshed index to
+  /// the cloud (scan-first convergence over the LAN), then (2) re-report this
+  /// device's full inventory (foreground throttle bypassed) and apply the intents
+  /// the cloud reconcile produces. Best-effort throughout — if the sidecar is
+  /// unreachable or its port is unknown, convergeOnPlayer returns a non-fatal
+  /// result and we still fall through to the normal poll, so the refresh degrades
+  /// to lazy convergence (watcher + heartbeat) rather than failing.
+  ///
+  /// Wire the library view's pull-to-refresh (UIRefreshControl / .refreshable)
+  /// to `await …intentExecutor.convergeAndRefresh()`.
+  public func convergeAndRefresh() async {
+    let serverUrl = AmperKit.shared.storage.settings.accounts.activeSetting.read
+      .loginCredentials?.serverUrl
+    _ = await CassetteSyncAPI.shared.convergeOnPlayer(serverUrl: serverUrl)
+    // Force a fresh full-inventory report (bypass the throttle) so the cloud
+    // reconcile runs against current truth, then apply what it queued.
+    lastFullInventoryReportAt = nil
+    await handlePendingIntents()
   }
 
   /// Post the device's complete owned-set (full-state inventory) to the server,
@@ -153,10 +180,10 @@ public final class IntentExecutor {
   /// the snapshot and stamps `inventory_as_of` (the reconciler's freshness
   /// signal). Best-effort: a failure just retries on the next poll, and the
   /// per-transfer differential report keeps the server live in the meantime.
-  private func reportFullInventoryIfDue() async {
+  private func reportFullInventoryIfDue() async -> CassetteDeviceInventoryResponse? {
     if let last = lastFullInventoryReportAt,
        Date().timeIntervalSince(last) < fullInventoryReportMinInterval {
-      return
+      return nil
     }
 
     let manager = DeviceOwnershipManager(context: AmperKit.shared.storage.main.context)
@@ -165,7 +192,7 @@ public final class IntentExecutor {
       items = try manager.fetchAllInventory()
     } catch {
       print("Cassette poll: full-inventory snapshot failed - \(error.localizedDescription)")
-      return
+      return nil
     }
 
     // A full-state report is a complete snapshot; the server replaces the
@@ -175,23 +202,63 @@ public final class IntentExecutor {
     // go live) orphan the rest. Skip instead; the differential report keeps the
     // server live, and the freshness gate treats a missing snapshot as stale.
     if items.count > 5000 {
-      print("Cassette poll: skipping full-state inventory — \(items.count) items exceeds the 5000 server cap")
-      return
+      print(
+        "Cassette poll: skipping full-state inventory — \(items.count) items exceeds the 5000 server cap"
+      )
+      return nil
     }
 
     let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? "unknown-device"
     let deviceLabel = UIDevice.current.name
     do {
-      try await api.reportFullInventory(
+      let response = try await api.reportFullInventory(
         deviceId: deviceId,
         deviceLabel: deviceLabel,
         items: items
       )
       lastFullInventoryReportAt = Date()
       print("Cassette poll: reported full-state inventory (\(items.count) item(s))")
+      return response
     } catch {
       print("Cassette poll: full-state inventory report failed - \(error.localizedDescription)")
+      return nil
     }
+  }
+
+  /// Apply the catalog-blind album grouping (Phase 1, Gap 1) the cloud returned
+  /// on the inventory report: collapse owned songs onto their group-key albums so
+  /// the device's albums match the web. Idempotent; runs on every sync that
+  /// returns grouping. Records the applied model version for diagnostics.
+  private func applyAlbumGrouping(_ response: CassetteDeviceInventoryResponse) async {
+    guard !response.grouping.isEmpty else { return }
+    guard let accountInfo = AmperKit.shared.storage.settings.accounts.active else { return }
+
+    let context = AmperKit.shared.storage.main.context
+    let summary = AlbumRegrouper(context: context).regroup(
+      items: response.grouping,
+      accountInfo: accountInfo
+    )
+
+    if AmperKit.shared.storage.settings.app.appliedGroupingModelVersion
+      != response.groupingModelVersion {
+      AmperKit.shared.storage.settings.app.appliedGroupingModelVersion =
+        response.groupingModelVersion
+    }
+
+    print(
+      "Cassette regroup: model v\(response.groupingModelVersion) — moved " +
+        "\(summary.movedSongs) song(s), removed \(summary.deletedAlbums) legacy album(s), " +
+        "\(summary.groups) group(s)"
+    )
+    os_log(
+      "regroup v%d moved=%d deletedAlbums=%d groups=%d",
+      log: self.log,
+      type: .info,
+      response.groupingModelVersion,
+      summary.movedSongs,
+      summary.deletedAlbums,
+      summary.groups
+    )
   }
 
   /// Fast Album Art backfill: albums already on the device whose cover was
@@ -263,7 +330,8 @@ public final class IntentExecutor {
       for url in entries {
         let stem = (url.lastPathComponent as NSString).deletingPathExtension
         if stem.hasSuffix("_thumb") { continue } // skip thumbs themselves
-        if FileManager.default.fileExists(atPath: CoverImageStore.thumbPath(forFullPath: url.path)) {
+        if FileManager.default
+          .fileExists(atPath: CoverImageStore.thumbPath(forFullPath: url.path)) {
           continue
         }
         CoverImageStore.ensureThumb(forFullPath: url.path)
@@ -436,14 +504,21 @@ public final class IntentExecutor {
           force: force
         )
       }
+      // D3: only record the applied version when the COVER is settled (succeeded,
+      // already valid on disk, or intentionally absent). A failed/bailed cover
+      // returns false, so we leave the version unrecorded and the next poll
+      // re-tries — instead of permanently remembering a blank as "done". (No
+      // cover URL ⇒ nothing to gate ⇒ settled.)
+      var coverSettled = true
       if let coverUrl = job.coverUrl {
-        await materializeAlbumCover(
+        coverSettled = await materializeAlbumCover(
           coverUrl: coverUrl,
           subsonicIds: job.subsonicIds,
           accountInfo: accountInfo,
           force: force
         )
       }
+      guard coverSettled else { continue } // retry on the next poll; don't record
       setAppliedArtworkVersion(job.contentVersion, forAlbumKey: job.albumKey)
       appliedThisPass.insert(job.albumKey)
       refreshed += 1
@@ -520,8 +595,10 @@ public final class IntentExecutor {
   }
 
   private func setAppliedArtworkVersion(_ version: String, forAlbumKey albumKey: String) {
-    var map = (UserDefaults.standard
-      .dictionary(forKey: Self.appliedArtworkVersionsKey) as? [String: String]) ?? [:]
+    var map = (
+      UserDefaults.standard
+        .dictionary(forKey: Self.appliedArtworkVersionsKey) as? [String: String]
+    ) ?? [:]
     map[albumKey] = version
     UserDefaults.standard.set(map, forKey: Self.appliedArtworkVersionsKey)
   }
@@ -669,16 +746,25 @@ public final class IntentExecutor {
   /// true` to BYPASS the "already .CustomImage on disk" gate so a CHANGED cover
   /// overwrites the old file (content reconciliation increment 2); the default
   /// preserves the absence-only transfer behavior.
+  /// Returns true when the cover is SETTLED (materialized now, already valid on
+  /// disk, or intentionally absent by preference) and the caller may record the
+  /// content version; false on a RETRYABLE failure (no Core Data album yet,
+  /// download/decode/write failure) so the version is NOT recorded and the next
+  /// poll re-tries (D3 — a failed cover must never be remembered as done).
+  @discardableResult
   private func materializeAlbumCover(
     coverUrl: String,
     subsonicIds: [String],
     accountInfo: AccountInfo,
     force: Bool = false
-  ) async {
-    // Honor the artwork-download preference (e.g. user set it to "never").
+  ) async
+    -> Bool {
+    // Honor the artwork-download preference (e.g. user set it to "never"). Settled
+    // (true): intentionally no cover, so don't retry every poll against a disabled
+    // preference.
     guard AmperKit.shared.storage.settings.accounts
-      .getSetting(accountInfo).read.artworkDownloadSetting != .never else { return }
-    guard !subsonicIds.isEmpty else { return }
+      .getSetting(accountInfo).read.artworkDownloadSetting != .never else { return true }
+    guard !subsonicIds.isEmpty else { return true }
 
     let context = AmperKit.shared.storage.main.context
 
@@ -687,35 +773,44 @@ public final class IntentExecutor {
     //    UNLESS forcing a refresh (the cover changed in the catalog).
     var artworkObjectID: NSManagedObjectID?
     var remoteInfo: ArtworkRemoteInfo?
+    var alreadyLocalValid = false
     context.performAndWait {
       let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
       request.predicate = NSPredicate(format: "id IN %@", subsonicIds)
       request.fetchLimit = 1
       guard let songMO = try? context.fetch(request).first,
             let artwork = Song(managedObject: songMO).album?.artwork else { return }
+      // D2: skip ONLY when the cached cover is present AND fully decodable. A
+      // truncated/oversized "half renders then black" file is INVALID — fall
+      // through and re-pull under the current cap, replacing the broken artifact.
       if !force,
          artwork.status == .CustomImage,
          let path = artwork.imagePath,
-         FileManager.default.fileExists(atPath: path) {
-        return // already local — nothing to do
+         FileManager.default.fileExists(atPath: path),
+         CoverImageStore.isDecodable(fileURL: URL(fileURLWithPath: path)) {
+        alreadyLocalValid = true
+        return // already local + valid — nothing to do
       }
       artworkObjectID = artwork.managedObject.objectID
       remoteInfo = artwork.remoteInfo
     }
-    guard let artworkObjectID, let remoteInfo else { return }
+    if alreadyLocalValid { return true } // settled — a valid cover is on disk
+    // No resolvable Artwork (the album isn't in Core Data yet) → RETRYABLE: do
+    // not record the version, let the next poll re-try once the album syncs.
+    guard let artworkObjectID, let remoteInfo else { return false }
 
     // 2. Download the full cover (stored verbatim).
-    guard let url = URL(string: coverUrl) else { return }
+    guard let url = URL(string: coverUrl) else { return false }
     let data: Data
     do {
       let (downloaded, response) = try await URLSession.shared.data(from: url)
       guard let http = response as? HTTPURLResponse,
             (200 ..< 300).contains(http.statusCode), !downloaded.isEmpty
-      else { return }
+      else { return false }
       data = downloaded
     } catch {
       print("Cassette poll: cover download failed - \(error.localizedDescription)")
-      return
+      return false
     }
 
     // Rule 1/§5: verify the bytes fully decode before they touch disk. A corrupt
@@ -726,7 +821,7 @@ public final class IntentExecutor {
     // a new cover lands only on verified success.
     guard CoverImageStore.isDecodable(data) else {
       print("Cassette poll: cover download not decodable — leaving existing cover")
-      return
+      return false
     }
 
     // 3. Write the file into the artwork dir and flip the Artwork to
@@ -735,7 +830,7 @@ public final class IntentExecutor {
     let fileManager = CacheFileManager.shared
     guard let relFilePath = fileManager.createRelPath(for: remoteInfo, account: accountInfo),
           let absFilePath = fileManager.getAbsoluteAmperfyPath(relFilePath: relFilePath)
-    else { return }
+    else { return false }
     do {
       try fileManager.writeDataExcludedFromBackup(
         data: data,
@@ -744,7 +839,7 @@ public final class IntentExecutor {
       )
     } catch {
       print("Cassette poll: cover write failed - \(error.localizedDescription)")
-      return
+      return false
     }
     context.performAndWait {
       guard let artworkMO = try? context.existingObject(with: artworkObjectID) as? ArtworkMO
@@ -760,6 +855,7 @@ public final class IntentExecutor {
       CoverImageStore.processStoredCover(fullFileURL: absFilePath)
     }.value
     print("Cassette poll: materialized album cover (\(data.count) bytes)")
+    return true
   }
 
   /// Download the album artist's bundled image and wire it into the artist's

@@ -327,7 +327,7 @@ public class EventLogger {
   /// Map it through so info/debug entries log at the right level.
   private static func osLogType(for logType: LogEntryType) -> OSLogType {
     switch logType {
-    case .error, .apiError: return .error
+    case .apiError, .error: return .error
     case .info: return .info
     case .debug: return .debug
     }

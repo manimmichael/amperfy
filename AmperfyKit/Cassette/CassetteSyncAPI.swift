@@ -37,12 +37,12 @@ public enum CassetteSyncError: Error {
   case invalidResponse
 }
 
-public extension Notification.Name {
+extension Notification.Name {
   /// Posted when a sync request gets a 401 — the bearer token was revoked
   /// (e.g. the device was removed from the account on the dashboard) or
   /// expired. The app shows a one-per-launch "reconnect?" alert that runs
   /// the re-link flow instead of silently dying.
-  static let cassetteTokenRejected = Notification.Name("CassetteTokenRejected")
+  public static let cassetteTokenRejected = Notification.Name("CassetteTokenRejected")
 }
 
 // MARK: - CassetteSyncIntent
@@ -165,6 +165,54 @@ public struct CassetteDeviceArtworkResponse: Sendable, Decodable {
   public let albums: [CassetteDeviceArtworkAlbum]
 }
 
+// MARK: - CassetteDeviceGroupingItem
+
+/// One owned track's catalog-blind album grouping, returned additively on the
+/// `/api/sync/device-inventory` response. `groupKey` is the web's
+/// buildAlbumGroupKey for the track's album bucket — the device keys its AlbumMO
+/// by it so its albums match the web. `displayAlbum`/`displayArtist` are the
+/// web's canonical card labels; `albumArtRef` is the catalog cover URL (or nil →
+/// fall back to the local cover proxy keyed by subsonicTrackId).
+public struct CassetteDeviceGroupingItem: Sendable, Decodable {
+  public let cassetteLocalId: String?
+  public let subsonicTrackId: String
+  public let groupKey: String
+  public let displayAlbum: String
+  public let displayArtist: String
+  public let albumArtRef: String?
+
+  enum CodingKeys: String, CodingKey {
+    case cassetteLocalId = "cassette_local_id"
+    case subsonicTrackId = "subsonic_track_id"
+    case groupKey = "group_key"
+    case displayAlbum = "display_album"
+    case displayArtist = "display_artist"
+    case albumArtRef = "album_art_ref"
+  }
+}
+
+// MARK: - CassetteDeviceInventoryResponse
+
+/// The `/api/sync/device-inventory` response envelope. Both fields are optional
+/// on the wire (older deploys omit them) so this decodes cleanly to an empty
+/// grouping rather than throwing.
+public struct CassetteDeviceInventoryResponse: Sendable, Decodable {
+  public let grouping: [CassetteDeviceGroupingItem]
+  public let groupingModelVersion: Int
+
+  enum CodingKeys: String, CodingKey {
+    case grouping
+    case groupingModelVersion = "grouping_model_version"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    self.grouping = try c
+      .decodeIfPresent([CassetteDeviceGroupingItem].self, forKey: .grouping) ?? []
+    self.groupingModelVersion = try c.decodeIfPresent(Int.self, forKey: .groupingModelVersion) ?? 0
+  }
+}
+
 // MARK: - CassetteAccount
 
 /// The authenticated caller's OWN account identity from `/api/sync/account`.
@@ -179,16 +227,23 @@ public struct CassetteAccount: Sendable, Decodable {
   /// decode so a server that doesn't yet emit the field — or an older deploy —
   /// decodes cleanly as `false` (on-device-only) instead of failing.
   public let serverMode: Bool
+  /// The paired Cassette Player's sidecar HTTP port (default 5173), distinct from
+  /// the Navidrome LAN port (loginCredentials.serverUrl). The phone reaches the
+  /// sidecar at `http://<lanHost>:<sidecarPort>` for on-demand scan-first
+  /// convergence (pull-to-refresh → POST /api/library/converge). Optional decode:
+  /// null when no player is paired or an older sidecar/deploy doesn't emit it.
+  public let sidecarPort: Int?
 
   enum CodingKeys: String, CodingKey {
-    case email, name, serverMode
+    case email, name, serverMode, sidecarPort
   }
 
   public init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
-    email = try c.decode(String.self, forKey: .email)
-    name = try c.decodeIfPresent(String.self, forKey: .name)
-    serverMode = try c.decodeIfPresent(Bool.self, forKey: .serverMode) ?? false
+    self.email = try c.decode(String.self, forKey: .email)
+    self.name = try c.decodeIfPresent(String.self, forKey: .name)
+    self.serverMode = try c.decodeIfPresent(Bool.self, forKey: .serverMode) ?? false
+    self.sidecarPort = try c.decodeIfPresent(Int.self, forKey: .sidecarPort)
   }
 }
 
@@ -227,6 +282,16 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   /// relaunch and offline opens. `nil` until the first successful fetch.
   nonisolated private static let accountNameKey = "cassette.accountName"
   nonisolated private static let accountEmailKey = "cassette.accountEmail"
+  nonisolated private static let sidecarPortKey = "cassette.sidecarPort"
+
+  /// The paired Player's sidecar HTTP port, cached from `/api/sync/account`.
+  /// `nil`/0 when unknown (no player paired, or a sidecar/deploy that predates
+  /// the field) — callers must treat nil as "on-demand convergence unavailable"
+  /// and fall back to lazy convergence (watcher + heartbeat).
+  public static var sidecarPort: Int? {
+    let value = UserDefaults.standard.integer(forKey: sidecarPortKey)
+    return value > 0 ? value : nil
+  }
 
   public static var accountName: String? {
     let value = UserDefaults.standard.string(forKey: accountNameKey)
@@ -249,6 +314,11 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     } else {
       defaults.removeObject(forKey: accountNameKey)
     }
+
+    // Persist the paired Player's sidecar port so the pull-to-refresh path can
+    // reach the sidecar synchronously, off the main actor. 0 clears it (no
+    // player / older sidecar) so a stale port can't linger after unpair.
+    defaults.set(account.sidecarPort ?? 0, forKey: sidecarPortKey)
 
     // Cassette §C: persist the account-sourced Server Mode so the library filter
     // reads it synchronously (immediately on launch/offline). The server value
@@ -397,11 +467,17 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   /// reconciler gates removes on. Unlike the differential report, an empty
   /// device is meaningful here (`items: []` == "I hold nothing"), so this never
   /// early-returns on an empty list.
+  /// Returns the server's decoded device-inventory response — carrying the
+  /// additive per-track album grouping (Phase 1) the regroup applies — or nil if
+  /// the body can't be decoded (older deploy). `@discardableResult` so callers
+  /// that only care about the side effect (the report itself) are unchanged.
+  @discardableResult
   public func reportFullInventory(
     deviceId: String,
     deviceLabel: String?,
     items: [(cassetteLocalId: String, mbid: String?, downloadedAt: Date)]
-  ) async throws {
+  ) async throws
+    -> CassetteDeviceInventoryResponse? {
     var body: [String: Any] = ["device_id": deviceId, "full_state": true]
     if let deviceLabel { body["device_label"] = deviceLabel }
 
@@ -414,7 +490,59 @@ public final class CassetteSyncAPI: @unchecked Sendable {
       row["mbid"] = entry.mbid as Any? ?? NSNull()
       return row
     }
-    _ = try await send(method: "POST", path: "/api/sync/device-inventory", json: body)
+    let data = try await send(method: "POST", path: "/api/sync/device-inventory", json: body)
+    return try? JSONDecoder().decode(CassetteDeviceInventoryResponse.self, from: data)
+  }
+
+  // MARK: On-demand convergence (B2 pull-to-refresh)
+
+  public enum ConvergeResult: Sendable {
+    case converged // sidecar reported a completed scan-first pass
+    case timeout // sidecar still working past its window — proceed lazily
+    case unavailable // no sidecar port known, or LAN host unresolved
+    case unreachable // network error reaching the sidecar
+  }
+
+  /// Drive an on-demand scan-first convergence on the paired Player's sidecar
+  /// over the LAN, then return so the caller can re-report inventory + reconcile.
+  /// The sidecar base is `http://<host-of-serverUrl>:<sidecarPort>` — the phone's
+  /// serverUrl carries Navidrome's host:4533, so we keep the host and swap the
+  /// port for the sidecar's (advertised via /api/sync/account). This is a LAN
+  /// call to the sidecar — NOT cassette.digital — so it carries no bearer/device
+  /// headers. Blocks up to ~95s (just past the sidecar's 90s convergeMaxWait).
+  /// Best-effort: every failure returns a non-fatal result so pull-to-refresh
+  /// degrades to lazy convergence (the watcher + heartbeat), never an error wall.
+  public func convergeOnPlayer(serverUrl: String?) async -> ConvergeResult {
+    guard let port = Self.sidecarPort, port > 0 else { return .unavailable }
+    guard let serverUrl,
+          let comps = URLComponents(string: serverUrl),
+          let host = comps.host
+    else { return .unavailable }
+
+    var sidecar = URLComponents()
+    sidecar.scheme = comps.scheme ?? "http"
+    sidecar.host = host
+    sidecar.port = port
+    sidecar.path = "/api/library/converge"
+    guard let url = sidecar.url else { return .unavailable }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.timeoutInterval = 95
+    let lanSession = URLSession(configuration: .ephemeral)
+    do {
+      let (data, response) = try await lanSession.data(for: request)
+      guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+        return .unreachable
+      }
+      if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+         (json["converged"] as? Bool) == true {
+        return .converged
+      }
+      return .timeout
+    } catch {
+      return .unreachable
+    }
   }
 
   // MARK: HTTP plumbing

@@ -197,7 +197,7 @@ extension CarPlaySceneDelegate {
       CarPlayListUserInfoKeys.artworkOwnerType.rawValue: ArtworkType.artist as Any,
     ]
     section.handler = { [weak self] item, completion in
-      guard let self = self, let activeAccount = self.activeAccount
+      guard let self = self, let activeAccount = activeAccount
       else { completion(); return }
       var albumItems = [CPListItem]()
       albumItems.append(createPlayShuffledListItem(playContext: PlayContext(
@@ -433,7 +433,7 @@ extension CarPlaySceneDelegate {
     guard let fetchedController = fetchedController,
           let fetchSections = fetchedController.sections,
           !fetchSections.isEmpty,
-          let activeAccount = self.activeAccount else { return sections }
+          let activeAccount = activeAccount else { return sections }
 
     for fetchSection in fetchSections {
       guard let fetchObjects = fetchSection.objects as? [GenreMO] else { continue }

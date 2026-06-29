@@ -254,8 +254,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       freezeCollapsingHeaderForPopTransition { [weak self] in
         guard let self else { return }
         // On a cancelled swipe, resume normal scroll-driven layout/alpha.
-        self.detailOperationsView?.resizeToFit()
-        self.updateStickyHeaderAlpha()
+        detailOperationsView?.resizeToFit()
+        updateStickyHeaderAlpha()
       }
     }
   }
@@ -413,7 +413,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     guard isMultiDisc else { return nil }
     // The FRC sections by `disk`, so the section name is the raw disc value
     // (e.g. "1", "2") — display it as-is under a "Disc" label.
-    let discValue = fetchedResultsController?.sections?.element(at: section)?.name ?? "\(section + 1)"
+    let discValue = fetchedResultsController?.sections?.element(at: section)?
+      .name ?? "\(section + 1)"
     return makeDiscHeaderView(disc: discValue)
   }
 

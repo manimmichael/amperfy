@@ -96,7 +96,7 @@ extension UIViewController {
       let accountStatusRow = UIDeferredMenuElement.uncached { [weak self] completion in
         guard let self else { completion([]); return }
         let accountLabel = UIAction(
-          title: self.cassetteAccountStatusLine(),
+          title: cassetteAccountStatusLine(),
           image: .userCircle(withConfiguration: UIImage.SymbolConfiguration(
             pointSize: 30,
             weight: .regular

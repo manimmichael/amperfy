@@ -247,7 +247,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     alert.addAction(UIAlertAction(title: "Reconnect", style: .default) { [weak self] _ in
       guard let self else { return }
       let reauth = CassetteTokenReauth()
-      self.cassetteReauth = reauth
+      cassetteReauth = reauth
       reauth.start { token in
         Task { @MainActor in
           self.cassetteReauth = nil
