@@ -245,19 +245,53 @@ public final class IntentExecutor {
         response.groupingModelVersion
     }
 
-    print(
-      "Cassette regroup: model v\(response.groupingModelVersion) — moved " +
-        "\(summary.movedSongs) song(s), removed \(summary.deletedAlbums) legacy album(s), " +
-        "\(summary.groups) group(s)"
-    )
+    // Materialize each grouped album's cover from the catalog URL the payload
+    // carries (album_art_ref). The group album has a synthetic id Navidrome has
+    // never heard of, so the lazy getCoverArt path 404s ("Artwork not found");
+    // pulling the bundled URL here gives the album a real local cover instead.
+    var artByKey = [String: (url: String, sids: [String])]()
+    for item in response.grouping {
+      guard let ref = item.albumArtRef else { continue }
+      var entry = artByKey[item.groupKey] ?? (url: ref, sids: [])
+      entry.sids.append(item.subsonicTrackId)
+      artByKey[item.groupKey] = entry
+    }
+    var coversMaterialized = 0
+    for (_, entry) in artByKey {
+      let ok = await materializeAlbumCover(
+        coverUrl: entry.url,
+        subsonicIds: entry.sids,
+        accountInfo: accountInfo
+      )
+      if ok { coversMaterialized += 1 }
+    }
+
+    let ctx: [String: String] = [
+      "version": String(response.groupingModelVersion),
+      "groups": String(summary.groups),
+      "moved": String(summary.movedSongs),
+      "created": String(summary.createdAlbums),
+      "purged": String(summary.purgedAlbums),
+      "byLocalId": String(summary.matchedByLocalId),
+      "skipped": String(summary.skipped),
+      "coverGroups": String(artByKey.count),
+      "coversMaterialized": String(coversMaterialized),
+    ]
+    DiagnosticLog.shared.log(.lifecycle, "album regroup", context: ctx)
+    print("Cassette regroup: v\(response.groupingModelVersion) \(ctx)")
     os_log(
-      "regroup v%d moved=%d deletedAlbums=%d groups=%d",
+      "regroup v%d groups=%d moved=%d created=%d purged=%d byLocalId=%d skipped=%d covers=%d/%d",
       log: self.log,
       type: .info,
       response.groupingModelVersion,
+      summary.groups,
       summary.movedSongs,
-      summary.deletedAlbums,
-      summary.groups
+      summary.createdAlbums,
+      summary.purgedAlbums,
+      summary.matchedByLocalId,
+      summary.skipped,
+      coversMaterialized,
+      artByKey.count
     )
   }
 

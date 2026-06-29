@@ -168,7 +168,11 @@ class AlbumRegrouperTest: XCTestCase {
     XCTAssertEqual(library.getSongs(for: account).count, songsBefore, "no song added/removed")
     XCTAssertEqual(summary.movedSongs, 6)
     XCTAssertEqual(summary.groups, 3)
-    XCTAssertEqual(summary.deletedAlbums, 4) // 2 Laufey + Hybrid + Meteora legacy albums
+    // The 4 emptied legacy Subsonic albums (2 Laufey + Hybrid + Meteora) are
+    // purged; purge sweeps ALL empties, so seeded fixtures may add a few more.
+    XCTAssertGreaterThanOrEqual(summary.purgedAlbums, 4)
+    XCTAssertNil(library.getAlbum(for: account, id: "subs-ht", isDetailFaultResolution: false))
+    XCTAssertNil(library.getAlbum(for: account, id: "subs-me", isDetailFaultResolution: false))
   }
 
   func testRegroupIsIdempotent() throws {
@@ -177,7 +181,7 @@ class AlbumRegrouperTest: XCTestCase {
     _ = regrouper.regroup(items: items, accountInfo: account.info)
     let second = regrouper.regroup(items: items, accountInfo: account.info)
     XCTAssertEqual(second.movedSongs, 0, "second run is a no-op")
-    XCTAssertEqual(second.deletedAlbums, 0)
+    XCTAssertEqual(second.purgedAlbums, 0, "nothing left to purge on a second run")
     XCTAssertEqual(
       library.getAlbum(for: account, id: laufeyKey, isDetailFaultResolution: false)?.songCount,
       4

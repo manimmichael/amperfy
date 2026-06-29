@@ -39,8 +39,20 @@ import os.log
 public final class AlbumRegrouper {
   public struct Summary: Sendable {
     public var movedSongs = 0
-    public var deletedAlbums = 0
+    public var purgedAlbums = 0
     public var groups = 0
+    public var createdAlbums = 0
+    public var matchedByLocalId = 0
+    public var skipped = 0
+  }
+
+  /// A filesystem-safe, stable, collision-free artwork id derived from the group
+  /// key (normalized alnum + space + U+001F separator). Used as the synthetic
+  /// Artwork remoteInfo so the group album's cover file has a stable path.
+  static func artworkId(for groupKey: String) -> String {
+    "cassette-" + groupKey
+      .replacingOccurrences(of: "\u{1f}", with: "__")
+      .replacingOccurrences(of: " ", with: "_")
   }
 
   private let log = OSLog(subsystem: "Amperfy", category: "AlbumRegrouper")
@@ -62,13 +74,35 @@ public final class AlbumRegrouper {
     var summary = Summary()
     guard !items.isEmpty else { return summary }
 
-    var byTrackId = [String: CassetteDeviceGroupingItem]()
-    for item in items { byTrackId[item.subsonicTrackId] = item }
+    // Match a device song to a payload entry by EITHER key: the Subsonic id is
+    // the fast path, but a re-sync can reassign Subsonic ids out from under us, so
+    // the cassette_local_id (stable, content-derived) is the fallback that keeps a
+    // drifted song from being stranded on its old album. These are `let` so they
+    // stay Sendable when captured inside context.performAndWait's closure.
+    let byTrackId: [String: CassetteDeviceGroupingItem] = {
+      var d = [String: CassetteDeviceGroupingItem]()
+      for item in items { d[item.subsonicTrackId] = item }
+      return d
+    }()
+    let byLocalId: [String: CassetteDeviceGroupingItem] = {
+      var d = [String: CassetteDeviceGroupingItem]()
+      for item in items {
+        if let lid = item.cassetteLocalId, !lid.isEmpty { d[lid] = item }
+      }
+      return d
+    }()
 
-    // The owned set drives the regroup. fetchAllSubsonicTrackIds wraps its own
-    // context.performAndWait; call it before opening ours.
-    let ownedIds = DeviceOwnershipManager(context: context).fetchAllSubsonicTrackIds()
+    let manager = DeviceOwnershipManager(context: context)
+    let ownedIds = manager.fetchAllSubsonicTrackIds()
     guard !ownedIds.isEmpty else { return summary }
+    // SongMO.id (Subsonic) -> cassette_local_id, for the fallback match above.
+    let localIdBySubsonic: [String: String] = {
+      var d = [String: String]()
+      if let rows = try? manager.fetchAll() {
+        for r in rows where r.subsonicTrackId != nil { d[r.subsonicTrackId!] = r.cassetteLocalId }
+      }
+      return d
+    }()
 
     context.performAndWait {
       let library = LibraryStorage(context: context)
@@ -83,7 +117,12 @@ public final class AlbumRegrouper {
 
       var targetByKey = [String: Album]()
       var mergedLegacyIds = Set<String>() // legacy album ids already folded in
-      var legacyById = [String: Album]() // emptied-legacy delete candidates
+      var createdCount = 0 // local — nested target() can't mutate the outer summary
+
+      func validLocalCover(_ aw: Artwork?) -> Bool {
+        guard let aw, aw.status == .CustomImage, let p = aw.imagePath else { return false }
+        return FileManager.default.fileExists(atPath: p)
+      }
 
       func target(for item: CassetteDeviceGroupingItem) -> Album {
         if let cached = targetByKey[item.groupKey] { return cached }
@@ -94,6 +133,7 @@ public final class AlbumRegrouper {
         ) ?? {
           let created = library.createAlbum(account: account)
           created.id = item.groupKey
+          createdCount += 1
           return created
         }()
         if album.name != item.displayAlbum { album.name = item.displayAlbum }
@@ -104,12 +144,30 @@ public final class AlbumRegrouper {
            album.artist?.id != artist.id {
           album.artist = artist
         }
+        // Cover provisioning: ONLY when the cloud supplies a catalog cover
+        // (album_art_ref). Give the album an Artwork with a synthetic, FS-safe
+        // remoteInfo so materializeAlbumCover (run after the regroup) can fill it
+        // from that URL — never a getCoverArt-by-synthetic-album-id fetch, which
+        // 404s ("Artwork not found"). When art_ref is null we leave artwork nil so
+        // the cover backfill SKIPS it (no 404 spam); a real local cover from a
+        // legacy album is still carried over at re-point time below.
+        if item.albumArtRef != nil, !validLocalCover(album.artwork) {
+          let aw = album.artwork ?? library.createArtwork(account: account)
+          aw.remoteInfo = ArtworkRemoteInfo(
+            id: Self.artworkId(for: item.groupKey),
+            type: "cassette-album"
+          )
+          if aw.status != .CustomImage { aw.status = .NotChecked }
+          album.artwork = aw
+        }
         targetByKey[item.groupKey] = album
         return album
       }
 
       for songMO in songMOs {
-        guard let item = byTrackId[songMO.id] else { continue }
+        let item = byTrackId[songMO.id] ?? localIdBySubsonic[songMO.id].flatMap { byLocalId[$0] }
+        guard let item else { summary.skipped += 1; continue }
+        if byTrackId[songMO.id] == nil { summary.matchedByLocalId += 1 }
         let song = Song(managedObject: songMO)
         let current = song.album
         if current?.id == item.groupKey { continue } // already grouped → no-op
@@ -119,14 +177,13 @@ public final class AlbumRegrouper {
         if let legacy = current, legacy.id != item.groupKey {
           if !mergedLegacyIds.contains(legacy.id) {
             mergeAnnotations(from: legacy, into: targetAlbum)
-            // Carry the existing local cover so the merged album keeps its art
-            // (no new fetch — the art-backfill path still heals covers later).
-            if targetAlbum.artwork == nil, let art = legacy.artwork {
-              targetAlbum.artwork = art
+            // Preserve a working LOCAL cover from a legacy album (the original
+            // downloaded art) when the group album doesn't already have one.
+            if !validLocalCover(targetAlbum.artwork), validLocalCover(legacy.artwork) {
+              targetAlbum.artwork = legacy.artwork
             }
             mergedLegacyIds.insert(legacy.id)
           }
-          legacyById[legacy.id] = legacy
         }
 
         song.album = targetAlbum
@@ -143,15 +200,21 @@ public final class AlbumRegrouper {
         }
       }
 
-      // Delete legacy albums emptied by the re-point. Tested on the LIVE songs
-      // relationship (not the cached songCount) — a legacy album still holding
-      // non-owned songs is left untouched (it just won't appear in the owned view).
-      for (_, legacy) in legacyById where legacy.songs.isEmpty {
-        library.deleteAlbum(album: legacy)
-        summary.deletedAlbums += 1
+      // PURGE every empty album — not only the ones we re-pointed off this run.
+      // This sweeps the NUL-era + Subsonic duplicate leftovers the old
+      // (re-pointed-only) deletion missed: once the consolidation above moves a
+      // duplicate's last owned song away, the duplicate is empty and meaningless
+      // in this download-only model, so it goes. An album still holding songs
+      // (owned or not) is untouched.
+      let albumReq: NSFetchRequest<AlbumMO> = AlbumMO.fetchRequest()
+      let allAlbums = (try? context.fetch(albumReq)) ?? []
+      for albumMO in allAlbums where (albumMO.songs?.count ?? 0) == 0 {
+        context.delete(albumMO)
+        summary.purgedAlbums += 1
       }
 
       summary.groups = targetByKey.count
+      summary.createdAlbums = createdCount
       do {
         try context.save()
       } catch {
