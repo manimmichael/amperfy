@@ -200,12 +200,34 @@ public final class AlbumRegrouper {
         }
       }
 
+      summary.groups = targetByKey.count
+      summary.createdAlbums = createdCount
+
+      // SAVE #1 — re-points + new group-key albums + refreshed counts. This is
+      // the user-visible change: the grid settles onto the correct albums in one
+      // atomic FRC update. Every owned song already points at its group-key album
+      // (the loop above), so no song is album-less across this save; the emptied
+      // legacy albums simply hold zero songs until the purge save below.
+      do {
+        try context.save()
+      } catch {
+        os_log(
+          "regroup save #1 (re-points) failed: %{public}@",
+          log: self.log,
+          type: .error,
+          error.localizedDescription
+        )
+      }
+
       // PURGE every empty album — not only the ones we re-pointed off this run.
       // This sweeps the NUL-era + Subsonic duplicate leftovers the old
       // (re-pointed-only) deletion missed: once the consolidation above moves a
       // duplicate's last owned song away, the duplicate is empty and meaningless
       // in this download-only model, so it goes. An album still holding songs
-      // (owned or not) is untouched.
+      // (owned or not) is untouched. Done as a SECOND save so the moves above are
+      // durably persisted before any delete (a crash between can't strand a song)
+      // and the grid sees the moves before the removals — never an insert+delete
+      // churn in one batch. No empty AlbumMO survives the operation.
       let albumReq: NSFetchRequest<AlbumMO> = AlbumMO.fetchRequest()
       let allAlbums = (try? context.fetch(albumReq)) ?? []
       for albumMO in allAlbums where (albumMO.songs?.count ?? 0) == 0 {
@@ -213,13 +235,12 @@ public final class AlbumRegrouper {
         summary.purgedAlbums += 1
       }
 
-      summary.groups = targetByKey.count
-      summary.createdAlbums = createdCount
+      // SAVE #2 — the purge of emptied legacy albums.
       do {
         try context.save()
       } catch {
         os_log(
-          "regroup save failed: %{public}@",
+          "regroup save #2 (purge) failed: %{public}@",
           log: self.log,
           type: .error,
           error.localizedDescription

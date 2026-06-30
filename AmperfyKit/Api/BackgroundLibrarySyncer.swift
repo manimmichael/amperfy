@@ -103,8 +103,28 @@ public final class BackgroundLibrarySyncer: AbstractBackgroundLibrarySyncer, Sen
     backgroundTask.wrappedValue = Task {
       os_log("start", log: self.log, type: .info)
 
-      if self.isRunning.wrappedValue, self.settings.user.isOnlineMode,
-         self.networkMonitor.isConnectedToNetwork {
+      // Cassette launch gate: for a user who already has an owned on-device
+      // library, suppress the automatic "newest albums" fetch at launch. That
+      // fetch paints a Navidrome-id-keyed rough draft (via SsSongParserDelegate)
+      // over the persisted group-key albums before the regroup runs — the cold-
+      // launch "wrong library that then corrects itself" flash. The owned library
+      // is the last-known-good view and paints instantly from Core Data; newest-
+      // albums stays reachable on the Home tab and via pull-to-refresh. This sync
+      // is already one-shot per process (isCurrentlyActive), so gating here
+      // suppresses only the launch fetch — no session flag needed.
+      let hasOwnedLibrary = (try? await storage.performAndGet { asyncCompanion in
+        !DeviceOwnershipManager(context: asyncCompanion.context)
+          .fetchAllSubsonicTrackIds().isEmpty
+      }) ?? false
+
+      if hasOwnedLibrary {
+        os_log(
+          "Cassette: owned library present, skipping launch newest-albums sync",
+          log: self.log,
+          type: .info
+        )
+      } else if self.isRunning.wrappedValue, self.settings.user.isOnlineMode,
+                self.networkMonitor.isConnectedToNetwork {
         do {
           try await autoDownloadLibrarySyncer
             .syncNewestLibraryElements(offset: 0, count: AmperKit.newestElementsFetchCount)

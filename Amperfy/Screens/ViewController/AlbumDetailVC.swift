@@ -20,6 +20,7 @@
 //
 
 import AmperfyKit
+import CoreData
 import UIKit
 
 // MARK: - AlbumDetailDiffableDataSource
@@ -51,15 +52,51 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   // to dim non-owned rows; the detail list itself is never filtered. Empty when
   // nothing is on the phone (then every row dims, which is correct).
   private var cassetteOwnedTrackIds: Set<String> = []
-  let album: Album
+  // Cassette: re-resolve the album by id so a background regroup that re-keys or
+  // purges the underlying AlbumMO can't strand this view on a deleted-object
+  // fault. A re-key changes the id (no same-id successor to follow), so the
+  // deletion path is to POP — see the deleted-object observer registered in
+  // viewDidLoad and the viewWillAppear re-resolve below.
+  var album: Album
+  private let albumId: String
 
   init(account: Account, album: Album) {
     self.album = album
+    self.albumId = album.id
     super.init(style: .grouped, account: account)
   }
 
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
+  }
+
+  deinit {
+    NotificationCenter.default.removeObserver(
+      self,
+      name: .NSManagedObjectContextObjectsDidChange,
+      object: nil
+    )
+  }
+
+  // Cassette: a background regroup re-points owned songs onto group-key albums
+  // and purges the emptied legacy AlbumMOs. If the AlbumMO this view is showing
+  // is one of those deletions, the view is dead — the song list empties and any
+  // album.* access faults. Pop unconditionally on the main thread before any
+  // such access; a deleted AlbumMO is a dead view, regardless of whether a
+  // regroup is "in progress".
+  @objc
+  private func cassetteAlbumMODeleted(_ notification: Notification) {
+    let deleted = notification.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject>
+    let mo = album.managedObject
+    guard mo.isDeleted || (deleted?.contains(mo) ?? false) else { return }
+    DispatchQueue.main.async { [weak self] in
+      guard let self, let nav = self.navigationController else { return }
+      if nav.topViewController === self {
+        nav.popViewController(animated: true)
+      } else {
+        nav.viewControllers.removeAll { $0 === self }
+      }
+    }
   }
 
   override func createDiffableDataSource() -> BasicUITableViewDiffableDataSource {
@@ -125,6 +162,15 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     singleFetchedResultsController = fetchedResultsController
     singleFetchedResultsController?.delegate = self
     singleFetchedResultsController?.fetch()
+
+    // Cassette: pop this view if a background regroup deletes the AlbumMO it is
+    // showing (re-key or purge). Registered once per instance; removed in deinit.
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(cassetteAlbumMODeleted(_:)),
+      name: .NSManagedObjectContextObjectsDidChange,
+      object: appDelegate.storage.main.context
+    )
 
     // cassette Patch 045: in-view search removed from album detail.
     // Library / Songs / Playlists category lists keep search; the
@@ -218,6 +264,14 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
+    // Cassette: re-resolve the album by id in case a background regroup replaced
+    // the underlying AlbumMO since the last appearance (no-op in steady state; a
+    // re-keyed/purged album returns nil here and the deleted-object observer pops).
+    if let fresh = appDelegate.storage.main.library.getAlbum(
+      for: account, id: albumId, isDetailFaultResolution: false
+    ) {
+      album = fresh
+    }
     navigationController?.navigationBar.prefersLargeTitles = false
   }
 
