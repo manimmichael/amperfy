@@ -124,43 +124,59 @@ public final class AlbumRegrouper {
         return FileManager.default.fileExists(atPath: p)
       }
 
-      func target(for item: CassetteDeviceGroupingItem) -> Album {
-        if let cached = targetByKey[item.groupKey] { return cached }
-        let album = library.getAlbum(
-          for: account,
-          id: item.groupKey,
-          isDetailFaultResolution: false
-        ) ?? {
-          let created = library.createAlbum(account: account)
-          created.id = item.groupKey
-          createdCount += 1
-          return created
-        }()
-        if album.name != item.displayAlbum { album.name = item.displayAlbum }
-        // Display artist: only adopt an artist that ALREADY exists locally by
-        // this exact name — never mint a synthetic artist (that would pollute
-        // the Artists list). Otherwise keep whatever materialization assigned.
-        if let artist = library.getArtistByExactName(for: account, name: item.displayArtist),
-           album.artist?.id != artist.id {
-          album.artist = artist
+      func target(for item: CassetteDeviceGroupingItem, nativeCover: ArtworkRemoteInfo?) -> Album {
+        let album: Album
+        if let cached = targetByKey[item.groupKey] {
+          album = cached
+        } else {
+          album = library.getAlbum(
+            for: account,
+            id: item.groupKey,
+            isDetailFaultResolution: false
+          ) ?? {
+            let created = library.createAlbum(account: account)
+            created.id = item.groupKey
+            createdCount += 1
+            return created
+          }()
+          if album.name != item.displayAlbum { album.name = item.displayAlbum }
+          // Display artist: only adopt an artist that ALREADY exists locally by
+          // this exact name — never mint a synthetic artist (that would pollute
+          // the Artists list). Otherwise keep whatever materialization assigned.
+          if let artist = library.getArtistByExactName(for: account, name: item.displayArtist),
+             album.artist?.id != artist.id {
+            album.artist = artist
+          }
+          targetByKey[item.groupKey] = album
         }
-        // Cover provisioning: ONLY when the cloud supplies a catalog cover
-        // (album_art_ref). Give the album an Artwork with a synthetic, FS-safe
-        // remoteInfo so materializeAlbumCover (run after the regroup) can fill it
-        // from that URL — never a getCoverArt-by-synthetic-album-id fetch, which
-        // 404s ("Artwork not found"). When art_ref is null we leave artwork nil so
-        // the cover backfill SKIPS it (no 404 spam); a real local cover from a
-        // legacy album is still carried over at re-point time below.
-        if item.albumArtRef != nil, !validLocalCover(album.artwork) {
-          let aw = album.artwork ?? library.createArtwork(account: account)
-          aw.remoteInfo = ArtworkRemoteInfo(
-            id: Self.artworkId(for: item.groupKey),
-            type: "cassette-album"
-          )
-          if aw.status != .CustomImage { aw.status = .NotChecked }
-          album.artwork = aw
+        // Cover provisioning — give EVERY owned album an Artwork so a cover can
+        // load, but never an id getCoverArt cannot serve. Runs on every call (not
+        // only first-create) so a later owned song carrying a native cover id can
+        // still fill an album an earlier coverless song created.
+        //  • catalog cover (album_art_ref present) → synthetic, FS-safe "cassette-"
+        //    id that materializeAlbumCover fills from the R2 URL after the regroup.
+        //  • no catalog cover → the owned song's NATIVE Subsonic cover id, so the
+        //    (un-gated) getCoverArt byte path pulls the Mac/disk art over the LAN —
+        //    this un-blanks the catalog-unmatched albums and mirrors the hub art.
+        //  • neither available → leave artwork nil (placeholder). Minting a
+        //    synthetic id with nothing to fill it is what caused the cassette-album
+        //    getCoverArt 404 loop, so we never do that.
+        if !validLocalCover(album.artwork) {
+          if item.albumArtRef != nil {
+            let aw = album.artwork ?? library.createArtwork(account: account)
+            aw.remoteInfo = ArtworkRemoteInfo(
+              id: Self.artworkId(for: item.groupKey),
+              type: "cassette-album"
+            )
+            if aw.status != .CustomImage { aw.status = .NotChecked }
+            album.artwork = aw
+          } else if album.artwork == nil, let nativeCover, !nativeCover.id.isEmpty {
+            let aw = library.createArtwork(account: account)
+            aw.remoteInfo = ArtworkRemoteInfo(id: nativeCover.id, type: nativeCover.type)
+            aw.status = .NotChecked
+            album.artwork = aw
+          }
         }
-        targetByKey[item.groupKey] = album
         return album
       }
 
@@ -172,15 +188,25 @@ public final class AlbumRegrouper {
         let current = song.album
         if current?.id == item.groupKey { continue } // already grouped → no-op
 
-        let targetAlbum = target(for: item)
+        // Pass the owned song's native Subsonic cover id so a catalog-unmatched
+        // album (album_art_ref == nil) can still load the Mac/disk art via getCoverArt.
+        let targetAlbum = target(for: item, nativeCover: song.artwork?.remoteInfo)
 
         if let legacy = current, legacy.id != item.groupKey {
           if !mergedLegacyIds.contains(legacy.id) {
             mergeAnnotations(from: legacy, into: targetAlbum)
             // Preserve a working LOCAL cover from a legacy album (the original
-            // downloaded art) when the group album doesn't already have one.
+            // downloaded art) when the group album doesn't already have one. If
+            // target() provisioned a placeholder shell (a non-.CustomImage native
+            // or synthetic Artwork with no file on disk), the real legacy cover
+            // supersedes it — delete the orphaned shell so the regroup never leaks
+            // a dangling Artwork row (no-orphans invariant).
             if !validLocalCover(targetAlbum.artwork), validLocalCover(legacy.artwork) {
+              let superseded = targetAlbum.artwork
               targetAlbum.artwork = legacy.artwork
+              if let superseded, superseded.managedObject !== legacy.artwork?.managedObject {
+                library.deleteArtwork(artwork: superseded)
+              }
             }
             mergedLegacyIds.insert(legacy.id)
           }

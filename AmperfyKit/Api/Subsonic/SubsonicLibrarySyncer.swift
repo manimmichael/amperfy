@@ -48,6 +48,13 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
 
   @MainActor
   func syncInitial(statusNotifyier: SyncCallbacks?) async throws {
+    // Cassette engine-cut: an on-device-only (rip-sync) user reaches SyncVC via the
+    // pairing flow (LoginVC) and every pre-sync relaunch (SceneDelegate). A full
+    // Subsonic catalog crawl here would paint the whole Player catalog as PID
+    // albums over the regrouped library. Skip it — SyncVC.finishSync() still runs
+    // after this returns, marking the library synced and advancing. Server-Mode
+    // users (isOnDeviceOnly == false) still get the full initial sync.
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     try await super.createCachedItemRepresentationsInCoreData(statusNotifyier: statusNotifyier)
 
     statusNotifyier?.notifySyncStarted(ofType: .genre, totalCount: 0)
@@ -248,6 +255,8 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func sync(genre: Genre) async throws {
     guard isSyncAllowed else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode.
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     try await withThrowingTaskGroup(of: Void.self) { taskGroup in
       genre.albums.forEach { album in
         taskGroup.addTask { @MainActor @Sendable in
@@ -261,6 +270,8 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func sync(artist: Artist) async throws {
     guard isSyncAllowed, !artist.id.isEmpty, artist.remoteStatus != .deleted else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode.
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     let artistObjectId = artist.managedObject.objectID
 
     func handleNotAvailableArtist(error: Error) async throws {
@@ -334,6 +345,10 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func sync(album: Album) async throws {
     guard isSyncAllowed, album.remoteStatus != .deleted else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode.
+    // This is the highest-impact gate — it also covers the artist/genre→album
+    // fan-out and the fetchFromServer() detail-appear path that route through here.
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     let albumObjectId = album.managedObject.objectID
 
     func handleNotAvailableAlbum(error: Error) async throws {
@@ -434,6 +449,14 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func sync(song: Song) async throws {
     guard isSyncAllowed else { return }
+    // Cassette engine-cut (SCOPED): in on-device-only mode, skip the song-info
+    // parse — it runs SsSongParserDelegate, which re-points song.album onto a
+    // native PID album (the regroup owns grouping). Lyrics is a BYTE path and must
+    // never be starved, so fetch it and return BEFORE the identity parse below.
+    if CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
+      try await syncLyrics(song: song)
+      return
+    }
     let response = try await subsonicServerApi.requestSongInfo(id: song.id)
     try await storage.async.perform { asyncCompanion in
       let accountAsync = Account(
@@ -635,6 +658,9 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func syncNewestAlbums(offset: Int, count: Int) async throws {
     guard isSyncAllowed else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode
+    // (the cloud group_key regroup is the sole album authority; byte paths stay live).
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     os_log("Sync newest albums: offset: %i count: %i", log: log, type: .info, offset, count)
     let response = try await subsonicServerApi.requestNewestAlbums(offset: offset, count: count)
     try await storage.async.perform { asyncCompanion in
@@ -670,6 +696,8 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func syncRecentAlbums(offset: Int, count: Int) async throws {
     guard isSyncAllowed else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode.
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     os_log("Sync recent albums: offset: %i count: %i", log: log, type: .info, offset, count)
     let response = try await subsonicServerApi.requestRecentAlbums(offset: offset, count: count)
     try await storage.async.perform { asyncCompanion in
@@ -705,6 +733,8 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func syncFavoriteLibraryElements() async throws {
     guard isSyncAllowed else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode.
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     let response = try await subsonicServerApi.requestFavoriteElements()
     try await storage.async.perform { asyncCompanion in
       os_log("Sync favorite artists", log: self.log, type: .info)
@@ -787,6 +817,9 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func syncMusicFolders() async throws {
     guard isSyncAllowed else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode
+    // (SsDirectoryParserDelegate inherits SsSongParserDelegate → re-points songs).
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     let response = try await subsonicServerApi.requestMusicFolders()
     try await storage.async.perform { asyncCompanion in
       let accountAsync = asyncCompanion.library.getAccount(managedObjectId: self.accountObjectId)
@@ -812,6 +845,8 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func syncIndexes(musicFolder: MusicFolder) async throws {
     guard isSyncAllowed else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode.
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     let response = try await subsonicServerApi.requestIndexes(musicFolderId: musicFolder.id)
     let musicFolderObjectId = musicFolder.managedObject.objectID
     try await storage.async.perform { asyncCompanion in
@@ -844,6 +879,8 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func sync(directory: Directory) async throws {
     guard isSyncAllowed else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode.
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     let response = try await subsonicServerApi.requestMusicDirectory(id: directory.id)
     let directoryObjectId = directory.managedObject.objectID
     try await storage.async.perform { asyncCompanion in
@@ -876,6 +913,9 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func requestRandomSongs(playlist: Playlist, count: Int) async throws {
     guard isSyncAllowed else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode.
+    // (Library shuffle uses local library.getRandomSongs, not this server call.)
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     let response = try await subsonicServerApi.requestRandomSongs(count: count)
     let playlistObjectId = playlist.managedObject.objectID
     try await storage.async.perform { asyncCompanion in
@@ -907,6 +947,9 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func requestSimilarSongs(song: Song, count: Int) async throws -> [Song] {
     guard isSyncAllowed else { return [] }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode.
+    // (Instant Mix degrades gracefully: EntityPreviewVC shows "No similar songs".)
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return [] }
     let response = try await subsonicServerApi.requestSimilarSongs(id: song.id, count: count)
 
     let similarSongObjectIds: [NSManagedObjectID] = try await storage.async.performAndGet {
@@ -1219,6 +1262,8 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func searchArtists(searchText: String) async throws {
     guard isSyncAllowed, !searchText.isEmpty else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode.
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     os_log("Search artists via API: \"%s\"", log: log, type: .info, searchText)
     let response = try await subsonicServerApi.requestSearchArtists(searchText: searchText)
     try await storage.async.perform { asyncCompanion in
@@ -1245,6 +1290,8 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func searchAlbums(searchText: String) async throws {
     guard isSyncAllowed, !searchText.isEmpty else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode.
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     os_log("Search albums via API: \"%s\"", log: log, type: .info, searchText)
     let response = try await subsonicServerApi.requestSearchAlbums(searchText: searchText)
     try await storage.async.perform { asyncCompanion in
@@ -1271,6 +1318,8 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func searchSongs(searchText: String) async throws {
     guard isSyncAllowed, !searchText.isEmpty else { return }
+    // Cassette engine-cut: no native album-identity writes in on-device-only mode.
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     os_log("Search songs via API: \"%s\"", log: log, type: .info, searchText)
     let response = try await subsonicServerApi.requestSearchSongs(searchText: searchText)
     try await storage.async.perform { asyncCompanion in

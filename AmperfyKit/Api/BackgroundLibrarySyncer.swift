@@ -138,6 +138,12 @@ public final class BackgroundLibrarySyncer: AbstractBackgroundLibrarySyncer, Sen
       }
 
       try? await storage.perform { asyncCompanion in
+        // Cassette engine-cut: the per-album song sync (sync(album:)) re-points
+        // owned songs onto native PID albums — the regroup owns grouping. The C1
+        // gate above only covers the newest-albums fetch; this loop is the other
+        // launch writer. Skip it for on-device-only libraries (sync(album:) is also
+        // gated, but skipping the loop avoids the wasted fetch + N no-op ops).
+        guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
         let albumsToSync = asyncCompanion.library.getAlbumWithoutSyncedSongs()
 
         for albumToSync in albumsToSync {

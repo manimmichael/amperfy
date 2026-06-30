@@ -48,6 +48,11 @@ public class AutoDownloadLibrarySyncer {
     offset: Int = 0,
     count: Int = AmperKit.newestElementsFetchCount
   ) async throws {
+    // Cassette engine-cut: this orchestrates syncNewestAlbums + per-album sync(album:)
+    // (the "%i new albums" re-assert). For on-device-only libraries the regroup owns
+    // album identity, so skip it whole — avoids the wasted getNewestAlbums diffing
+    // and the log noise (the gated syncer methods would no-op anyway).
+    guard !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
     let oldNewestAlbums = Set(storage.main.library.getNewestAlbums(
       for: account,
       offset: 0,
