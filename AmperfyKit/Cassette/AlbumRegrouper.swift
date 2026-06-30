@@ -114,6 +114,7 @@ public final class AlbumRegrouper {
       var targetByKey = [String: Album]()
       var mergedLegacyIds = Set<String>() // legacy album ids already folded in
       var coverProvisioned = Set<String>() // album ids whose cover we've settled this pass
+      var artistAdopted = Set<String>() // album ids whose display artist we've settled this pass
       var createdCount = 0 // local — nested target() can't mutate the outer summary
       var provisionedCount = 0 // local — albums (re)pointed at a native cover id this pass
 
@@ -155,6 +156,33 @@ public final class AlbumRegrouper {
         provisionedCount += 1
       }
 
+      // Adopt the album's DISPLAY artist every pass — the move-gate twin of the
+      // cover bug. A settled device (moved=0) reaches ONLY the no-move branch, so
+      // artist adoption must run there too or the card's artist line stays blank.
+      // Deduped per album id; idempotent (an album that already has an artist is
+      // left alone, no churn). Source order:
+      //  1. a local Artist that ALREADY exists by the cloud's display name (the
+      //     catalog-canonical name when the library has it) — never mint a synthetic
+      //     artist (that would pollute the Artists list).
+      //  2. else the owned song's OWN local artist — the library's stylized name
+      //     ("fun." where the catalog ships "Fun"), so the card never blanks on
+      //     catalog-vs-tag drift. (Display follows the library; grouping stays the
+      //     normalized group_key. See the artist-name model notes.)
+      //  3. neither → leave nil; a later song may carry one.
+      func adoptDisplayArtist(on album: Album, displayArtist: String, songArtist: Artist?) {
+        guard !artistAdopted.contains(album.id) else { return }
+        if album.artist != nil { artistAdopted.insert(album.id); return } // already set
+        if let artist = library.getArtistByExactName(for: account, name: displayArtist) {
+          album.artist = artist
+          artistAdopted.insert(album.id)
+          return
+        }
+        if let songArtist {
+          album.artist = songArtist
+          artistAdopted.insert(album.id)
+        }
+      }
+
       func target(for item: CassetteDeviceGroupingItem, nativeCover: ArtworkRemoteInfo?) -> Album {
         let album: Album
         if let cached = targetByKey[item.groupKey] {
@@ -171,13 +199,6 @@ public final class AlbumRegrouper {
             return created
           }()
           if album.name != item.displayAlbum { album.name = item.displayAlbum }
-          // Display artist: only adopt an artist that ALREADY exists locally by
-          // this exact name — never mint a synthetic artist (that would pollute
-          // the Artists list). Otherwise keep whatever materialization assigned.
-          if let artist = library.getArtistByExactName(for: account, name: item.displayArtist),
-             album.artist?.id != artist.id {
-            album.artist = artist
-          }
           targetByKey[item.groupKey] = album
         }
         provisionNativeCover(on: album, nativeCover: nativeCover)
@@ -192,16 +213,21 @@ public final class AlbumRegrouper {
         let current = song.album
         let nativeCover = song.artwork?.remoteInfo
         if current?.id == item.groupKey {
-          // Already grouped → no move, but STILL provision + migrate the cover.
-          // A steady-state device (moved=0) reaches ONLY this branch, so without
-          // this its covers would never get a native id and never paint.
-          if let current { provisionNativeCover(on: current, nativeCover: nativeCover) }
+          // Already grouped → no move, but STILL provision the cover AND adopt the
+          // display artist. A steady-state device (moved=0) reaches ONLY this
+          // branch, so without this its covers never paint and its artist line
+          // stays blank.
+          if let current {
+            provisionNativeCover(on: current, nativeCover: nativeCover)
+            adoptDisplayArtist(on: current, displayArtist: item.displayArtist, songArtist: song.artist)
+          }
           continue
         }
 
         // Pass the owned song's native Subsonic cover id so getCoverArt can load
         // the album's local-drive cover.jpg over the LAN.
         let targetAlbum = target(for: item, nativeCover: nativeCover)
+        adoptDisplayArtist(on: targetAlbum, displayArtist: item.displayArtist, songArtist: song.artist)
 
         if let legacy = current, legacy.id != item.groupKey {
           if !mergedLegacyIds.contains(legacy.id) {

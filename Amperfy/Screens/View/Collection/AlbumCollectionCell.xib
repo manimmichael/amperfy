@@ -45,8 +45,8 @@
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Title" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="hHv-Ol-9T7" userLabel="Title Label">
                                         <rect key="frame" x="0.0" y="0.0" width="31.666666666666668" height="17"/>
                                         <constraints>
-                                            <constraint firstAttribute="height" constant="17" id="hQa-4Q-xIT">
-                                                <variation key="widthClass=regular" constant="18"/>
+                                            <constraint firstAttribute="height" constant="22" id="hQa-4Q-xIT">
+                                                <variation key="widthClass=regular" constant="22"/>
                                             </constraint>
                                         </constraints>
                                         <fontDescription key="fontDescription" type="system" pointSize="16"/>
@@ -78,8 +78,8 @@
                                     </label>
                                 </subviews>
                                 <constraints>
-                                    <constraint firstAttribute="height" constant="36" id="RXp-z1-4PU">
-                                        <variation key="widthClass=regular" constant="38"/>
+                                    <constraint firstAttribute="height" constant="41" id="RXp-z1-4PU">
+                                        <variation key="widthClass=regular" constant="42"/>
                                     </constraint>
                                 </constraints>
                                 <variation key="widthClass=regular" spacing="4"/>
