@@ -58,6 +58,16 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
         managedObject: asyncCompanion.context
           .object(with: downloadInfo.objectId) as! ArtworkMO
       )
+      // Migration safety (deferred deletion). The synthetic "cassette-album" cover
+      // path is retired — no code mints these ids anymore. But an existing device
+      // may still carry one until the next regroup re-points it to the native cover
+      // id, and the regroup runs AFTER this backfill on the first post-switch sync.
+      // Navidrome never knew these ids (getCoverArt → error 70), so keep throwing so
+      // a lingering synthetic row can't 404 or poison a good .CustomImage. Remove
+      // this guard in a later release once no device can hold a cassette-album row.
+      guard artwork.remoteInfo.type != "cassette-album" else {
+        throw DownloadError.fetchFailed
+      }
       return artwork.id
     }
     return try await subsonicServerApi.generateUrl(forArtworkId: artworkId)

@@ -245,27 +245,10 @@ public final class IntentExecutor {
         response.groupingModelVersion
     }
 
-    // Materialize each grouped album's cover from the catalog URL the payload
-    // carries (album_art_ref). The group album has a synthetic id Navidrome has
-    // never heard of, so the lazy getCoverArt path 404s ("Artwork not found");
-    // pulling the bundled URL here gives the album a real local cover instead.
-    var artByKey = [String: (url: String, sids: [String])]()
-    for item in response.grouping {
-      guard let ref = item.albumArtRef else { continue }
-      var entry = artByKey[item.groupKey] ?? (url: ref, sids: [])
-      entry.sids.append(item.subsonicTrackId)
-      artByKey[item.groupKey] = entry
-    }
-    var coversMaterialized = 0
-    for (_, entry) in artByKey {
-      let ok = await materializeAlbumCover(
-        coverUrl: entry.url,
-        subsonicIds: entry.sids,
-        accountInfo: accountInfo
-      )
-      if ok { coversMaterialized += 1 }
-    }
-
+    // Covers are served by the native getCoverArt byte path (Navidrome → the
+    // local-drive folder cover.jpg over the LAN): the regroup provisions each
+    // album's Artwork with its native cover id (AlbumRegrouper), and the owned-
+    // album backfill below enqueues the fetch. There is no catalog/R2 cover path.
     let ctx: [String: String] = [
       "version": String(response.groupingModelVersion),
       "groups": String(summary.groups),
@@ -274,13 +257,12 @@ public final class IntentExecutor {
       "purged": String(summary.purgedAlbums),
       "byLocalId": String(summary.matchedByLocalId),
       "skipped": String(summary.skipped),
-      "coverGroups": String(artByKey.count),
-      "coversMaterialized": String(coversMaterialized),
+      "provisioned": String(summary.coversProvisioned),
     ]
     DiagnosticLog.shared.log(.lifecycle, "album regroup", context: ctx)
     print("Cassette regroup: v\(response.groupingModelVersion) \(ctx)")
     os_log(
-      "regroup v%d groups=%d moved=%d created=%d purged=%d byLocalId=%d skipped=%d covers=%d/%d",
+      "regroup v%d groups=%d moved=%d created=%d purged=%d byLocalId=%d skipped=%d provisioned=%d",
       log: self.log,
       type: .info,
       response.groupingModelVersion,
@@ -290,8 +272,7 @@ public final class IntentExecutor {
       summary.purgedAlbums,
       summary.matchedByLocalId,
       summary.skipped,
-      coversMaterialized,
-      artByKey.count
+      summary.coversProvisioned
     )
   }
 
@@ -391,9 +372,9 @@ public final class IntentExecutor {
   /// in UserDefaults (see `appliedArtworkVersion`). For each manifest album we
   /// compute its albumKey and read the stored version:
   ///   - stored == nil (first run): materialize once, record the version.
-  ///   - stored != manifest.contentVersion (changed): force-materialize BOTH
-  ///     the artist image and the cover (bypassing the on-disk idempotent gate
-  ///     so the changed bytes overwrite the old file), then record the version.
+  ///   - stored != manifest.contentVersion (changed): force-materialize the
+  ///     artist image (bypassing the on-disk idempotent gate so the changed bytes
+  ///     overwrite the old file), then record the version.
   ///   - stored == manifest.contentVersion (unchanged): skip entirely — cheap.
   ///
   /// Off the main actor for the enumeration/matching, throttled the same way
@@ -409,7 +390,6 @@ public final class IntentExecutor {
       let artist: String
       let albumKey: String
       let artistImageUrl: String?
-      let coverUrl: String?
       let contentVersion: String
     }
 
@@ -431,12 +411,10 @@ public final class IntentExecutor {
       let albumNorm = Self.normalizeForVersionKey(album.albumName)
       let artistNorm = Self.normalizeForVersionKey(album.artistName)
       let imageUrl = (album.artistImageUrl?.isEmpty == false) ? album.artistImageUrl : nil
-      let coverUrl = (album.coverUrl?.isEmpty == false) ? album.coverUrl : nil
       manifestByAlbum[albumNorm, default: []].append(ManifestCandidate(
         artist: artistNorm,
         albumKey: Self.albumVersionKey(artist: album.artistName, album: album.albumName),
         artistImageUrl: imageUrl,
-        coverUrl: coverUrl,
         contentVersion: album.contentVersion
       ))
     }
@@ -454,7 +432,6 @@ public final class IntentExecutor {
       let albumKey: String
       let contentVersion: String
       let artistImageUrl: String?
-      let coverUrl: String?
       let subsonicIds: [String]
     }
     let jobs: [ArtworkJob]
@@ -507,7 +484,6 @@ public final class IntentExecutor {
             albumKey: chosen.albumKey,
             contentVersion: chosen.contentVersion,
             artistImageUrl: chosen.artistImageUrl,
-            coverUrl: chosen.coverUrl,
             subsonicIds: subsonicIds
           ))
         }
@@ -538,21 +514,9 @@ public final class IntentExecutor {
           force: force
         )
       }
-      // D3: only record the applied version when the COVER is settled (succeeded,
-      // already valid on disk, or intentionally absent). A failed/bailed cover
-      // returns false, so we leave the version unrecorded and the next poll
-      // re-tries — instead of permanently remembering a blank as "done". (No
-      // cover URL ⇒ nothing to gate ⇒ settled.)
-      var coverSettled = true
-      if let coverUrl = job.coverUrl {
-        coverSettled = await materializeAlbumCover(
-          coverUrl: coverUrl,
-          subsonicIds: job.subsonicIds,
-          accountInfo: accountInfo,
-          force: force
-        )
-      }
-      guard coverSettled else { continue } // retry on the next poll; don't record
+      // Record the applied version after the best-effort artist-image refresh.
+      // Album covers are served by native getCoverArt (the local-drive cover.jpg),
+      // never the manifest, so there is nothing more to settle here.
       setAppliedArtworkVersion(job.contentVersion, forAlbumKey: job.albumKey)
       appliedThisPass.insert(job.albumKey)
       refreshed += 1
@@ -670,12 +634,10 @@ public final class IntentExecutor {
     }
 
     let tracks: [CassetteSyncTrack]
-    let albumCover: CassetteSyncAlbumCover?
     let albumArtist: CassetteSyncArtist?
     do {
       let response = try await api.getIntentTracks(intentId: intent.id)
       tracks = response.tracks
-      albumCover = response.cover
       albumArtist = response.artist
     } catch {
       print(
@@ -733,16 +695,9 @@ public final class IntentExecutor {
     }
     print("Cassette poll: intent \(intent.id) - enqueued \(enqueued) new download(s)")
 
-    // Fast Album Art: bundle the album cover so it's on-device the moment the
-    // album is — no display-time getCoverArt fetch. Best-effort; on failure the
-    // existing lazy artwork path still applies. Idempotent (skips once local).
-    if let albumCover {
-      await materializeAlbumCover(
-        coverUrl: albumCover.url,
-        subsonicIds: tracks.map(\.subsonicTrackId),
-        accountInfo: accountInfo
-      )
-    }
+    // Fast Album Art (artist photo): bundle the album artist's image so it's
+    // on-device with the album. Covers come from native getCoverArt (the local-
+    // drive cover.jpg over the LAN), not a bundled URL. Best-effort; idempotent.
     if let albumArtist {
       await materializeArtistImage(
         imageUrl: albumArtist.imageUrl,
@@ -763,140 +718,15 @@ public final class IntentExecutor {
     }
   }
 
-  /// Download the album's bundled cover and wire it into the album's `Artwork`
-  /// so it displays locally with no network getCoverArt fetch — the same move
-  /// `SubsonicArtworkDownloadDelegate` makes on a successful fetch, but sourced
-  /// from the cassette.digital cover URL (bundled in the tracks response on a
-  /// fresh transfer, or carried by the artwork manifest on a refresh).
-  ///
-  /// Best-effort and idempotent: honors the artwork-download preference, skips
-  /// when a local cover already exists, and silently falls back to the existing
-  /// lazy artwork path on any failure (album/artwork not yet in the library,
-  /// download error, etc.). The full original is stored verbatim — full image,
-  /// square, no crop.
-  ///
-  /// Resolves the album's `Artwork` via any of `subsonicIds` (one hop:
-  /// `SongMO.id == subsonic_track_id` → `song.album?.artwork`). Pass `force:
-  /// true` to BYPASS the "already .CustomImage on disk" gate so a CHANGED cover
-  /// overwrites the old file (content reconciliation increment 2); the default
-  /// preserves the absence-only transfer behavior.
-  /// Returns true when the cover is SETTLED (materialized now, already valid on
-  /// disk, or intentionally absent by preference) and the caller may record the
-  /// content version; false on a RETRYABLE failure (no Core Data album yet,
-  /// download/decode/write failure) so the version is NOT recorded and the next
-  /// poll re-tries (D3 — a failed cover must never be remembered as done).
-  @discardableResult
-  private func materializeAlbumCover(
-    coverUrl: String,
-    subsonicIds: [String],
-    accountInfo: AccountInfo,
-    force: Bool = false
-  ) async
-    -> Bool {
-    // Honor the artwork-download preference (e.g. user set it to "never"). Settled
-    // (true): intentionally no cover, so don't retry every poll against a disabled
-    // preference.
-    guard AmperKit.shared.storage.settings.accounts
-      .getSetting(accountInfo).read.artworkDownloadSetting != .never else { return true }
-    guard !subsonicIds.isEmpty else { return true }
-
-    let context = AmperKit.shared.storage.main.context
-
-    // 1. Resolve the album's Artwork from any of the intent's tracks
-    //    (SongMO.id == subsonic_track_id). Skip if a local cover already exists,
-    //    UNLESS forcing a refresh (the cover changed in the catalog).
-    var artworkObjectID: NSManagedObjectID?
-    var remoteInfo: ArtworkRemoteInfo?
-    var alreadyLocalValid = false
-    context.performAndWait {
-      let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
-      request.predicate = NSPredicate(format: "id IN %@", subsonicIds)
-      request.fetchLimit = 1
-      guard let songMO = try? context.fetch(request).first,
-            let artwork = Song(managedObject: songMO).album?.artwork else { return }
-      // D2: skip ONLY when the cached cover is present AND fully decodable. A
-      // truncated/oversized "half renders then black" file is INVALID — fall
-      // through and re-pull under the current cap, replacing the broken artifact.
-      if !force,
-         artwork.status == .CustomImage,
-         let path = artwork.imagePath,
-         FileManager.default.fileExists(atPath: path),
-         CoverImageStore.isDecodable(fileURL: URL(fileURLWithPath: path)) {
-        alreadyLocalValid = true
-        return // already local + valid — nothing to do
-      }
-      artworkObjectID = artwork.managedObject.objectID
-      remoteInfo = artwork.remoteInfo
-    }
-    if alreadyLocalValid { return true } // settled — a valid cover is on disk
-    // No resolvable Artwork (the album isn't in Core Data yet) → RETRYABLE: do
-    // not record the version, let the next poll re-try once the album syncs.
-    guard let artworkObjectID, let remoteInfo else { return false }
-
-    // 2. Download the full cover (stored verbatim).
-    guard let url = URL(string: coverUrl) else { return false }
-    let data: Data
-    do {
-      let (downloaded, response) = try await URLSession.shared.data(from: url)
-      guard let http = response as? HTTPURLResponse,
-            (200 ..< 300).contains(http.statusCode), !downloaded.isEmpty
-      else { return false }
-      data = downloaded
-    } catch {
-      print("Cassette poll: cover download failed - \(error.localizedDescription)")
-      return false
-    }
-
-    // Rule 1/§5: verify the bytes fully decode before they touch disk. A corrupt
-    // or truncated download (or a failed content-version refresh under force:)
-    // must never overwrite an existing good cover — bail and leave the current
-    // cover + status untouched; the next poll retries. The write itself is
-    // atomic (writeDataExcludedFromBackup uses .atomic), so verify + atomic =
-    // a new cover lands only on verified success.
-    guard CoverImageStore.isDecodable(data) else {
-      print("Cassette poll: cover download not decodable — leaving existing cover")
-      return false
-    }
-
-    // 3. Write the file into the artwork dir and flip the Artwork to
-    //    .CustomImage — identical to SubsonicArtworkDownloadDelegate, so
-    //    imagePath / LibraryEntityImage then serve it with zero network.
-    let fileManager = CacheFileManager.shared
-    guard let relFilePath = fileManager.createRelPath(for: remoteInfo, account: accountInfo),
-          let absFilePath = fileManager.getAbsoluteAmperfyPath(relFilePath: relFilePath)
-    else { return false }
-    do {
-      try fileManager.writeDataExcludedFromBackup(
-        data: data,
-        to: absFilePath,
-        accountInfo: accountInfo
-      )
-    } catch {
-      print("Cassette poll: cover write failed - \(error.localizedDescription)")
-      return false
-    }
-    context.performAndWait {
-      guard let artworkMO = try? context.existingObject(with: artworkObjectID) as? ArtworkMO
-      else { return }
-      let artwork = Artwork(managedObject: artworkMO)
-      artwork.status = .CustomImage
-      artwork.relFilePath = relFilePath
-      try? context.save()
-    }
-    // cassette §art-collapse: defensively square + generate the ~480px thumb
-    // tier beside the stored full cover. Off-main — it decodes/encodes images.
-    await Task.detached(priority: .utility) {
-      CoverImageStore.processStoredCover(fullFileURL: absFilePath)
-    }.value
-    print("Cassette poll: materialized album cover (\(data.count) bytes)")
-    return true
-  }
-
   /// Download the album artist's bundled image and wire it into the artist's
-  /// `Artwork` — the same end-state as `materializeAlbumCover`, for the album
-  /// artist. Best-effort and idempotent: honors the artwork-download
-  /// preference, skips when a local artist image already exists, and no-ops on
-  /// any failure.
+  /// `Artwork` — a local `.CustomImage` for the album artist, the same disk
+  /// end-state a successful getCoverArt would land. Best-effort and idempotent:
+  /// honors the artwork-download preference, skips when a local artist image
+  /// already exists, and no-ops on any failure.
+  ///
+  /// Artist photos have no local-drive equivalent the way album covers do (no
+  /// folder cover.jpg over getCoverArt), so they keep this catalog-sourced
+  /// materialize path — unlike album covers, which are now native getCoverArt only.
   ///
   /// Unlike covers (one hop: `song.album?.artwork`), the artist image must NOT
   /// depend on the inherited `album → artist → artwork` graph. Cassette

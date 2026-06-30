@@ -44,15 +44,11 @@ public final class AlbumRegrouper {
     public var createdAlbums = 0
     public var matchedByLocalId = 0
     public var skipped = 0
-  }
-
-  /// A filesystem-safe, stable, collision-free artwork id derived from the group
-  /// key (normalized alnum + space + U+001F separator). Used as the synthetic
-  /// Artwork remoteInfo so the group album's cover file has a stable path.
-  static func artworkId(for groupKey: String) -> String {
-    "cassette-" + groupKey
-      .replacingOccurrences(of: "\u{1f}", with: "__")
-      .replacingOccurrences(of: " ", with: "_")
+    /// Albums (re)pointed at their native cover id this pass — i.e. still awaiting
+    /// the getCoverArt fetch. Reads high on the first post-switch pass (migration),
+    /// then falls to 0 as covers land `.CustomImage`. A non-zero steady-state value
+    /// means provisioning runs but the LAN fetch isn't settling the cover.
+    public var coversProvisioned = 0
   }
 
   private let log = OSLog(subsystem: "Amperfy", category: "AlbumRegrouper")
@@ -117,11 +113,46 @@ public final class AlbumRegrouper {
 
       var targetByKey = [String: Album]()
       var mergedLegacyIds = Set<String>() // legacy album ids already folded in
+      var coverProvisioned = Set<String>() // album ids whose cover we've settled this pass
       var createdCount = 0 // local — nested target() can't mutate the outer summary
+      var provisionedCount = 0 // local — albums (re)pointed at a native cover id this pass
 
       func validLocalCover(_ aw: Artwork?) -> Bool {
         guard let aw, aw.status == .CustomImage, let p = aw.imagePath else { return false }
         return FileManager.default.fileExists(atPath: p)
+      }
+
+      // Give an owned album an Artwork keyed on the owned song's NATIVE Subsonic
+      // cover id, so the (un-gated) getCoverArt byte path pulls the local-drive
+      // cover.jpg from the LAN Player (Navidrome serves the folder cover.* ahead of
+      // embedded art). One path for matched and unmatched albums alike — there is
+      // no catalog/R2 cover path anymore.
+      //
+      // Runs for EVERY owned album every regroup, not only when a song moves: an
+      // already-grouped device (steady-state moved=0) reaches ONLY the no-move
+      // branch, and must still provision + migrate its covers. Deduped per album
+      // id; an album with no native id from this song is left for a later song.
+      //
+      // Migration: an existing device may still hold a synthetic "cassette-album"
+      // Artwork from the retired R2 path — a stale .NotChecked/.FetchError shell OR
+      // a materialized .CustomImage carrying the WRONG catalog cover (the "green vs
+      // gold" case). Re-point either to the native id and reset .NotChecked so
+      // getCoverArt re-fetches the correct disk cover.
+      func provisionNativeCover(on album: Album, nativeCover: ArtworkRemoteInfo?) {
+        guard !coverProvisioned.contains(album.id) else { return }
+        let isSyntheticShell = album.artwork?.remoteInfo.type == "cassette-album"
+        if !isSyntheticShell, validLocalCover(album.artwork) {
+          coverProvisioned.insert(album.id) // already has a good local cover
+          return
+        }
+        guard let nativeCover, !nativeCover.id.isEmpty else { return } // try a later song
+        let aw = album.artwork ?? library.createArtwork(account: account)
+        let native = ArtworkRemoteInfo(id: nativeCover.id, type: nativeCover.type)
+        if aw.remoteInfo != native { aw.remoteInfo = native }
+        if aw.status != .CustomImage { aw.status = .NotChecked }
+        album.artwork = aw
+        coverProvisioned.insert(album.id)
+        provisionedCount += 1
       }
 
       func target(for item: CassetteDeviceGroupingItem, nativeCover: ArtworkRemoteInfo?) -> Album {
@@ -149,34 +180,7 @@ public final class AlbumRegrouper {
           }
           targetByKey[item.groupKey] = album
         }
-        // Cover provisioning — give EVERY owned album an Artwork so a cover can
-        // load, but never an id getCoverArt cannot serve. Runs on every call (not
-        // only first-create) so a later owned song carrying a native cover id can
-        // still fill an album an earlier coverless song created.
-        //  • catalog cover (album_art_ref present) → synthetic, FS-safe "cassette-"
-        //    id that materializeAlbumCover fills from the R2 URL after the regroup.
-        //  • no catalog cover → the owned song's NATIVE Subsonic cover id, so the
-        //    (un-gated) getCoverArt byte path pulls the Mac/disk art over the LAN —
-        //    this un-blanks the catalog-unmatched albums and mirrors the hub art.
-        //  • neither available → leave artwork nil (placeholder). Minting a
-        //    synthetic id with nothing to fill it is what caused the cassette-album
-        //    getCoverArt 404 loop, so we never do that.
-        if !validLocalCover(album.artwork) {
-          if item.albumArtRef != nil {
-            let aw = album.artwork ?? library.createArtwork(account: account)
-            aw.remoteInfo = ArtworkRemoteInfo(
-              id: Self.artworkId(for: item.groupKey),
-              type: "cassette-album"
-            )
-            if aw.status != .CustomImage { aw.status = .NotChecked }
-            album.artwork = aw
-          } else if album.artwork == nil, let nativeCover, !nativeCover.id.isEmpty {
-            let aw = library.createArtwork(account: account)
-            aw.remoteInfo = ArtworkRemoteInfo(id: nativeCover.id, type: nativeCover.type)
-            aw.status = .NotChecked
-            album.artwork = aw
-          }
-        }
+        provisionNativeCover(on: album, nativeCover: nativeCover)
         return album
       }
 
@@ -186,11 +190,18 @@ public final class AlbumRegrouper {
         if byTrackId[songMO.id] == nil { summary.matchedByLocalId += 1 }
         let song = Song(managedObject: songMO)
         let current = song.album
-        if current?.id == item.groupKey { continue } // already grouped → no-op
+        let nativeCover = song.artwork?.remoteInfo
+        if current?.id == item.groupKey {
+          // Already grouped → no move, but STILL provision + migrate the cover.
+          // A steady-state device (moved=0) reaches ONLY this branch, so without
+          // this its covers would never get a native id and never paint.
+          if let current { provisionNativeCover(on: current, nativeCover: nativeCover) }
+          continue
+        }
 
-        // Pass the owned song's native Subsonic cover id so a catalog-unmatched
-        // album (album_art_ref == nil) can still load the Mac/disk art via getCoverArt.
-        let targetAlbum = target(for: item, nativeCover: song.artwork?.remoteInfo)
+        // Pass the owned song's native Subsonic cover id so getCoverArt can load
+        // the album's local-drive cover.jpg over the LAN.
+        let targetAlbum = target(for: item, nativeCover: nativeCover)
 
         if let legacy = current, legacy.id != item.groupKey {
           if !mergedLegacyIds.contains(legacy.id) {
@@ -228,6 +239,7 @@ public final class AlbumRegrouper {
 
       summary.groups = targetByKey.count
       summary.createdAlbums = createdCount
+      summary.coversProvisioned = provisionedCount
 
       // SAVE #1 — re-points + new group-key albums + refreshed counts. This is
       // the user-visible change: the grid settles onto the correct albums in one

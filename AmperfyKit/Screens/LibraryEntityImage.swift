@@ -262,7 +262,7 @@ public class LibraryEntityImage: RoundedImage {
 // MARK: - CoverImageStore
 
 /// cassette §art-collapse: the two-tier, square, off-main cover machinery shared
-/// by ingestion (IntentExecutor.materializeAlbumCover, the lazy Subsonic path)
+/// by ingestion (the native getCoverArt path via SubsonicArtworkDownloadDelegate)
 /// and display (LibraryEntityImage). One album-level cover per album, stored as
 /// a capped full file plus a ~480px square thumb beside it (`<id>_thumb.<ext>`),
 /// decoded at the size the view actually needs.
