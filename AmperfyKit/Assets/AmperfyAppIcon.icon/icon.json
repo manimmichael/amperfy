@@ -1,6 +1,9 @@
 {
   "fill" : {
-    "automatic-gradient" : "display-p3:0.90980,0.47059,0.18824,1.00000",
+    "linear-gradient" : [
+      "display-p3:0.90980,0.47059,0.18824,1.00000",
+      "display-p3:0.90980,0.36078,0.22745,1.00000"
+    ],
     "orientation" : {
       "start" : {
         "x" : 0.5,
@@ -19,10 +22,37 @@
           "fill" : {
             "automatic-gradient" : "srgb:0.94902,0.92941,0.89412,1.00000"
           },
+          "hidden" : true,
           "image-name" : "icon.png",
           "name" : "icon",
           "position" : {
             "scale" : 1.7,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "fill" : {
+            "automatic-gradient" : "srgb:0.94902,0.92941,0.89412,1.00000"
+          },
+          "image-name" : "icon 2.png",
+          "name" : "icon 2",
+          "position" : {
+            "scale" : 0.88,
             "translation-in-points" : [
               0,
               0
