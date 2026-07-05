@@ -70,10 +70,9 @@ class GenericTableCell: BasicTableCell {
     infoLabel.isHidden = infoText.isEmpty
     infoLabel.text = infoText
     infoLabel.textAlignment = (traitCollection.horizontalSizeClass == .regular) ? .right : .left
-    favoriteIconImage.isHidden = !container.isFavorite
-    // cassette Patch 049 (Phase D): favorite icon drops from amber to ink.
-    // See PlayableTableCell for shared rationale.
-    favoriteIconImage.tintColor = CassetteTheme.UIColors.ink
+    // cassette: favorites removed — the per-row favorite icon is always hidden
+    // (the isFavorite column is preserved but no longer surfaced on library rows).
+    favoriteIconImage.isHidden = true
 
     if container is Album {
       infoLabelWidthConstraint.constant = 75

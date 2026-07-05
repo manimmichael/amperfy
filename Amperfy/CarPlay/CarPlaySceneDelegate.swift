@@ -189,7 +189,11 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
             storage: appDelegate.storage,
             getMeta: appDelegate.getMeta,
             eventLogger: appDelegate.eventLogger,
-            player: appDelegate.player
+            player: appDelegate.player,
+            // cassette (Job 1.3): CarPlay Home is album-forward — build the two
+            // album shelves this instance renders. iOS's HomeManager leaves this
+            // default-false, so iOS Home is untouched.
+            buildsAlbumShelves: true
           )
           sharedHome?.applySnapshotCB = { [weak self] in
             guard let self else { return }
@@ -262,9 +266,18 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     // D5: no "Cached" tab. The music is on the phone, not "cached" — offline
     // filtering happens automatically inside the Library lists (onlyCached:
     // isOfflineMode), so there's no separate surface and no "cache" wording.
+    //
+    // cassette (CarPlay feel-good, Job 3): album-forward, driving-safe IA.
+    // Albums & Artists are promoted to top-level tabs (were nested under the
+    // "Library" tab) so the most-reached categories are one tap from the root.
+    // Library's other children (Genres, Favorite Songs) are intentionally not
+    // surfaced on CarPlay — album/artist/playlist is enough behind the wheel.
+    // `libraryTab` stays defined (its templateWillAppear branch is now just
+    // unreachable) so nothing else breaks. 4 tabs, under the 5-tab ceiling.
     let bar = CPTabBarTemplate(templates: [
       homeTab,
-      libraryTab,
+      albumsSection,
+      artistsSection,
       playlistTab,
     ].prefix(upToAsArray: CPTabBarTemplate.maximumTabCount))
     return bar
@@ -349,6 +362,8 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     let template = CPListTemplate(title: "Artists", sections: [
       CPListSection(items: [CPListTemplateItem]()),
     ])
+    // cassette (Job 3): promoted to a top-level CarPlay tab.
+    template.tabImage = UIImage.artist
     return template
   }()
 
@@ -377,6 +392,8 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     let template = CPListTemplate(title: "Albums", sections: [
       CPListSection(items: [CPListTemplateItem]()),
     ])
+    // cassette (Job 3): promoted to a top-level CarPlay tab.
+    template.tabImage = UIImage.album
     return template
   }()
 

@@ -51,6 +51,10 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   // legacy `accountSettings.homeSections` Codable payloads keep
   // decoding; .resume left in the enum but no longer rendered.
   case recent
+  // cassette (Forgotten Albums): owned albums the user has drifted from — the
+  // anti-recency shelf. Appended (ordinal 15) so legacy Codable `homeSections`
+  // payloads keep decoding.
+  case forgottenAlbums
 
   // cassette redesign (Surface 4): Resume leads the Home IA again — a
   // single full-width card sourced from the lastPlayedDate FRCs. The four
@@ -59,7 +63,10 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     .resume,
     .recent,
     .yourPlaylists,
-    .recentlyAdded,
+    // cassette: "Albums" is now the from-your-collection shelf (`.forgottenAlbums`,
+    // retitled). The old played->newest "Albums" row (`.recentlyAdded`) is retired
+    // from Home — `Recent` covers recently-played albums.
+    .forgottenAlbums,
     .recentlyPlayedArtists,
   ]
 
@@ -70,7 +77,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   public static let editableSections: [HomeSection] = [
     .recent,
     .yourPlaylists,
-    .recentlyAdded,
+    .forgottenAlbums,
     .recentlyPlayedArtists,
   ]
 
@@ -91,9 +98,10 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     // Codable decoding of legacy AccountSetting payloads doesn't
     // break; only the user-facing title changes.
     case .yourPlaylists: return "Playlists"
-    case .recentlyAdded: return "Albums"
+    case .recentlyAdded: return "Recently Added Albums" // retired from Home; retitled to avoid a duplicate "Albums"
     case .recentlyPlayedArtists: return "Artists"
     case .recent: return "Recent"
+    case .forgottenAlbums: return "Albums" // the from-your-collection / anti-recency shelf, surfaced as "Albums"
     }
   }
 
@@ -118,6 +126,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .recentlyAdded: return false
     case .recentlyPlayedArtists: return false
     case .recent: return false
+    case .forgottenAlbums: return false
     }
   }
 }

@@ -64,9 +64,6 @@
                                         <imageReference key="image" image="heart" catalog="system" symbolScale="medium"/>
                                         <backgroundConfiguration key="background"/>
                                     </buttonConfiguration>
-                                    <connections>
-                                        <action selector="favoritePressed:" destination="iN0-l3-epB" eventType="touchUpInside" id="cBE-1x-Pe9"/>
-                                    </connections>
                                 </button>
                                 <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="cYG-VG-BvQ" userLabel="Options">
                                     <rect key="frame" x="329" y="35" width="30" height="30"/>

@@ -48,32 +48,8 @@ extension CarPlaySceneDelegate {
           appDelegate.player.toggleShuffle()
         })
       )
-      if let currentlyPlaying = appDelegate.player.currentlyPlaying,
-         !currentlyPlaying.isRadio {
-        let isFavorite = appDelegate.player.currentlyPlaying?.isFavorite ?? false
-        buttons.append(
-          CPNowPlayingImageButton(
-            image: isFavorite ? .heartFill : .heartEmpty,
-            handler: { [weak self] button in
-              guard let self = self else { return }
-              guard let playableInfo = appDelegate.player.currentlyPlaying,
-                    let account = playableInfo.account else { return }
-              Task { @MainActor in
-                do {
-                  try await playableInfo
-                    .remoteToggleFavorite(
-                      syncer: self.appDelegate
-                        .getMeta(account.info).librarySyncer
-                    )
-                } catch {
-                  self.appDelegate.eventLogger.report(topic: "Toggle Favorite", error: error)
-                }
-                self.configureNowPlayingTemplate()
-              }
-            }
-          )
-        )
-      }
+      // cassette (favorites rip-out): the CarPlay now-playing favorite (heart)
+      // button was removed. Repeat + shuffle remain.
     }
     // Cassette CarPlay: the playback-speed multiplier only makes sense for
     // spoken-word content. Cassette surfaces podcasts as a real, playable

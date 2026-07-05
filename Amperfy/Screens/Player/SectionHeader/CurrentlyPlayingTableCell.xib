@@ -85,9 +85,6 @@
                             <imageReference key="image" image="heart" catalog="system" symbolScale="medium"/>
                             <backgroundConfiguration key="background"/>
                         </buttonConfiguration>
-                        <connections>
-                            <action selector="favoritePressed:" destination="gve-H7-PxP" eventType="touchUpInside" id="nof-ey-DEY"/>
-                        </connections>
                     </button>
                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="awQ-BG-bfX" userLabel="Options">
                         <rect key="frame" x="329" y="32" width="30" height="30"/>

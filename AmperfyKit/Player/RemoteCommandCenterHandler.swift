@@ -168,40 +168,11 @@ public class RemoteCommandCenterHandler {
       })
     #endif
 
-    remoteCommandCenter.likeCommand.isEnabled = true
-    remoteCommandCenter.likeCommand.localizedTitle = NSLocalizedString(
-      "Favorite",
-      comment: "Marks the currently playing element as favorite"
-    )
-    remoteCommandCenter.likeCommand.addTarget(handler: { event in
-      guard let command = event as? MPFeedbackCommandEvent,
-            let currentItem = self.musicPlayer.currentlyPlaying,
-            currentItem.isFavoritable
-      else { return .noSuchContent }
-      guard command.isNegative == currentItem.isFavorite else {
-        self.remoteCommandCenter.likeCommand.isActive = currentItem.isFavorite
-        return .success
-      }
-      // cassette Patch 040: roll the lock-screen heart back to its
-      // prior state if the server call fails. AbstractPlayable.remote
-      // ToggleFavorite already rolls the model back; this revert
-      // keeps the MPRemoteCommandCenter `isActive` in sync with the
-      // model so the lock-screen UI doesn't lie either.
-      let previousActive = command.isNegative
-      self.remoteCommandCenter.likeCommand.isActive = !command.isNegative
-      Task { @MainActor in
-        do {
-          if let accountInfo = currentItem.account?.info {
-            let librarySyncer = self.getLibrarySyncerCB(accountInfo)
-            try await currentItem.remoteToggleFavorite(syncer: librarySyncer)
-          }
-        } catch {
-          self.remoteCommandCenter.likeCommand.isActive = previousActive
-          self.eventLogger.report(topic: "Toggle Favorite", error: error)
-        }
-      }
-      return .success
-    })
+    // cassette: favorites feature removed. The lock-screen / Control Center
+    // like (feedback) command is permanently disabled and given no handler so no
+    // heart renders. Left off in every branch of
+    // changeRemoteCommandCenterControlsBasedOnCurrentPlayableType() below too.
+    remoteCommandCenter.likeCommand.isEnabled = false
   }
 
   func changeRemoteCommandCenterControlsBasedOnCurrentPlayableType() {
@@ -218,8 +189,9 @@ public class RemoteCommandCenterHandler {
       remoteCommandCenter.skipForwardCommand.isEnabled = false
       remoteCommandCenter.changeShuffleModeCommand.isEnabled = true
       remoteCommandCenter.changeRepeatModeCommand.isEnabled = true
-      remoteCommandCenter.likeCommand.isEnabled = true
-      remoteCommandCenter.likeCommand.isActive = currentItem.isFavorite
+      // cassette: favorites removed — like command stays disabled for songs too.
+      remoteCommandCenter.likeCommand.isEnabled = false
+      remoteCommandCenter.likeCommand.isActive = false
       remoteCommandCenter.changePlaybackPositionCommand.isEnabled = true
       remoteCommandCenter.changePlaybackRateCommand.isEnabled = true
     case .podcastEpisode:

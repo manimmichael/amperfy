@@ -27,6 +27,8 @@ struct DiagnosticsSettingsView: View {
   private var entries: [DiagnosticEntry] = []
   @State
   private var exportURL: URL?
+  @State
+  private var syncCheck: DeviceOwnershipManager.SyncSelfCheck?
 
   var body: some View {
     ZStack {
@@ -45,6 +47,49 @@ struct DiagnosticsSettingsView: View {
             ShareLink(item: exportURL) {
               Label("Export diagnostics", systemImage: "square.and.arrow.up")
             }
+          }
+        }
+
+        Section(
+          header: Text("Sync self-check"),
+          footer: Text(
+            "Read-only. Compares what this device OWNS against what can actually render in the library. \"Invisible\" tracks are on the phone but have no library record to show, so they never appear."
+          )
+        ) {
+          Button {
+            runSyncCheck()
+          } label: {
+            Label("Run sync self-check", systemImage: "arrow.triangle.2.circlepath")
+          }
+          if let c = syncCheck {
+            syncCheckRow("Owned tracks", "\(c.ownedTrackCount)")
+            syncCheckRow("Renderable (have record)", "\(c.renderableTrackCount)")
+            syncCheckRow(
+              "Invisible (owned, no record)",
+              "\(c.invisibleTrackCount)",
+              warn: c.invisibleTrackCount > 0
+            )
+            syncCheckRow("Albums that render", "\(c.renderedAlbumCount)")
+            syncCheckRow("Files on disk", "\(c.filesOnDisk)")
+            syncCheckRow("Missing files (stranded)", "\(c.filesMissing)", warn: c.filesMissing > 0)
+            syncCheckRow(
+              "Invisible but file present",
+              "\(c.invisibleButOnDisk)",
+              warn: c.invisibleButOnDisk > 0
+            )
+            syncCheckRow(
+              "Server Mode",
+              c.serverModeOn ? "ON (shows catalog!)" : "off",
+              warn: c.serverModeOn
+            )
+            ForEach(c.sampleInvisible, id: \.self) { line in
+              Text(line)
+                .font(.caption2.monospaced())
+                .foregroundColor(.secondary)
+            }
+            Text(verdict(for: c))
+              .font(.footnote)
+              .foregroundColor(.secondary)
           }
         }
 
@@ -78,6 +123,38 @@ struct DiagnosticsSettingsView: View {
   /// not on every pull-to-refresh.
   private func refresh() {
     entries = Array(DiagnosticLog.shared.snapshot().reversed())
+  }
+
+  /// Read-only: compute the on-device ownership-vs-visibility snapshot on the
+  /// main context. Nothing here mutates Core Data or the filesystem.
+  private func runSyncCheck() {
+    let manager = DeviceOwnershipManager(context: AmperKit.shared.storage.main.context)
+    syncCheck = manager.syncSelfCheck()
+    UISelectionFeedbackGenerator().selectionChanged()
+  }
+
+  @ViewBuilder
+  private func syncCheckRow(_ label: String, _ value: String, warn: Bool = false) -> some View {
+    HStack {
+      Text(label)
+      Spacer()
+      Text(value)
+        .monospacedDigit()
+        .foregroundColor(warn ? .orange : .secondary)
+    }
+  }
+
+  private func verdict(for c: DeviceOwnershipManager.SyncSelfCheck) -> String {
+    if c.invisibleButOnDisk > 0 {
+      return "\(c.invisibleButOnDisk) owned tracks are on disk but have no library record — the missing-SongMO gap. A library re-sync should reveal them."
+    }
+    if c.filesMissing > 0 {
+      return "\(c.filesMissing) owned tracks have no file on disk — a transfer stranding."
+    }
+    if c.serverModeOn {
+      return "Server Mode is ON — the library shows the full catalog, not just owned tracks."
+    }
+    return "Everything owned is renderable — no visibility gap on this device."
   }
 
   private func flagMoment() {

@@ -27,10 +27,13 @@ import Foundation
 extension LibraryDisplayType {
   fileprivate var isVisibleInCachedCarPlay: Bool {
     switch self {
-    case .albums, .artists, .favoriteAlbums, .favoriteArtists, .favoriteSongs, .genres,
-         .newestAlbums, .podcasts, .recentAlbums:
+    case .albums, .artists, .genres, .newestAlbums, .podcasts, .recentAlbums:
       return true
-    case .directories, .downloads, .radios, .songs:
+    // cassette (favorites rip-out): the three Favorite surfaces are hidden from
+    // the cached CarPlay tab (the handler-switch cases below are kept for
+    // exhaustiveness but are now unreachable).
+    case .favoriteAlbums, .favoriteArtists, .favoriteSongs, .directories, .downloads, .radios,
+         .songs:
       return false
     case .playlists:
       return false // playlists have their own tab

@@ -159,7 +159,19 @@ public struct LibraryDisplaySettings: Sendable, Codable {
   // `combined` storage — so podcast playback/data stay intact and a future
   // re-enable is a one-line revert. `LibraryContainerVC.dropdownCategories`
   // (the mobile dropdown) is filtered separately since it's a fixed list.
-  private static let hiddenBrowseTypes: Set<LibraryDisplayType> = [.podcasts]
+  //
+  // cassette (favorites rip-out): the three Favorite browse surfaces
+  // (Favorite Songs / Albums / Artists) are hidden here too. The
+  // LibraryDisplayType enum cases + segue factories are kept (Codable +
+  // exhaustive switches); this hard-hides them from every non-CarPlay browse
+  // surface. Re-enable is a one-line revert.
+  private static let hiddenBrowseTypes: Set<LibraryDisplayType> = [
+    .podcasts,
+    .directories,
+    .favoriteSongs,
+    .favoriteAlbums,
+    .favoriteArtists,
+  ]
 
   public var inUse: [LibraryDisplayType] {
     combined[0].filter { !Self.hiddenBrowseTypes.contains($0) }
@@ -215,7 +227,7 @@ public struct LibraryDisplaySettings: Sendable, Codable {
         .newestAlbums,
         .recentAlbums,
         .songs,
-        .favoriteSongs,
+        // cassette: favorites removed — Favorite Songs no longer seeded.
         .directories,
         .playlists,
         // cassette: Podcasts intentionally omitted — hidden as a browse
@@ -230,13 +242,12 @@ public struct LibraryDisplaySettings: Sendable, Codable {
       inUse: [
         .genres,
         .artists,
-        .favoriteArtists,
         .albums,
-        .favoriteAlbums,
         .newestAlbums,
         .recentAlbums,
         .songs,
-        .favoriteSongs,
+        // cassette: favorites removed — Favorite Artists/Albums/Songs no
+        // longer seeded into the add-to-playlist picker.
         .directories,
         .playlists,
       ]

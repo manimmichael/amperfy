@@ -180,6 +180,15 @@ public struct CassetteDeviceGroupingItem: Sendable, Decodable {
   public let displayAlbum: String
   public let displayArtist: String
   public let albumArtRef: String?
+  /// The track's own title + duration (additive). Present once the cloud deploy
+  /// includes them; lets the device materialize a SongMO for an owned track it
+  /// never library-synced (AlbumRegrouper), so "owned" always equals "visible".
+  /// Optional so an older cloud response still decodes.
+  public let trackTitle: String?
+  public let duration: Int?
+  /// The track's 1-based position on its disc, so a materialized SongMO sorts in
+  /// album order. Optional/nullable (only ripped-and-linked tracks carry it).
+  public let discTrackIndex: Int?
 
   enum CodingKeys: String, CodingKey {
     case cassetteLocalId = "cassette_local_id"
@@ -188,6 +197,9 @@ public struct CassetteDeviceGroupingItem: Sendable, Decodable {
     case displayAlbum = "display_album"
     case displayArtist = "display_artist"
     case albumArtRef = "album_art_ref"
+    case trackTitle = "track_title"
+    case duration
+    case discTrackIndex = "disc_track_index"
   }
 }
 

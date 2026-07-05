@@ -51,7 +51,9 @@ final class HomeVC: UICollectionViewController {
       storage: appDelegate.storage,
       getMeta: appDelegate.getMeta,
       eventLogger: appDelegate.eventLogger,
-      player: appDelegate.player
+      player: appDelegate.player,
+      // cassette (Forgotten Albums): iOS Home builds the anti-recency shelf.
+      buildsForgottenShelf: true
     )
     let layout = HomeVC.createLayout()
     super.init(collectionViewLayout: layout)
@@ -163,6 +165,23 @@ final class HomeVC: UICollectionViewController {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
     sharedHome.updateFromRemote()
+    // cassette (Forgotten Albums): opportunistic roll-off of aged hot-log rows
+    // into the durable cold counters, then stamp the shelf's current impressions
+    // now that Home is on screen.
+    appDelegate.storage.main.library.rollOffAgedHomeShelfEvents(for: account)
+    recordForgottenShelfImpressionIfVisible()
+  }
+
+  /// cassette (Forgotten Albums): stamp `lastSurfacedOnHomeDate` + write a hot-log
+  /// "surfaced" row for the albums currently on the shelf. Only when actually on
+  /// screen; the storage layer is per-day idempotent, so this is safe to call on
+  /// every appearance / snapshot.
+  private func recordForgottenShelfImpressionIfVisible() {
+    guard viewIfLoaded?.window != nil else { return }
+    let ids = (sharedHome.data[.forgottenAlbums] ?? [])
+      .compactMap { ($0.playableContainable as? Album)?.id }
+    guard !ids.isEmpty else { return }
+    appDelegate.storage.main.library.recordForgottenAlbumsSurfaced(albumIds: ids, for: account)
   }
 
   // MARK: - Layout
@@ -403,6 +422,9 @@ final class HomeVC: UICollectionViewController {
     }
     dataSource.apply(snapshot, animatingDifferences: animated)
     refreshEmptyLibraryState(hasItems: totalItems > 0)
+    // cassette (Forgotten Albums): the shelf may have just populated while Home
+    // is visible — record the impression (per-day idempotent).
+    recordForgottenShelfImpressionIfVisible()
   }
 
   /// cassette Patch 020: Cassette-flavored "no music yet" empty state on
@@ -479,8 +501,15 @@ final class HomeVC: UICollectionViewController {
     _ collectionView: UICollectionView,
     didSelectItemAt indexPath: IndexPath
   ) {
-    guard let playableContainer = dataSource.itemIdentifier(for: indexPath)?.playableContainable
-    else { return }
+    guard let selectedItem = dataSource.itemIdentifier(for: indexPath) else { return }
+    let playableContainer = selectedItem.playableContainable
+
+    // cassette (Forgotten Albums): "opened from shelf" intent stamp (hot-log row
+    // only; Home navigates on tap, so this is not a confirmed play — play-origin
+    // attribution is deferred by design).
+    if selectedItem.section == .forgottenAlbums, let album = playableContainer as? Album {
+      appDelegate.storage.main.library.recordForgottenAlbumOpened(albumId: album.id)
+    }
 
     // cassette Patch 042: every Home card navigates to detail. The
     // bottom-right play overlay (Patch 043) is the dedicated

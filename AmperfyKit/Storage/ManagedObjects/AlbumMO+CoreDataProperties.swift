@@ -53,6 +53,16 @@ extension AlbumMO {
   public var remoteSongCount: Int16
   @NSManaged
   public var year: Int16
+  // cassette (Forgotten Albums, v53): shelf turnover state + cold-tier feedback
+  // primitives. lastSurfacedOnHomeDate drives daily rotation; the two lifetime
+  // counters are the durable atomic primitives the hot-tier HomeShelfEvent log
+  // folds into on roll-off (rejection/open-rate are derived on demand, never stored).
+  @NSManaged
+  public var lastSurfacedOnHomeDate: Date?
+  @NSManaged
+  public var timesSurfacedLifetime: Int32
+  @NSManaged
+  public var timesOpenedFromShelfLifetime: Int32
   @NSManaged
   public var artist: ArtistMO?
   @NSManaged

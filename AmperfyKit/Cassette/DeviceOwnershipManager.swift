@@ -80,6 +80,58 @@ public final class DeviceOwnershipManager {
     return resultID
   }
 
+  /// A single ownership row for `recordBatch`.
+  public struct BatchEntry: Sendable {
+    public let cassetteLocalId: String
+    public let mbid: String?
+    public let subsonicTrackId: String?
+    public let fileExtension: String
+    public let downloadedAt: Date
+    public init(
+      cassetteLocalId: String,
+      mbid: String?,
+      subsonicTrackId: String?,
+      fileExtension: String,
+      downloadedAt: Date
+    ) {
+      self.cassetteLocalId = cassetteLocalId
+      self.mbid = mbid
+      self.subsonicTrackId = subsonicTrackId
+      self.fileExtension = fileExtension
+      self.downloadedAt = downloadedAt
+    }
+  }
+
+  /// cassette: batch insert/update ownership rows in a SINGLE `save()` — one
+  /// SQLite write for a whole download burst instead of N per-track saves. Meant
+  /// to be called OFF the main thread (e.g. inside `storage.async.perform`); the
+  /// `performAndWait` is re-entrant-safe when already on the context's queue.
+  public func recordBatch(_ entries: [BatchEntry]) throws {
+    guard !entries.isEmpty else { return }
+    var caught: Error?
+    context.performAndWait {
+      do {
+        for entry in entries {
+          let existing = try fetchOneInternal(cassetteLocalId: entry.cassetteLocalId)
+          let ownership = existing ?? DeviceOwnershipMO(context: context)
+          ownership.cassetteLocalId = entry.cassetteLocalId
+          ownership.mbid = entry.mbid
+          ownership.subsonicTrackId = entry.subsonicTrackId
+          ownership.filePath = "\(entry.cassetteLocalId).\(entry.fileExtension)"
+          ownership.downloadedAt = entry.downloadedAt
+          ownership.fileSizeBytes = fileStorage.fileSize(
+            for: entry.cassetteLocalId,
+            extension: entry.fileExtension
+          )
+        }
+        try context.save() // one save for the whole batch
+      } catch {
+        caught = error
+      }
+    }
+    if let caught { throw caught }
+  }
+
   /// Delete the ownership record and its backing file. Idempotent.
   public func remove(cassetteLocalId: String) throws {
     var caught: Error?
@@ -237,6 +289,72 @@ public final class DeviceOwnershipManager {
       }
     }
     return result
+  }
+
+  // MARK: - Read-only diagnostics (sync self-check)
+
+  /// A read-only snapshot of the on-device ownership vs visibility state — the
+  /// on-device half of the desktop<->phone sync probe. Nothing here mutates.
+  public struct SyncSelfCheck: Sendable {
+    public let ownedTrackCount: Int          // ownership rows with a subsonicTrackId
+    public let renderableTrackCount: Int     // of those, how many have a matching SongMO
+    public let invisibleTrackCount: Int      // owned but NO SongMO → renders nowhere
+    public let renderedAlbumCount: Int       // distinct albums reachable from owned SongMOs
+    public let filesOnDisk: Int              // ownership rows whose backing file exists
+    public let filesMissing: Int             // ownership rows whose file is gone (stranding)
+    public let invisibleButOnDisk: Int       // invisible AND file present → the SongMO-graph gap
+    public let serverModeOn: Bool            // stale server-mode would show catalog, not owned-only
+    public let sampleInvisible: [String]     // a few invisible rows for spot-checking
+  }
+
+  /// Compute the sync self-check. Safe to call on the main actor with the main
+  /// context (`AmperKit.shared.storage.main.context`).
+  public func syncSelfCheck() -> SyncSelfCheck {
+    var owned = 0, renderable = 0, albums = 0
+    var filesOnDisk = 0, filesMissing = 0, invisibleOnDisk = 0
+    var sample: [String] = []
+    context.performAndWait {
+      let ownedIds = ownedSubsonicTrackIdsInternal()
+      owned = ownedIds.count
+      let songs = ownedSongsInternal()
+      let songIds = Set(songs.compactMap { $0.id })
+      renderable = songIds.intersection(ownedIds).count
+      albums = Set(songs.compactMap { $0.album?.id }.filter { !$0.isEmpty }).count
+
+      let request: NSFetchRequest<DeviceOwnershipMO> = DeviceOwnershipMO.fetchRequest()
+      let rows = (try? context.fetch(request)) ?? []
+      let dir = fileStorage.musicDirectory()
+      for row in rows {
+        let path = row.filePath ?? ""
+        let exists = !path.isEmpty &&
+          FileManager.default.fileExists(atPath: dir.appendingPathComponent(path).path)
+        exists ? (filesOnDisk += 1) : (filesMissing += 1)
+        let sid = row.subsonicTrackId ?? ""
+        let invisible = sid.isEmpty || !songIds.contains(sid)
+        if invisible {
+          if exists { invisibleOnDisk += 1 }
+          if sample.count < 8 {
+            sample.append(
+              "sid=\(sid.isEmpty ? "∅" : sid) clid=\(row.cassetteLocalId ?? "∅") file=\(exists ? "yes" : "MISSING")"
+            )
+          }
+        }
+      }
+    }
+    let serverMode = UserDefaults.standard.bool(
+      forKey: CassetteLibraryFilterProvider.serverModeDefaultsKey
+    )
+    return SyncSelfCheck(
+      ownedTrackCount: owned,
+      renderableTrackCount: renderable,
+      invisibleTrackCount: max(0, owned - renderable),
+      renderedAlbumCount: albums,
+      filesOnDisk: filesOnDisk,
+      filesMissing: filesMissing,
+      invisibleButOnDisk: invisibleOnDisk,
+      serverModeOn: serverMode,
+      sampleInvisible: sample
+    )
   }
 
   // MARK: - Internal (must be called inside context.perform*)

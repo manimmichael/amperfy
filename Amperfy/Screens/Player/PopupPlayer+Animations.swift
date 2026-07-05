@@ -38,14 +38,12 @@ extension PopupPlayerVC {
     var artworkToDisapper: UIView?
     var containerToDisapper: UIView?
     var detailsContainerToDisapper: UIView?
-    var favoriteToDisapper: UIView?
     var optionsToDisapper: UIView?
 
     var viewToApper: UIView?
     var artworkToApper: UIView?
     var containerToApper: UIView?
     var detailsContainerToApper: UIView?
-    var favoriteToApper: UIView?
     var optionsToApper: UIView?
 
     switch displayStyle {
@@ -54,13 +52,11 @@ extension PopupPlayerVC {
       artworkToDisapper = largeCurrentlyPlayingView?.artworkImage
       containerToDisapper = largeCurrentlyPlayingView
       detailsContainerToDisapper = largeCurrentlyPlayingView?.detailsContainer
-      favoriteToDisapper = largeCurrentlyPlayingView?.favoriteButton
       optionsToDisapper = largeCurrentlyPlayingView?.optionsButton
       viewToApper = tableView
       artworkToApper = currentlyPlayingTableCell?.artworkImage
       containerToApper = currentlyPlayingTableCell
       detailsContainerToApper = currentlyPlayingTableCell
-      favoriteToApper = currentlyPlayingTableCell?.favoriteButton
       optionsToApper = currentlyPlayingTableCell?.optionsButton
       scrollToCurrentlyPlayingRow()
       currentlyPlayingTableCell?.refresh()
@@ -69,13 +65,11 @@ extension PopupPlayerVC {
       artworkToDisapper = currentlyPlayingTableCell?.artworkImage
       containerToDisapper = currentlyPlayingTableCell
       detailsContainerToDisapper = currentlyPlayingTableCell
-      favoriteToDisapper = currentlyPlayingTableCell?.favoriteButton
       optionsToDisapper = currentlyPlayingTableCell?.optionsButton
       viewToApper = largePlayerPlaceholderView
       artworkToApper = largeCurrentlyPlayingView?.artworkImage
       containerToApper = largeCurrentlyPlayingView
       detailsContainerToApper = largeCurrentlyPlayingView?.detailsContainer
-      favoriteToApper = largeCurrentlyPlayingView?.favoriteButton
       optionsToApper = largeCurrentlyPlayingView?.optionsButton
       largeCurrentlyPlayingView?.refresh()
     }
@@ -89,8 +83,6 @@ extension PopupPlayerVC {
             let artworkToApper = artworkToApper,
             let detailsContainerToDisapper = detailsContainerToDisapper,
             let detailsContainerToApper = detailsContainerToApper,
-            let favoriteToDisapper = favoriteToDisapper,
-            let favoriteToApper = favoriteToApper,
             let optionsToDisapper = optionsToDisapper,
             let optionsToApper = optionsToApper
       else { return }
@@ -115,27 +107,6 @@ extension PopupPlayerVC {
         targetView: artworkToApper,
         sourceFrame: artworkSourceFrame,
         targetFrame: artworkTargetFrame
-      )
-
-      favoriteToApper.layoutIfNeeded()
-      var favoriteSourceFrame = view.convert(
-        favoriteToDisapper.frame,
-        from: detailsContainerToDisapper
-      )
-      favoriteSourceFrame = limitSizeToInsideThePlaceholder(
-        targetFrame: favoriteSourceFrame,
-        placeholderFrame: largePlayerPlaceholderView.frame
-      )
-      var favoriteTargetFrame = view.convert(favoriteToApper.frame, from: detailsContainerToApper)
-      favoriteTargetFrame = limitSizeToInsideThePlaceholder(
-        targetFrame: favoriteTargetFrame,
-        placeholderFrame: largePlayerPlaceholderView.frame
-      )
-      animateFavorite(
-        sourceView: favoriteToDisapper,
-        targetView: favoriteToApper,
-        sourceFrame: favoriteSourceFrame,
-        targetFrame: favoriteTargetFrame
       )
 
       optionsToApper.layoutIfNeeded()
@@ -234,23 +205,6 @@ extension PopupPlayerVC {
 
     animatePlayStyleObject(
       object: fakeImageView,
-      sourceView: sourceView,
-      targetView: targetView,
-      sourceFrame: sourceFrame,
-      targetFrame: targetFrame
-    )
-  }
-
-  private func animateFavorite(
-    sourceView: UIView,
-    targetView: UIView,
-    sourceFrame: CGRect,
-    targetFrame: CGRect
-  ) {
-    let fakeButton = UIButton(frame: sourceFrame)
-    refreshFavoriteButton(button: fakeButton)
-    animatePlayStyleObject(
-      object: fakeButton,
       sourceView: sourceView,
       targetView: targetView,
       sourceFrame: sourceFrame,

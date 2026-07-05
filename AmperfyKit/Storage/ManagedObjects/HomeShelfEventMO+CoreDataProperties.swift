@@ -1,9 +1,8 @@
 //
-//  FavoriteTypeAppEnum.swift
-//  Amperfy
+//  HomeShelfEventMO+CoreDataProperties.swift
+//  AmperfyKit
 //
-//  Created by Maximilian Bauer on 24.12.25.
-//  Copyright (c) 2025 Maximilian Bauer. All rights reserved.
+//  Cassette fork — Forgotten Albums shelf (hot-tier feedback log).
 //
 //  This program is free software: you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License as published by
@@ -19,19 +18,23 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
-import AppIntents
+import CoreData
 import Foundation
 
-enum FavoriteTypeAppEnum: Int, AppEnum {
-  case favorite
-  case removeFromFavorites
+extension HomeShelfEventMO {
+  @nonobjc
+  public class func fetchRequest() -> NSFetchRequest<HomeShelfEventMO> {
+    NSFetchRequest<HomeShelfEventMO>(entityName: "HomeShelfEvent")
+  }
 
-  static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Favorite")
-  static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
-    .favorite: DisplayRepresentation(title: "Favorite", image: .init(systemName: "heart.fill")),
-    .removeFromFavorites: DisplayRepresentation(
-      title: "Stop favoriting",
-      image: .init(systemName: "heart.slash.fill")
-    ),
-  ]
+  // kind raw values — keep stable (persisted).
+  public static let kindSurfaced: Int16 = 0
+  public static let kindOpenedFromShelf: Int16 = 1
+
+  @NSManaged
+  public var albumId: String
+  @NSManaged
+  public var date: Date
+  @NSManaged
+  public var kind: Int16
 }

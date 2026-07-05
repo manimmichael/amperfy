@@ -45,6 +45,10 @@ class CurrentlyPlayingTableCell: BasicTableCell {
 
   func prepare(toWorkOnRootView: PopupPlayerVC?) {
     rootView = toWorkOnRootView
+    // cassette: favorites removed. The favorite button is kept in the nib (its
+    // outlet + constraints anchor the options button) but permanently hidden and
+    // no longer wired to any action.
+    favoriteButton.isHidden = true
     titleLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
     refresh()
@@ -56,7 +60,6 @@ class CurrentlyPlayingTableCell: BasicTableCell {
       titleLabel: titleLabel,
       artistLabel: artistLabel
     )
-    rootView?.refreshFavoriteButton(button: favoriteButton)
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
   }
 
@@ -79,11 +82,5 @@ class CurrentlyPlayingTableCell: BasicTableCell {
   func artistNamePressed(_ sender: Any) {
     rootView?.displayArtistDetail()
     rootView?.displayPodcastDetail()
-  }
-
-  @IBAction
-  func favoritePressed(_ sender: Any) {
-    rootView?.favoritePressed()
-    rootView?.refreshFavoriteButton(button: favoriteButton)
   }
 }

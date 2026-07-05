@@ -65,18 +65,17 @@ extension CarPlaySceneDelegate {
   }
 
   /// Cassette CarPlay trim: a fixed, driving-safe Library — exactly Albums,
-  /// Artists, Playlists and Favorite Songs, in that order. We deliberately
-  /// ignore the user's full mobile `libraryDisplaySettings` order here: the
-  /// in-car list must stay short and predictable (category -> list -> play),
-  /// so Home shelves (Newest / Recently Played Albums), flat Songs,
-  /// Directories, Podcasts and Radios are not offered. Each row pushes a local
-  /// FRC-backed browse template, so it never hangs when the server is
-  /// unreachable.
+  /// Artists and Playlists, in that order. We deliberately ignore the user's
+  /// full mobile `libraryDisplaySettings` order here: the in-car list must stay
+  /// short and predictable (category -> list -> play), so Home shelves (Newest
+  /// / Recently Played Albums), flat Songs, Directories, Podcasts and Radios are
+  /// not offered. Each row pushes a local FRC-backed browse template, so it
+  /// never hangs when the server is unreachable.
+  /// cassette (favorites rip-out): Favorite Songs removed from the in-car list.
   static let carPlayLibraryRows: [LibraryDisplayType] = [
     .albums,
     .artists,
     .playlists,
-    .favoriteSongs,
   ]
 
   func createLibraryNavigationTypeSection() -> CPListSection {
@@ -144,9 +143,9 @@ extension CarPlaySceneDelegate {
     switch type {
     case .albums: return albumsSection
     case .artists: return artistsSection
-    case .favoriteSongs: return songsFavoriteSection
-    case .directories, .downloads, .favoriteAlbums, .favoriteArtists, .genres, .newestAlbums,
-         .playlists, .podcasts, .radios, .recentAlbums, .songs:
+    // cassette (favorites rip-out): .favoriteSongs now falls through to nil.
+    case .directories, .downloads, .favoriteSongs, .favoriteAlbums, .favoriteArtists, .genres,
+         .newestAlbums, .playlists, .podcasts, .radios, .recentAlbums, .songs:
       return nil
     }
   }

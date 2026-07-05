@@ -171,9 +171,10 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
 
   func prepare(toWorkOnRootView: PopupPlayerVC?) {
     rootView = toWorkOnRootView
-    // cassette polish Part 2: the heart moved to the bottom transport row in
-    // PlayerControlView, so the artwork-row favorite button is hidden here.
-    // The per-track overflow (optionsButton) stays in this row.
+    // cassette: favorites removed. The artwork-row favorite button is kept in the
+    // nib (its outlet + constraints anchor the options button) but permanently
+    // hidden and no longer wired to any action. The per-track overflow
+    // (optionsButton) stays in this row.
     favoriteButton.isHidden = true
     titleLabel.applyAmperfyStyle()
     albumLabel.applyAmperfyStyle()
@@ -426,7 +427,6 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
       titleLabel: titleLabel,
       artistLabel: artistLabel
     )
-    rootView?.refreshFavoriteButton(button: favoriteButton)
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
     // cassette Patch 054 (Phase I): refreshRating call removed; popup
     // rating view deleted.
@@ -458,12 +458,6 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
   func artistNamePressed(_ sender: Any) {
     rootView?.displayArtistDetail()
     rootView?.displayPodcastDetail()
-  }
-
-  @IBAction
-  func favoritePressed(_ sender: Any) {
-    rootView?.favoritePressed()
-    rootView?.refreshFavoriteButton(button: favoriteButton)
   }
 }
 

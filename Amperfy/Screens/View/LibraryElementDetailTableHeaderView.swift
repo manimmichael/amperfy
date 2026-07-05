@@ -39,11 +39,12 @@ struct PlayShuffleInfoConfiguration {
   /// cassette polish Part 4 / Polish 2 (D1): when true (set only by the Album /
   /// Artist / Playlist detail headers), the compact-width layout swaps the
   /// side-by-side bordered pair for a single action bar:
-  /// `[heart]  [PLAY][shuffle]  [overflow]`. List headers leave this false.
+  /// `[repeat]  [PLAY][shuffle]`. List headers leave this false.
   var usesProminentPlayButton: Bool = false
-  /// cassette Polish 2 (D1): the entity the action-bar heart favorites and the
-  /// overflow menu targets. Injected by GenericDetailTableHeader from its own
-  /// DetailHeaderConfiguration so the shared header needs no VC-specific code.
+  /// cassette Polish 2 (D1): the album/artist this header represents. Injected by
+  /// GenericDetailTableHeader from its own DetailHeaderConfiguration; the header
+  /// reads it to bind the Play/Pause CTA to this context (`isThisContextCurrent`).
+  /// (Formerly also drove the action-bar heart — favorites feature removed.)
   var favoriteEntity: (any PlayableContainable)?
   var rootViewController: UIViewController?
 }
@@ -73,7 +74,9 @@ class LibraryElementDetailTableHeaderView: UIView {
   private var prominentContainer: UIView?
   private var prominentPlayButton: UIButton?
   private var prominentShuffleButton: UIButton?
-  private var prominentHeartButton: UIButton?
+  // cassette: the leading action-bar slot was a favorite heart; it is now a
+  // repeat toggle (favorites feature removed). Mirrors the trailing shuffle.
+  private var prominentRepeatButton: UIButton?
 
   required init?(coder aDecoder: NSCoder) {
     super.init(coder: aDecoder)
@@ -151,27 +154,35 @@ class LibraryElementDetailTableHeaderView: UIView {
 
     if showProminent {
       prominentShuffleButton?.isHidden = config.isShuffleHidden
-      // Heart only for favoritable containers (Album/Artist). Playlists,
-      // genres and podcasts are not favoritable and hide it.
-      prominentHeartButton?.isHidden = !(config.favoriteEntity?.isFavoritable ?? false)
-      refreshProminentHeartIcon()
+      // Repeat is a global player toggle — always available, never gated on
+      // the entity (unlike the favorite heart it replaced).
+      refreshProminentRepeatIcon()
     }
     refreshPlayButtonState()
   }
 
-  // cassette redesign (Surface 1): orange is reserved for live state — the
-  // filled heart is the "favorited" live state and paints orange; the empty
-  // heart is quiet ink2.
-  private func refreshProminentHeartIcon() {
-    guard let heart = prominentHeartButton else { return }
-    let isFav = config?.favoriteEntity?.isFavorite ?? false
-    var heartConfig = heart.configuration ?? UIButton.Configuration.cassetteBare()
-    heartConfig.image = isFav ? UIImage(systemName: "heart.fill") : UIImage(systemName: "heart")
-    heartConfig.baseForegroundColor = isFav
-      ? CassetteTheme.UIColors.orange
-      : CassetteTheme.UIColors.ink2
-    heart.configuration = heartConfig
-    heart.accessibilityLabel = isFav ? "Unmark favorite" : "Favorite"
+  // cassette: leading action-bar slot repeat toggle. Orange is reserved for
+  // live state — repeat All / One paint orange (repeat is "on"); Off is quiet
+  // ink2. Glyph mirrors the mini/popup players (repeat / repeat.1).
+  private func refreshProminentRepeatIcon() {
+    guard let repeatBtn = prominentRepeatButton, let player = config?.player else { return }
+    let mode = player.repeatMode
+    var repeatConfig = repeatBtn.configuration ?? UIButton.Configuration.cassetteBare()
+    switch mode {
+    case .off:
+      repeatConfig.image = .repeatMenu
+      repeatConfig.baseForegroundColor = CassetteTheme.UIColors.ink2
+      repeatBtn.accessibilityLabel = "Repeat off"
+    case .all:
+      repeatConfig.image = .repeatAll
+      repeatConfig.baseForegroundColor = CassetteTheme.UIColors.orange
+      repeatBtn.accessibilityLabel = "Repeat all"
+    case .single:
+      repeatConfig.image = .repeatOne
+      repeatConfig.baseForegroundColor = CassetteTheme.UIColors.orange
+      repeatBtn.accessibilityLabel = "Repeat one"
+    }
+    repeatBtn.configuration = repeatConfig
   }
 
   @IBAction
@@ -362,17 +373,18 @@ class LibraryElementDetailTableHeaderView: UIView {
     shuffle.accessibilityLabel = "Shuffle"
     shuffle.addTarget(self, action: #selector(prominentShufflePressed), for: .touchUpInside)
 
-    let heart = Self.makePlainActionButton(systemImage: "heart")
-    heart.addTarget(self, action: #selector(prominentHeartPressed), for: .touchUpInside)
+    let repeatBtn = Self.makePlainActionButton(systemImage: "repeat")
+    repeatBtn.accessibilityLabel = "Repeat"
+    repeatBtn.addTarget(self, action: #selector(prominentRepeatPressed), for: .touchUpInside)
 
-    container.addSubview(heart)
+    container.addSubview(repeatBtn)
     container.addSubview(play)
     container.addSubview(shuffle)
-    // cassette Patch 104: heart and shuffle sit on the quarter points —
-    // centered between the central play button and each screen edge
-    // (centerX multipliers 0.5 / 1.5) — instead of flush to the edges.
-    let heartQuarterPoint = NSLayoutConstraint(
-      item: heart,
+    // cassette Patch 104: the leading (repeat) and trailing (shuffle) buttons
+    // sit on the quarter points — centered between the central play button and
+    // each screen edge (centerX multipliers 0.5 / 1.5) — not flush to the edges.
+    let repeatQuarterPoint = NSLayoutConstraint(
+      item: repeatBtn,
       attribute: .centerX,
       relatedBy: .equal,
       toItem: container,
@@ -395,8 +407,8 @@ class LibraryElementDetailTableHeaderView: UIView {
       container.leadingAnchor.constraint(equalTo: leadingAnchor),
       container.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-      heartQuarterPoint,
-      heart.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+      repeatQuarterPoint,
+      repeatBtn.centerYAnchor.constraint(equalTo: container.centerYAnchor),
 
       play.centerXAnchor.constraint(equalTo: container.centerXAnchor),
       play.centerYAnchor.constraint(equalTo: container.centerYAnchor),
@@ -410,7 +422,7 @@ class LibraryElementDetailTableHeaderView: UIView {
     prominentContainer = container
     prominentPlayButton = play
     prominentShuffleButton = shuffle
-    prominentHeartButton = heart
+    prominentRepeatButton = repeatBtn
   }
 
   /// cassette redesign (Surface 1): visual style of the prominent detail
@@ -485,25 +497,11 @@ class LibraryElementDetailTableHeaderView: UIView {
   }
 
   @objc
-  private func prominentHeartPressed() {
-    guard let entity = config?.favoriteEntity, entity.isFavoritable,
-          let accountInfo = entity.account?.info else { return }
-    guard appDelegate.storage.settings.user.isOnlineMode else { return }
+  private func prominentRepeatPressed() {
+    guard let player = config?.player else { return }
     Haptics.light.vibrate(isHapticsEnabled: appDelegate.storage.settings.user.isHapticsEnabled)
-    Task { @MainActor in
-      do {
-        try await entity.remoteToggleFavorite(
-          syncer: self.appDelegate.getMeta(accountInfo).librarySyncer
-        )
-      } catch {
-        self.appDelegate.eventLogger.report(
-          topic: "Toggle Favorite",
-          error: error,
-          isBackground: true
-        )
-      }
-      self.refreshProminentHeartIcon()
-    }
+    player.setRepeatMode(player.repeatMode.nextMode)
+    refreshProminentRepeatIcon()
   }
 
   func activate() {

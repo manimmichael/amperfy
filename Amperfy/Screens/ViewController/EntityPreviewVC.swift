@@ -135,14 +135,7 @@ class EntityPreviewActionBuilder {
       menuActions.append(UIMenu(options: .displayInline, children: gotoActions))
     }
     // cassette Polish 2 (G4): Rating removed from every context menu.
-    // cassette redesign (Surface 2): Favorite returns for TRACK-level rows
-    // only — rows stay quiet (no persistent per-row heart), so the overflow
-    // menu + swipe actions are the favoriting surfaces. Containers (album /
-    // artist) keep the detail-header heart and stay out of the menu.
-    if let playable = entityContainer as? AbstractPlayable,
-       playable.isSong, playable.isFavoritable {
-      elementHandlingActions.append(createFavoriteMenu(libraryEntity: playable))
-    }
+    // cassette: favorites feature removed — no Favorite entry in the overflow menu.
     if isAddToPlaylist {
       elementHandlingActions.append(createAddToPlaylistAction())
     }
@@ -537,29 +530,6 @@ class EntityPreviewActionBuilder {
         self.appDelegate.player.appendPodcastQueue(playables: self.entityPlayables)
       },
     ])
-  }
-
-  private func createFavoriteMenu(libraryEntity: AbstractLibraryEntity) -> UIAction {
-    libraryEntity.isFavorite ?
-      UIAction(title: "Unmark favorite", image: .heartSlash) { action in self.toggleFavorite() } :
-      UIAction(title: "Favorite", image: .heartEmpty) { action in self.toggleFavorite() }
-  }
-
-  private func toggleFavorite() {
-    guard appDelegate.storage.settings.user.isOnlineMode,
-          let account = entityContainer.account else { return }
-    Task { @MainActor in
-      do {
-        try await entityContainer
-          .remoteToggleFavorite(
-            syncer: self.appDelegate.getMeta(account.info)
-              .librarySyncer
-          )
-      } catch {
-        self.appDelegate.eventLogger.report(topic: "Toggle Favorite", error: error)
-      }
-      self.reloadRootView()
-    }
   }
 
   private func createRatingMenu(libraryEntity: AbstractLibraryEntity) -> UIMenu {

@@ -102,7 +102,10 @@ struct SwipeDisplaySettings {
        .hasCachedItems {
       return false
     }
-    if !containable.isFavoritable, actionType == .favorite {
+    // cassette: favorites feature removed. The .favorite swipe action is never
+    // displayed (the enum case is kept for Codable/exhaustiveness only). A
+    // legacy persisted swipe config that still lists it is filtered here.
+    if actionType == .favorite {
       return false
     }
     return true

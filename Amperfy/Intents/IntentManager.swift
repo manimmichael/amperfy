@@ -728,83 +728,8 @@ public class IntentManager {
           success(nil)
         }
       }
-
-    documentation.append(
-      XCallbackActionDocu(
-        name: "FavoriteCurrentlyPlayingSong",
-        description: "Mark the currently playing song as favorite.",
-        exampleURLs: [
-          "amperfy://x-callback-url/favoriteCurrentlyPlayingSong?favorite=0",
-          "amperfy://x-callback-url/favoriteCurrentlyPlayingSong?favorite=1",
-        ],
-        action: "favoriteCurrentlyPlayingSong",
-        parameters: [
-          XCallbackActionParameterDocu(
-            name: NSUserActivity.ActivityKeys.favorite.rawValue,
-            type: "Int",
-            isMandatory: true,
-            description: "0 (no favorite) or 1 (favorite)"
-          ),
-        ]
-      )
-    )
-    CallbackURLKit
-      .register(action: "favoriteCurrentlyPlayingSong") { parameters, success, failure, cancel in
-        guard let favoriteRaw = parameters
-          .first(where: { $0.key == NSUserActivity.ActivityKeys.favorite.rawValue })?.value
-        else {
-          failure(NSError.error(
-            code: .missingParameter,
-            failureReason: "Parameter favorite not provided."
-          ))
-          return
-        }
-        guard let favorite = Int(favoriteRaw),
-              favorite >= 0,
-              favorite <= 1 else {
-          failure(NSError.error(
-            code: .missingParameter,
-            failureReason: "Parameter favorite is not valid."
-          ))
-          return
-        }
-        guard self.storage.settings.user.isOnlineMode else {
-          failure(NSError.error(
-            code: .missingParameter,
-            failureReason: "Favorite can only be changed in Online Mode."
-          ))
-          return
-        }
-
-        guard let currentlyPlaying = self.player.currentlyPlaying else {
-          failure(NSError.error(
-            code: .missingParameter,
-            failureReason: "There is no song currently playing."
-          ))
-          return
-        }
-        guard currentlyPlaying.isSong else {
-          failure(NSError.error(code: .missingParameter, failureReason: "Only songs can be rated."))
-          return
-        }
-        guard currentlyPlaying.isFavorite != (favorite == 1) else {
-          // do nothing
-          success(nil)
-          return
-        }
-
-        Task { @MainActor in
-          do {
-            if let accountInfo = currentlyPlaying.account?.info {
-              let librarySyncer = self.getLibrarySyncerCB(accountInfo)
-              try await currentlyPlaying.remoteToggleFavorite(syncer: librarySyncer)
-            }
-          } catch {
-            // ignore error here
-          }
-          success(nil)
-        }
-      }
+    // cassette: favorites removed — the favoriteCurrentlyPlayingSong x-callback
+    // action + its documentation were removed here.
   }
 
   @MainActor

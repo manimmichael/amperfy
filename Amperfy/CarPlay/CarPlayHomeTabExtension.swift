@@ -25,12 +25,27 @@ import CoreData
 import Foundation
 
 extension CarPlaySceneDelegate {
+  /// cassette (CarPlay feel-good, Jobs 1.2/1.3): CarPlay Home is album-forward —
+  /// two album shelves lead, then Playlists, then Artists. Resume is omitted (an
+  /// iOS-only full-width hero card) and the heterogeneous "Recent" shelf is
+  /// dropped in favor of the explicit album shelves. This is a CarPlay-LOCAL
+  /// section list; it never mutates `HomeSection.defaultValue`, so iOS Home (a
+  /// separate `HomeManager` instance with its own render loop) is unaffected. The
+  /// two album shelves have data only because the CarPlay `HomeManager` was
+  /// created with `buildsAlbumShelves: true`. Empty shelves (e.g. Recently Played
+  /// Albums before any album play) are hidden by the guard in `createHomeImageRows`.
+  private var carPlayHomeSections: [HomeSection] {
+    [.recentlyPlayedAlbums, .newestAlbums, .yourPlaylists, .recentlyPlayedArtists]
+  }
+
   func updateHomeSections() {
     guard let sharedHome else { return }
-    let alreadyCreatedData = homeRowData
-    let requestedData = sharedHome.data
-    guard alreadyCreatedData !=
-      requestedData else {
+    // cassette: compare only the sections CarPlay actually renders. Comparing
+    // the full `homeRowData` / `sharedHome.data` dicts would always differ on
+    // the unrendered `.resume` key and permanently defeat this early-out.
+    let renderedNow = carPlayHomeSections.map { homeRowData[$0] ?? [] }
+    let requestedNow = carPlayHomeSections.map { sharedHome.data[$0] ?? [] }
+    guard renderedNow != requestedNow else {
       return
     }
     let homeRows = createHomeImageRows()
@@ -41,7 +56,15 @@ extension CarPlaySceneDelegate {
   func createHomeImageRows() -> [CPListImageRowItem] {
     guard let sharedHome else { return [] }
     var imageRows = [CPListImageRowItem]()
-    for section in sharedHome.orderedVisibleSections {
+    for section in carPlayHomeSections {
+      // cassette: hide-when-empty on CarPlay (mirrors HomeVC Patch 036 at
+      // HomeVC.swift:399). Skip shelves with no items and clear any stale
+      // rendered snapshot so `updateHomeSections`' change-detection settles
+      // rather than rebuilding on every callback while the shelf stays empty.
+      guard let sectionItems = sharedHome.data[section], !sectionItems.isEmpty else {
+        homeRowData[section] = []
+        continue
+      }
       if let row = homeImageRows[section] {
         let alreadyCreatedData = homeRowData[section]
         let requestedData = sharedHome.data[section]

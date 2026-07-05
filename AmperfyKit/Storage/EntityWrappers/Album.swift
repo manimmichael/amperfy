@@ -187,6 +187,24 @@ public class Album: AbstractLibraryEntity {
 
   public var playables: [AbstractPlayable] { songs }
 
+  // cassette (Forgotten Albums, v53): turnover state + cold-tier feedback
+  // primitives. lastSurfacedOnHomeDate is read by the shelf's turnover selection;
+  // the two counters are the durable lifetime primitives folded from the hot log.
+  public var lastSurfacedOnHomeDate: Date? {
+    get { managedObject.lastSurfacedOnHomeDate }
+    set { managedObject.lastSurfacedOnHomeDate = newValue }
+  }
+
+  public var timesSurfacedLifetime: Int32 {
+    get { managedObject.timesSurfacedLifetime }
+    set { managedObject.timesSurfacedLifetime = newValue }
+  }
+
+  public var timesOpenedFromShelfLifetime: Int32 {
+    get { managedObject.timesOpenedFromShelfLifetime }
+    set { managedObject.timesOpenedFromShelfLifetime = newValue }
+  }
+
   public var isOrphaned: Bool {
     identifier == "Unknown (Orphaned)"
   }

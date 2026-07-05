@@ -63,6 +63,18 @@ public final class CassetteTransferSession: NSObject, @unchecked Sendable {
   private let inFlightLock = NSLock()
   private var inFlightLocalIds = Set<String>()
 
+  // cassette: batch the post-download ownership write + inventory report. Each
+  // finished file appends here; a debounced flush records all ownership rows in
+  // ONE off-main save and sends ONE (chunked) inventory POST — instead of N
+  // main-thread Core Data saves + N POSTs during the burst (which starved the
+  // Home carousels' main-thread work and flooded the log). `pendingAdditions`
+  // is guarded by `pendingLock`; `flushWorkItem` is only touched on the main queue.
+  private let pendingLock = NSLock()
+  private var pendingAdditions: [(meta: CassetteTransferMetadata, downloadedAt: Date)] = []
+  private var flushWorkItem: DispatchWorkItem?
+  private let flushDebounceInterval: TimeInterval = 0.4
+  private static let maxInventoryPerRequest = 5000 // matches server MAX_INVENTORY_PER_REQUEST
+
   private lazy var session: URLSession = {
     let config = URLSessionConfiguration
       .background(withIdentifier: Self.backgroundIdentifier)
@@ -163,11 +175,15 @@ extension CassetteTransferSession: URLSessionDownloadDelegate {
           let data = desc.data(using: .utf8),
           let meta = try? JSONDecoder().decode(CassetteTransferMetadata.self, from: data)
     else {
+      #if DEBUG
       print("Cassette transfer: download finished with no/invalid metadata")
+      #endif
       os_log("download finished with no/invalid metadata", log: self.log, type: .error)
       return
     }
+    #if DEBUG
     print("Cassette transfer: download finished for \(meta.cassetteLocalId), moving into place")
+    #endif
 
     // The temp file at `location` is only valid synchronously here — move it
     // into place immediately.
@@ -189,10 +205,11 @@ extension CassetteTransferSession: URLSessionDownloadDelegate {
       return
     }
 
-    // Record ownership + report inventory off the delegate queue.
-    Task { @MainActor in
-      await self.recordAndReport(meta)
-    }
+    // cassette: buffer for a batched, off-main ownership write + inventory report
+    // (see `pendingAdditions` / `flushPendingReports`). Replaces the per-track
+    // `@MainActor recordAndReport` that saved Core Data on the main thread once
+    // per completed track during the burst.
+    enqueueForReporting(meta)
   }
 
   public func urlSession(
@@ -217,58 +234,126 @@ extension CassetteTransferSession: URLSessionDownloadDelegate {
   }
 
   public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-    DispatchQueue.main.async {
-      let handler = self.backgroundCompletionHandler
-      self.backgroundCompletionHandler = nil
-      handler?()
+    // BUG-039 regression fix: persist any buffered ownership rows BEFORE telling
+    // the OS we're done (which lets it suspend the app). A background download
+    // burst that drains the queue before the 0.4s debounce fires would otherwise
+    // discard its buffered ownership rows on suspension, and those albums (files on
+    // disk, no DeviceOwnership row) would never appear in the on-device library.
+    Task { [weak self] in
+      await self?.flushPending()
+      await MainActor.run {
+        let handler = self?.backgroundCompletionHandler
+        self?.backgroundCompletionHandler = nil
+        handler?()
+      }
     }
   }
 
-  @MainActor
-  private func recordAndReport(_ meta: CassetteTransferMetadata) async {
-    let context = AmperKit.shared.storage.main.context
-    let manager = DeviceOwnershipManager(context: context)
-    do {
-      try manager.record(
-        cassetteLocalId: meta.cassetteLocalId,
-        mbid: meta.mbid,
-        subsonicTrackId: meta.subsonicTrackId,
-        fileExtension: meta.ext
-      )
-      print("Cassette transfer: recorded ownership for \(meta.cassetteLocalId)")
-      // Refresh the on-device-only library views now that this track is owned.
-      CassetteOwnershipNotifier.shared.ownershipDidChange()
-    } catch {
-      os_log(
-        "failed to record ownership for %{public}@: %{public}@",
-        log: self.log,
-        type: .error,
-        meta.cassetteLocalId,
-        error.localizedDescription
+  /// cassette: buffer a completed download and (re)arm the debounced flush.
+  /// Called from the URLSession delegate queue. Cheap — no Core Data, no network.
+  private func enqueueForReporting(_ meta: CassetteTransferMetadata) {
+    pendingLock.lock()
+    pendingAdditions.append((meta, Date()))
+    pendingLock.unlock()
+    // Manage the debounce timer on the main queue so `flushWorkItem` is only ever
+    // touched from one place.
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.flushWorkItem?.cancel()
+      let work = DispatchWorkItem { [weak self] in Task { await self?.flushPending() } }
+      self.flushWorkItem = work
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + self.flushDebounceInterval,
+        execute: work
       )
     }
+  }
 
-    let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? "unknown-device"
-    let deviceLabel = UIDevice.current.name
+  /// cassette: drain the buffered burst and persist it DURABLY. The ownership
+  /// write is the on-device library's source of truth, so it is committed off-main
+  /// and AWAITED — a caller can therefore guarantee it landed before the app
+  /// suspends (`urlSessionDidFinishEvents` does exactly that). This closes the
+  /// BUG-039 regression where a background download burst that drained the queue
+  /// before the 0.4s debounce fired lost its ownership rows entirely, so those
+  /// albums (files on disk but no DeviceOwnership row) never appeared. On a save
+  /// failure the batch is RE-QUEUED, never silently dropped. The inventory POST is
+  /// best-effort. Atomic drain — safe to call concurrently (debounce / completion /
+  /// lifecycle); whoever wins the drain owns the batch.
+  public func flushPending() async {
+    let batch: [(meta: CassetteTransferMetadata, downloadedAt: Date)] = pendingLock.withLock {
+      let drained = pendingAdditions
+      pendingAdditions.removeAll()
+      return drained
+    }
+    guard !batch.isEmpty else { return }
+
+    let deviceId = await MainActor.run { UIDevice.current.identifierForVendor?.uuidString ?? "unknown-device" }
+    let deviceLabel = await MainActor.run { UIDevice.current.name }
+
+    // 1) Ownership — off-main, DURABLE (awaited). Must persist; if the save
+    // throws, re-buffer so a later flush retries rather than losing owned tracks.
     do {
-      try await syncAPI.reportDeviceInventory(
-        deviceId: deviceId,
-        deviceLabel: deviceLabel,
-        added: [(cassetteLocalId: meta.cassetteLocalId, mbid: meta.mbid, downloadedAt: Date())],
-        removed: []
-      )
-      print("Cassette transfer: reported inventory addition for \(meta.cassetteLocalId)")
+      let asyncStorage = await MainActor.run { AmperKit.shared.storage.async }
+      try await asyncStorage.perform { asyncCompanion in
+        let manager = DeviceOwnershipManager(context: asyncCompanion.context)
+        try manager.recordBatch(batch.map { entry in
+          DeviceOwnershipManager.BatchEntry(
+            cassetteLocalId: entry.meta.cassetteLocalId,
+            mbid: entry.meta.mbid,
+            subsonicTrackId: entry.meta.subsonicTrackId,
+            fileExtension: entry.meta.ext,
+            downloadedAt: entry.downloadedAt
+          )
+        })
+      }
+      for entry in batch { clearInFlight(entry.meta.cassetteLocalId) }
+      // Refresh the on-device-only library views once (the notifier is debounced).
+      await MainActor.run { CassetteOwnershipNotifier.shared.ownershipDidChange() }
     } catch {
+      pendingLock.withLock { pendingAdditions.append(contentsOf: batch) }
       os_log(
-        "failed to report inventory for %{public}@: %{public}@",
+        "failed to persist ownership batch (re-queued for retry): %{public}@",
         log: self.log,
         type: .error,
-        meta.cassetteLocalId,
         error.localizedDescription
       )
+      return
     }
 
-    clearInFlight(meta.cassetteLocalId)
+    // 2) Inventory — best-effort batched POST (chunked to the server cap).
+    // Recoverable via the full-inventory sync; does NOT gate local visibility,
+    // which the persisted ownership rows above own.
+    let added = batch.map {
+      (cassetteLocalId: $0.meta.cassetteLocalId, mbid: $0.meta.mbid, downloadedAt: $0.downloadedAt)
+    }
+    for chunk in Self.chunk(added, size: Self.maxInventoryPerRequest) {
+      do {
+        try await self.syncAPI.reportDeviceInventory(
+          deviceId: deviceId,
+          deviceLabel: deviceLabel,
+          added: chunk,
+          removed: []
+        )
+      } catch {
+        os_log(
+          "failed to report inventory batch: %{public}@",
+          log: self.log,
+          type: .error,
+          error.localizedDescription
+        )
+      }
+    }
+    #if DEBUG
+    print("Cassette transfer: durably persisted \(batch.count) ownership additions + reported inventory")
+    #endif
+  }
+
+
+  private static func chunk<T>(_ array: [T], size: Int) -> [[T]] {
+    guard size > 0, array.count > size else { return array.isEmpty ? [] : [array] }
+    return stride(from: 0, to: array.count, by: size).map {
+      Array(array[$0 ..< Swift.min($0 + size, array.count)])
+    }
   }
 
   private func clearInFlight(_ cassetteLocalId: String) {

@@ -45,6 +45,9 @@ public final class IntentExecutor {
   private let transferSession = CassetteTransferSession.shared
 
   private var isRunning = false
+  /// Set by executeRemoval when a remove intent deleted owned tracks; drives the
+  /// single guaranteed library repaint at the end of a poll cycle.
+  private var didRemoveThisCycle = false
   // Once-per-launch device registration (user_devices upsert). The header
   // keep-alive rides every request; this full registration also refreshes
   // platform/model/app_version.
@@ -84,6 +87,7 @@ public final class IntentExecutor {
 
     isRunning = true
     defer { isRunning = false }
+    didRemoveThisCycle = false
 
     if !hasRegisteredDevice {
       do {
@@ -126,6 +130,15 @@ public final class IntentExecutor {
     await refreshAccountIdentityIfNeeded()
     for intent in intents {
       await executeIntent(intent)
+    }
+
+    // Removals just deleted owned tracks: repaint the on-device-only library ONCE,
+    // immediately, now that the whole burst has settled and the main thread is free.
+    // A removed album's tracks are no longer owned, so the rebuilt FRC drops it in
+    // place — no relaunch. Fired here (right after the loop) rather than per-removal
+    // so the burst can't cancel it and it can't race the regroup below.
+    if didRemoveThisCycle {
+      await MainActor.run { CassetteOwnershipNotifier.shared.ownershipDidChangeNow() }
     }
 
     // Fast Album Art: fill covers for albums already on the device — not just
@@ -254,6 +267,7 @@ public final class IntentExecutor {
       "groups": String(summary.groups),
       "moved": String(summary.movedSongs),
       "created": String(summary.createdAlbums),
+      "createdSongs": String(summary.createdSongs),
       "purged": String(summary.purgedAlbums),
       "byLocalId": String(summary.matchedByLocalId),
       "skipped": String(summary.skipped),
@@ -274,6 +288,29 @@ public final class IntentExecutor {
       summary.skipped,
       summary.coversProvisioned
     )
+
+    // The regroup may have created new group-key albums (and SongMOs for owned
+    // tracks that had no catalog record). Two follow-ups so they show up right,
+    // in-place, without an app relaunch:
+    //  1. Those albums are NOT in the library FRC's owned-album-id predicate (a
+    //     snapshot from FRC setup), so they stay hidden until it's rebuilt — the
+    //     "invisible until relaunch" symptom. The ownership notifier's observers
+    //     rebuild the FRC with a fresh owned-album set.
+    //  2. The cover backfill (backfillOwnedAlbumCovers) ran BEFORE the regroup
+    //     this poll, so the just-created albums missed it and render coverless.
+    //     Re-run it now (idempotent — skips albums that already have a local
+    //     cover) so their covers fetch on this same sync.
+    if summary.createdSongs > 0 || summary.createdAlbums > 0 {
+      await MainActor.run { CassetteOwnershipNotifier.shared.ownershipDidChange() }
+    }
+    // Re-run the cover backfill (which ran BEFORE the regroup this poll) whenever
+    // the regroup provisioned an album cover id — for newly-created albums OR
+    // already-owned albums an earlier build left coverless — so their covers fetch
+    // on this same sync. Idempotent: skips albums that already have a local cover,
+    // and self-terminates once coversProvisioned falls to 0.
+    if summary.coversProvisioned > 0 || summary.createdSongs > 0 {
+      await backfillOwnedAlbumCovers(accountInfo: accountInfo)
+    }
   }
 
   /// Fast Album Art backfill: albums already on the device whose cover was
@@ -601,6 +638,17 @@ public final class IntentExecutor {
     UserDefaults.standard.set(map, forKey: Self.appliedArtworkVersionsKey)
   }
 
+  /// The cassette_local_id if `targetId` is an id-keyed remove target
+  /// (`localid@<clid>`), else nil. Mirrors the cloud's LOCAL_ID_REMOVE_PREFIX +
+  /// decodeLocalIdRemoveTargetId (sync-intents.ts).
+  private static let localIdRemovePrefix = "localid@"
+  static func decodeLocalIdRemoveTarget(_ targetId: String) -> String? {
+    guard targetId.hasPrefix(localIdRemovePrefix) else { return nil }
+    let clid = targetId.dropFirst(localIdRemovePrefix.count)
+      .trimmingCharacters(in: .whitespaces)
+    return clid.isEmpty ? nil : clid
+  }
+
   private func executeIntent(_ intent: CassetteSyncIntent) async {
     print(
       "Cassette poll: executing intent \(intent.id) " +
@@ -621,34 +669,57 @@ public final class IntentExecutor {
       try? await api.updateIntent(id: intent.id, state: "syncing")
     }
 
-    // Reachability: the Cassette Player must be on the LAN to pull files.
-    let reachable = await isCassettePlayerReachable()
-    print("Cassette poll: intent \(intent.id) - Cassette Player reachable=\(reachable)")
-    guard reachable else {
-      try? await api.updateIntent(
-        id: intent.id,
-        state: "waiting",
-        error: "cassette_player_unreachable"
-      )
-      return
+    let isRemove = intent.intentKind == "remove"
+
+    // Reachability: only an ADD needs the LAN Player (to pull files). A REMOVE
+    // deletes local files + ownership rows, so it must run even with the Mac
+    // off-LAN — gating removes on reachability used to strand them in "waiting".
+    if !isRemove {
+      let reachable = await isCassettePlayerReachable()
+      print("Cassette poll: intent \(intent.id) - Cassette Player reachable=\(reachable)")
+      guard reachable else {
+        try? await api.updateIntent(
+          id: intent.id,
+          state: "waiting",
+          error: "cassette_player_unreachable"
+        )
+        return
+      }
     }
 
+    // Tracks: an id-keyed remove (`localid@<clid>`) carries its target in the
+    // intent id, so skip the network resolve entirely — a local delete needs only
+    // the cassette_local_id. This is the fast path for the reconciler's per-track
+    // removes. Everything else (adds, legacy album-keyed removes) resolves via the
+    // tracks endpoint.
     let tracks: [CassetteSyncTrack]
     let albumArtist: CassetteSyncArtist?
-    do {
-      let response = try await api.getIntentTracks(intentId: intent.id)
-      tracks = response.tracks
-      albumArtist = response.artist
-    } catch {
-      print(
-        "Cassette poll: intent \(intent.id) - track resolve failed: \(error.localizedDescription)"
-      )
-      try? await api.updateIntent(
-        id: intent.id,
-        state: "failed",
-        error: "track_resolve_failed"
-      )
-      return
+    if isRemove, let clid = Self.decodeLocalIdRemoveTarget(intent.targetId) {
+      tracks = [CassetteSyncTrack(
+        subsonicTrackId: "",
+        cassetteLocalId: clid,
+        mbid: nil,
+        title: nil,
+        duration: nil,
+        fileExtension: ""
+      )]
+      albumArtist = nil
+    } else {
+      do {
+        let response = try await api.getIntentTracks(intentId: intent.id)
+        tracks = response.tracks
+        albumArtist = response.artist
+      } catch {
+        print(
+          "Cassette poll: intent \(intent.id) - track resolve failed: \(error.localizedDescription)"
+        )
+        try? await api.updateIntent(
+          id: intent.id,
+          state: "failed",
+          error: "track_resolve_failed"
+        )
+        return
+      }
     }
     print("Cassette poll: intent \(intent.id) - resolved \(tracks.count) track(s)")
 
@@ -924,8 +995,12 @@ public final class IntentExecutor {
 
     print("Cassette poll: intent \(intent.id) - removed \(removed.count) owned track(s)")
     if !removed.isEmpty {
-      // Refresh the on-device-only library views now that these are gone.
-      CassetteOwnershipNotifier.shared.ownershipDidChange()
+      // Mark the cycle dirty; handlePendingIntents fires ONE immediate library
+      // refresh after the whole burst settles. (The old per-removal debounced
+      // ownershipDidChange got repeatedly cancelled during a fast multi-track
+      // burst and the last one raced the main-thread-blocking regroup, so the
+      // removed album could linger on screen until an app relaunch.)
+      didRemoveThisCycle = true
       let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? "unknown-device"
       try? await api.reportDeviceInventory(
         deviceId: deviceId,

@@ -261,36 +261,6 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
     )
   }
 
-  func favoritePressed() {
-    switch player.playerMode {
-    case .music:
-      guard let playableInfo = player.currentlyPlaying else { return }
-      if playableInfo.isSong, let account = playableInfo.account {
-        Task { @MainActor in
-          do {
-            try await playableInfo
-              .remoteToggleFavorite(
-                syncer: self.appDelegate.getMeta(account.info)
-                  .librarySyncer
-              )
-          } catch {
-            self.appDelegate.eventLogger.report(topic: "Toggle Favorite", error: error)
-          }
-          self.refresh()
-        }
-      } else if let radio = playableInfo.asRadio,
-                let siteURL = radio.siteURL {
-        UIApplication.shared.open(siteURL)
-      }
-    case .podcast:
-      guard let podcastEpisode = player.currentlyPlaying?.asPodcastEpisode
-      else { return }
-      let plainDetailsVC = PlainDetailsVC()
-      plainDetailsVC.display(podcastEpisode: podcastEpisode, on: self)
-      present(plainDetailsVC, animated: true)
-    }
-  }
-
   func displayArtistDetail() {
     if let song = player.currentlyPlaying?.asSong, let artist = song.artist,
        let account = artist.account {

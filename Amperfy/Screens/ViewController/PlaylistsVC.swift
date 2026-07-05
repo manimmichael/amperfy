@@ -83,11 +83,6 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
   private var fetchedResultsController: PlaylistFetchedResultsController!
   private var optionsButton: UIBarButtonItem!
   private var sortType: PlaylistSortType = .name
-  // cassette Patch 044: pinned virtual "Liked Songs" entry. Sits as
-  // `tableView.tableHeaderView` above the user-created playlists so
-  // it's always visible at the top of the list. Tap routes into the
-  // existing favorites-filtered SongsVC; count refreshes on appear.
-  private var likedSongsHeader: LikedSongsHeaderRowView?
 
   init(account: Account) {
     super.init(style: .grouped, account: account)
@@ -137,8 +132,6 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
     tableView.sectionHeaderHeight = 0.0
     tableView.estimatedSectionHeaderHeight = 0.0
     tableView.backgroundColor = .backgroundColor
-
-    setupLikedSongsHeader()
 
     #if !targetEnvironment(macCatalyst)
       refreshControl = UIRefreshControl()
@@ -228,7 +221,6 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
     }
     updateRightBarButtonItems()
     updateContentUnavailable()
-    refreshLikedSongsCount()
     guard appDelegate.storage.settings.user.isOnlineMode else { return }
     Task { @MainActor in do {
       try await self.appDelegate.getMeta(self.account.info).librarySyncer
@@ -399,228 +391,8 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
     updateContentUnavailable()
   }
 
-  // MARK: - Liked Songs header (cassette Patch 044)
-
-  private func setupLikedSongsHeader() {
-    let header = LikedSongsHeaderRowView()
-    // cassette Patch 104: tableHeaderView is frame-based — it must keep
-    // translatesAutoresizingMaskIntoConstraints = true. With it disabled the
-    // frame assigned in relayoutLikedSongsHeader() never sticks, the height
-    // comparison fails on every layout pass, and re-assigning the header
-    // re-invalidates layout: an infinite viewDidLayoutSubviews loop that
-    // froze the whole tab the moment the first liked song appeared.
-    header.onTap = { [weak self] in
-      guard let self else { return }
-      navigationController?.pushViewController(
-        AppStoryboard.Main.segueToFavoriteSongs(account: account),
-        animated: true
-      )
-    }
-    likedSongsHeader = header
-    // cassette Patch 104: the row is only installed when there is at least
-    // one liked song — refreshLikedSongsCount() owns install/removal.
-    refreshLikedSongsCount()
-  }
-
-  private func refreshLikedSongsCount() {
-    guard let header = likedSongsHeader else { return }
-    let count = appDelegate.storage.main.library.getFavoriteSongs(for: account).count
-    // cassette Patch 104: don't render an empty "Liked Songs · 0 songs" row.
-    // The count refreshes on every appear, so liking the first song (or
-    // un-liking the last) adds/removes the row on the next visit.
-    guard count > 0 else {
-      if tableView.tableHeaderView === header {
-        tableView.tableHeaderView = nil
-      }
-      return
-    }
-    header.setCount(count)
-    if tableView.tableHeaderView !== header {
-      // tableHeaderView needs an explicit frame width; sizing happens
-      // via auto-layout inside `relayoutLikedSongsHeader`.
-      let containerWidth = tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width
-      header.frame = CGRect(x: 0, y: 0, width: containerWidth, height: 64)
-      tableView.tableHeaderView = header
-    }
-    relayoutLikedSongsHeader()
-  }
-
-  private func relayoutLikedSongsHeader() {
-    guard let header = likedSongsHeader, tableView.tableHeaderView === header else { return }
-    let target = CGSize(
-      width: tableView.bounds.width,
-      height: UIView.layoutFittingCompressedSize.height
-    )
-    let size = header.systemLayoutSizeFitting(
-      target,
-      withHorizontalFittingPriority: .required,
-      verticalFittingPriority: .fittingSizeLevel
-    )
-    if header.frame.size.height != size.height || header.frame.size.width != tableView.bounds
-      .width {
-      header.frame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: size.height)
-      tableView.tableHeaderView = header
-    }
-  }
-
-  override func viewDidLayoutSubviews() {
-    super.viewDidLayoutSubviews()
-    relayoutLikedSongsHeader()
-  }
-}
-
-// MARK: - LikedSongsHeaderRowView
-
-/// cassette Patch 044: pinned row that surfaces the virtual "Liked
-/// Songs" playlist at the top of PlaylistsVC. Visual rhythm matches
-/// a PlaylistTableCell — a 44pt rounded artwork tile on the leading
-/// edge with title + caption and a trailing chevron — so it reads
-/// as part of the playlist list rather than a foreign banner.
-private final class LikedSongsHeaderRowView: UIControl {
-  private static let tileSize: CGFloat = 44
-  private static let verticalInset: CGFloat = 10
-
-  private let iconTile: UIView = {
-    let view = UIView()
-    view.translatesAutoresizingMaskIntoConstraints = false
-    view.backgroundColor = CassetteTheme.UIColors.bg2
-    view.layer.cornerRadius = 6
-    view.layer.cornerCurve = .continuous
-    return view
-  }()
-
-  private let iconImageView: UIImageView = {
-    let iv = UIImageView()
-    iv.translatesAutoresizingMaskIntoConstraints = false
-    iv.image = UIImage(systemName: "heart.fill")
-    // cassette Patch 049 (Phase D): Liked Songs heart drops to ink. Hearts
-    // across the app (row favorites, popup player) all share ink as the
-    // single "favorite" affordance; filled vs outline carries the state.
-    iv.tintColor = CassetteTheme.UIColors.ink
-    iv.contentMode = .scaleAspectFit
-    return iv
-  }()
-
-  private let titleLabel: UILabel = {
-    let label = UILabel()
-    label.translatesAutoresizingMaskIntoConstraints = false
-    label.font = UIFont.cassette(.rowTitle)
-    label.textColor = CassetteTheme.UIColors.ink
-    label.text = "Liked Songs"
-    return label
-  }()
-
-  private let subtitleLabel: UILabel = {
-    let label = UILabel()
-    label.translatesAutoresizingMaskIntoConstraints = false
-    label.font = UIFont.cassette(.caption)
-    label.textColor = CassetteTheme.UIColors.ink2
-    return label
-  }()
-
-  private let chevronImageView: UIImageView = {
-    let iv = UIImageView()
-    iv.translatesAutoresizingMaskIntoConstraints = false
-    iv.image = UIImage(systemName: "chevron.right")
-    iv.tintColor = CassetteTheme.UIColors.ink3
-    iv.contentMode = .scaleAspectFit
-    return iv
-  }()
-
-  private let separator: UIView = {
-    let view = UIView()
-    view.translatesAutoresizingMaskIntoConstraints = false
-    view.backgroundColor = CassetteTheme.UIColors.ink4
-    return view
-  }()
-
-  /// cassette Patch 044: PlaylistsVC sets this to push the
-  /// favorites-filtered SongsVC.
-  var onTap: (() -> ())?
-
-  override init(frame: CGRect) {
-    super.init(frame: frame)
-    setup()
-  }
-
-  required init?(coder: NSCoder) {
-    super.init(coder: coder)
-    setup()
-  }
-
-  private func setup() {
-    backgroundColor = .backgroundColor
-    accessibilityTraits = .button
-    accessibilityLabel = "Liked Songs"
-    // cassette Patch 104: follow the table view's layout margins instead of
-    // a private fixed inset so the row spans (and aligns with) the playlist
-    // rows below at every width.
-    preservesSuperviewLayoutMargins = true
-    addAction(UIAction { [weak self] _ in self?.onTap?() }, for: .touchUpInside)
-
-    addSubview(iconTile)
-    iconTile.addSubview(iconImageView)
-    addSubview(titleLabel)
-    addSubview(subtitleLabel)
-    addSubview(chevronImageView)
-    addSubview(separator)
-
-    NSLayoutConstraint.activate([
-      iconTile.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
-      iconTile.centerYAnchor.constraint(equalTo: centerYAnchor),
-      iconTile.widthAnchor.constraint(equalToConstant: Self.tileSize),
-      iconTile.heightAnchor.constraint(equalToConstant: Self.tileSize),
-
-      iconImageView.centerXAnchor.constraint(equalTo: iconTile.centerXAnchor),
-      iconImageView.centerYAnchor.constraint(equalTo: iconTile.centerYAnchor),
-      iconImageView.widthAnchor.constraint(equalToConstant: 22),
-      iconImageView.heightAnchor.constraint(equalToConstant: 20),
-
-      titleLabel.leadingAnchor.constraint(equalTo: iconTile.trailingAnchor, constant: 12),
-      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: Self.verticalInset),
-      titleLabel.trailingAnchor.constraint(
-        lessThanOrEqualTo: chevronImageView.leadingAnchor,
-        constant: -8
-      ),
-
-      subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-      subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2),
-      subtitleLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
-      subtitleLabel.bottomAnchor.constraint(
-        equalTo: bottomAnchor,
-        constant: -(Self.verticalInset + 1)
-      ),
-
-      chevronImageView.trailingAnchor.constraint(
-        equalTo: layoutMarginsGuide.trailingAnchor
-      ),
-      chevronImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
-      chevronImageView.widthAnchor.constraint(equalToConstant: 10),
-      chevronImageView.heightAnchor.constraint(equalToConstant: 14),
-
-      separator.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
-      separator.trailingAnchor.constraint(equalTo: trailingAnchor),
-      separator.bottomAnchor.constraint(equalTo: bottomAnchor),
-      // Half-point hairline; matches the visual weight of UITableView's
-      // built-in separators without pulling on UIScreen.main (deprecated
-      // in iOS 26).
-      separator.heightAnchor.constraint(equalToConstant: 0.5),
-    ])
-  }
-
-  func setCount(_ count: Int) {
-    let suffix = count == 1 ? "song" : "songs"
-    subtitleLabel.text = "\(count) \(suffix)"
-    accessibilityValue = subtitleLabel.text
-  }
-
-  // Visual feedback on touch so the row reads as tappable, matching
-  // UITableViewCell's selection style without inheriting it.
-  override var isHighlighted: Bool {
-    didSet {
-      backgroundColor = isHighlighted
-        ? CassetteTheme.UIColors.bg2
-        : .backgroundColor
-    }
-  }
+  // cassette: the pinned "Liked Songs" header (Patch 044) was removed with the
+  // favorites feature. Its setup/refresh/relayout methods, the
+  // viewDidLayoutSubviews override that repositioned it, and the
+  // LikedSongsHeaderRowView class were all deleted.
 }

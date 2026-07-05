@@ -633,6 +633,72 @@ public class LibraryStorage: PlayableFileCachable {
     context.delete(scrobbleEntry.managedObject)
   }
 
+  // MARK: - cassette Forgotten Albums (turnover state + two-tier feedback log)
+
+  /// Record that `albumIds` were shown on the Forgotten Albums shelf: stamp each
+  /// album's `lastSurfacedOnHomeDate` (turnover) and append a hot-tier
+  /// `HomeShelfEvent(.surfaced)` row. Idempotent per day — an album already
+  /// stamped today is skipped, so repeated Home appearances don't inflate counts
+  /// or churn the turnover window.
+  @discardableResult
+  public func recordForgottenAlbumsSurfaced(albumIds: [String], for account: Account) -> Bool {
+    guard !albumIds.isEmpty else { return false }
+    let startOfToday = Calendar.current.startOfDay(for: Date())
+    let now = Date()
+    var wrote = false
+    for id in albumIds {
+      guard let album = getAlbum(for: account, id: id, isDetailFaultResolution: false) else {
+        continue
+      }
+      if let last = album.lastSurfacedOnHomeDate, last >= startOfToday { continue } // already today
+      album.lastSurfacedOnHomeDate = now
+      let event = HomeShelfEventMO(context: context)
+      event.albumId = id
+      event.date = now
+      event.kind = HomeShelfEventMO.kindSurfaced
+      wrote = true
+    }
+    if wrote { saveContext() }
+    return wrote
+  }
+
+  /// Record that the user opened `albumId` from the Forgotten Albums shelf — the
+  /// cheap intent stamp at the Home tap (Home navigates on tap, so this captures
+  /// "opened from shelf", not a confirmed play; play-origin attribution is
+  /// deferred by design). Hot-tier row only.
+  public func recordForgottenAlbumOpened(albumId: String) {
+    let event = HomeShelfEventMO(context: context)
+    event.albumId = albumId
+    event.date = Date()
+    event.kind = HomeShelfEventMO.kindOpenedFromShelf
+    saveContext()
+  }
+
+  /// Roll off `HomeShelfEvent` rows older than the 30-day hot window: fold each
+  /// into the matching album's durable lifetime cold counter, then delete the
+  /// row. Opportunistic + bounded (only aged rows) — call on launch / first Home
+  /// render of the day. No worker, no schedule.
+  public func rollOffAgedHomeShelfEvents(for account: Account) {
+    let cutoff = Date().addingTimeInterval(-30 * 24 * 60 * 60)
+    let request = HomeShelfEventMO.fetchRequest()
+    request.predicate = NSPredicate(format: "date < %@", cutoff as NSDate)
+    guard let aged = try? context.fetch(request), !aged.isEmpty else { return }
+    for event in aged {
+      if let album = getAlbum(for: account, id: event.albumId, isDetailFaultResolution: false) {
+        switch event.kind {
+        case HomeShelfEventMO.kindSurfaced:
+          album.timesSurfacedLifetime += 1
+        case HomeShelfEventMO.kindOpenedFromShelf:
+          album.timesOpenedFromShelfLifetime += 1
+        default:
+          break
+        }
+      }
+      context.delete(event)
+    }
+    saveContext()
+  }
+
   func createMusicFolder(account: Account) -> MusicFolder {
     let musicFolderMO = MusicFolderMO(context: context)
     let musicFolder = MusicFolder(managedObject: musicFolderMO)

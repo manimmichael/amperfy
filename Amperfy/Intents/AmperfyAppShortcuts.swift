@@ -83,19 +83,9 @@ struct AmperfyAppShortcuts: AppShortcutsProvider {
       systemImageName: "play.house.fill"
     )
     //
-    // Favorite / Rate
+    // Rate
+    // cassette: favorites removed — the "Favorite Song" Siri shortcut is gone.
     //
-    AppShortcut(
-      intent: SetFavoriteForCurrentlyPlayingSongIntent(),
-      phrases: [
-        "Favorite song in \(.applicationName)",
-        "Favorite current song in \(.applicationName)",
-        "\(\.$isFavorite) in \(.applicationName)",
-        "\(\.$isFavorite) song in \(.applicationName)",
-      ],
-      shortTitle: "Favorite Song",
-      systemImageName: "heart"
-    )
     AppShortcut(
       intent: SetRatingForCurrentlyPlayingSongIntent(),
       phrases: [

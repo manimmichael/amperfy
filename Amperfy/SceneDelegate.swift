@@ -193,22 +193,28 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
   private func startCassetteIntentPolling() {
     // Poll once immediately, then every 30s while in the foreground.
-    // Verbose-but-temporary logging (Phase 3.1) — `print` is guaranteed
-    // visible in the Xcode console, unlike os_log .info which is filtered.
+    // cassette: debug-only console tracing (gated so it doesn't ship / add
+    // main-thread I/O in release).
+    #if DEBUG
     print("Cassette poll: app became active -> triggering poll")
+    #endif
     Task { await IntentExecutor.shared.handlePendingIntents() }
     cassetteIntentPollTimer?.invalidate()
     cassetteIntentPollTimer = Timer.scheduledTimer(
       withTimeInterval: 30,
       repeats: true
     ) { _ in
+      #if DEBUG
       print("Cassette poll: 30s timer fired -> triggering poll")
+      #endif
       Task { await IntentExecutor.shared.handlePendingIntents() }
     }
   }
 
   private func stopCassetteIntentPolling() {
+    #if DEBUG
     print("Cassette poll: backgrounded -> timer stopped")
+    #endif
     cassetteIntentPollTimer?.invalidate()
     cassetteIntentPollTimer = nil
   }
@@ -236,7 +242,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     guard !cassetteReconnectAlertShown else { return }
     guard let topVC = AppDelegate.topViewController() else { return }
     cassetteReconnectAlertShown = true
+    #if DEBUG
     print("Cassette sync: token rejected -> showing reconnect alert")
+    #endif
 
     let alert = UIAlertController(
       title: "Device removed",
@@ -257,7 +265,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             return
           }
           self.appDelegate.storage.settings.cassetteBearerToken = token
+          #if DEBUG
           print("Cassette sync: reconnected, re-registering device")
+          #endif
           Task {
             try? await CassetteSyncAPI.shared.registerDevice()
             await IntentExecutor.shared.handlePendingIntents()
@@ -300,6 +310,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     DiagnosticLog.shared.log(.lifecycle, "entered background")
     DiagnosticLog.shared.flushNow()
     AmperKit.shared.threadPerformanceMonitor.isInForeground = false
+    // cassette (BUG-039): durably persist any buffered device-ownership rows before
+    // iOS suspends us, so a just-completed copy burst isn't lost (files-on-disk with
+    // no ownership row = albums that never appear in the on-device library). Guarded
+    // by a background-task assertion so the async flush has time to finish.
+    let ownershipFlushTask = UIApplication.shared.beginBackgroundTask(withName: "digital.cassette.ownership-flush")
+    Task {
+      await CassetteTransferSession.shared.flushPending()
+      await MainActor.run {
+        if ownershipFlushTask != .invalid { UIApplication.shared.endBackgroundTask(ownershipFlushTask) }
+      }
+    }
     stopCassetteIntentPolling()
     guard appDelegate.isNormalInteraction else {
       return

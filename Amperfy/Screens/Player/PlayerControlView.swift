@@ -28,7 +28,7 @@ import UIKit
 
 class PlayerControlView: UIView {
   // cassette Patch 104: +12pt so the added breathing room between the
-  // transport row and the airplay/heart/queue row isn't squeezed out.
+  // transport row and the airplay/queue row isn't squeezed out.
   static let frameHeight: CGFloat = 187
   static private let margin = UIEdgeInsets(
     top: 0,
@@ -80,10 +80,6 @@ class PlayerControlView: UIView {
   weak var volumeButton: UIButton!
   @IBOutlet
   weak var optionsButton: UIButton!
-
-  /// cassette polish Part 2: the heart moves into the bottom row (AirPlay -
-  /// Heart - Queue). Created in code and inserted into `optionsStackView`.
-  private var heartButton: UIButton?
 
   /// cassette transport polish: the previous/play/next buttons are re-pinned to
   /// the SAME equidistant quarter-point distribution the album action row uses
@@ -150,13 +146,10 @@ class PlayerControlView: UIView {
     audioInfoLabel?.removeFromSuperview()
     playTypeIcon?.removeFromSuperview()
     // cassette polish Part 2: kill the on-screen volume control (physical
-    // buttons handle volume) and the player-level overflow menu. The heart
-    // joins the bottom row between AirPlay and the queue button. The heart's
-    // data path (rootView.favoritePressed -> remoteToggleFavorite) is
-    // untouched; only its placement changes.
+    // buttons handle volume) and the player-level overflow menu. The bottom row
+    // is now just AirPlay + Queue (the favorite heart was removed).
     volumeButton?.removeFromSuperview()
     optionsButton?.removeFromSuperview()
-    setupBottomRowHeart()
     setupCassetteTransportLayout()
     refreshPlayer()
 
@@ -252,11 +245,11 @@ class PlayerControlView: UIView {
   /// row's equidistant distribution (centerX multipliers 0.5 / 1.0 / 1.5 of the
   /// full view width). The transport buttons ship inside a fixed-width
   /// `fillEqually` stack (`SoI-ny-Hw0`); that clusters them more tightly than
-  /// the album row's heart/play/shuffle and isn't a true equidistant-around-
+  /// the album row's play/shuffle and isn't a true equidistant-around-
   /// center layout once the skip buttons toggle. We lift the 5 buttons out of
   /// that stack into `self` and pin each by centerX multiplier, keeping the now-
   /// empty stack as the (unchanged) vertical anchor so the time row above and
-  /// the AirPlay/heart/queue row below keep their existing spacing.
+  /// the AirPlay/queue row below keep their existing spacing.
   private func setupCassetteTransportLayout() {
     guard !didSetupCassetteTransportLayout else { return }
     guard let transportStack = playButton.superview else { return }
@@ -292,41 +285,6 @@ class PlayerControlView: UIView {
     // Skip buttons (default-hidden in Cassette) flank symmetrically further out.
     pin(skipBackwardButton, centerXMultiplier: 0.25)
     pin(skipForwardButton, centerXMultiplier: 1.75)
-  }
-
-  private func setupBottomRowHeart() {
-    let heart = UIButton(type: .system)
-    heart.translatesAutoresizingMaskIntoConstraints = false
-    heart.addTarget(self, action: #selector(heartButtonPushed), for: .touchUpInside)
-    // cassette Polish 2 (G1): keep the heart from clipping inside the 28pt row.
-    heart.clipsToBounds = false
-    NSLayoutConstraint.activate([
-      heart.widthAnchor.constraint(equalToConstant: 28),
-      heart.heightAnchor.constraint(equalToConstant: 28),
-    ])
-    optionsStackView.clipsToBounds = false
-    // AirPlay (index 0) - Heart - Queue ...
-    optionsStackView.insertArrangedSubview(heart, at: 1)
-    heartButton = heart
-  }
-
-  // cassette Polish 2 (G1): the shared `refreshFavoriteButton` applies an 11pt
-  // content inset for a standalone 44pt hit target. Inside the 28pt bottom row
-  // that left only ~6pt for the 22pt glyph, clipping it. Re-fit to the row
-  // after refreshing the favorite state.
-  private func refreshBottomRowHeart() {
-    guard let heartButton else { return }
-    rootView?.refreshFavoriteButton(button: heartButton)
-    if var config = heartButton.configuration {
-      config.contentInsets = .zero
-      heartButton.configuration = config
-    }
-  }
-
-  @objc
-  func heartButtonPushed() {
-    rootView?.favoritePressed()
-    refreshBottomRowHeart()
   }
 
   @IBAction
@@ -366,7 +324,6 @@ class PlayerControlView: UIView {
     )
     playerHandler?.refreshPrevNextButtons(previousButton: previousButton, nextButton: nextButton)
     playerHandler?.refreshDisplayPlaylistButton(displayPlaylistButton: displayPlaylistButton)
-    refreshBottomRowHeart()
     refreshPlayerModeChangeButton()
   }
 

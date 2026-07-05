@@ -127,56 +127,6 @@ extension PopupPlayerVC {
     present(host, animated: true)
   }
 
-  func refreshFavoriteButton(button: UIButton) {
-    // cassette polish Part 5: heart sits plain against the player background
-    // (no bg2 circular tile). 22pt symbol in ink, filled when favorited and
-    // outlined when not; 44pt hit target via symmetric content insets.
-    // Patch 104 (Root 1): cassetteBare() opts out of the iOS 26 default
-    // glass capsule that was leaking a faint container around the heart.
-    var config = UIButton.Configuration.cassetteBare()
-    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-      pointSize: 22,
-      weight: .regular
-    )
-    config.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11)
-    switch player.playerMode {
-    case .music:
-      if let playableInfo = player.currentlyPlaying,
-         playableInfo.isSong {
-        config.image = playableInfo.isFavorite ? .heartFill : .heartEmpty
-        // cassette redesign (Surface 5): the favorited heart is one of the
-        // three sanctioned orange live-state surfaces (scrubber fill,
-        // playing indicator, active heart). Unfavorited stays quiet ink
-        // alongside its row siblings.
-        config.baseForegroundColor = playableInfo.isFavorite
-          ? CassetteTheme.UIColors.orange
-          : CassetteTheme.UIColors.ink
-        // E6 (a): the heart is no longer gated on isOnlineMode — favoriting is
-        // local-first (remoteToggleFavorite keeps the flip when the server is
-        // unreachable), so it works away from home.
-        button.isEnabled = true
-      } else if let playableInfo = player.currentlyPlaying,
-                let radio = playableInfo.asRadio {
-        config.image = .followLink
-        config.baseForegroundColor = CassetteTheme.UIColors.ink
-        button.isEnabled = radio.siteURL != nil
-      } else {
-        config.image = .heartEmpty
-        config.baseForegroundColor = CassetteTheme.UIColors.ink
-        button.isEnabled = false
-      }
-    case .podcast:
-      config.image = .info
-      config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .large)
-      config.baseForegroundColor = CassetteTheme.UIColors.ink
-      button.isEnabled = true
-    }
-    if #available(iOS 17.0, *) {
-      button.isSymbolAnimationEnabled = true
-    }
-    button.configuration = config
-  }
-
   /// cassette Patch 029: the popup-player background is now a flat
   /// `bg4` surface set on the host view in `PopupPlayerVC.viewDidLoad`.
   /// The blurred album-art layer + `DominantColors`-driven gradient

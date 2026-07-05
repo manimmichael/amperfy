@@ -12,11 +12,18 @@
 //  deletes the emptied legacy albums.
 //
 //  Idempotent — safe to run on every sync; once every owned song already points
-//  at its group-key album it makes no changes. It touches ONLY AlbumMO identity
-//  and Song.album relationships: never a Song, a file, or a DeviceOwnership row,
-//  so the owned-track count is invariant across a regroup. It is catalog-blind —
-//  two disk albums that resolve to one catalog album (e.g. a box set) keep their
-//  distinct group keys and stay separate.
+//  at its group-key album it makes no changes. It is catalog-blind — two disk
+//  albums that resolve to one catalog album (e.g. a box set) keep their distinct
+//  group keys and stay separate.
+//
+//  It also MATERIALIZES a missing catalog record: the transfer path records a
+//  DeviceOwnership row + the file but never builds the SongMO the library renders
+//  from (those otherwise come only from a separate, online-gated library sync). So
+//  an owned track can sit on disk yet render nowhere. The pre-pass below creates a
+//  SongMO (id == the owned Subsonic id, title + duration from the grouping entry)
+//  for any owned track that lacks one, so "owned" always equals "visible". It
+//  never touches a file or a DeviceOwnership row — the OWNED-track count stays
+//  invariant; only the SongMO count grows to match it.
 //
 //  This program is free software: you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License as published by
@@ -42,6 +49,10 @@ public final class AlbumRegrouper {
     public var purgedAlbums = 0
     public var groups = 0
     public var createdAlbums = 0
+    /// SongMOs materialized this pass for OWNED tracks that had a grouping entry
+    /// but no catalog record yet (the transfer path records ownership + file but
+    /// never builds a SongMO). This is what makes "owned" == "visible".
+    public var createdSongs = 0
     public var matchedByLocalId = 0
     public var skipped = 0
     /// Albums (re)pointed at their native cover id this pass — i.e. still awaiting
@@ -103,6 +114,46 @@ public final class AlbumRegrouper {
     context.performAndWait {
       let library = LibraryStorage(context: context)
       let account = library.getAccount(info: accountInfo)
+
+      // PRE-PASS (cassette owned==visible heal): materialize a SongMO for any
+      // OWNED track that has a grouping entry but no catalog record yet. Runs
+      // before the fetch below so the newly-created songs are picked up and
+      // grouped in the same pass (a pending insert matches an IN-predicate fetch).
+      // Requires the grouping entry to carry a title (older cloud deploys omit it
+      // → nothing is created, the heal simply waits for the deploy).
+      do {
+        let existingReq: NSFetchRequest<SongMO> = SongMO.fetchRequest()
+        existingReq.predicate = NSPredicate(format: "id IN %@", ownedIds)
+        let existingIds = Set(((try? context.fetch(existingReq)) ?? []).map(\.id))
+        for sid in ownedIds where !existingIds.contains(sid) {
+          guard let item = byTrackId[sid] ?? localIdBySubsonic[sid].flatMap({ byLocalId[$0] }),
+                let title = item.trackTitle, !title.isEmpty else { continue }
+          let song = library.createSong(account: account)
+          song.id = sid
+          song.title = title
+          if let dur = item.duration, dur > 0 { song.remoteDuration = dur }
+          // Rip track position → album-detail sort order (disk → track → title).
+          // Only set on THIS created song; real-synced songs already carry .track.
+          // Null (non-ripped) leaves track = 0 → sorts by title, no worse than before.
+          if let idx = item.discTrackIndex, idx > 0 { song.track = idx }
+          // Native cover id is provisioned in the main loop below (for ANY owned
+          // song lacking artwork), so a heal also fixes songs an earlier build
+          // created coverless — not only the ones created this pass.
+          // An artist so the Artists list + the album's artist line aren't blank:
+          // reuse an existing artist by the cloud's display name, else mint one
+          // (display name IS the canonical artist; the app's name-dedup folds any
+          // later real-sync duplicate). The album link is set by the loop below.
+          if let artist = library.getArtistByExactName(for: account, name: item.displayArtist) {
+            song.artist = artist
+          } else {
+            let artist = library.createArtist(account: account)
+            artist.id = "cassette-synth-artist:\(item.displayArtist)"
+            artist.name = item.displayArtist
+            song.artist = artist
+          }
+          summary.createdSongs += 1
+        }
+      }
 
       // One fetch of every owned Song, with its album prefetched.
       let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
@@ -210,6 +261,19 @@ public final class AlbumRegrouper {
         guard let item else { summary.skipped += 1; continue }
         if byTrackId[songMO.id] == nil { summary.matchedByLocalId += 1 }
         let song = Song(managedObject: songMO)
+        // Ensure the song carries a native cover id — its own Subsonic id, the LAN
+        // cover proxy key — so its album can get a cover. Songs created by the
+        // owned==visible heal (or synced before artwork bundling) may lack one;
+        // provisioning here (idempotent — only when absent) heals already-coverless
+        // albums too, not just ones created this pass. Mirrors SsXmlParser
+        // .parseArtwork (id, empty type, NotChecked); the album inherits it via
+        // provisionNativeCover and backfillOwnedAlbumCovers fetches the cover.jpg.
+        if song.artwork == nil {
+          let aw = library.createArtwork(account: account)
+          aw.remoteInfo = ArtworkRemoteInfo(id: songMO.id, type: "")
+          aw.status = .NotChecked
+          song.artwork = aw
+        }
         let current = song.album
         let nativeCover = song.artwork?.remoteInfo
         if current?.id == item.groupKey {

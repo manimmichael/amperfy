@@ -98,6 +98,22 @@ class HomeManager: NSObject {
   private let getMeta: (_ accountInfo: AccountInfo) -> MetaManager
   private let eventLogger: EventLogger
   private let player: PlayerFacade
+  /// cassette (CarPlay feel-good, Job 1.3): when true, this instance also builds
+  /// the two album-forward shelves (`.recentlyPlayedAlbums` / `.newestAlbums`)
+  /// that CarPlay Home renders. iOS Home leaves it false — its section set
+  /// (`HomeSection.defaultValue`) doesn't include them, so it neither builds nor
+  /// renders them, keeping the extra work + snapshot fan-out off the iOS path.
+  private let buildsAlbumShelves: Bool
+  /// cassette (Forgotten Albums): when true, this instance builds the iOS-only
+  /// "From Your Collection" anti-recency shelf (`.forgottenAlbums`). CarPlay
+  /// leaves it false (its section list doesn't include it).
+  private let buildsForgottenShelf: Bool
+
+  // cassette (Forgotten Albums) tuning knobs.
+  private static let forgottenCandidateFetchLimit = 150
+  private static let forgottenTurnoverDays = 7
+  private static let forgottenColdSeconds: TimeInterval = 60 * 24 * 60 * 60 // 60 days
+  private static let forgottenRekindleMinPlays: Int = 5
 
   var isOfflineMode: Bool {
     storage.settings.user.isOfflineMode
@@ -118,13 +134,19 @@ class HomeManager: NSObject {
   // items exist.
   private var albumsAllFetch: AlbumFetchedResultsController?
   private var artistsAllFetch: ArtistFetchedResultsController?
+  // cassette (Forgotten Albums): owned-album candidate pool (the on-device
+  // ownership predicate auto-applies), newest-sorted so the older end
+  // approximates "added long ago".
+  private var forgottenAlbumsFetch: AlbumFetchedResultsController?
 
   // Transient per-recompute scoring, rebuilt at the top of
   // `recomputeAllShelves` and consumed by the shelf builders in that pass.
   private var albumScores: [String: (container: Album, score: ShelfScore)] = [:]
   private var artistScores: [String: (container: Artist, score: ShelfScore)] = [:]
   private var rankedAlbumIDs: [String] = []
-  private var rankedArtistIDs: [String] = []
+  // cassette (BUG-036): `rankedArtistIDs` (song-derived artist ranking) retired —
+  // the Artists shelf now ranks by the real artist-play signal in
+  // `updateRecentArtists()`, so album plays no longer surface artists.
 
   // Part 2a: coalesce the FRC-change burst (~30 callbacks in 0.1s as Core Data
   // settles after a play / sync) and player transitions into a single debounced
@@ -138,13 +160,17 @@ class HomeManager: NSObject {
     storage: PersistentStorage,
     getMeta: @escaping (_ accountInfo: AccountInfo) -> MetaManager,
     eventLogger: EventLogger,
-    player: PlayerFacade
+    player: PlayerFacade,
+    buildsAlbumShelves: Bool = false,
+    buildsForgottenShelf: Bool = false
   ) {
     self.account = account
     self.storage = storage
     self.getMeta = getMeta
     self.eventLogger = eventLogger
     self.player = player
+    self.buildsAlbumShelves = buildsAlbumShelves
+    self.buildsForgottenShelf = buildsForgottenShelf
     // cassette Patch 042: four-shelf IA is fixed. Legacy
     // `accountSettings.homeSections` is left on disk untouched so a
     // future rollback or re-introduction of editable shelves can
@@ -220,6 +246,20 @@ class HomeManager: NSObject {
     )
     artistsAllFetch?.delegate = self
     artistsAllFetch?.search(searchText: "", onlyCached: isOfflineMode, displayFilter: .all)
+
+    // cassette (Forgotten Albums): iOS-only owned-album candidate FRC. In
+    // on-device-only mode the AlbumFetchedResultsController's ownership predicate
+    // already constrains this to owned albums.
+    if buildsForgottenShelf {
+      forgottenAlbumsFetch = AlbumFetchedResultsController(
+        coreDataCompanion: storage.main, account: account,
+        sortType: .newest,
+        isGroupedInAlphabeticSections: false,
+        fetchLimit: Self.forgottenCandidateFetchLimit
+      )
+      forgottenAlbumsFetch?.delegate = self
+      forgottenAlbumsFetch?.search(searchText: "", onlyCached: isOfflineMode, displayFilter: .all)
+    }
 
     recomputeAllShelves()
   }
@@ -325,12 +365,21 @@ class HomeManager: NSObject {
     albumScores = scoreContainers(from: songs) { $0.album }
     artistScores = scoreContainers(from: songs) { $0.artist }
     rankedAlbumIDs = rankedContainerIDs(albumScores)
-    rankedArtistIDs = rankedContainerIDs(artistScores)
 
     updateRecent()
     updatePlaylists()
     updateAlbums()
     updateRecentArtists()
+    // cassette (Job 1.3): CarPlay-only album-forward shelves. Gated so iOS
+    // neither computes nor snapshots them.
+    if buildsAlbumShelves {
+      updateRecentlyPlayedAlbums()
+      updateNewestAlbums()
+    }
+    // cassette (Forgotten Albums): iOS-only anti-recency shelf.
+    if buildsForgottenShelf {
+      updateForgottenAlbums()
+    }
   }
 
   // MARK: - Play scoring (Home Shelves v1 foundation)
@@ -403,16 +452,28 @@ class HomeManager: NSObject {
   func updateRecent() {
     var entries: [(date: Date, container: PlayableContainable, id: String)] = []
 
-    // cassette Home Shelves v1: albums are now eligible here via song-derived
-    // recency (album.lastTimePlayed is never written), so a played album
-    // actually appears in Recent — not just playlists and artists.
+    // cassette Home Shelves v1 — album vs. artist recency are DELIBERATELY
+    // asymmetric here; do not "unify" them:
+    //  • Albums use song-derived recency (scored.score.lastPlayed). Load-bearing:
+    //    an album can reach Recent via a non-containable play context (queue,
+    //    mix) where Album.playedViaContext() never fires, so the song rollup is
+    //    the only path that surfaces it. (BUG-037: album.lastTimePlayed IS
+    //    written on PlayContext(containable: album) — just not on those
+    //    queue/mix paths — hence the rollup.)
+    //  • Artists use the container signal (scored.container.lastTimePlayed,
+    //    written by Artist.playedViaContext()). An artist only reaches a queue by
+    //    being CHOSEN as an artist, which always writes that signal — so the song
+    //    rollup would re-surface an artist whenever an album of theirs played
+    //    ("Bleachers doubling", BUG-038). Ranking by the container signal means an
+    //    album play no longer promotes the artist into Recent. Same read-side fix
+    //    as BUG-036 on the Artists shelf (updateRecentArtists), second builder.
     for (id, scored) in albumScores {
       if let date = scored.score.lastPlayed {
         entries.append((date, scored.container, id))
       }
     }
     for (id, scored) in artistScores {
-      if let date = scored.score.lastPlayed {
+      if let date = scored.container.lastTimePlayed {
         entries.append((date, scored.container, id))
       }
     }
@@ -571,18 +632,195 @@ class HomeManager: NSObject {
     applySnapshotCB?()
   }
 
-  /// Artists, same recency-then-affinity ranking with the fill-to-N backfill.
-  /// The old hard "hide below 3 played artists" guard is gone — backfill reaches
-  /// the target, so a real shelf renders whenever the library has artists at all.
+  /// cassette (BUG-036): rank by the REAL artist-play signal, not song-rollup.
+  /// `Artist.playedViaContext()` (AbstractLibraryEntity) writes `lastTimePlayed`
+  /// on every `PlayContext(containable: artist)`, so an artist that was actually
+  /// played leads — whereas playing an *album* stamps the album's `lastTimePlayed`,
+  /// not the artist's, so it no longer surfaces the artist here (the old
+  /// song-rollup couldn't tell the two apart). Candidates still come from
+  /// `artistScores` (a played artist's songs are in the recent sample, so it is
+  /// present); we just rank by `container.lastTimePlayed`. Backfill (fill-to-N) is
+  /// unchanged so the shelf never renders empty — an artist that only appears via
+  /// alphabetical backfill is there by library membership, not "surfaced" by a play.
   func updateRecentArtists() {
+    let rankedByArtistPlay = artistScores
+      .filter { $0.value.container.lastTimePlayed != nil }
+      .sorted {
+        ($0.value.container.lastTimePlayed ?? .distantPast) >
+          ($1.value.container.lastTimePlayed ?? .distantPast)
+      }
+      .map { $0.key }
     data[.recentlyPlayedArtists] = filledShelf(
       section: .recentlyPlayedArtists,
-      rankedIDs: rankedArtistIDs,
+      rankedIDs: rankedByArtistPlay,
       containerForID: { artistScores[$0]?.container },
       atLargeMOs: artistsAllFetch?.fetchedObjects as? [ArtistMO],
       wrap: { Artist(managedObject: $0) }
     )
     applySnapshotCB?()
+  }
+
+  /// cassette (Job 1.3): "Recently Played Albums" — albums actually played
+  /// (`album.lastTimePlayed` via `Album.playedViaContext()`), most-recent first.
+  /// Played-only (no backfill) so the title stays honest; the CarPlay empty-shelf
+  /// guard hides it when there are no album plays yet. CarPlay-only — built only
+  /// when `buildsAlbumShelves` is set (see `recomputeAllShelves`).
+  func updateRecentlyPlayedAlbums() {
+    let played = albumScores.values
+      .filter { $0.container.lastTimePlayed != nil }
+      .sorted {
+        ($0.container.lastTimePlayed ?? .distantPast) >
+          ($1.container.lastTimePlayed ?? .distantPast)
+      }
+      .prefix(Self.shelfCarouselCap)
+    data[.recentlyPlayedAlbums] = played.map {
+      HomeItem(
+        section: .recentlyPlayedAlbums,
+        stableID: Self.stableID(for: $0.container),
+        playableContainable: $0.container
+      )
+    }
+    applySnapshotCB?()
+  }
+
+  /// cassette (Job 1.3): "Newest Albums" — albums by recency-of-addition
+  /// (`album.addedDate` ~ `ShelfScore.newestAdded`), newest first, filled to
+  /// target from the stable at-large list so it isn't sparse. CarPlay-only.
+  func updateNewestAlbums() {
+    let rankedByAdded = albumScores
+      .sorted {
+        ($0.value.score.newestAdded ?? .distantPast) >
+          ($1.value.score.newestAdded ?? .distantPast)
+      }
+      .map { $0.key }
+    data[.newestAlbums] = filledShelf(
+      section: .newestAlbums,
+      rankedIDs: rankedByAdded,
+      containerForID: { albumScores[$0]?.container },
+      atLargeMOs: albumsAllFetch?.fetchedObjects as? [AlbumMO],
+      wrap: { Album(managedObject: $0) }
+    )
+    applySnapshotCB?()
+  }
+
+  /// cassette (Forgotten Albums): the anti-recency shelf — owned albums the user
+  /// has drifted from or never explored. iOS-only (`buildsForgottenShelf`). Draws
+  /// from three pools, forgotten-purchase-weighted (the deep pool at launch):
+  ///  • forgotten purchase — owned & never played, from the older (added-long-ago) end
+  ///  • deep cut — 1-2 tracks ever played, the rest at zero ("kept for one song")
+  ///  • rekindle — real lifetime plays, gone cold
+  /// Turnover-aware: albums surfaced on a recent PRIOR day are held back so the set
+  /// changes day to day (HomeVC stamps `lastSurfacedOnHomeDate` when the shelf shows).
+  /// Song iteration for deep-cut/rekindle is confined to the *touched* subset, so a
+  /// fresh install (only forgotten-purchase populated) does no per-song work.
+  func updateForgottenAlbums() {
+    guard let albumMOs = forgottenAlbumsFetch?.fetchedObjects as? [AlbumMO] else {
+      data[.forgottenAlbums] = []
+      applySnapshotCB?()
+      return
+    }
+    // FRC is newest-first; the OLDER end approximates "added long ago".
+    let owned = albumMOs.map { Album(managedObject: $0) }
+
+    // Never repeat what Resume / Recent already show on the same screen.
+    var excludedIDs = Set<String>()
+    for section in [HomeSection.resume, .recent] {
+      for item in data[section] ?? [] { excludedIDs.insert(item.stableID) }
+    }
+
+    // Turnover cooldown: hold back albums surfaced on a recent *prior* day, so
+    // today's set stays stable while yesterday's rotates out.
+    let cal = Calendar.current
+    let startOfToday = cal.startOfDay(for: Date())
+    let cooldownStart = cal.date(
+      byAdding: .day,
+      value: -Self.forgottenTurnoverDays,
+      to: startOfToday
+    ) ?? startOfToday
+    func isEligible(_ album: Album) -> Bool {
+      if excludedIDs.contains(Self.stableID(for: album)) { return false }
+      if let d = album.lastSurfacedOnHomeDate, d >= cooldownStart, d < startOfToday {
+        return false
+      }
+      return true
+    }
+
+    // Pool 1 — forgotten purchase: owned & never played, oldest-added first.
+    let forgottenPurchase = owned.reversed().filter {
+      $0.lastTimePlayed == nil && $0.playCount == 0 && isEligible($0)
+    }
+
+    // Pools 2 & 3 — over the TOUCHED subset only (bounded song iteration).
+    let coldCutoff = Date().addingTimeInterval(-Self.forgottenColdSeconds)
+    var deepCut: [Album] = []
+    var rekindle: [(album: Album, plays: Int)] = []
+    for album in owned
+      where (album.lastTimePlayed != nil || album.playCount > 0) && isEligible(album) {
+      let tracks = album.playables
+      let playedTracks = tracks.reduce(0) { $0 + ($1.playCount > 0 ? 1 : 0) }
+      if tracks.count >= 3, (1 ... 2).contains(playedTracks) {
+        deepCut.append(album)
+      }
+      let playSum = tracks.reduce(0) { $0 + $1.playCount }
+      let isCold = album.lastTimePlayed.map { $0 < coldCutoff } ?? true
+      if playSum >= Self.forgottenRekindleMinPlays, isCold {
+        rekindle.append((album, playSum))
+      }
+    }
+    let rekindleRanked = rekindle.sorted { $0.plays > $1.plays }.map(\.album)
+
+    let blended = blendForgotten(
+      forgottenPurchase: Array(forgottenPurchase),
+      deepCut: deepCut,
+      rekindle: rekindleRanked
+    )
+    data[.forgottenAlbums] = blended.map {
+      HomeItem(
+        section: .forgottenAlbums,
+        stableID: Self.stableID(for: $0),
+        playableContainable: $0
+      )
+    }
+    applySnapshotCB?()
+  }
+
+  /// Forgotten-weighted interleave: ~3 forgotten-purchase to 1 secondary (deep-cut
+  /// / rekindle, alternating), deduped within the shelf, capped at the carousel max.
+  private func blendForgotten(
+    forgottenPurchase: [Album],
+    deepCut: [Album],
+    rekindle: [Album]
+  )
+    -> [Album] {
+    var out: [Album] = []
+    var seen = Set<String>()
+    func push(_ album: Album) {
+      let id = Self.stableID(for: album)
+      guard !seen.contains(id) else { return }
+      seen.insert(id)
+      out.append(album)
+    }
+    var fi = 0, di = 0, ri = 0
+    var preferDeep = true
+    while out.count < Self.shelfCarouselCap {
+      let before = out.count
+      var f = 0
+      while f < 3, fi < forgottenPurchase.count, out.count < Self.shelfCarouselCap {
+        push(forgottenPurchase[fi]); fi += 1; f += 1
+      }
+      if out.count < Self.shelfCarouselCap {
+        if preferDeep, di < deepCut.count {
+          push(deepCut[di]); di += 1
+        } else if ri < rekindle.count {
+          push(rekindle[ri]); ri += 1
+        } else if di < deepCut.count {
+          push(deepCut[di]); di += 1
+        }
+        preferDeep.toggle()
+      }
+      if out.count == before { break } // all pools exhausted
+    }
+    return out
   }
 
   /// Shared fill-to-N builder for the album & artist shelves: the song-derived
@@ -649,7 +887,8 @@ extension HomeManager: @preconcurrency NSFetchedResultsControllerDelegate {
         || controller == newestSongsFetch?.fetchResultsController
         || controller == playlistsLastPlayedFetch?.fetchResultsController
         || controller == albumsAllFetch?.fetchResultsController
-        || controller == artistsAllFetch?.fetchResultsController {
+        || controller == artistsAllFetch?.fetchResultsController
+        || controller == forgottenAlbumsFetch?.fetchResultsController {
         scheduleRecompute()
       }
     }

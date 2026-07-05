@@ -110,4 +110,17 @@ public final class CassetteOwnershipNotifier {
       execute: work
     )
   }
+
+  /// Post the refresh IMMEDIATELY (no debounce), cancelling any pending debounced
+  /// post. Use when a change is known-final and the library must repaint now —
+  /// e.g. the end of a removal poll cycle, so a removed album drops in place with
+  /// no relaunch. @MainActor, so the post runs on the main thread.
+  public func ownershipDidChangeNow() {
+    pending?.cancel()
+    pending = nil
+    NotificationCenter.default.post(
+      name: CassetteLibraryFilterProvider.filterChangedNotification,
+      object: nil
+    )
+  }
 }
