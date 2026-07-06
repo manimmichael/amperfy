@@ -177,15 +177,23 @@ class TabBarVC: UITabBarController {
   // on a real direction change past a small threshold, so a steady scroll doesn't
   // thrash the property.
   private var cassetteLastScrollY: CGFloat = 0
+  private var cassetteLastToggleAt: TimeInterval = 0
   func cassetteUpdateMinimizeForScroll(_ scrollView: UIScrollView) {
     let y = scrollView.contentOffset.y
     let dy = y - cassetteLastScrollY
     cassetteLastScrollY = y
     guard abs(dy) > 4 else { return } // ignore sub-pixel jitter
     let desired: UITabBarController.MinimizeBehavior = dy < 0 ? .never : .onScrollDown
-    if tabBarMinimizeBehavior != desired {
-      tabBarMinimizeBehavior = desired
-    }
+    guard tabBarMinimizeBehavior != desired else { return }
+    // Cooldown: each behavior change animates the bar. On rapid up/down reversals,
+    // hammering the property every frame piles up animations and UIKit stops
+    // responding for a while ("tired out"). Rate-limit so each animation settles —
+    // the FIRST reversal still fires immediately (cassetteLastToggleAt == 0), only a
+    // fast wiggle is throttled. ~0.35s ≈ the minimize animation length.
+    let now = ProcessInfo.processInfo.systemUptime
+    guard now - cassetteLastToggleAt > 0.35 else { return }
+    cassetteLastToggleAt = now
+    tabBarMinimizeBehavior = desired
   }
 
   private func mainContent() -> UIView {
