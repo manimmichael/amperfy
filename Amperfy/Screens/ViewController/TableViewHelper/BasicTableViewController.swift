@@ -124,6 +124,21 @@ class BasicTableViewController: KeyCommandTableViewController {
 
   let searchController = UISearchController(searchResultsController: nil)
 
+  // TEMP nav-tracking diagnostics — remove after the lazy-reveal root cause is
+  // confirmed. Base override so any list screen (AlbumsVC/ArtistsVC/etc. that do
+  // NOT override scrollViewDidScroll) logs its scroll geometry. Detail screens have
+  // their own copy and don't call super, so they aren't double-logged.
+  private var cassetteNavThrottleY: CGFloat = .greatestFiniteMagnitude
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    if abs(scrollView.contentOffset.y - cassetteNavThrottleY) > 8 {
+      cassetteNavThrottleY = scrollView.contentOffset.y
+      let dy = scrollView.panGestureRecognizer.translation(in: scrollView.superview).y
+      let dir = dy > 0 ? "UP" : (dy < 0 ? "DOWN" : "flat")
+      let atTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 0.5
+      print("CASSETTE-NAV: \(type(of: self)) off.y=\(Int(scrollView.contentOffset.y)) adjTop=\(scrollView.adjustedContentInset.top) adjBot=\(scrollView.adjustedContentInset.bottom) atTop=\(atTop) drag=\(dir) tracking=\(scrollView.isTracking)")
+    }
+  }
+
   var swipeDisplaySettings = SwipeDisplaySettings()
   var containableAtIndexPathCallback: ContainableAtIndexPathCallback?
   var playContextAtIndexPathCallback: PlayContextAtIndexPathCallback?
