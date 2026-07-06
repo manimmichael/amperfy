@@ -69,6 +69,14 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   /// CarPlay to Home and kill playback). Reset to false on each connect.
   private var didApplyInitialRoot = false
 
+  /// The player mode the now-playing button row was last built for. The button
+  /// SET depends only on the mode (music: repeat+shuffle; podcast: repeat+rate),
+  /// never the track — so `configureNowPlayingTemplate()` skips the rebuild when
+  /// this is unchanged, avoiding the on-track-change flash of the active
+  /// repeat/shuffle selection + scrubber. Reset on disconnect so a fresh connect
+  /// re-pushes the buttons onto the new template.
+  var lastConfiguredNowPlayingMode: PlayerMode?
+
   var interfaceController: CPInterfaceController?
   var traits: UITraitCollection {
     interfaceController?.carTraitCollection ?? UITraitCollection.maxDisplayScale
@@ -113,6 +121,19 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         self,
         selector: #selector(refreshOfflineMode),
         name: .offlineModeChanged,
+        object: nil
+      )
+      // cassette: the owned/materialized library grows AFTER CarPlay's owned-set
+      // fetch controllers are built, and each bakes `id IN fetchOwnedAlbumIds()`
+      // as a snapshot frozen at construction time. The phone's VCs rebuild their
+      // identical FRCs on this notification; CarPlay must too, or its Albums /
+      // Artists panes stay frozen at whatever set was owned when first constructed
+      // (the "~20 of 73 albums" bug). Posted on the main thread by
+      // CassetteOwnershipNotifier.
+      appDelegate.notificationHandler.register(
+        self,
+        selector: #selector(refreshOwnedLibrary),
+        name: CassetteLibraryFilterProvider.filterChangedNotification,
         object: nil
       )
       accountNotificationHandler = AccountNotificationHandler(
@@ -231,6 +252,11 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
       self.interfaceController = nil
       appDelegate.notificationHandler.remove(self, name: .fetchControllerSortChanged, object: nil)
       appDelegate.notificationHandler.remove(self, name: .offlineModeChanged, object: nil)
+      appDelegate.notificationHandler.remove(
+        self,
+        name: CassetteLibraryFilterProvider.filterChangedNotification,
+        object: nil
+      )
       accountNotificationHandler?.performOnAllRegisteredAccounts { [weak self] accountInfo in
         guard let self else { return }
         let meta = appDelegate.getMeta(accountInfo)
@@ -247,6 +273,8 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
       }
 
       CPNowPlayingTemplate.shared.remove(self)
+      // Force the next connect to re-push the button row onto the fresh template.
+      lastConfiguredNowPlayingMode = nil
 
       resetFetchController()
     }
@@ -632,34 +660,38 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
                       let managedObjectID = objectIdInfo.value as? NSManagedObjectID {
               switch ownerType {
               case .song:
-                let mo = appDelegate.storage.main.context.object(with: managedObjectID) as? SongMO
+                let mo = (try? appDelegate.storage.main.context
+                  .existingObject(with: managedObjectID)) as? SongMO
                 if let mo = mo {
                   playable = Song(managedObject: mo)
                 }
               case .album:
-                let mo = appDelegate.storage.main.context.object(with: managedObjectID) as? AlbumMO
+                let mo = (try? appDelegate.storage.main.context
+                  .existingObject(with: managedObjectID)) as? AlbumMO
                 if let mo = mo {
                   entity = Album(managedObject: mo)
                 }
               case .artist:
-                let mo = appDelegate.storage.main.context.object(with: managedObjectID) as? ArtistMO
+                let mo = (try? appDelegate.storage.main.context
+                  .existingObject(with: managedObjectID)) as? ArtistMO
                 if let mo = mo {
                   entity = Artist(managedObject: mo)
                 }
               case .podcast:
-                let mo = appDelegate.storage.main.context
-                  .object(with: managedObjectID) as? PodcastMO
+                let mo = (try? appDelegate.storage.main.context
+                  .existingObject(with: managedObjectID)) as? PodcastMO
                 if let mo = mo {
                   entity = Podcast(managedObject: mo)
                 }
               case .podcastEpisode:
-                let mo = appDelegate.storage.main.context
-                  .object(with: managedObjectID) as? PodcastEpisodeMO
+                let mo = (try? appDelegate.storage.main.context
+                  .existingObject(with: managedObjectID)) as? PodcastEpisodeMO
                 if let mo = mo {
                   playable = PodcastEpisode(managedObject: mo)
                 }
               case .radio:
-                let mo = appDelegate.storage.main.context.object(with: managedObjectID) as? RadioMO
+                let mo = (try? appDelegate.storage.main.context
+                  .existingObject(with: managedObjectID)) as? RadioMO
                 if let mo = mo {
                   playable = Radio(managedObject: mo)
                 }
@@ -785,6 +817,25 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
           [CPListSection(items: createSongItems(from: songsFavoritesCachedFetchController))]
         )
     }
+  }
+
+  // cassette: the owned/materialized library changed (a sync materialized more
+  // owned SongMOs, or a removal reaped some). Every owned-set-scoped CarPlay fetch
+  // controller baked `id IN fetchOwnedAlbumIds()` at build time, so it is frozen
+  // to the old set. Drop them all (resetFetchController), then re-render whatever
+  // section is on screen via refreshOfflineMode() — its create*FetchController
+  // calls re-snapshot the CURRENT owned set. Sections not currently presented stay
+  // nil and rebuild lazily on their next templateWillAppear. This is what lets
+  // CarPlay converge from ~20 to the full 73 owned albums the phone shows.
+  @objc
+  private func refreshOwnedLibrary() {
+    os_log(
+      "CarPlay: owned library changed -> rebuild owned fetch controllers",
+      log: self.log,
+      type: .info
+    )
+    resetFetchController()
+    refreshOfflineMode()
   }
 
   @objc

@@ -50,9 +50,9 @@ extension CarPlaySceneDelegate {
   }
 
   func createLibraryTypeImageRowElement(type: LibraryDisplayType) -> CPListImageRowItemRowElement {
-    let baseImage = type.image
+    let baseImage = type.carPlayGlyphImage
     let element = CPListImageRowItemRowElement(
-      image: UIImage.createArtwork(
+      image: UIImage.carPlayGlyph(
         with: baseImage,
         iconSizeType: .small,
         theme: getPreference(activeAccountInfo).theme,
@@ -92,7 +92,7 @@ extension CarPlaySceneDelegate {
       guard let section = librarySection(for: type) else { continue }
       items.append(createLibraryItem(
         text: type.displayName,
-        icon: type.image,
+        icon: type.carPlayGlyphImage,
         sectionToDisplay: section
       ))
     }
@@ -108,8 +108,8 @@ extension CarPlaySceneDelegate {
       text: LibraryDisplayType.playlists.displayName,
       detailText: nil,
       image: UIImage
-        .createArtwork(
-          with: LibraryDisplayType.playlists.image,
+        .carPlayGlyph(
+          with: LibraryDisplayType.playlists.carPlayGlyphImage,
           iconSizeType: .small,
           theme: getPreference(activeAccountInfo).theme,
           lightDarkMode: traits.userInterfaceStyle.asModeType,
@@ -153,8 +153,8 @@ extension CarPlaySceneDelegate {
   func createPlayRandomSection() -> CPListSection {
     var playRandomItems = [CPListImageRowItemRowElement]()
     let playRandomAlbumsItem = CPListImageRowItemRowElement(
-      image: UIImage.createArtwork(
-        with: UIImage.album,
+      image: UIImage.carPlayGlyph(
+        with: UIImage.lucideAlbums,
         iconSizeType: .small,
         theme: getPreference(activeAccountInfo).theme,
         lightDarkMode: traits.userInterfaceStyle.asModeType,
@@ -164,8 +164,8 @@ extension CarPlaySceneDelegate {
     )
     playRandomItems.append(playRandomAlbumsItem)
     let playRandomSongsItem = CPListImageRowItemRowElement(
-      image: UIImage.createArtwork(
-        with: UIImage.musicalNotes,
+      image: UIImage.carPlayGlyph(
+        with: UIImage.lucideSongs,
         iconSizeType: .small,
         theme: getPreference(activeAccountInfo).theme,
         lightDarkMode: traits.userInterfaceStyle.asModeType,
@@ -206,8 +206,8 @@ extension CarPlaySceneDelegate {
     var quickActionItems = [CPListImageRowItemRowElement]()
     if appDelegate.player.musicItemCount > 0 {
       let item = CPListImageRowItemRowElement(
-        image: UIImage.createArtwork(
-          with: UIImage.musicalNotes,
+        image: UIImage.carPlayGlyph(
+          with: UIImage.lucideSongs,
           iconSizeType: .small,
           theme: getPreference(activeAccountInfo).theme,
           lightDarkMode: traits.userInterfaceStyle.asModeType,
@@ -223,7 +223,7 @@ extension CarPlaySceneDelegate {
     // still tolerates the podcast title (now unreachable) via continuePlaybackPodcastTitle.
     if appDelegate.storage.settings.accounts.allAccounts.count > 1 {
       let switchAccountItem = CPListImageRowItemRowElement(
-        image: UIImage.createArtwork(
+        image: UIImage.carPlayGlyph(
           with: UIImage.userPerson,
           iconSizeType: .small,
           theme: getPreference(activeAccountInfo).theme,
@@ -286,7 +286,7 @@ extension CarPlaySceneDelegate {
       let item = CPListItem(
         text: name,
         detailText: displayServerUrl,
-        image: UIImage.createArtwork(
+        image: UIImage.carPlayGlyph(
           with: isActive ? UIImage.userCircleCheckmark : UIImage.userCircle(),
           iconSizeType: .big,
           theme: getPreference(accountInfo).theme,

@@ -261,6 +261,26 @@ public final class AlbumRegrouper {
         guard let item else { summary.skipped += 1; continue }
         if byTrackId[songMO.id] == nil { summary.matchedByLocalId += 1 }
         let song = Song(managedObject: songMO)
+        // Owned==visible + ordering heal for EVERY matched owned song (freshly
+        // materialized AND pre-existing / re-parented-from-an-old-rip), idempotent:
+        //  • track — authoritative disc position from the cloud grouping. A song
+        //    re-parented from an earlier partial rip otherwise keeps track 0 and
+        //    sorts BEFORE track 1 (the CarPlay out-of-order symptom); the pre-pass
+        //    only set track on songs it created, never on re-parented ones.
+        //  • size — a materialized (or older coverless-build) SongMO has size 0 and
+        //    no local file, so AlbumSongsFetchedResultsController's
+        //    excludeServerDeleteUncachedSongsFetchPredicate — (size > 0 AND album
+        //    available) OR relFilePath != nil — hides it: the album detail shows a
+        //    song COUNT header but an EMPTY track list (the Box Car Racer symptom).
+        //    These tracks are owned and streamable over the LAN by their Subsonic
+        //    id, so give them a plausible positive size (estimated from duration).
+        //    size is the server byte size, NOT a cached flag — playback still
+        //    streams; this only clears the "server-deleted uncached ghost" filter.
+        if let idx = item.discTrackIndex, idx > 0, song.track != idx { song.track = idx }
+        if song.size <= 0 {
+          let estimatedBytes = (item.duration ?? 0) * 32_000 // ~256 kbps
+          song.size = estimatedBytes > 0 ? estimatedBytes : 1
+        }
         // Ensure the song carries a native cover id — its own Subsonic id, the LAN
         // cover proxy key — so its album can get a cover. Songs created by the
         // owned==visible heal (or synced before artwork bundling) may lack one;

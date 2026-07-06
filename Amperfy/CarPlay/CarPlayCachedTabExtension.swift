@@ -113,8 +113,8 @@ extension CarPlaySceneDelegate {
   func createPlayRandomCachedSection() -> CPListSection {
     var playRandomItems = [CPListImageRowItemRowElement]()
     let playRandomAlbumsItem = CPListImageRowItemRowElement(
-      image: UIImage.createArtwork(
-        with: UIImage.album,
+      image: UIImage.carPlayGlyph(
+        with: UIImage.lucideAlbums,
         iconSizeType: .small,
         theme: getPreference(activeAccountInfo).theme,
         lightDarkMode: traits.userInterfaceStyle.asModeType,
@@ -124,8 +124,8 @@ extension CarPlaySceneDelegate {
     )
     playRandomItems.append(playRandomAlbumsItem)
     let playRandomSongsItem = CPListImageRowItemRowElement(
-      image: UIImage.createArtwork(
-        with: UIImage.musicalNotes,
+      image: UIImage.carPlayGlyph(
+        with: UIImage.lucideSongs,
         iconSizeType: .small,
         theme: getPreference(activeAccountInfo).theme,
         lightDarkMode: traits.userInterfaceStyle.asModeType,

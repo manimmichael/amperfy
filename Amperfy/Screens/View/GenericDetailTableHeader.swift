@@ -304,7 +304,18 @@ class GenericDetailTableHeader: UIView {
   // rounded crop.
   private func configureArtworkPresentation() {
     guard let entityContainer = config?.entityContainer else { return }
-    entityImage.shape = entityContainer is Artist ? .circle : .rounded(.small)
+    // cassette: the artist photo is a circular crop. Album covers use a much
+    // smaller corner radius (.verySmall = 3pt, vs the .small = 5pt everything
+    // else uses) so a bordered / framed cover keeps crisp corners instead of
+    // having its border shaved off by the rounding. Other non-artist entities
+    // (playlists, podcasts, genres) keep the standard .small.
+    if entityContainer is Artist {
+      entityImage.shape = .circle
+    } else if entityContainer is Album {
+      entityImage.shape = .rounded(.verySmall)
+    } else {
+      entityImage.shape = .rounded(.small)
+    }
   }
 
   private var isCompactWidth: Bool {

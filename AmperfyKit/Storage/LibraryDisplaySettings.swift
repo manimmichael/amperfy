@@ -122,6 +122,29 @@ public enum LibraryDisplayType: Int, CaseIterable, Sendable, Codable {
     }
   }
 
+  // cassette (CarPlay Lucide): the in-car counterpart of `image`. CarPlay renders
+  // outline Lucide glyphs (matching the web) instead of the phone's SF Symbols;
+  // any type without a Lucide glyph falls back to its SF symbol.
+  public var carPlayGlyphImage: UIImage {
+    switch self {
+    case .albums, .newestAlbums, .recentAlbums:
+      return UIImage.lucideAlbums
+    case .artists:
+      return UIImage.lucideArtists
+    case .songs:
+      return UIImage.lucideSongs
+    case .playlists:
+      return UIImage.lucidePlaylists
+    case .genres:
+      return UIImage.lucideGenres
+    case .radios:
+      return UIImage.lucideRadio
+    case .directories, .downloads, .podcasts,
+         .favoriteSongs, .favoriteAlbums, .favoriteArtists:
+      return image
+    }
+  }
+
   // cassette Patch 053 (Phase H): outline counterpart for tab bar selection
   // state. Most LibraryDisplayType icons are already outline-only SF Symbols
   // or custom assets (square.stack, music.note, music.mic, dot.radiowaves,

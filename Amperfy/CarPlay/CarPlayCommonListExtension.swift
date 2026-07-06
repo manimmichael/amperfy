@@ -227,8 +227,8 @@ extension CarPlaySceneDelegate {
     let section = CPListItem(
       text: "All Songs",
       detailText: nil,
-      image: UIImage.createArtwork(
-        with: UIImage.musicalNotes,
+      image: UIImage.carPlayGlyph(
+        with: UIImage.lucideSongs,
         iconSizeType: .small,
         theme: getPreference(activeAccountInfo).theme,
         lightDarkMode: traits.userInterfaceStyle.asModeType,
@@ -537,8 +537,8 @@ extension CarPlaySceneDelegate {
     text: String = "Random"
   )
     -> CPListItem {
-    let img = UIImage.createArtwork(
-      with: UIImage.shuffle,
+    let img = UIImage.carPlayGlyph(
+      with: UIImage.lucideShuffle,
       iconSizeType: .small,
       theme: getPreference(activeAccountInfo).theme,
       lightDarkMode: traits.userInterfaceStyle.asModeType,
@@ -560,8 +560,8 @@ extension CarPlaySceneDelegate {
     text: String = "Shuffle"
   )
     -> CPListItem {
-    let img = UIImage.createArtwork(
-      with: UIImage.shuffle,
+    let img = UIImage.carPlayGlyph(
+      with: UIImage.lucideShuffle,
       iconSizeType: .small,
       theme: getPreference(activeAccountInfo).theme,
       lightDarkMode: traits.userInterfaceStyle.asModeType,
@@ -611,7 +611,7 @@ extension CarPlaySceneDelegate {
       text: text,
       detailText: subtitle,
       image: UIImage
-        .createArtwork(
+        .carPlayGlyph(
           with: icon,
           iconSizeType: .small,
           theme: getPreference(activeAccountInfo).theme,

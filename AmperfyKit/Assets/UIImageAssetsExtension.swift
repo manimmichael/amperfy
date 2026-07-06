@@ -606,6 +606,19 @@ extension UIImage {
     UIImage(systemName: systemName) ?? UIImage()
   }
 
+  // MARK: - Cassette CarPlay glyphs (Lucide)
+
+  // Outline glyphs matching the web (lucide-react), loaded from the kit asset
+  // catalog as template images. `carPlayGlyph` sizes + accent-tints them for the
+  // in-car list. Deliberately CarPlay-only: the phone app stays on SF Symbols.
+  public static let lucideAlbums = UIImage.create("cassette-lucide-albums")
+  public static let lucideArtists = UIImage.create("cassette-lucide-artists")
+  public static let lucideSongs = UIImage.create("cassette-lucide-songs")
+  public static let lucidePlaylists = UIImage.create("cassette-lucide-playlists")
+  public static let lucideGenres = UIImage.create("cassette-lucide-genres")
+  public static let lucideRadio = UIImage.create("cassette-lucide-radio")
+  public static let lucideShuffle = UIImage.create("cassette-lucide-shuffle")
+
   public static func createArtwork(
     with image: UIImage,
     iconSizeType: ArtworkIconSizeType,
@@ -638,6 +651,50 @@ extension UIImage {
     )
     buildView.layoutIfNeeded()
     return buildView.screenshot ?? UIImage()
+  }
+
+  /// CarPlay list/nav glyph — the de-tiled counterpart of `createArtwork`. Renders
+  /// the symbol TRANSPARENT and accent-tinted (no opaque background tile), so it
+  /// sits on CarPlay's own iOS-26 glass surface instead of the foreign white/gray
+  /// box a snapshotted `EntityImageView` produced. Same signature as
+  /// `createArtwork` so CarPlay call sites swap in with a one-word rename; the
+  /// tile-only args (`lightDarkMode`, `switchColors`) are accepted-and-ignored.
+  public static func carPlayGlyph(
+    with image: UIImage,
+    iconSizeType: ArtworkIconSizeType,
+    theme: ThemePreference,
+    lightDarkMode _: LightDarkModeType,
+    switchColors _: Bool = true
+  )
+    -> UIImage {
+    // A crisp intrinsic size; CarPlay scales into its row slot. Bigger for the
+    // account row's `.big` avatar, standard for the small nav/category glyphs.
+    let pointSize: CGFloat = iconSizeType == .big ? 54 : 38
+    let sized: UIImage
+    if image.isSymbolImage {
+      // SF Symbol: a point-size configuration scales it crisply.
+      sized = image.applyingSymbolConfiguration(
+        UIImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+      ) ?? image
+    } else {
+      // Vector asset (e.g. a Lucide outline glyph): symbol configuration is a
+      // no-op, so rasterize the vector-preserving template into a square of the
+      // target size, inset slightly so the 2pt stroke has breathing room.
+      let side = pointSize
+      let inset = side * 0.12
+      let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
+      sized = renderer.image { _ in
+        image.draw(in: CGRect(
+          x: inset,
+          y: inset,
+          width: side - inset * 2,
+          height: side - inset * 2
+        ))
+      }.withRenderingMode(.alwaysTemplate)
+    }
+    // .alwaysOriginal bakes the accent tint in (CarPlay shows list images as-is),
+    // giving an on-brand glyph on the glass rather than a system-monochrome one.
+    return sized.withTintColor(theme.asColor, renderingMode: .alwaysOriginal)
   }
 
   private static func createEmptyImage(with size: CGSize) -> UIImage? {

@@ -34,6 +34,18 @@ extension CarPlaySceneDelegate {
   }
 
   func configureNowPlayingTemplate() {
+    // The now-playing button SET depends ONLY on the player mode (music →
+    // repeat+shuffle, podcast → repeat+playback-rate) — never on the track. The
+    // MusicPlayable.didStartPlaying observer calls this on every track change;
+    // pushing a fresh button array via updateNowPlayingButtons then tears down and
+    // recreates the button row, flashing the active repeat/shuffle selection and
+    // re-rendering the template (which takes the scrubber with it). So rebuild the
+    // buttons ONLY when the mode actually changes; otherwise the existing buttons
+    // persist untouched and nothing flashes on a track advance.
+    let mode = appDelegate.player.playerMode
+    guard mode != lastConfiguredNowPlayingMode else { return }
+    lastConfiguredNowPlayingMode = mode
+
     var buttons: [CPNowPlayingButton] = []
     buttons.append(
       CPNowPlayingRepeatButton(handler: { [weak self] button in
