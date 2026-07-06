@@ -123,6 +123,12 @@ final class HomeVC: UICollectionViewController {
     )
   }
 
+  // cassette (manual eager tab-bar reveal): drive minimize/expand from scroll
+  // direction (see TabBarVC.cassetteUpdateMinimizeForScroll).
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    (tabBarController as? TabBarVC)?.cassetteUpdateMinimizeForScroll(scrollView)
+  }
+
 
   @objc
   private func cassetteLibraryFilterChanged() {

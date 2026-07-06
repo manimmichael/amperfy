@@ -124,6 +124,13 @@ class BasicTableViewController: KeyCommandTableViewController {
 
   let searchController = UISearchController(searchResultsController: nil)
 
+  // cassette (manual eager tab-bar reveal): drive minimize/expand from scroll
+  // direction (see TabBarVC.cassetteUpdateMinimizeForScroll). Base override covers
+  // the list screens; detail screens call the same helper from their own override.
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    (tabBarController as? TabBarVC)?.cassetteUpdateMinimizeForScroll(scrollView)
+  }
+
   var swipeDisplaySettings = SwipeDisplaySettings()
   var containableAtIndexPathCallback: ContainableAtIndexPathCallback?
   var playContextAtIndexPathCallback: PlayContextAtIndexPathCallback?

@@ -169,6 +169,25 @@ class TabBarVC: UITabBarController {
     }
   }
 
+  // cassette (manual eager reveal): iOS 26's tab bar only re-expands at the very
+  // top with our nested navigation, and there's no imperative "expand" API. So we
+  // drive `tabBarMinimizeBehavior` from scroll DIRECTION: scrolling UP flips it to
+  // `.never` (which should un-minimize the bar immediately), scrolling DOWN flips
+  // it back to `.onScrollDown` (so it minimizes again as you read on). Only toggles
+  // on a real direction change past a small threshold, so a steady scroll doesn't
+  // thrash the property.
+  private var cassetteLastScrollY: CGFloat = 0
+  func cassetteUpdateMinimizeForScroll(_ scrollView: UIScrollView) {
+    let y = scrollView.contentOffset.y
+    let dy = y - cassetteLastScrollY
+    cassetteLastScrollY = y
+    guard abs(dy) > 4 else { return } // ignore sub-pixel jitter
+    let desired: UITabBarController.MinimizeBehavior = dy < 0 ? .never : .onScrollDown
+    if tabBarMinimizeBehavior != desired {
+      tabBarMinimizeBehavior = desired
+    }
+  }
+
   private func mainContent() -> UIView {
     // Attempt to find the main content view controller's view if the sidebar is visible.
     // Fallback to self.view.safeAreaLayoutGuide.leadingAnchor otherwise.

@@ -314,6 +314,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
     updateStickyHeaderAlpha()
+    (tabBarController as? TabBarVC)?.cassetteUpdateMinimizeForScroll(scrollView)
   }
 
   // resizeToFit defers any header re-measure that arrives mid-scroll (it would
