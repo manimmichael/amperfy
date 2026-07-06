@@ -162,8 +162,6 @@ class SearchVC: BasicTableViewController {
     navigationItem.searchController = searchController
     searchController.searchResultsUpdater = self
     navigationItem.searchBarPlacementAllowsExternalIntegration = true
-    // TEMP diagnostics (remove once search is confirmed): prove the wiring at load.
-    print("CASSETTE-SEARCH: viewDidLoad wired — hasSearchController=\(navigationItem.searchController != nil) updater=\(searchController.searchResultsUpdater != nil)")
 
     tableView.register(nibName: PlaylistTableCell.typeName)
     tableView.register(nibName: GenericTableCell.typeName)
@@ -539,8 +537,6 @@ class SearchVC: BasicTableViewController {
   }
 
   override func updateSearchResults(for searchController: UISearchController) {
-    // TEMP diagnostics (remove once search is confirmed): does typing reach here?
-    print("CASSETTE-SEARCH: updateSearchResults FIRED text='\(searchController.searchBar.text ?? "<nil>")' scope=\(searchController.searchBar.selectedScopeButtonIndex)")
     guard let searchText = searchController.searchBar.text, let accountObjectId else { return }
     // Cassette fork — Layer 3 Phase 3.2 (library filtering). In on-device-only
     // mode global search stays local and is constrained to owned items; the
@@ -556,7 +552,13 @@ class SearchVC: BasicTableViewController {
     if !searchText.isEmpty {
       isSearchActive = true
     }
-    if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 0 {
+    // cassette (search fix — the real one): in on-device mode the scope bar is
+    // hidden (scopeButtonTitles == nil), so `selectedScopeButtonIndex` is -1, NOT
+    // 0. This branch used `== 0`, so with no scope bar every keystroke fell through
+    // to the else clause that CLEARS results — the actual reason search "changed
+    // nothing" (verified on-device: FIRED text='djo' scope=-1). Treat anything that
+    // isn't the Downloaded scope (index 1) as the default local search (0 OR -1).
+    if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex != 1 {
       if !isOnDeviceOnly {
         Task { @MainActor in do {
           try await self.appDelegate.getMeta(self.account.info).librarySyncer
@@ -660,11 +662,9 @@ class SearchVC: BasicTableViewController {
           .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? SongMO }
           .compactMap { Song(managedObject: $0) }
         self.tableView.separatorStyle = .singleLine
-        print("CASSETTE-SEARCH: populated a=\(self.artists.count) al=\(self.albums.count) s=\(self.songs.count) p=\(self.playlists.count) active=\(self.isSearchActive)")
         self.updateDataSource(animated: false)
         self.updateContentUnavailable()
       } catch {
-        print("CASSETTE-SEARCH: async ERROR \(error)")
         self.appDelegate.eventLogger.report(topic: "Local Search", error: error, isBackground: true)
         self.updateContentUnavailable()
       }}
@@ -733,11 +733,9 @@ class SearchVC: BasicTableViewController {
           .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? SongMO }
           .compactMap { Song(managedObject: $0) }
         self.tableView.separatorStyle = .singleLine
-        print("CASSETTE-SEARCH: populated a=\(self.artists.count) al=\(self.albums.count) s=\(self.songs.count) p=\(self.playlists.count) active=\(self.isSearchActive)")
         self.updateDataSource(animated: false)
         self.updateContentUnavailable()
       } catch {
-        print("CASSETTE-SEARCH: async ERROR \(error)")
         self.appDelegate.eventLogger.report(topic: "Local Search", error: error, isBackground: true)
         self.updateContentUnavailable()
       }}
