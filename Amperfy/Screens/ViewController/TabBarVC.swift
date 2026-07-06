@@ -133,11 +133,12 @@ class TabBarVC: UITabBarController {
       object: nil
     )
 
-    // cassette: `.automatic` lets the system minimize the tab bar on scroll but
-    // bring it right back the moment the user scrolls up (the Reddit-style feel —
-    // the nav is one small up-swipe away). Options: `.automatic` (this),
-    // `.never` (always pinned), `.onScrollDown`, `.onScrollUp`.
-    tabBarMinimizeBehavior = .automatic
+    // cassette: `.onScrollDown` minimizes the tab bar as the user scrolls DOWN and
+    // brings it back the moment they scroll UP (the Reddit feel). `.automatic`
+    // resolved to no-minimize for our tab-bar-with-mini-player config, so we set
+    // the explicit behavior. Options: `.onScrollDown` (this), `.never` (pinned),
+    // `.automatic` (system default → no-shrink here), `.onScrollUp`.
+    tabBarMinimizeBehavior = .onScrollDown
 
     miniPlayer = MiniPlayerView(player: appDelegate.player)
     miniPlayer!.configureForiOS()

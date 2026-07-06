@@ -162,6 +162,8 @@ class SearchVC: BasicTableViewController {
     navigationItem.searchController = searchController
     searchController.searchResultsUpdater = self
     navigationItem.searchBarPlacementAllowsExternalIntegration = true
+    // TEMP diagnostics (remove once search is confirmed): prove the wiring at load.
+    print("CASSETTE-SEARCH: viewDidLoad wired — hasSearchController=\(navigationItem.searchController != nil) updater=\(searchController.searchResultsUpdater != nil)")
 
     tableView.register(nibName: PlaylistTableCell.typeName)
     tableView.register(nibName: GenericTableCell.typeName)
@@ -537,6 +539,8 @@ class SearchVC: BasicTableViewController {
   }
 
   override func updateSearchResults(for searchController: UISearchController) {
+    // TEMP diagnostics (remove once search is confirmed): does typing reach here?
+    print("CASSETTE-SEARCH: updateSearchResults FIRED text='\(searchController.searchBar.text ?? "<nil>")' scope=\(searchController.searchBar.selectedScopeButtonIndex)")
     guard let searchText = searchController.searchBar.text, let accountObjectId else { return }
     // Cassette fork — Layer 3 Phase 3.2 (library filtering). In on-device-only
     // mode global search stays local and is constrained to owned items; the
@@ -656,9 +660,11 @@ class SearchVC: BasicTableViewController {
           .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? SongMO }
           .compactMap { Song(managedObject: $0) }
         self.tableView.separatorStyle = .singleLine
+        print("CASSETTE-SEARCH: populated a=\(self.artists.count) al=\(self.albums.count) s=\(self.songs.count) p=\(self.playlists.count) active=\(self.isSearchActive)")
         self.updateDataSource(animated: false)
         self.updateContentUnavailable()
       } catch {
+        print("CASSETTE-SEARCH: async ERROR \(error)")
         self.appDelegate.eventLogger.report(topic: "Local Search", error: error, isBackground: true)
         self.updateContentUnavailable()
       }}
@@ -727,9 +733,11 @@ class SearchVC: BasicTableViewController {
           .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? SongMO }
           .compactMap { Song(managedObject: $0) }
         self.tableView.separatorStyle = .singleLine
+        print("CASSETTE-SEARCH: populated a=\(self.artists.count) al=\(self.albums.count) s=\(self.songs.count) p=\(self.playlists.count) active=\(self.isSearchActive)")
         self.updateDataSource(animated: false)
         self.updateContentUnavailable()
       } catch {
+        print("CASSETTE-SEARCH: async ERROR \(error)")
         self.appDelegate.eventLogger.report(topic: "Local Search", error: error, isBackground: true)
         self.updateContentUnavailable()
       }}
