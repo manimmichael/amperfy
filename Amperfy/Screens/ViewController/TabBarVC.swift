@@ -145,7 +145,14 @@ class TabBarVC: UITabBarController {
     miniPlayer!.glassContainer.translatesAutoresizingMaskIntoConstraints = false
 
     let accessory = UITabAccessory(contentView: miniPlayer!.glassContainer)
-    bottomAccessory = accessory
+    // TEMP nav A/B (REVERT AFTER TEST): detach the mini-player bottomAccessory to
+    // isolate whether IT is what suppresses the tab bar's eager re-expand on
+    // scroll-up (the lazy reveal is universal — proven on a clean .automatic list —
+    // so the cause is the tab bar itself; the accessory is the prime suspect). With
+    // this commented the mini-player is temporarily gone; we only care whether the
+    // Search/Home/Library bar now pops open on the first up-swipe.
+    _ = accessory
+    // bottomAccessory = accessory
 
     heightConstraint = miniPlayer!.glassContainer.heightAnchor.constraint(equalToConstant: 48.0)
     heightConstraint?.isActive = true
