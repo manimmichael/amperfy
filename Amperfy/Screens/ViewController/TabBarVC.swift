@@ -133,7 +133,12 @@ class TabBarVC: UITabBarController {
       object: nil
     )
 
-    tabBarMinimizeBehavior = .onScrollDown
+    // cassette: keep the tab bar (Search / Home / Library) PERSISTENT. iOS 26's
+    // default `.onScrollDown` minimizes it while scrolling down, forcing a scroll
+    // back to the top to reveal the nav again — annoying for a browse-heavy
+    // library. `.never` pins it. Other native options if we revisit: `.automatic`
+    // (system default), `.onScrollDown` (prior), `.onScrollUp`.
+    tabBarMinimizeBehavior = .never
 
     miniPlayer = MiniPlayerView(player: appDelegate.player)
     miniPlayer!.configureForiOS()

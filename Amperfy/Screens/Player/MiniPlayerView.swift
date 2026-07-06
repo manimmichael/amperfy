@@ -97,11 +97,11 @@ class MiniPlayerView: UIView {
     label.textAlignment = .center
     label.backgroundColor = .clear
     label.numberOfLines = 1
-    // cassette Patch 032: route mini-player typography through the
-    // canonical scale. Title is miniTitle (14pt semibold display);
-    // subtitle bumps 11pt -> 12pt regular mono (caption) to honor the
-    // 12pt floor.
-    label.font = UIFont.cassette(.miniTitle)
+    // cassette: mini-player (liquid glass) typography, sized explicitly rather
+    // than via the shared .miniTitle/.caption roles so the glass pill reads
+    // larger without lifting those roles app-wide. Title 18pt condensed semibold,
+    // subtitle 14pt mono (see refreshForTraitChange for the size-class variants).
+    label.font = UIFont.cassetteDisplay(size: 18, weight: .semibold)
     label.textColor = CassetteTheme.UIColors.ink
     return label
   }()
@@ -112,7 +112,7 @@ class MiniPlayerView: UIView {
     label.backgroundColor = .clear
     label.textAlignment = .center
     label.numberOfLines = 1
-    label.font = UIFont.cassette(.caption)
+    label.font = UIFont.cassetteMono(size: 14, weight: .regular)
     label.textColor = CassetteTheme.UIColors.ink2
     return label
   }()
@@ -751,11 +751,11 @@ class MiniPlayerView: UIView {
     // caption at .compact (12pt mono regular) — both honor the 12pt
     // floor and differ only by weight.
     if horizontalSizeClass == .regular {
-      titleLabel.font = UIFont.cassette(.miniTitle)
-      subtitleLabel.font = UIFont.cassette(.metadata)
+      titleLabel.font = UIFont.cassetteDisplay(size: 18, weight: .semibold)
+      subtitleLabel.font = UIFont.cassetteMono(size: 14, weight: .medium)
     } else {
-      titleLabel.font = UIFont.cassette(.miniTitle)
-      subtitleLabel.font = UIFont.cassette(.caption)
+      titleLabel.font = UIFont.cassetteDisplay(size: 18, weight: .semibold)
+      subtitleLabel.font = UIFont.cassetteMono(size: 14, weight: .regular)
     }
   }
 

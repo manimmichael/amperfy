@@ -769,12 +769,28 @@ class HomeManager: NSObject {
     }
     let rekindleRanked = rekindle.sorted { $0.plays > $1.plays }.map(\.album)
 
-    let blended = blendForgotten(
+    var blended = blendForgotten(
       forgottenPurchase: Array(forgottenPurchase),
       deepCut: deepCut,
       rekindle: rekindleRanked
     )
-    data[.forgottenAlbums] = blended.map {
+    // Fill-to-target: the three forgotten pools are legitimately sparse on a
+    // library with little play history (a fresh install populates only the
+    // forgotten-purchase pool), and this shelf — unlike the album/artist shelves'
+    // `filledShelf` — had NO backfill, so the "Albums" row collapsed to a couple
+    // of items. Top up from the owned albums at-large (oldest-added first, matching
+    // the "added long ago" lean), skipping Resume/Recent and dupes, so the shelf
+    // always reads as a full row.
+    if blended.count < Self.shelfTargetCount {
+      var included = Set(blended.map { Self.stableID(for: $0) })
+      for album in owned.reversed() where blended.count < Self.shelfTargetCount {
+        let id = Self.stableID(for: album)
+        if included.contains(id) || excludedIDs.contains(id) { continue }
+        included.insert(id)
+        blended.append(album)
+      }
+    }
+    data[.forgottenAlbums] = blended.prefix(Self.shelfCarouselCap).map {
       HomeItem(
         section: .forgottenAlbums,
         stableID: Self.stableID(for: $0),

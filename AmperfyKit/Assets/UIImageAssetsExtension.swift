@@ -286,10 +286,17 @@ extension UIImage {
     return image.size
   }
 
+  // cassette (Lucide core chrome): the high-visibility icons — tab bar, library
+  // categories, player transport and common nav/actions — are Lucide glyphs
+  // (matching the web + CarPlay), loaded from the kit asset catalog as template
+  // images (accent-tinted by the app). Player transport (play/pause/stop/skip)
+  // uses hand-authored FILLED Lucide variants for tap punch; everything else is
+  // outline. Menus, settings and compound/niche icons stay on SF Symbols (many
+  // have no Lucide equivalent), so a few mixed glyphs remain by design.
   public static let airplayaudio = UIImage.create(systemName: AmperfyImage.airplayaudio.systemName)
-  public static let album = UIImage.create(systemName: AmperfyImage.album.systemName)
+  public static let album = UIImage.create("cassette-lucide-albums")
   public static let antenna = UIImage.create(systemName: AmperfyImage.antenna.systemName)
-  public static let artist = UIImage.create(systemName: AmperfyImage.artist.systemName)
+  public static let artist = UIImage.create("cassette-lucide-artists")
   public static let appIcon = UIImage.create("Icon-1024")
   public static let appIconTemplate = UIImage.create("Icon-monocolor")
     .withRenderingMode(.alwaysTemplate)
@@ -305,7 +312,7 @@ extension UIImage {
   public static let cache = download
   public static let cancleDownloads = UIImage
     .create(systemName: AmperfyImage.cancleDownloads.systemName)
-  public static let check = UIImage.create(systemName: AmperfyImage.check.systemName)
+  public static let check = UIImage.create("cassette-lucide-check")
   public static let circle = UIImage.create(systemName: AmperfyImage.circle.systemName)
   public static let clear = UIImage.create(systemName: AmperfyImage.clear.systemName)
   public static let clipboard = UIImage.create(systemName: AmperfyImage.clipboard.systemName)
@@ -317,15 +324,15 @@ extension UIImage {
   public static let doc = UIImage.create(systemName: AmperfyImage.doc.systemName)
   public static let documents = UIImage.create(systemName: AmperfyImage.documents.systemName)
   public static let download = UIImage.create(systemName: AmperfyImage.download.systemName)
-  public static let ellipsis = UIImage.create(systemName: AmperfyImage.ellipsis.systemName)
+  public static let ellipsis = UIImage.create("cassette-lucide-ellipsis")
   public static let equalizer = UIImage.create(systemName: AmperfyImage.equalizer.systemName)
   public static let exclamation = UIImage.create(systemName: AmperfyImage.exclamation.systemName)
-  public static let filter = UIImage.create(systemName: AmperfyImage.filter.systemName)
+  public static let filter = UIImage.create("cassette-lucide-filter")
   public static let followLink = UIImage.create(systemName: AmperfyImage.followLink.systemName)
   public static let folder = UIImage.create(systemName: AmperfyImage.folder.systemName)
   public static let forwardFill = UIImage.create(systemName: AmperfyImage.forwardFill.systemName)
   public static let forwardMenu = UIImage.create(systemName: AmperfyImage.forwardMenu.systemName)
-  public static let genre = UIImage.create(systemName: AmperfyImage.genre.systemName)
+  public static let genre = UIImage.create("cassette-lucide-genres")
   public static let goBackward15 = UIImage.create(systemName: AmperfyImage.goBackward15.systemName)
   public static let goForward30 = UIImage.create(systemName: AmperfyImage.goForward30.systemName)
   public static let grid = UIImage.create(systemName: AmperfyImage.grid.systemName)
@@ -333,9 +340,9 @@ extension UIImage {
   public static let heartEmpty = UIImage.create(systemName: AmperfyImage.heartEmpty.systemName)
   public static let heartFill = UIImage.create(systemName: AmperfyImage.heartFill.systemName)
   public static let heartSlash = UIImage.create(systemName: AmperfyImage.heartSlash.systemName)
-  public static let home = UIImage.create(systemName: AmperfyImage.home.systemName)
+  public static let home = UIImage.create("cassette-lucide-house")
   // cassette Patch 053 (Phase H): outline counterpart for tab bar selection.
-  public static let homeOutline = UIImage.create(systemName: AmperfyImage.homeOutline.systemName)
+  public static let homeOutline = UIImage.create("cassette-lucide-house")
   // cassette Patch 053 (Phase H): outline counterparts for the LibraryDisplayType
   // categories that have a real SF Symbol fill/outline pair. Library categories
   // whose icon is outline-only (square.stack, music.note, music.mic, etc.)
@@ -345,46 +352,48 @@ extension UIImage {
   public static let folderOutline = UIImage.create(systemName: "folder")
   public static let guitarsOutline = UIImage.create(systemName: "guitars")
   public static let downloadOutline = UIImage.create(systemName: "arrow.down.circle")
-  public static let info = UIImage.create(systemName: AmperfyImage.info.systemName)
+  public static let info = UIImage.create("cassette-lucide-info")
   public static let isSelected = UIImage.create(systemName: AmperfyImage.isSelected.systemName)
-  public static let listBullet = UIImage.create(systemName: AmperfyImage.listBullet.systemName)
+  public static let listBullet = UIImage.create("cassette-lucide-list")
   public static let login = UIImage.create(systemName: AmperfyImage.login.systemName)
   public static let lyrics = UIImage.create(systemName: AmperfyImage.lyrics.systemName)
   public static let miniPlayer = UIImage.create(systemName: AmperfyImage.miniPlayer.systemName)
-  public static let minus = UIImage.create(systemName: AmperfyImage.minus.systemName)
-  public static let musicLibrary = UIImage.create(systemName: AmperfyImage.musicLibrary.systemName)
+  public static let minus = UIImage.create("cassette-lucide-minus")
+  public static let musicLibrary = UIImage.create("cassette-lucide-library")
   // cassette Patch 053 (Phase H): outline counterpart for tab bar selection.
-  public static let musicLibraryOutline = UIImage
-    .create(systemName: AmperfyImage.musicLibraryOutline.systemName)
-  public static let musicalNotes = UIImage.create(systemName: AmperfyImage.musicalNotes.systemName)
+  public static let musicLibraryOutline = UIImage.create("cassette-lucide-library")
+  public static let musicalNotes = UIImage.create("cassette-lucide-songs")
   public static let pause = UIImage.create(systemName: AmperfyImage.pause.systemName)
   public static let pauseMenu = UIImage.create(systemName: AmperfyImage.pauseMenu.systemName)
   public static let password = UIImage.create(systemName: AmperfyImage.password.systemName)
   public static let person = UIImage.create(systemName: AmperfyImage.person.systemName)
   public static let photo = UIImage.create(systemName: AmperfyImage.photo.systemName)
+  // Player transport stays on SF Symbols: sizing is symbol-driven (pointSize /
+  // preferredSymbolConfiguration), which non-symbol Lucide assets ignore — a
+  // Lucide play would render at a fixed 24pt (too small vs the 32pt popup player).
   public static let play = UIImage.create(systemName: AmperfyImage.play.systemName)
   public static let playCircle = UIImage.create(systemName: AmperfyImage.playCircle.systemName)
   public static let playMenu = UIImage.create(systemName: AmperfyImage.playMenu.systemName)
   public static let playbackRate = UIImage.create(systemName: AmperfyImage.playbackRate.systemName)
-  public static let playlist = UIImage.create(systemName: AmperfyImage.playlist.systemName)
+  public static let playlist = UIImage.create("cassette-lucide-playlists")
   public static let playlistDisplayStyle = UIImage
     .create(systemName: AmperfyImage.playlistDisplayStyle.systemName)
   public static let playlistPlus = UIImage.create(systemName: AmperfyImage.playlistPlus.systemName)
   public static let playlistX = UIImage.create(systemName: AmperfyImage.playlistX.systemName)
-  public static let plus = UIImage.create(systemName: AmperfyImage.plus.systemName)
-  public static let plusCircle = UIImage.create(systemName: AmperfyImage.plusCircle.systemName)
-  public static let radio = UIImage.create(systemName: AmperfyImage.radio.systemName)
+  public static let plus = UIImage.create("cassette-lucide-plus")
+  public static let plusCircle = UIImage.create("cassette-lucide-circle-plus")
+  public static let radio = UIImage.create("cassette-lucide-radio")
   public static let redo = UIImage.create(systemName: AmperfyImage.redo.systemName)
-  public static let refresh = UIImage.create(systemName: AmperfyImage.refresh.systemName)
+  public static let refresh = UIImage.create("cassette-lucide-refresh-cw")
   public static let repeatAll = UIImage.create(systemName: AmperfyImage.repeatAll.systemName)
   public static let repeatMenu = UIImage.create(systemName: AmperfyImage.repeatMenu.systemName)
   public static let repeatOff = UIImage.create(systemName: AmperfyImage.repeatOff.systemName)
   public static let repeatOne = UIImage.create(systemName: AmperfyImage.repeatOne.systemName)
   public static let resize = UIImage.create(systemName: AmperfyImage.resize.systemName)
-  public static let search = UIImage.create(systemName: AmperfyImage.search.systemName)
+  public static let search = UIImage.create("cassette-lucide-search")
   public static let server = UIImage.create(systemName: AmperfyImage.server.systemName)
   public static let serverUrl = UIImage.create(systemName: AmperfyImage.serverUrl.systemName)
-  public static let settings = UIImage.create(systemName: AmperfyImage.settings.systemName)
+  public static let settings = UIImage.create("cassette-lucide-settings")
   public static let shuffle = UIImage.create(systemName: AmperfyImage.shuffle.systemName)
   public static let instantMix = UIImage.create(systemName: AmperfyImage.instantMix.systemName)
   public static let shuffleMenu = UIImage.create(systemName: AmperfyImage.shuffleMenu.systemName)
@@ -402,7 +411,7 @@ extension UIImage {
     .create(systemName: AmperfyImage.skipForwardMenu.systemName)
   public static let sleep = UIImage.create(systemName: AmperfyImage.sleep.systemName)
   public static let sleepFill = UIImage.create(systemName: AmperfyImage.sleepFill.systemName)
-  public static let sort = UIImage.create(systemName: AmperfyImage.sort.systemName)
+  public static let sort = UIImage.create("cassette-lucide-arrow-up-down")
   public static let sparkles = UIImage.create(systemName: AmperfyImage.sparkles.systemName)
   public static let squareArrow = UIImage.create(systemName: AmperfyImage.squareArrow.systemName)
   public static let starEmpty = UIImage.create(systemName: AmperfyImage.starEmpty.systemName)
@@ -412,7 +421,7 @@ extension UIImage {
     .create(systemName: AmperfyImage.startDownload.systemName)
   public static let stop = UIImage.create(systemName: AmperfyImage.stop.systemName)
   public static let stopMenu = UIImage.create(systemName: AmperfyImage.stopMenu.systemName)
-  public static let trash = UIImage.create(systemName: AmperfyImage.trash.systemName)
+  public static let trash = UIImage.create("cassette-lucide-trash-2")
   public static let triangleDown = UIImage.create(systemName: AmperfyImage.triangleDown.systemName)
   public static let unSelected = UIImage.create(systemName: AmperfyImage.unSelected.systemName)
   public static let userCircleCheckmark = UIImage

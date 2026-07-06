@@ -529,6 +529,16 @@ class SearchVC: BasicTableViewController {
     // mode global search stays local and is constrained to owned items; the
     // remote Subsonic searches only run in Server Mode.
     let isOnDeviceOnly = CassetteLibraryFilterProvider.shared.isOnDeviceOnly
+    // cassette: reflect the "searching" state SYNCHRONOUSLY. Result population and
+    // the final isSearchActive=true happen inside the async pass below; if that
+    // pass races (its `searchText == searchBar.text` guard drops a late completion)
+    // or throws (previously swallowed by an empty catch), isSearchActive would stay
+    // false and the pre-search "No Search History" screen would remain up even
+    // though a query is typed. Setting it here means the empty state is at worst
+    // "No results", never "No Search History".
+    if !searchText.isEmpty {
+      isSearchActive = true
+    }
     if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 0 {
       if !isOnDeviceOnly {
         Task { @MainActor in do {
@@ -620,23 +630,24 @@ class SearchVC: BasicTableViewController {
         self.isSearchActive = true
         self.searchHistory = []
         self.artists = searchResult.artistsIDs
-          .compactMap { self.appDelegate.storage.main.context.object(with: $0) as? ArtistMO }
+          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? ArtistMO }
           .compactMap { Artist(managedObject: $0) }
         self.albums = searchResult.albumsIDs
-          .compactMap { self.appDelegate.storage.main.context.object(with: $0) as? AlbumMO }
+          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? AlbumMO }
           .compactMap { Album(managedObject: $0) }
         self.playlists = searchResult.playlistsIDs
-          .compactMap { self.appDelegate.storage.main.context.object(with: $0) as? PlaylistMO }
+          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? PlaylistMO }
           .compactMap { Playlist(library: self.appDelegate.storage.main.library, managedObject: $0)
           }
         self.songs = searchResult.songsIDs
-          .compactMap { self.appDelegate.storage.main.context.object(with: $0) as? SongMO }
+          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? SongMO }
           .compactMap { Song(managedObject: $0) }
         self.tableView.separatorStyle = .singleLine
         self.updateDataSource(animated: false)
         self.updateContentUnavailable()
       } catch {
-        // do nothing
+        self.appDelegate.eventLogger.report(topic: "Local Search", error: error, isBackground: true)
+        self.updateContentUnavailable()
       }}
     } else if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 1 {
       Task { @MainActor in do {
@@ -690,23 +701,24 @@ class SearchVC: BasicTableViewController {
         self.isSearchActive = true
         self.searchHistory = []
         self.artists = searchResult.artistsIDs
-          .compactMap { self.appDelegate.storage.main.context.object(with: $0) as? ArtistMO }
+          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? ArtistMO }
           .compactMap { Artist(managedObject: $0) }
         self.albums = searchResult.albumsIDs
-          .compactMap { self.appDelegate.storage.main.context.object(with: $0) as? AlbumMO }
+          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? AlbumMO }
           .compactMap { Album(managedObject: $0) }
         self.playlists = searchResult.playlistsIDs
-          .compactMap { self.appDelegate.storage.main.context.object(with: $0) as? PlaylistMO }
+          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? PlaylistMO }
           .compactMap { Playlist(library: self.appDelegate.storage.main.library, managedObject: $0)
           }
         self.songs = searchResult.songsIDs
-          .compactMap { self.appDelegate.storage.main.context.object(with: $0) as? SongMO }
+          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? SongMO }
           .compactMap { Song(managedObject: $0) }
         self.tableView.separatorStyle = .singleLine
         self.updateDataSource(animated: false)
         self.updateContentUnavailable()
       } catch {
-        // do nothing
+        self.appDelegate.eventLogger.report(topic: "Local Search", error: error, isBackground: true)
+        self.updateContentUnavailable()
       }}
     } else {
       isSearchActive = false
