@@ -77,6 +77,14 @@ struct SettingsView: View {
       NavigationStack {
         list
           .navigationTitle("Settings")
+          // cassette: use the INLINE title on the Settings root. The large-title
+          // (scroll-edge) state renders the global opaque nav-bar appearance
+          // (CassetteTheme.applyGlobalAppearance → configureWithOpaqueBackground)
+          // as a gray bar that covers the top and whose own large title never
+          // resolves in this SwiftUI-in-modal context — the "gray artifact" that
+          // clips the UI. Inline matches every sub-screen and shows "Settings"
+          // cleanly with no large-title bar.
+          .navigationBarTitleDisplayMode(.inline)
       }
     #endif
   }
