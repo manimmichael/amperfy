@@ -148,7 +148,20 @@ class SearchVC: BasicTableViewController {
     accountObjectId = account.managedObject.objectID
     searchHistory = appDelegate.storage.main.library.getSearchHistory(for: account)
     updateDataSource(animated: false)
-    navigationController?.navigationItem.searchBarPlacementAllowsExternalIntegration = true
+    // cassette (search fix): bind the search controller to THIS view controller's
+    // own navigationItem EARLY (viewDidLoad, before the tab activates search), and
+    // put `searchBarPlacementAllowsExternalIntegration` on the SAME navigationItem
+    // that holds the searchController. iOS 26's UISearchTab (automaticallyActivates-
+    // Search) hoists the search bar from the VC's navigationItem and routes typing
+    // to its searchResultsUpdater. Previously the flag was set on the NAVIGATION
+    // CONTROLLER's navigationItem (which has no searchController) while the
+    // searchController itself was wired only later in viewIsAppearing — so the
+    // tab's search field was never bound to `updateSearchResults` and typing did
+    // nothing. configureSearchController (viewIsAppearing) still refreshes the
+    // scope titles / placeholder on top of this.
+    navigationItem.searchController = searchController
+    searchController.searchResultsUpdater = self
+    navigationItem.searchBarPlacementAllowsExternalIntegration = true
 
     tableView.register(nibName: PlaylistTableCell.typeName)
     tableView.register(nibName: GenericTableCell.typeName)

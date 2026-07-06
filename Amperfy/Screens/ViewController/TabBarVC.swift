@@ -133,12 +133,11 @@ class TabBarVC: UITabBarController {
       object: nil
     )
 
-    // cassette: keep the tab bar (Search / Home / Library) PERSISTENT. iOS 26's
-    // default `.onScrollDown` minimizes it while scrolling down, forcing a scroll
-    // back to the top to reveal the nav again — annoying for a browse-heavy
-    // library. `.never` pins it. Other native options if we revisit: `.automatic`
-    // (system default), `.onScrollDown` (prior), `.onScrollUp`.
-    tabBarMinimizeBehavior = .never
+    // cassette: `.automatic` lets the system minimize the tab bar on scroll but
+    // bring it right back the moment the user scrolls up (the Reddit-style feel —
+    // the nav is one small up-swipe away). Options: `.automatic` (this),
+    // `.never` (always pinned), `.onScrollDown`, `.onScrollUp`.
+    tabBarMinimizeBehavior = .automatic
 
     miniPlayer = MiniPlayerView(player: appDelegate.player)
     miniPlayer!.configureForiOS()
