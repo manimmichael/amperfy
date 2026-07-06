@@ -70,11 +70,14 @@ struct SettingsView: View {
       .navigationTitle("General")
       .navigationBarTitleDisplayMode(.inline)
     #else
-      NavigationView {
+      // cassette: NavigationStack (iOS 16+) replaces the deprecated NavigationView.
+      // On iOS 26 the deprecated NavigationView renders a mis-styled opaque bar that
+      // briefly covers the large "Settings" title and glitches/animates over the UI
+      // on push into a sub-menu; NavigationStack adopts the Liquid Glass bar cleanly.
+      NavigationStack {
         list
           .navigationTitle("Settings")
       }
-      .navigationViewStyle(.stack)
     #endif
   }
 }
