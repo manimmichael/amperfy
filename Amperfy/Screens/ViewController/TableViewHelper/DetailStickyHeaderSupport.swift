@@ -131,7 +131,6 @@ enum DetailStickyHeaderSupport {
     let item = viewController.navigationItem
     let currentBarAlpha = item.standardAppearance?.backgroundColor?.cgColor.alpha ?? 0
     if abs(currentBarAlpha - progress) > 0.01 {
-      print("CASSETTE-NAV: bar-appearance REASSIGN progress=\(String(format: "%.2f", progress))") // TEMP
       let barAppearance = UINavigationBarAppearance()
       barAppearance.configureWithTransparentBackground()
       barAppearance.backgroundColor = CassetteTheme.UIColors.bg.withAlphaComponent(progress)

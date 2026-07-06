@@ -123,17 +123,6 @@ final class HomeVC: UICollectionViewController {
     )
   }
 
-  // TEMP nav-tracking diagnostics — remove after the lazy-reveal root cause is confirmed.
-  private var cassetteNavThrottleY: CGFloat = .greatestFiniteMagnitude
-  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
-    if abs(scrollView.contentOffset.y - cassetteNavThrottleY) > 8 {
-      cassetteNavThrottleY = scrollView.contentOffset.y
-      let dy = scrollView.panGestureRecognizer.translation(in: scrollView.superview).y
-      let dir = dy > 0 ? "UP" : (dy < 0 ? "DOWN" : "flat")
-      let atTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 0.5
-      print("CASSETTE-NAV: home off.y=\(Int(scrollView.contentOffset.y)) adjTop=\(scrollView.adjustedContentInset.top) adjBot=\(scrollView.adjustedContentInset.bottom) atTop=\(atTop) drag=\(dir) tracking=\(scrollView.isTracking)")
-    }
-  }
 
   @objc
   private func cassetteLibraryFilterChanged() {
