@@ -314,8 +314,18 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     }
   }
 
+  // TEMP nav-tracking diagnostics — remove after the lazy-reveal root cause is confirmed.
+  private var cassetteNavLastY: CGFloat = .greatestFiniteMagnitude
+
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
     updateStickyHeaderAlpha()
+    if abs(scrollView.contentOffset.y - cassetteNavLastY) > 8 {
+      cassetteNavLastY = scrollView.contentOffset.y
+      let dy = scrollView.panGestureRecognizer.translation(in: scrollView.superview).y
+      let dir = dy > 0 ? "UP" : (dy < 0 ? "DOWN" : "flat")
+      let atTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 0.5
+      print("CASSETTE-NAV: album off.y=\(Int(scrollView.contentOffset.y)) adjTop=\(scrollView.adjustedContentInset.top) adjBot=\(scrollView.adjustedContentInset.bottom) atTop=\(atTop) drag=\(dir) tracking=\(scrollView.isTracking)")
+    }
   }
 
   // resizeToFit defers any header re-measure that arrives mid-scroll (it would
