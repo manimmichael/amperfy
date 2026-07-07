@@ -33,6 +33,33 @@ struct PlaybackSettingsView: View {
   @EnvironmentObject
   private var settings: Settings
 
+  // cassette: the phone's "download quality" control. Reuses the existing
+  // (previously hidden) cacheTranscodingFormatPreference, which the download
+  // URL builder already honors: raw = the full-resolution original file,
+  // mp3 = a smaller transcoded copy. Written straight through to the persisted
+  // store, so no new SettingsHost binding is required.
+  @State
+  private var downloadQuality: CacheTranscodingFormatPreference = .raw
+
+  // "Keep songs you stream" only makes sense in Server Mode (streaming the full
+  // catalog). Outside it Cassette is download-first and nothing streams, so the
+  // row is hidden. Reads the same flag the library filter uses.
+  private var isServerModeOn: Bool {
+    CassetteLibraryFilterProvider.shared.currentFilter == .everything
+  }
+
+  private func downloadQualityLabel(_ pref: CacheTranscodingFormatPreference) -> String {
+    switch pref {
+    case .raw: return "Lossless (FLAC)"
+    case .mp3, .serverConfig: return "High (MP3)"
+    }
+  }
+
+  private func setDownloadQuality(_ pref: CacheTranscodingFormatPreference) {
+    downloadQuality = pref
+    appDelegate.storage.settings.user.cacheTranscodingFormatPreference = pref
+  }
+
   var body: some View {
     ZStack {
       SettingsList {
@@ -44,13 +71,27 @@ struct PlaybackSettingsView: View {
 
         SettingsSection(
           content: {
-            SettingsCheckBoxRow(
-              title: "Keep songs you stream",
-              isOn: $settings.isPlayerAutoCachePlayedItems
-            )
+            SettingsRow(title: "Download quality") {
+              Menu(downloadQualityLabel(downloadQuality)) {
+                Button("Lossless (FLAC)") { setDownloadQuality(.raw) }
+                Button("High (MP3)") { setDownloadQuality(.mp3) }
+              }
+            }
           },
-          footer: "Save a copy on this device of anything you stream in Server Mode, so it's there next time without using data."
+          footer: "Sets the quality downloaded to this device. Your Mac always keeps the original, full resolution files."
         )
+
+        if isServerModeOn {
+          SettingsSection(
+            content: {
+              SettingsCheckBoxRow(
+                title: "Keep songs you stream",
+                isOn: $settings.isPlayerAutoCachePlayedItems
+              )
+            },
+            footer: "Save a copy on this device of anything you stream in Server Mode, so it's there next time without using data."
+          )
+        }
 
         // cassette §2 (decision answer): the Mac-only "Mini Player Always on
         // Top" control was collateral when the Display screen was removed.
@@ -72,6 +113,7 @@ struct PlaybackSettingsView: View {
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       appDelegate.userStatistics.visited(.settingsPlayer)
+      downloadQuality = appDelegate.storage.settings.user.cacheTranscodingFormatPreference
     }
   }
 }
