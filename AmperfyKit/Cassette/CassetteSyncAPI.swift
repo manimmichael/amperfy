@@ -246,8 +246,13 @@ public struct CassetteAccount: Sendable, Decodable {
   /// null when no player is paired or an older sidecar/deploy doesn't emit it.
   public let sidecarPort: Int?
 
+  /// Cassette Phase 2b: account-sourced download quality tier ("lossless" |
+  /// "high" | "efficient") the phone applies to the music it downloads. Optional
+  /// decode → "high" for older deploys that don't emit it.
+  public let downloadQuality: String
+
   enum CodingKeys: String, CodingKey {
-    case email, name, serverMode, sidecarPort
+    case email, name, serverMode, sidecarPort, downloadQuality
   }
 
   public init(from decoder: Decoder) throws {
@@ -256,6 +261,7 @@ public struct CassetteAccount: Sendable, Decodable {
     self.name = try c.decodeIfPresent(String.self, forKey: .name)
     self.serverMode = try c.decodeIfPresent(Bool.self, forKey: .serverMode) ?? false
     self.sidecarPort = try c.decodeIfPresent(Int.self, forKey: .sidecarPort)
+    self.downloadQuality = try c.decodeIfPresent(String.self, forKey: .downloadQuality) ?? "high"
   }
 }
 
@@ -295,6 +301,9 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   nonisolated private static let accountNameKey = "cassette.accountName"
   nonisolated private static let accountEmailKey = "cassette.accountEmail"
   nonisolated private static let sidecarPortKey = "cassette.sidecarPort"
+  /// Cassette Phase 2b: last-known account-sourced download quality tier, read by
+  /// the download URL builder so it honors the web-set quality synchronously.
+  nonisolated static let downloadQualityKey = "cassette.downloadQuality"
 
   /// The paired Player's sidecar HTTP port, cached from `/api/sync/account`.
   /// `nil`/0 when unknown (no player paired, or a sidecar/deploy that predates
@@ -348,6 +357,11 @@ public final class CassetteSyncAPI: @unchecked Sendable {
         )
       }
     }
+
+    // Cassette Phase 2b: persist the account-sourced download quality so the
+    // download URL builder honors it synchronously (web-authoritative — the
+    // Devices page owns this; the phone reads it here).
+    defaults.set(account.downloadQuality, forKey: downloadQualityKey)
   }
 
   // MARK: Device identity

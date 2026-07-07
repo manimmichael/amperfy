@@ -324,8 +324,23 @@ final class SubsonicServerApi: URLCleanser, Sendable {
   public func generateUrl(forDownloadingPlayableId apiId: String) async throws -> URL {
     let version = try await determineApiVersionToUse()
     // If transcoding is selected for caching the subsonic API method 'stream' must be used
-    // For raw format subsonic API method 'download' can be used
-    switch settings.user.cacheTranscodingFormatPreference {
+    // For raw format subsonic API method 'download' can be used.
+    //
+    // Cassette Phase 2b: the account-sourced download quality (set on the web
+    // Devices page, persisted to UserDefaults by CassetteSyncAPI.persistAccount)
+    // is authoritative when present — "lossless" downloads the original,
+    // "high"/"efficient" transcode to mp3. Falls back to the local cache-format
+    // preference for installs that haven't synced an account yet.
+    let effectiveFormat: CacheTranscodingFormatPreference
+    switch UserDefaults.standard.string(forKey: CassetteSyncAPI.downloadQualityKey) {
+    case "lossless":
+      effectiveFormat = .raw
+    case "high", "efficient":
+      effectiveFormat = .mp3
+    default:
+      effectiveFormat = settings.user.cacheTranscodingFormatPreference
+    }
+    switch effectiveFormat {
     case .mp3:
       var urlComp = try createAuthApiUrlComponent(version: version, forAction: "stream", id: apiId)
       urlComp.addQueryItem(name: "format", value: "mp3")
