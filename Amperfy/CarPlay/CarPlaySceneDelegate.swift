@@ -230,9 +230,20 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
           }
         }
 
-      if self.appDelegate.player.currentlyPlaying != nil, self.appDelegate.player.isPlaying {
+      if let current = self.appDelegate.player.currentlyPlaying, self.appDelegate.player.isPlaying {
         self.updatePlayerQueueSection()
         self.displayNowPlaying(immediately: true) {}
+        // cassette (CarPlay cover on reconnect): after unplug→replug→resume-same-track
+        // the now-playing hero can be a stale placeholder — didConnect refreshes the
+        // template but never rebuilds the now-playing INFO/artwork, and the cover
+        // download may have been cancelled while disconnected. Re-request the
+        // ALBUM-FIRST cover (owned covers live on the album). Because Artwork.isCached
+        // is hardcoded false the request re-completes, and .downloadFinishedSuccess
+        // then drives NowPlayingInfoCenterHandler to rebuild the hero with the real art.
+        let heroArtwork = (current as? Song)?.album?.artwork ?? current.artwork
+        if let heroArtwork, let accountInfo = heroArtwork.account?.info {
+          self.appDelegate.getMeta(accountInfo).artworkDownloadManager.download(object: heroArtwork)
+        }
       }
     }
   }

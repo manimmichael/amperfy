@@ -197,30 +197,37 @@ extension CarPlaySceneDelegate {
       CarPlayListUserInfoKeys.artworkOwnerType.rawValue: ArtworkType.artist as Any,
     ]
     section.handler = { [weak self] item, completion in
-      guard let self = self, let activeAccount = activeAccount
+      guard let self = self,
+            let template = makeArtistDetailTemplate(for: artist, onlyCached: onlyCached)
       else { completion(); return }
-      var albumItems = [CPListItem]()
-      albumItems.append(createPlayShuffledListItem(playContext: PlayContext(
-        containable: artist,
-        playables: artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-      )))
-      albumItems.append(createDetailAllSongsTemplate(for: artist, onlyCached: onlyCached))
-      let artistAlbums = appDelegate.storage.main.library.getAlbums(
-        for: activeAccount,
-        whichContainsSongsWithArtist: artist,
-        onlyCached: onlyCached || isOfflineMode
-      ).prefix(carPlayLeafItemLimit(reserved: albumItems.count))
-      for album in artistAlbums {
-        let listItem = createDetailTemplate(for: album, onlyCached: onlyCached)
-        albumItems.append(listItem)
-      }
-      let artistTemplate = CPListTemplate(title: artist.name, sections: [
-        CPListSection(items: albumItems),
-      ])
-      pushTemplateIfAllowed(artistTemplate, animated: true)
+      pushTemplateIfAllowed(template, animated: true)
       completion()
     }
     return section
+  }
+
+  // cassette (CarPlay open-a-view): the artist detail (shuffle + all-songs + albums)
+  // as a REUSABLE template, shared by the library artist row and the Home artist tile.
+  func makeArtistDetailTemplate(for artist: Artist, onlyCached: Bool) -> CPListTemplate? {
+    guard let activeAccount else { return nil }
+    var albumItems = [CPListItem]()
+    albumItems.append(createPlayShuffledListItem(playContext: PlayContext(
+      containable: artist,
+      playables: artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
+    )))
+    albumItems.append(createDetailAllSongsTemplate(for: artist, onlyCached: onlyCached))
+    let artistAlbums = appDelegate.storage.main.library.getAlbums(
+      for: activeAccount,
+      whichContainsSongsWithArtist: artist,
+      onlyCached: onlyCached || isOfflineMode
+    ).prefix(carPlayLeafItemLimit(reserved: albumItems.count))
+    for album in artistAlbums {
+      let listItem = createDetailTemplate(for: album, onlyCached: onlyCached)
+      albumItems.append(listItem)
+    }
+    return CPListTemplate(title: artist.name, sections: [
+      CPListSection(items: albumItems),
+    ])
   }
 
   func createDetailAllSongsTemplate(for artist: Artist, onlyCached: Bool) -> CPListItem {
@@ -285,28 +292,34 @@ extension CarPlaySceneDelegate {
     ]
     section.handler = { [weak self] item, completion in
       guard let self = self else { completion(); return }
-      var songItems = [CPListItem]()
-      songItems.append(createPlayShuffledListItem(playContext: PlayContext(
-        containable: album,
-        playables: album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-      )))
-      let albumSongs = album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-        .prefix(carPlayLeafItemLimit(reserved: songItems.count))
-      for (index, song) in albumSongs.enumerated() {
-        let listItem = createDetailTemplate(
-          for: song,
-          playContext: PlayContext(containable: album, index: index, playables: Array(albumSongs)),
-          isTrackDisplayed: true
-        )
-        songItems.append(listItem)
-      }
-      let albumTemplate = CPListTemplate(title: album.name, sections: [
-        CPListSection(items: songItems),
-      ])
-      pushTemplateIfAllowed(albumTemplate, animated: true)
+      pushTemplateIfAllowed(makeAlbumDetailTemplate(for: album, onlyCached: onlyCached), animated: true)
       completion()
     }
     return section
+  }
+
+  // cassette (CarPlay open-a-view): the album detail (shuffle row + track list) as a
+  // REUSABLE template, so the library album row AND the Home album tile open the same
+  // view instead of the Home tile auto-playing.
+  func makeAlbumDetailTemplate(for album: Album, onlyCached: Bool) -> CPListTemplate {
+    var songItems = [CPListItem]()
+    songItems.append(createPlayShuffledListItem(playContext: PlayContext(
+      containable: album,
+      playables: album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
+    )))
+    let albumSongs = album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
+      .prefix(carPlayLeafItemLimit(reserved: songItems.count))
+    for (index, song) in albumSongs.enumerated() {
+      let listItem = createDetailTemplate(
+        for: song,
+        playContext: PlayContext(containable: album, index: index, playables: Array(albumSongs)),
+        isTrackDisplayed: true
+      )
+      songItems.append(listItem)
+    }
+    return CPListTemplate(title: album.name, sections: [
+      CPListSection(items: songItems),
+    ])
   }
 
   func createPlaylistsSections() -> [CPListSection] {
@@ -340,12 +353,7 @@ extension CarPlaySceneDelegate {
         )
         item.handler = { [weak self] item, completion in
           guard let self = self else { completion(); return }
-          let playlistDetailTemplate = CPListTemplate(title: playlist.name, sections: [
-            CPListSection(items: [CPListTemplateItem]()),
-          ])
-          playlistDetailSection = playlistDetailTemplate
-          createPlaylistDetailFetchController(playlist: playlist)
-          pushTemplateIfAllowed(playlistDetailTemplate, animated: true)
+          pushPlaylistDetail(playlist)
           completion()
         }
         items.append(item)
@@ -357,6 +365,17 @@ extension CarPlaySceneDelegate {
       if itemCount > CPListTemplate.maximumItemCount { break }
     }
     return sections
+  }
+
+  // cassette (CarPlay open-a-view): push a playlist's detail (empty template + async
+  // FRC populate), shared by the library playlist row and the Home playlist tile.
+  func pushPlaylistDetail(_ playlist: Playlist) {
+    let playlistDetailTemplate = CPListTemplate(title: playlist.name, sections: [
+      CPListSection(items: [CPListTemplateItem]()),
+    ])
+    playlistDetailSection = playlistDetailTemplate
+    createPlaylistDetailFetchController(playlist: playlist)
+    pushTemplateIfAllowed(playlistDetailTemplate, animated: true)
   }
 
   func createPodcastsSections(

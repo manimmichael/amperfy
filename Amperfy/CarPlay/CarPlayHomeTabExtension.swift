@@ -146,22 +146,25 @@ extension CarPlaySceneDelegate {
       let liveItem = sharedHome.data[section]?.first { $0.stableID == tappedID }
       let selectedPlayable = (liveItem ?? renderedItems[index]).playableContainable
       Task { @MainActor in
-        // A1: start the tapped container immediately from what's already local
-        // and surface Now Playing — never gate playback on a server sync. Any
-        // server-side refresh happens AFTER, off the critical path (and is now
-        // time-bounded by the A1 request timeout, so it can't hang the tap).
-        self.appDelegate.player.play(context: PlayContext(containable: selectedPlayable))
-        displayNowPlaying {
-          completion()
-        }
-        if !isOfflineMode {
-          try? await selectedPlayable.fetch(
-            storage: self.appDelegate.storage,
-            librarySyncer: self.appDelegate.getMeta(activeAccountInfo).librarySyncer,
-            playableDownloadManager: self.appDelegate.getMeta(activeAccountInfo)
-              .playableDownloadManager
+        // cassette (CarPlay open-a-view): a Home tile tap OPENS the item's detail
+        // view (album track list / artist / playlist) — same as the library rows —
+        // instead of auto-playing. Playback happens when the user taps a track or
+        // Shuffle inside. Anything without a detail view falls back to play().
+        if let album = selectedPlayable as? Album {
+          self.pushTemplateIfAllowed(
+            self.makeAlbumDetailTemplate(for: album, onlyCached: isOfflineMode),
+            animated: true
           )
+        } else if let artist = selectedPlayable as? Artist,
+                  let template = self.makeArtistDetailTemplate(for: artist, onlyCached: isOfflineMode) {
+          self.pushTemplateIfAllowed(template, animated: true)
+        } else if let playlist = selectedPlayable as? Playlist {
+          self.pushPlaylistDetail(playlist)
+        } else {
+          self.appDelegate.player.play(context: PlayContext(containable: selectedPlayable))
+          self.displayNowPlaying {}
         }
+        completion()
       }
     }
     return row
