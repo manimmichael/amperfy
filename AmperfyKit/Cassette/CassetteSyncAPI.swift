@@ -436,6 +436,20 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     return account
   }
 
+  /// Cassette Phase 2c: push the phone-chosen download quality UP to the account
+  /// (the hub), so the web reflects it and the next `/api/sync/account` fetch
+  /// won't clobber the local choice. Also updates the local UserDefaults key the
+  /// download URL builder reads, so the change applies immediately. Fire-and-
+  /// forget from the Playback picker.
+  public func setDownloadQuality(_ tier: String) async throws {
+    UserDefaults.standard.set(tier, forKey: Self.downloadQualityKey)
+    _ = try await send(
+      method: "PATCH",
+      path: "/api/account/download-quality",
+      json: ["download_quality_tier": tier]
+    )
+  }
+
   /// Read-only artwork backfill manifest for a device's owned albums — the
   /// album artist's catalog image + the album's catalog cover, per owned
   /// album. Used to heal already-synced libraries without a remove/re-add.

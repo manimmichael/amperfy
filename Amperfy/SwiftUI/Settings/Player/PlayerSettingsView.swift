@@ -58,6 +58,11 @@ struct PlaybackSettingsView: View {
   private func setDownloadQuality(_ pref: CacheTranscodingFormatPreference) {
     downloadQuality = pref
     appDelegate.storage.settings.user.cacheTranscodingFormatPreference = pref
+    // Phase 2c: push the choice up to the hub (the web Devices page) and update
+    // the key the download URL builder reads, so the web reflects it and the
+    // next account sync won't clobber it. Fire-and-forget.
+    let tier = pref == .raw ? "lossless" : "high"
+    Task { try? await CassetteSyncAPI.shared.setDownloadQuality(tier) }
   }
 
   var body: some View {
