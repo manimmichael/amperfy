@@ -31,6 +31,13 @@ class KeyCommandCollectionViewController: UICollectionViewController {
     super.viewDidLoad()
     setNavBarTitle(title: sceneTitle ?? "")
   }
+
+  // cassette (manual eager tab-bar reveal): the library-root collection screen
+  // drives the same scroll-direction reveal as the list screens.
+  // See TabBarVC.cassetteUpdateMinimizeForScroll.
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    (tabBarController as? TabBarVC)?.cassetteUpdateMinimizeForScroll(scrollView)
+  }
 }
 
 // MARK: - CollectionViewKeyCommandsController

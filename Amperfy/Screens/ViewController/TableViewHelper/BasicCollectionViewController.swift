@@ -52,6 +52,15 @@ class BasicCollectionViewController: UICollectionViewController {
     updateSearchResults(for: searchController)
   }
 
+  // cassette (manual eager tab-bar reveal): COLLECTION screens (the album/artist
+  // GRIDS — the primary browse surface) drive the same scroll-direction reveal the
+  // table screens get via BasicTableViewController. Without this the tab bar never
+  // pops back while scrolling a grid, which read as "the reveal disappeared."
+  // See TabBarVC.cassetteUpdateMinimizeForScroll.
+  override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    (tabBarController as? TabBarVC)?.cassetteUpdateMinimizeForScroll(scrollView)
+  }
+
   func configureSearchController(
     placeholder: String?,
     scopeButtonTitles: [String]? = nil

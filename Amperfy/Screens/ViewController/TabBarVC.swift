@@ -182,18 +182,34 @@ class TabBarVC: UITabBarController {
     let y = scrollView.contentOffset.y
     let dy = y - cassetteLastScrollY
     cassetteLastScrollY = y
-    guard abs(dy) > 4 else { return } // ignore sub-pixel jitter
-    let desired: UITabBarController.MinimizeBehavior = dy < 0 ? .never : .onScrollDown
+
+    // Asymmetric sensitivity (the "Reddit feel"): the bar should POP BACK on the
+    // faintest upward flick — that's the motion users notice — but hide a little
+    // more deliberately so a jittery downward read doesn't yank it away. Small
+    // reveal threshold, larger hide threshold, a shallow dead-zone between them.
+    let desired: UITabBarController.MinimizeBehavior
+    if dy < -1.5 {
+      desired = .never // scrolling UP → reveal
+    } else if dy > 6 {
+      desired = .onScrollDown // scrolling DOWN deliberately → allow minimize
+    } else {
+      return // dead-zone: sub-pixel jitter / direction unclear
+    }
     guard tabBarMinimizeBehavior != desired else { return }
-    // Cooldown: each behavior change animates the bar. On rapid up/down reversals,
-    // hammering the property every frame piles up animations and UIKit stops
-    // responding for a while ("tired out"). Rate-limit so each animation settles —
-    // the FIRST reversal still fires immediately (cassetteLastToggleAt == 0), only a
-    // fast wiggle is throttled. ~0.35s ≈ the minimize animation length.
+
+    // Anti-thrash cooldown: each behavior change animates the bar; hammering the
+    // property on rapid reversals piles up animations and UIKit stalls ("tired
+    // out"). Reveal gets a SHORTER cooldown so popping the bar back always feels
+    // instant; hiding is rate-limited a touch more. The first toggle fires
+    // immediately (cassetteLastToggleAt == 0); only a fast wiggle is throttled.
     let now = ProcessInfo.processInfo.systemUptime
-    guard now - cassetteLastToggleAt > 0.35 else { return }
+    let cooldown: TimeInterval = desired == .never ? 0.18 : 0.30
+    guard now - cassetteLastToggleAt > cooldown else { return }
     cassetteLastToggleAt = now
     tabBarMinimizeBehavior = desired
+    #if DEBUG
+    print("CASSETTE-NAV: \(desired == .never ? "REVEAL" : "hide") dy=\(String(format: "%.1f", dy))")
+    #endif
   }
 
   private func mainContent() -> UIView {

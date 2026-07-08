@@ -275,6 +275,10 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
     updateStickyHeaderAlpha()
+    // cassette (manual eager tab-bar reveal): this VC overrides scrollViewDidScroll
+    // for its sticky header, so it must also drive the reveal itself — the base
+    // helper doesn't run when the override shadows it.
+    (tabBarController as? TabBarVC)?.cassetteUpdateMinimizeForScroll(scrollView)
   }
 
   private func updateStickyHeaderAlpha() {
