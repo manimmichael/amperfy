@@ -75,6 +75,18 @@ struct AccountSettingsView: View {
     appDelegate.logoutAccount(accountInfo)
   }
 
+  /// cassette: a Cassette-paired account's Subsonic login is a `cassette-*`
+  /// machine credential the desktop Player mints AND manages automatically at
+  /// pairing. The stock "Update Password" screen is LOCAL-ONLY — it changes
+  /// Navidrome + the on-device keychain but never the cloud — so a manual change
+  /// here silently diverges from the authoritative cloud credential and breaks on
+  /// the next re-pair. Hide it for Cassette accounts; manual (generic Subsonic)
+  /// accounts still get it.
+  private func isCassetteAccount(_ info: AccountInfo) -> Bool {
+    (appDelegate.storage.settings.accounts.getSetting(info).read
+      .loginCredentials?.username ?? "").hasPrefix("cassette-")
+  }
+
   var body: some View {
     ZStack {
       SettingsList {
@@ -110,8 +122,10 @@ struct AccountSettingsView: View {
           }
 
           SettingsSection {
-            SettingsButtonRow(title: "Update Password") {
-              withPopupAnimation { isPwUpdateDialogVisible = true }
+            if !isCassetteAccount(activeAccountInfo) {
+              SettingsButtonRow(title: "Update Password") {
+                withPopupAnimation { isPwUpdateDialogVisible = true }
+              }
             }
             SettingsButtonRow(title: "Resync Library") {
               isShowResyncLibraryAlert = true
