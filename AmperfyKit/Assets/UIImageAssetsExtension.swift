@@ -663,9 +663,9 @@ extension UIImage {
   }
 
   /// CarPlay list/nav glyph — the de-tiled counterpart of `createArtwork`. Renders
-  /// the symbol TRANSPARENT and accent-tinted (no opaque background tile), so it
-  /// sits on CarPlay's own iOS-26 glass surface instead of the foreign white/gray
-  /// box a snapshotted `EntityImageView` produced. Same signature as
+  /// the symbol TRANSPARENT and white (no opaque background tile), so it sits on
+  /// CarPlay's own iOS-26 glass surface instead of the foreign white/gray box a
+  /// snapshotted `EntityImageView` produced. Same signature as
   /// `createArtwork` so CarPlay call sites swap in with a one-word rename; the
   /// tile-only args (`lightDarkMode`, `switchColors`) are accepted-and-ignored.
   public static func carPlayGlyph(
@@ -679,31 +679,44 @@ extension UIImage {
     // A crisp intrinsic size; CarPlay scales into its row slot. Bigger for the
     // account row's `.big` avatar, standard for the small nav/category glyphs.
     let pointSize: CGFloat = iconSizeType == .big ? 54 : 38
-    let sized: UIImage
+    // Bake the glyph as WHITE *pixels* in a plain bitmap — NOT a tinted template.
+    // CarPlay shows a list image with its own colors only when it's a genuine
+    // bitmap (like album art). A `.withTintColor(…, .alwaysOriginal)` result keeps
+    // its baked color when we return it, but every call site then applies
+    // `carPlayImage(carTraitCollection:)`, whose `UIImageAsset` round-trip resets it
+    // to a re-tintable template — so CarPlay tinted it per background: light on the
+    // dark library glass, but DARK on an album-detail background derived from light
+    // album art (the "black shuffle button"). Drawing white into the RGB makes it a
+    // real bitmap that stays white on every surface, matching the white row text
+    // (which rides CarPlay's own background-darkening legibility guarantee).
+    // (`theme` no longer drives the glyph color — every glyph is white.)
     if image.isSymbolImage {
-      // SF Symbol: a point-size configuration scales it crisply.
-      sized = image.applyingSymbolConfiguration(
+      // SF Symbol: a point-size configuration scales it crisply. Rasterize the
+      // white-tinted symbol at its natural size (no forced square, so wide/narrow
+      // symbols keep their aspect).
+      let symbol = image.applyingSymbolConfiguration(
         UIImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
       ) ?? image
+      let white = symbol.withTintColor(.white, renderingMode: .alwaysOriginal)
+      let renderer = UIGraphicsImageRenderer(size: white.size)
+      return renderer.image { _ in white.draw(at: .zero) }
     } else {
       // Vector asset (e.g. a Lucide outline glyph): symbol configuration is a
-      // no-op, so rasterize the vector-preserving template into a square of the
-      // target size, inset slightly so the 2pt stroke has breathing room.
+      // no-op, so draw the white-tinted vector into a square of the target size,
+      // inset slightly so the 2pt stroke has breathing room.
       let side = pointSize
       let inset = side * 0.12
+      let white = image.withTintColor(.white, renderingMode: .alwaysOriginal)
       let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
-      sized = renderer.image { _ in
-        image.draw(in: CGRect(
+      return renderer.image { _ in
+        white.draw(in: CGRect(
           x: inset,
           y: inset,
           width: side - inset * 2,
           height: side - inset * 2
         ))
-      }.withRenderingMode(.alwaysTemplate)
+      }
     }
-    // .alwaysOriginal bakes the accent tint in (CarPlay shows list images as-is),
-    // giving an on-brand glyph on the glass rather than a system-monochrome one.
-    return sized.withTintColor(theme.asColor, renderingMode: .alwaysOriginal)
   }
 
   private static func createEmptyImage(with size: CGSize) -> UIImage? {
