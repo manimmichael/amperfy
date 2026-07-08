@@ -82,16 +82,30 @@ struct AccountSettingsView: View {
           // cassette polish Part 6: server URL, transcoding, scrobble, Auto
           // Cache, backend/API-version rows, and Manage Server URLs are hidden.
           // Pairing owns the connection; protocol details don't surface here.
+          // cassette: this row used to show the raw Subsonic machine login
+          // (loginCredentials.username, e.g. "cassette-qsvdgam0") — a device
+          // credential the desktop mints at pairing, NOT the user's identity, which
+          // read as "that is not my username". Show the real Cassette account
+          // instead: name, then email — the same identity the account menu already
+          // leads with (CassetteSyncAPI, sourced from /api/sync/account). Falls back
+          // to "Connected" before the first sync lands, and never surfaces the token.
           SettingsSection {
             SettingsRow(
-              title: "Username",
+              title: "Account",
               orientation: .vertical,
               splitPercentage: splitPercentage
             ) {
-              SecondaryText(
-                appDelegate.storage.settings.accounts.getSetting(settings.activeAccountInfo).read
-                  .loginCredentials?.username ?? ""
-              )
+              SecondaryText(CassetteSyncAPI.accountName ?? CassetteSyncAPI.accountEmail ?? "Connected")
+            }
+            if CassetteSyncAPI.accountName != nil,
+               let email = CassetteSyncAPI.accountEmail {
+              SettingsRow(
+                title: "Email",
+                orientation: .vertical,
+                splitPercentage: splitPercentage
+              ) {
+                SecondaryText(email)
+              }
             }
           }
 
