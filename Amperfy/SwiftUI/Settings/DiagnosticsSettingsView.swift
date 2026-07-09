@@ -35,7 +35,7 @@ struct DiagnosticsSettingsView: View {
       List {
         Section(
           footer: Text(
-            "An always-on, in-memory trace of playback, CarPlay and server activity. Flag a moment to bookmark it, then export the full trace to share it."
+            "An always-on, in-memory trace of playback, CarPlay and server activity. Flag a moment to bookmark it, then export the full trace — including any recent crash reports — to share it."
           )
         ) {
           Button {

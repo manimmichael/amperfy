@@ -35,8 +35,14 @@ public struct LogData: Encodable {
   // Cassette — Diagnostics Phase 1: the full in-memory rolling trace, separate
   // from `eventInfo` (which stays capped at the latest 30 CoreData entries).
   public var rollingTrace: [DiagnosticEntry]?
+  // Cassette — recent MetricKit crash/diagnostic payloads (crash + hang + CPU- and
+  // disk-write-exception reports from prior sessions), embedded inline so an
+  // exported report carries the actual stack traces instead of leaving them
+  // unreachable in the app container. Newest first; capped at `attachedCrashCount`.
+  public var crashDiagnostics: [CrashDiagnostic]?
 
   static let latestEventsCount = 30
+  static let attachedCrashCount = 3
 
   @MainActor
   public static func collectInformation(amperfyData: AmperKit) -> LogData {
@@ -97,7 +103,37 @@ public struct LogData: Encodable {
     // Cassette — Diagnostics Phase 1: attach the full rolling trace (no 30-cap).
     logData.rollingTrace = DiagnosticLog.shared.snapshot()
 
+    // Cassette — embed the most recent MetricKit crash payloads so the exported
+    // report is self-contained: the crash stack travels with the trace.
+    logData.crashDiagnostics = collectCrashDiagnostics()
+
     return logData
+  }
+
+  /// Read the newest MetricKit crash/diagnostic payloads off disk (written by
+  /// `DiagnosticCrashReporter` into the Diagnostics directory) and decode each as
+  /// inline JSON so it embeds cleanly in the exported report. Best-effort: a
+  /// missing directory or an unreadable/garbled file is skipped, never fatal.
+  private static func collectCrashDiagnostics() -> [CrashDiagnostic]? {
+    guard let dir = DiagnosticLog.diagnosticsDirectory(),
+          let files = try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil
+          ) else { return nil }
+    // Filenames are `crash-yyyyMMdd-HHmmss-<index>.json`, so a reverse
+    // lexicographic sort is newest-first.
+    let newestCrashFiles = files
+      .filter { $0.lastPathComponent.hasPrefix("crash-") }
+      .sorted { $0.lastPathComponent > $1.lastPathComponent }
+      .prefix(attachedCrashCount)
+    let decoder = JSONDecoder()
+    let decoded: [CrashDiagnostic] = newestCrashFiles.compactMap { url in
+      guard let data = try? Data(contentsOf: url),
+            let payload = try? decoder.decode(JSONValue.self, from: data)
+      else { return nil }
+      return CrashDiagnostic(filename: url.lastPathComponent, payload: payload)
+    }
+    return decoded.isEmpty ? nil : decoded
   }
 }
 
@@ -170,4 +206,64 @@ public struct EventInfo: Encodable {
   public var totalEventCount: Int?
   public var attachedEventCount: Int?
   public var events: [LogEntry]?
+}
+
+// MARK: - CrashDiagnostic
+
+/// One MetricKit diagnostic payload from a previous session (crash / hang / CPU /
+/// disk-write exception), embedded in the exported report as inline JSON alongside
+/// the filename it was captured to.
+public struct CrashDiagnostic: Encodable {
+  public var filename: String
+  public var payload: JSONValue
+}
+
+// MARK: - JSONValue
+
+/// A minimal JSON tree used to embed an already-encoded JSON document (a MetricKit
+/// payload) INLINE inside the export — as real nested JSON rather than an escaped
+/// string, so the crash report stays human- and tool-readable. Whole numbers
+/// re-encode without a decimal point, and all strings (binary names, symbols,
+/// termination reason, OS version) are preserved verbatim.
+public enum JSONValue: Codable {
+  case null
+  case bool(Bool)
+  case number(Double)
+  case string(String)
+  case array([JSONValue])
+  case object([String: JSONValue])
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    if container.decodeNil() {
+      self = .null
+    } else if let value = try? container.decode(Bool.self) {
+      self = .bool(value)
+    } else if let value = try? container.decode(Double.self) {
+      self = .number(value)
+    } else if let value = try? container.decode(String.self) {
+      self = .string(value)
+    } else if let value = try? container.decode([JSONValue].self) {
+      self = .array(value)
+    } else if let value = try? container.decode([String: JSONValue].self) {
+      self = .object(value)
+    } else {
+      throw DecodingError.dataCorruptedError(
+        in: container,
+        debugDescription: "Unsupported JSON value"
+      )
+    }
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    switch self {
+    case .null: try container.encodeNil()
+    case let .bool(value): try container.encode(value)
+    case let .number(value): try container.encode(value)
+    case let .string(value): try container.encode(value)
+    case let .array(value): try container.encode(value)
+    case let .object(value): try container.encode(value)
+    }
+  }
 }

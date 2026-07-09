@@ -62,13 +62,6 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   var accountNotificationHandler: AccountNotificationHandler?
   var sharedHome: HomeManager?
 
-  /// B3: the active-account callback fires on every `.accountActiveChanged`,
-  /// including transient `nil`s from an auth blip. The first fire per
-  /// connection must bind a root template; after that we only tear down +
-  /// rebuild on a real account-identity change (so a mid-drive blip can't reset
-  /// CarPlay to Home and kill playback). Reset to false on each connect.
-  private var didApplyInitialRoot = false
-
   /// The player mode the now-playing button row was last built for. The button
   /// SET depends only on the mode (music: repeat+shuffle; podcast: repeat+rate),
   /// never the track — so `configureNowPlayingTemplate()` skips the rebuild when
@@ -163,71 +156,36 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
       self.interfaceController?.delegate = self
       self.configureNowPlayingTemplate()
 
-      didApplyInitialRoot = false
+      // Bind the CarPlay root deterministically the moment we connect. The INITIAL
+      // root must not hinge on the async active-account callback landing cleanly:
+      // after a crash-triggered relaunch the scene can connect while storage /
+      // account restore is still in flight, and if that path doesn't complete,
+      // CarPlay is left with no root template — a blank screen that clears only on a
+      // physical unplug/replug (observed 2026-07-09). Applying the current active
+      // account synchronously here guarantees the scene is usable on connect.
+      applyActiveAccount(appDelegate.storage.settings.accounts.active)
+
       accountNotificationHandler?
         .registerCallbackForActiveAccountChange { [weak self] accountInfo in
           guard let self else { return }
 
-          // B3: after the first bind, only react to a real account-identity
-          // change. A repeat event for the same account, or a transient
-          // `.accountActiveChanged(nil)` (auth blip) while accounts still
-          // exist, must NOT resetFetchController / setRootTemplate — that's the
-          // mid-drive "reset to Home, audio off" symptom.
+          // B3: the initial bind already happened synchronously above, so react
+          // only to a real account-identity change. A repeat event for the same
+          // account, or a transient `.accountActiveChanged(nil)` (auth blip) while
+          // accounts still exist, must NOT resetFetchController / setRootTemplate —
+          // that's the mid-drive "reset to Home, audio off" symptom.
           let current: AccountInfo? = activeAccountInfo
-          if didApplyInitialRoot {
-            if accountInfo == current { return }
-            if accountInfo == nil,
-               !appDelegate.storage.settings.accounts.allAccounts.isEmpty {
-              os_log(
-                "CarPlay: transient nil active account ignored (accounts remain)",
-                log: self.log,
-                type: .info
-              )
-              return
-            }
-          }
-          didApplyInitialRoot = true
-
-          resetFetchController()
-          activeAccountInfo = accountInfo
-          guard let accountInfo else {
+          if accountInfo == current { return }
+          if accountInfo == nil,
+             !appDelegate.storage.settings.accounts.allAccounts.isEmpty {
             os_log(
-              "CarPlay: no account available -> display Disconnected",
+              "CarPlay: transient nil active account ignored (accounts remain)",
               log: self.log,
               type: .info
             )
-            activeAccount = nil
-            self.interfaceController?.setRootTemplate(
-              disconnectedTemplate,
-              animated: true,
-              completion: nil
-            )
             return
           }
-          activeAccount = appDelegate.storage.main.library.getAccount(info: accountInfo)
-          sharedHome = HomeManager(
-            account: activeAccount,
-            storage: appDelegate.storage,
-            getMeta: appDelegate.getMeta,
-            eventLogger: appDelegate.eventLogger,
-            player: appDelegate.player,
-            // cassette (Job 1.3): CarPlay Home is album-forward — build the two
-            // album shelves this instance renders. iOS's HomeManager leaves this
-            // default-false, so iOS Home is untouched.
-            buildsAlbumShelves: true
-          )
-          sharedHome?.applySnapshotCB = { [weak self] in
-            guard let self else { return }
-            updateHomeSections()
-          }
-          self.interfaceController?.setRootTemplate(
-            rootBarTemplate,
-            animated: false,
-            completion: nil
-          )
-          Task { @MainActor in
-            self.refreshOfflineMode()
-          }
+          applyActiveAccount(accountInfo)
         }
 
       if let current = self.appDelegate.player.currentlyPlaying, self.appDelegate.player.isPlaying {
@@ -245,6 +203,54 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
           self.appDelegate.getMeta(accountInfo).artworkDownloadManager.download(object: heroArtwork)
         }
       }
+    }
+  }
+
+  /// Bind an active account to the CarPlay scene: rebuild the owned-set fetch
+  /// controllers, wire up Home, and set the root template. Called synchronously on
+  /// `didConnect` (so the scene is never left blank if the account callback races
+  /// app init after a crash-relaunch) and again on any genuine active-account
+  /// change. Safe to call repeatedly; the same account simply rebinds.
+  private func applyActiveAccount(_ accountInfo: AccountInfo?) {
+    resetFetchController()
+    activeAccountInfo = accountInfo
+    guard let accountInfo else {
+      os_log(
+        "CarPlay: no account available -> display Disconnected",
+        log: self.log,
+        type: .info
+      )
+      activeAccount = nil
+      self.interfaceController?.setRootTemplate(
+        disconnectedTemplate,
+        animated: true,
+        completion: nil
+      )
+      return
+    }
+    activeAccount = appDelegate.storage.main.library.getAccount(info: accountInfo)
+    sharedHome = HomeManager(
+      account: activeAccount,
+      storage: appDelegate.storage,
+      getMeta: appDelegate.getMeta,
+      eventLogger: appDelegate.eventLogger,
+      player: appDelegate.player,
+      // cassette (Job 1.3): CarPlay Home is album-forward — build the two album
+      // shelves this instance renders. iOS's HomeManager leaves this default-false,
+      // so iOS Home is untouched.
+      buildsAlbumShelves: true
+    )
+    sharedHome?.applySnapshotCB = { [weak self] in
+      guard let self else { return }
+      updateHomeSections()
+    }
+    self.interfaceController?.setRootTemplate(
+      rootBarTemplate,
+      animated: false,
+      completion: nil
+    )
+    Task { @MainActor in
+      self.refreshOfflineMode()
     }
   }
 
