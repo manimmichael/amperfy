@@ -340,6 +340,13 @@ class BackendAudioPlayer: NSObject {
   }
 
   func continuePlay() {
+    // cassette: reactivate the audio session on resume. We now release the session
+    // when the CarPlay/car route disappears (AudioSessionHandler.deactivateSession),
+    // and resume does not otherwise reconfigure it — so a play after a car unplug
+    // would be silent. `configureBackgroundPlayback` is a guarded no-op when the
+    // session is already active (and while an interruption is in progress), so this
+    // is safe on every resume path.
+    audioSessionHandler.configureBackgroundPlayback()
     isPlaying = true
     player?.resume()
     startTimers()

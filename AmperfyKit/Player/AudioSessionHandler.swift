@@ -135,6 +135,23 @@ public class AudioSessionHandler {
           }
           break
         }
+        // cassette: a CarPlay / car-audio route going away must ALSO release the
+        // audio session, not just pause. Cassette activates `.playback` once and
+        // otherwise never deactivates it, and this handler previously ignored the
+        // car route — so after a drive the app kept the session and a now-stale
+        // CarPlay route, starving other apps (e.g. YouTube in Safari) until it was
+        // force-quit. Pause, then hand the session back with
+        // `.notifyOthersOnDeactivation`; a later play reactivates via continuePlay.
+        // Kept separate from the headphones/BT loop so that behaviour is untouched.
+        for output in previousRoute.outputs
+          where output.portType == AVAudioSession.Port.carAudio {
+          os_log(.info, "Audio Session: CarPlay/car route gone -> pause + release session")
+          Task { @MainActor in
+            self.musicPlayer?.pause()
+            self.deactivateSession()
+          }
+          break
+        }
       }
     default: break
     }
@@ -154,6 +171,27 @@ public class AudioSessionHandler {
       try AVAudioSession.sharedInstance().setCategory(AVAudioSession.Category.playback)
       try AVAudioSession.sharedInstance().setActive(true)
       isSessionActive = true
+    } catch {
+      eventLogger?.report(topic: "Audio Session", error: error)
+    }
+  }
+
+  /// cassette: hand the `.playback` audio session back to the system. Cassette
+  /// activates the session once (`configureBackgroundPlayback`) and otherwise
+  /// never deactivates it, so a paused/idle app keeps the session — and, after a
+  /// CarPlay drive, a now-stale car route — which can starve other apps (e.g.
+  /// Safari/YouTube). Called when the CarPlay/car route disappears (see
+  /// `handleRouteChange`). `.notifyOthersOnDeactivation` lets a waiting app resume.
+  /// Resets `isSessionActive` so the next play re-activates via `continuePlay` /
+  /// `configureBackgroundPlayback`; no-op if we don't currently hold the session.
+  func deactivateSession() {
+    guard isSessionActive else { return }
+    do {
+      try AVAudioSession.sharedInstance().setActive(
+        false,
+        options: .notifyOthersOnDeactivation
+      )
+      isSessionActive = false
     } catch {
       eventLogger?.report(topic: "Audio Session", error: error)
     }
