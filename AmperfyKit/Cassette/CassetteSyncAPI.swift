@@ -53,6 +53,10 @@ public struct CassetteSyncIntent: Sendable, Decodable {
   public let targetId: String
   public let state: String
   public let intentKind: String
+  /// Which device this intent is for. The server stamps every intent with a
+  /// device (explicit or resolved-primary); nil only on legacy rows from the
+  /// single-device era.
+  public let targetDeviceId: String?
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -60,6 +64,7 @@ public struct CassetteSyncIntent: Sendable, Decodable {
     case targetId = "target_id"
     case state
     case intentKind = "intent_kind"
+    case targetDeviceId = "target_device_id"
   }
 }
 
@@ -408,15 +413,25 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     print("Cassette sync: device registered (\(Self.deviceId))")
   }
 
-  /// Non-terminal intents the device should act on: brand-new (`pending`),
+  /// Non-terminal intents THIS device should act on: brand-new (`pending`),
   /// resuming after a crash (`syncing`), and parked-on-unreachable
   /// (`waiting`). executeIntent is idempotent, so re-seeing `syncing` is safe.
+  ///
+  /// Device filter: the intents list is account-wide, so it includes intents
+  /// targeted at the user's OTHER devices (the Android phone). Acting on
+  /// those would download their albums here and race their state machine —
+  /// only own-device intents pass. nil targets are legacy single-device rows;
+  /// the iPhone (the original device) keeps honoring them.
   public func getActionableIntents() async throws -> [CassetteSyncIntent] {
     struct Envelope: Decodable { let intents: [CassetteSyncIntent] }
     let data = try await get(path: "/api/sync/intents")
     let all = try JSONDecoder().decode(Envelope.self, from: data).intents
     let actionable: Set<String> = ["pending", "syncing", "waiting"]
-    return all.filter { actionable.contains($0.state) }
+    let myDeviceId = Self.deviceId
+    return all.filter {
+      actionable.contains($0.state) &&
+        ($0.targetDeviceId == nil || $0.targetDeviceId == myDeviceId)
+    }
   }
 
   public func getIntentTracks(intentId: String) async throws -> CassetteIntentTracksResponse {
