@@ -67,6 +67,8 @@ enum CoreDataMigrationVersion: String, CaseIterable {
     "Amperfy v52" // Cassette Layer 1: add musicBrainzId to Song/Album/Artist (additive optional — lightweight inferred mapping)
   case v53 =
     "Amperfy v53" // Cassette Forgotten Albums: add HomeShelfEvent entity + Album surfacing/feedback fields (additive — lightweight inferred mapping)
+  case v54 =
+    "Amperfy v54" // Cassette play spine: add ScrobbleEntry.cloudSyncedAt (additive optional — lightweight inferred mapping)
 
   // MARK: - Current
 
@@ -187,6 +189,8 @@ enum CoreDataMigrationVersion: String, CaseIterable {
     case .v52:
       return .v53
     case .v53:
+      return .v54
+    case .v54:
       return nil
     }
   }
