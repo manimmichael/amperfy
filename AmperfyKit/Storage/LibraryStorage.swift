@@ -625,6 +625,26 @@ public class LibraryStorage: PlayableFileCachable {
     return ScrobbleEntry(managedObject: scrobbleEntryMO)
   }
 
+  /// Cassette play spine: completed-play entries not yet POSTed to
+  /// cassette.digital (`cloudSyncedAt == nil`). Independent of the Subsonic
+  /// `isUploaded` flag — the cloud sync runs in on-device mode too. Oldest-first
+  /// and capped so a long offline backlog drains in bounded batches (the endpoint
+  /// accepts at most 500 plays per request).
+  public func getUnsyncedCloudPlayEntries(for account: Account, fetchLimit: Int) -> [ScrobbleEntry] {
+    let fetchRequest = ScrobbleEntryMO.fetchRequest()
+    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+      getFetchPredicate(forAccount: account),
+      NSPredicate(format: "%K == nil", #keyPath(ScrobbleEntryMO.cloudSyncedAt)),
+      NSPredicate(format: "%K != nil", #keyPath(ScrobbleEntryMO.date)),
+    ])
+    fetchRequest.sortDescriptors = [
+      NSSortDescriptor(key: #keyPath(ScrobbleEntryMO.date), ascending: true),
+    ]
+    fetchRequest.fetchLimit = fetchLimit
+    let mos = (try? context.fetch(fetchRequest)) ?? []
+    return mos.map { ScrobbleEntry(managedObject: $0) }
+  }
+
   func deleteRadio(_ radio: Radio) {
     context.delete(radio.managedObject)
   }

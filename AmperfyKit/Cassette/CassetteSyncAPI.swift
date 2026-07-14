@@ -549,6 +549,40 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     return try? JSONDecoder().decode(CassetteDeviceInventoryResponse.self, from: data)
   }
 
+  // MARK: Play spine (cross-surface listening history)
+
+  /// Batch-report completed plays to the cloud play spine (`/api/sync/plays`).
+  /// Append-only + no server-side dedup, so the caller must only send plays it
+  /// hasn't sent before (the ScrobbleSyncer stamps `cloudSyncedAt` on success).
+  /// Identity is `cassetteLocalId`, computed on-device via `CassetteLocalID` so
+  /// it keys on the same id as the web-computed library index. `mbid`,
+  /// `durationPlayedSeconds` and `completionRatio` are optional. Send ≤ 500 per
+  /// call (the endpoint's cap).
+  public func recordPlays(
+    _ plays: [(
+      cassetteLocalId: String,
+      mbid: String?,
+      playedAt: Date,
+      durationPlayedSeconds: Int?,
+      completionRatio: Double?
+    )]
+  ) async throws {
+    guard !plays.isEmpty else { return }
+    let iso = ISO8601DateFormatter()
+    let rows: [[String: Any]] = plays.map { play -> [String: Any] in
+      var row: [String: Any] = [
+        "cassette_local_id": play.cassetteLocalId,
+        "played_at": iso.string(from: play.playedAt),
+        "source_device": "ios",
+      ]
+      row["mbid"] = play.mbid as Any? ?? NSNull()
+      row["duration_played_seconds"] = play.durationPlayedSeconds as Any? ?? NSNull()
+      row["completion_ratio"] = play.completionRatio as Any? ?? NSNull()
+      return row
+    }
+    _ = try await send(method: "POST", path: "/api/sync/plays", json: ["plays": rows])
+  }
+
   // MARK: On-demand convergence (B2 pull-to-refresh)
 
   public enum ConvergeResult: Sendable {

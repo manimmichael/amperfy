@@ -49,6 +49,13 @@ public class ScrobbleEntry: NSObject {
     set { managedObject.isUploaded = newValue }
   }
 
+  /// Cassette play spine: when this play was POSTed to cassette.digital
+  /// (nil = not yet cloud-synced). Distinct from `isUploaded` (Subsonic scrobble).
+  public var cloudSyncedAt: Date? {
+    get { managedObject.cloudSyncedAt }
+    set { managedObject.cloudSyncedAt = newValue }
+  }
+
   public var playable: AbstractPlayable? {
     get {
       guard let songMO = managedObject.playable else { return nil }

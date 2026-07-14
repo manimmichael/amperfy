@@ -262,6 +262,7 @@
     <entity name="ScrobbleEntry" representedClassName="ScrobbleEntryMO" syncable="YES">
         <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="isUploaded" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="cloudSyncedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="account" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Account" inverseName="scrobbleEntries" inverseEntity="Account"/>
         <relationship name="playable" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="AbstractPlayable" inverseName="scrobbleEntries" inverseEntity="AbstractPlayable"/>
     </entity>

@@ -34,6 +34,12 @@ extension ScrobbleEntryMO {
   public var date: Date?
   @NSManaged
   public var isUploaded: Bool
+  // Cassette play spine: when this completed-play was POSTed to
+  // cassette.digital's /api/sync/plays. nil = not yet synced. Independent of
+  // `isUploaded` (the Subsonic/Navidrome scrobble), so cloud sync runs in
+  // on-device mode too.
+  @NSManaged
+  public var cloudSyncedAt: Date?
   @NSManaged
   public var playable: AbstractPlayableMO?
 }

@@ -68,6 +68,10 @@ public class ScrobbleSyncer {
   }
 
   public func start() {
+    // Cassette play spine: drain any completed plays not yet POSTed to the cloud.
+    // Independent of Subsonic online mode and the guard below (which only gates
+    // the Subsonic scrobble upload), so an offline backlog flushes at app launch.
+    flushCloudPlays()
     guard storage.main.library.getUploadableScrobbleEntryCount(for: account) > 0 else { return }
     isRunning = true
     if !isActive {
@@ -179,6 +183,77 @@ public class ScrobbleSyncer {
     scrobbleEntry.playable = playedSong
     scrobbleEntry.isUploaded = isUploaded
     storage.main.saveContext()
+    // Cassette play spine: a completed play was just logged — flush it (and any
+    // backlog) to the cloud. Event-driven, no polling. Runs in on-device mode too.
+    flushCloudPlays()
+  }
+
+  // MARK: - Cassette play spine (cross-surface listening history)
+
+  /// Kick a cloud-play flush on the main actor. Fire-and-forget: the durable
+  /// `ScrobbleEntryMO` rows mean anything not sent now is retried on the next
+  /// completed play or at app launch (`start()`).
+  public func flushCloudPlays() {
+    Task { @MainActor in await self.performCloudPlayFlush() }
+  }
+
+  private func performCloudPlayFlush() async {
+    // Not paired to a cassette account → nothing to report to.
+    guard CassetteSyncAPI.bearerToken != nil else { return }
+
+    let entries = storage.main.library.getUnsyncedCloudPlayEntries(for: account, fetchLimit: 500)
+    guard !entries.isEmpty else { return }
+
+    var plays: [(
+      cassetteLocalId: String,
+      mbid: String?,
+      playedAt: Date,
+      durationPlayedSeconds: Int?,
+      completionRatio: Double?
+    )] = []
+    var syncedEntries: [ScrobbleEntry] = []
+    var stampedNonSong = false
+
+    for entry in entries {
+      guard let song = entry.playable?.asSong, let date = entry.date else {
+        // Podcasts / dateless rows have no cross-device play identity — stamp them
+        // so they don't re-queue every flush.
+        entry.cloudSyncedAt = Date()
+        stampedNonSong = true
+        continue
+      }
+      let localId = CassetteLocalID.compute(
+        artist: song.artist?.name ?? "",
+        title: song.title,
+        durationSeconds: song.duration
+      )
+      plays.append((
+        cassetteLocalId: localId,
+        mbid: nil,
+        playedAt: date,
+        durationPlayedSeconds: nil,
+        completionRatio: nil
+      ))
+      syncedEntries.append(entry)
+    }
+    if stampedNonSong { storage.main.saveContext() }
+    guard !plays.isEmpty else { return }
+
+    do {
+      try await CassetteSyncAPI.shared.recordPlays(plays)
+      let now = Date()
+      for entry in syncedEntries { entry.cloudSyncedAt = now }
+      storage.main.saveContext()
+      os_log("Cloud play sync: %d play(s) reported", log: self.log, type: .info, plays.count)
+    } catch {
+      // Leave rows unsynced; retried on the next completed play / launch.
+      os_log(
+        "Cloud play sync failed (will retry): %{public}@",
+        log: self.log,
+        type: .info,
+        String(describing: error)
+      )
+    }
   }
 
   private func startSongPlayed() async {
