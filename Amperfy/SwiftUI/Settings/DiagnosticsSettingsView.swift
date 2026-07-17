@@ -29,13 +29,24 @@ struct DiagnosticsSettingsView: View {
   private var exportURL: URL?
   @State
   private var syncCheck: DeviceOwnershipManager.SyncSelfCheck?
+  @State
+  private var uploadState: UploadState = .idle
+  @State
+  private var autoUploadEnabled = DiagnosticsConfig.isUploadEnabled
+
+  private enum UploadState: Equatable {
+    case idle
+    case uploading
+    case succeeded
+    case failed
+  }
 
   var body: some View {
     ZStack {
       List {
         Section(
           footer: Text(
-            "An always-on, in-memory trace of playback, CarPlay and server activity. Flag a moment to bookmark it, then export the full trace — including any recent crash reports — to share it."
+            "An always-on, in-memory trace of playback, CarPlay and server activity. Flag a moment to bookmark it, then export the full trace — including any recent crash reports — to share it, or send it straight to Cassette support."
           )
         ) {
           Button {
@@ -48,6 +59,32 @@ struct DiagnosticsSettingsView: View {
               Label("Export diagnostics", systemImage: "square.and.arrow.up")
             }
           }
+          Button {
+            uploadToSupport()
+          } label: {
+            switch uploadState {
+            case .idle:
+              Label("Send to Cassette support", systemImage: "arrow.up.circle")
+            case .uploading:
+              Label("Sending…", systemImage: "arrow.up.circle")
+            case .succeeded:
+              Label("Sent to Cassette support", systemImage: "checkmark.circle")
+            case .failed:
+              Label("Send failed — tap to retry", systemImage: "exclamationmark.circle")
+            }
+          }
+          .disabled(uploadState == .uploading)
+        }
+
+        Section(
+          footer: Text(
+            "When on, crash and hang reports upload automatically to help fix problems. They're anonymous — no account, name or email. Turn this off to keep everything on this device."
+          )
+        ) {
+          Toggle("Automatically send crash reports", isOn: $autoUploadEnabled)
+            .onChange(of: autoUploadEnabled) { _, newValue in
+              DiagnosticsConfig.isUploadEnabled = newValue
+            }
         }
 
         Section(
@@ -155,6 +192,34 @@ struct DiagnosticsSettingsView: View {
       return "Server Mode is ON — the library shows the full catalog, not just owned tracks."
     }
     return "Everything owned is renderable — no visibility gap on this device."
+  }
+
+  /// Upload the full diagnostics export to the spine as a user-consented
+  /// `diagnostic_export` (this is the explicit share path, so consent is true).
+  /// Device fields are read here on the main actor and handed to the uploader.
+  private func uploadToSupport() {
+    guard uploadState != .uploading,
+          let payload = LogData.collectInformation(amperfyData: AmperKit.shared).asJSONData()
+    else { return }
+    uploadState = .uploading
+    let device = UIDevice.current
+    let deviceModel = device.model
+    let osVersion = device.systemVersion
+    let breadcrumbs = DiagnosticLog.shared.snapshot()
+    UISelectionFeedbackGenerator().selectionChanged()
+    Task {
+      let ok = await DiagnosticsConfig.sharedUploader.submitExport(
+        payload: payload,
+        occurredAt: Date(),
+        deviceModel: deviceModel,
+        osVersion: osVersion,
+        breadcrumbs: breadcrumbs
+      )
+      await MainActor.run {
+        uploadState = ok ? .succeeded : .failed
+        UINotificationFeedbackGenerator().notificationOccurred(ok ? .success : .error)
+      }
+    }
   }
 
   private func flagMoment() {

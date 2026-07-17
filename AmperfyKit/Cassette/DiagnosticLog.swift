@@ -18,9 +18,10 @@
 //      flushes on mark-moment, app-background and termination. The snapshot
 //      file is what pairs with a MetricKit crash report on the next launch.
 //
-//  On flush / mark / crash the buffer would also be handed to the upload seam
-//  (`DiagnosticUploader`) — but that is a no-op this phase (`DiagnosticsConfig`
-//  is off and only `NoopDiagnosticUploader` exists). See DiagnosticUploader.swift.
+//  This buffer never uploads itself. It only writes `rolling-buffer.json`; the
+//  crash drain (`HTTPDiagnosticUploader`) reads the preserved previous-session
+//  snapshot and ships it as the `rolling_trace` attachment beside a crash report.
+//  See DiagnosticUploader.swift.
 //
 
 import Foundation
@@ -47,8 +48,6 @@ public final class DiagnosticLog: @unchecked Sendable {
   private let flushDebounce: TimeInterval = 3.0
   private var pendingFlush = false
   private var flushTimerArmed = false
-
-  private let uploader: DiagnosticUploader = NoopDiagnosticUploader()
 
   public init(capacity: Int = DiagnosticLog.defaultCapacity) {
     self.capacity = max(1, capacity)
@@ -158,19 +157,14 @@ public final class DiagnosticLog: @unchecked Sendable {
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
       let data = try encoder.encode(entries)
       try data.write(to: url, options: .atomic)
-      maybeUploadLocked(data)
     } catch {
-      os_log("DiagnosticLog flush failed: %{public}@", log: log, type: .error, error.localizedDescription)
+      os_log(
+        "DiagnosticLog flush failed: %{public}@",
+        log: log,
+        type: .error,
+        error.localizedDescription
+      )
     }
-  }
-
-  /// Upload seam — OFF this phase. `DiagnosticsConfig.isUploadEnabled` is false
-  /// and `uploader` is the no-op, so this never touches the network. Phase 2
-  /// implements a real `DiagnosticUploader` and flips the flag.
-  private func maybeUploadLocked(_ payload: Data) {
-    guard DiagnosticsConfig.isUploadEnabled else { return }
-    let uploader = self.uploader
-    Task.detached { await uploader.upload(payload) }
   }
 
   // MARK: Disk locations
@@ -201,5 +195,26 @@ public final class DiagnosticLog: @unchecked Sendable {
   /// The single overwrite file holding the latest rolling-buffer snapshot.
   public static func snapshotFileURL() -> URL? {
     diagnosticsDirectory()?.appendingPathComponent("rolling-buffer.json")
+  }
+
+  /// The preserved copy of the PREVIOUS session's snapshot. The live
+  /// `rolling-buffer.json` gets overwritten seconds into the new session (the
+  /// launch breadcrumb schedules a debounced flush), so the crash drain reads
+  /// this copy — the trace that was on disk when the app died — as the
+  /// `rolling_trace` attachment.
+  public static func lastSessionSnapshotFileURL() -> URL? {
+    diagnosticsDirectory()?.appendingPathComponent("rolling-buffer.last-session.json")
+  }
+
+  /// Copy the current on-disk snapshot aside as the previous-session trace. MUST
+  /// run at launch BEFORE the first append/flush overwrites `rolling-buffer.json`,
+  /// so the copy is genuinely the pre-crash trace. No-op when there is no prior
+  /// snapshot (first ever launch).
+  public static func preserveLastSessionSnapshot() {
+    guard let source = snapshotFileURL(),
+          let destination = lastSessionSnapshotFileURL(),
+          FileManager.default.fileExists(atPath: source.path) else { return }
+    try? FileManager.default.removeItem(at: destination)
+    try? FileManager.default.copyItem(at: source, to: destination)
   }
 }

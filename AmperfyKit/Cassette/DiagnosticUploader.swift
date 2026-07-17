@@ -2,19 +2,18 @@
 //  DiagnosticUploader.swift
 //  AmperfyKit
 //
-//  Cassette fork — Diagnostics Phase 1 (upload seam, switched OFF).
+//  Cassette fork — Diagnostics Phase 2 (upload seam, switched ON).
 //
-//  The seam for a future Phase 2 backend, designed in now so enabling it is a
-//  flip, not a refactor. This phase ships ONLY the no-op implementation and a
-//  flag that defaults off. There is deliberately no network client, no endpoint
-//  URL and no POST logic here — the real uploader, the cassette.digital
-//  receiving endpoint, the R2 write and the Switchboard view are a separate
-//  Phase 2 audit + spec, and that backend does not exist yet.
+//  The seam the Phase 1 no-op reserved. The live implementation
+//  (`HTTPDiagnosticUploader`) posts to the diagnostics spine at
+//  cassette.digital; this file owns the protocol both call sites reach through,
+//  the retained no-op (for previews / non-uploading builds), and the shared
+//  configuration: the process-wide uploader instance and the opt-out master
+//  switch.
 //
-//  The contract Phase 1 delivers: everything that would be uploaded
-//  (mark-moment / background flushes / MetricKit crash reports) is already
-//  captured and snapshotted locally, so Phase 2 only has to implement
-//  `DiagnosticUploader` and turn `DiagnosticsConfig.isUploadEnabled` on.
+//  Consent model: crashes and hangs auto-upload (OPT-OUT — `isUploadEnabled`
+//  defaults ON), while a full diagnostic export is only sent when the user
+//  explicitly shares it. See HTTPDiagnosticUploader.
 //
 
 import Foundation
@@ -22,28 +21,62 @@ import Foundation
 // MARK: - DiagnosticUploader
 
 public protocol DiagnosticUploader: Sendable {
-  /// Send a serialized diagnostic payload (rolling-buffer snapshot or crash
-  /// report). Async + throwing-free so call sites stay trivial; a real
-  /// implementation handles its own retry/backoff internally.
-  func upload(_ payload: Data) async
+  /// Upload every not-yet-acknowledged MetricKit crash file on disk. Called at
+  /// launch and again whenever MetricKit delivers new payloads (both are
+  /// idempotent via the upload ledger). A real implementation handles its own
+  /// retry/backoff internally; nothing is dropped unsent.
+  func drainPendingCrashReports() async
+
+  /// Upload a user-consented full diagnostics export. Device fields are supplied
+  /// by the caller (read on the main actor). Returns whether the whole export —
+  /// report plus its attachment — was accepted.
+  func submitExport(
+    payload: Data,
+    occurredAt: Date,
+    deviceModel: String,
+    osVersion: String,
+    breadcrumbs: [DiagnosticEntry]
+  ) async -> Bool
 }
 
 // MARK: - NoopDiagnosticUploader
 
-/// The only implementation this phase. Does nothing.
+/// Retained for SwiftUI previews and any build that shouldn't touch the network.
+/// Does nothing.
 public struct NoopDiagnosticUploader: DiagnosticUploader {
   public init() {}
-  public func upload(_ payload: Data) async {
-    // Phase 2: route to cassette.digital. Intentionally empty for now.
-  }
+  public func drainPendingCrashReports() async {}
+  public func submitExport(
+    payload: Data,
+    occurredAt: Date,
+    deviceModel: String,
+    osVersion: String,
+    breadcrumbs: [DiagnosticEntry]
+  ) async
+    -> Bool { false }
 }
 
 // MARK: - DiagnosticsConfig
 
 public enum DiagnosticsConfig {
-  /// Master switch for the upload seam. OFF in Phase 1 — no network code exists
-  /// to honour it. `nonisolated(unsafe)` because this is a developer-/Phase-2-
-  /// flipped flag rather than something mutated concurrently; Phase 2 should
-  /// replace it with a real persisted setting.
-  public nonisolated(unsafe) static var isUploadEnabled = false
+  private static let uploadEnabledKey = "cassette.diagnostics.uploadEnabled"
+
+  /// The process-wide uploader both `DiagnosticLog`/`DiagnosticCrashReporter` (the
+  /// crash drain) and the Settings export action reach through. A single shared
+  /// instance so there's one URLSession and one drain gate.
+  public static let sharedUploader: DiagnosticUploader = HTTPDiagnosticUploader()
+
+  /// Master switch for diagnostics upload. OPT-OUT: absent a stored value it is
+  /// ON, so crashes/hangs auto-upload out of the box; a user can turn it off and
+  /// that choice persists.
+  public static var isUploadEnabled: Bool {
+    get {
+      let defaults = UserDefaults.standard
+      guard defaults.object(forKey: uploadEnabledKey) != nil else { return true }
+      return defaults.bool(forKey: uploadEnabledKey)
+    }
+    set {
+      UserDefaults.standard.set(newValue, forKey: uploadEnabledKey)
+    }
+  }
 }

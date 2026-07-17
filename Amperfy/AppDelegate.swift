@@ -290,8 +290,23 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // Cassette — Diagnostics Phase 1: start on-device crash capture (MetricKit
     // delivers crash/hang reports on the NEXT launch) and open the rolling
     // diagnostic trace with a launch breadcrumb.
+    //
+    // Preserve the previous session's rolling-buffer snapshot BEFORE the launch
+    // breadcrumb schedules a flush that would overwrite it — the crash drain
+    // ships that pre-crash trace as the crash report's rolling_trace attachment.
+    DiagnosticLog.preserveLastSessionSnapshot()
     DiagnosticCrashReporter.shared.start()
     DiagnosticLog.shared.log(.lifecycle, "app launching")
+
+    // Cassette — Diagnostics Phase 2: drain any not-yet-acknowledged MetricKit
+    // crash reports to the spine (opt-out; user can disable). MetricKit is
+    // post-mortem, so uploading on the next launch — rather than an unsafe
+    // crash-time handler — is the correct and only safe moment. Fire-and-forget.
+    if DiagnosticsConfig.isUploadEnabled {
+      Task.detached(priority: .utility) {
+        await DiagnosticsConfig.sharedUploader.drainPendingCrashReports()
+      }
+    }
 
     // cassette Patch 046 (Phase A): default tint cascade is ink, not orange.
     // Orange survives only on three pinned surfaces (popup + mini scrubbers,
