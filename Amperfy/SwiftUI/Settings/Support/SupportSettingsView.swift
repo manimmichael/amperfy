@@ -20,72 +20,133 @@
 //
 
 import AmperfyKit
-import MessageUI
 import SwiftUI
+import UIKit
 
 // MARK: - SupportSettingsView
 
+/// Cassette Diagnostics Feature B/C: the founder-facing "Report a problem"
+/// outlet. Replaces upstream Amperfy's MFMailCompose "Send feedback" (which
+/// depended on a configured Mail account and shipped a JSON attachment nobody
+/// read) with an IN-APP form that POSTs `report_type=user_feedback` straight to
+/// the diagnostics spine — landing next to crashes/hangs in /admin/diagnostics
+/// with a "User message" panel. Manual feedback is user-initiated, so it is sent
+/// regardless of the diagnostics opt-out. An optional key-window screenshot rides
+/// along as an `image/png` attachment.
 struct SupportSettingsView: View {
-  let splitPercentage = 0.15
-
-  // Cassette support address (was upstream Amperfy's `amperfy@familie-zimba.de`).
-  static let cassetteSupportEmail = "hello@cassette.digital"
-
   @State
-  var result: Result<MFMailComposeResult, Error>? = nil
+  private var feedbackText = ""
   @State
-  var isShowingMailView = false
+  private var includeScreenshot = true
+  @State
+  private var sendState: SendState = .idle
+
+  private enum SendState: Equatable {
+    case idle
+    case sending
+    case succeeded
+    case failed
+  }
+
+  private var canSend: Bool {
+    sendState != .sending &&
+      !feedbackText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
 
   var body: some View {
-    ZStack {
-      SettingsList {
-        SettingsSection {
-          // cassette §A1: upstream Amperfy GitHub-issues row dropped (no public
-          // Cassette repo to point listeners at). Feedback-by-mail routes to the
-          // Cassette address below.
-          SettingsButtonRow(
-            title: "Send feedback",
-            splitPercentage: splitPercentage
-          ) {
-            if MFMailComposeViewController.canSendMail() {
-              isShowingMailView.toggle()
-            } else {
-              appDelegate.eventLogger.info(
-                topic: "Email Info",
-                statusCode: .emailError,
-                message: "Email is not configured in settings app or Cassette is not able to send an email.",
-                displayPopup: true
-              )
+    SettingsList {
+      SettingsSection(
+        content: {
+          // Multi-line free text. `.vertical` axis lets the field grow with the
+          // message; the placeholder doubles as the prompt.
+          TextField(
+            "Describe the problem, or share any feedback…",
+            text: $feedbackText,
+            axis: .vertical
+          )
+          .lineLimit(4 ... 10)
+          .disabled(sendState == .sending)
+
+          Toggle("Include a screenshot of the app", isOn: $includeScreenshot)
+            .disabled(sendState == .sending)
+
+          Button {
+            send()
+          } label: {
+            switch sendState {
+            case .idle:
+              Label("Send to Cassette", systemImage: "paperplane")
+            case .sending:
+              Label("Sending…", systemImage: "paperplane")
+            case .succeeded:
+              Label("Sent — thank you", systemImage: "checkmark.circle")
+            case .failed:
+              Label("Send failed — tap to retry", systemImage: "exclamationmark.circle")
             }
           }
-        }
-        // cassette §G: Event Log moved to the Advanced screen.
-      }
-      .sheet(isPresented: $isShowingMailView) {
-        MailView(
-          result: $result,
-          subject: "Cassette support",
-          messageBody: """
-          \nPlease describe your issue.
-          \nFeedback is always welcome too.
-          \n
-          \n
-          --- Please don't remove the attachment ---
-          """,
-          recipients: [Self.cassetteSupportEmail],
-          attachments: [MailAttachment(
-            data: LogData.collectInformation(amperfyData: AmperKit.shared).asJSONData(),
-            mimeType: "application/json",
-            fileName: "CassetteLog.json"
-          )]
-        )
-      }
+          .disabled(!canSend)
+        },
+        footer: "Sends your message straight to Cassette. A screenshot, if included, helps us see what you saw. No Mail account needed."
+      )
+      // cassette §G: Event Log moved to the Advanced screen.
     }
     .navigationTitle("Support")
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       appDelegate.userStatistics.visited(.settingsSupport)
     }
+  }
+
+  // MARK: Send
+
+  private func send() {
+    guard canSend else { return }
+    let message = feedbackText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // Capture on the main actor, BEFORE flipping to `.sending`, so the snapshot is
+    // of the app as the user left it. Device fields + breadcrumbs are read here
+    // too, then handed to the off-main-actor uploader.
+    let screenshot = includeScreenshot ? Self.captureKeyWindowPNG() : nil
+    let device = UIDevice.current
+    let deviceModel = device.model
+    let osVersion = device.systemVersion
+    let breadcrumbs = DiagnosticLog.shared.snapshot()
+
+    sendState = .sending
+    UISelectionFeedbackGenerator().selectionChanged()
+
+    Task {
+      let ok = await DiagnosticsConfig.sharedUploader.submitFeedback(
+        message: message,
+        screenshot: screenshot,
+        deviceModel: deviceModel,
+        osVersion: osVersion,
+        breadcrumbs: breadcrumbs
+      )
+      await MainActor.run {
+        sendState = ok ? .succeeded : .failed
+        if ok { feedbackText = "" }
+        UINotificationFeedbackGenerator().notificationOccurred(ok ? .success : .error)
+      }
+    }
+  }
+
+  /// Snapshot the current key window as PNG. Feature C: the manual-feedback
+  /// screenshot. Uses `drawHierarchy(afterScreenUpdates: false)` so it captures
+  /// what's already on screen without forcing a re-render. Returns nil if no key
+  /// window is resolvable (never fatal — feedback still sends text-only).
+  @MainActor
+  private static func captureKeyWindowPNG() -> Data? {
+    let window = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap(\.windows)
+      .first { $0.isKeyWindow }
+    guard let window else { return nil }
+    let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+    let image = renderer.image { _ in
+      window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+    }
+    return image.pngData()
   }
 }
 

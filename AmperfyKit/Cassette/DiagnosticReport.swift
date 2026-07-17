@@ -117,7 +117,7 @@ public struct DiagnosticConsent: Encodable {
 
 /// Declares a big blob the client will PUT out-of-band. The server responds with
 /// a presigned URL per declared slot. Slots: `rolling_trace`, `metrickit_crash`,
-/// `metrickit_metrics`, `full_export`.
+/// `metrickit_metrics`, `full_export`, `screenshot`.
 public struct DiagnosticAttachmentDeclaration: Encodable {
   public var slot: String
   public var kind: String

@@ -234,6 +234,70 @@ public final class HTTPDiagnosticUploader: DiagnosticUploader, @unchecked Sendab
     )
   }
 
+  // MARK: Manual feedback
+
+  /// Upload a MANUAL user-feedback report. User-initiated → ALWAYS sent, with no
+  /// `isUploadEnabled` gate (that flag only governs the AUTO crash drain). The
+  /// free-text `message` rides inline as `user_message`; an optional key-window
+  /// PNG rides as a `screenshot` attachment (content_type image/png) via the same
+  /// presign two-step. Device fields are read by the caller on the main actor.
+  public func submitFeedback(
+    message: String,
+    screenshot: Data?,
+    deviceModel: String,
+    osVersion: String,
+    breadcrumbs: [DiagnosticEntry]
+  ) async
+    -> Bool {
+    let iso = ISO8601DateFormatter()
+    var report = DiagnosticReport(
+      idempotencyKey: UUID().uuidString,
+      reportType: "user_feedback",
+      appVersion: Self.bundleShortVersion,
+      installId: DiagnosticInstallIdentity.installId,
+      occurredAt: iso.string(from: Date())
+    )
+    report.appBuild = Self.bundleVersion
+    report.osName = "iOS"
+    report.osVersion = osVersion
+    report.deviceModel = deviceModel
+    report.deviceId = CassetteSyncAPI.deviceId
+    report.severity = "info"
+    report.title = "User feedback"
+    report.userMessage = message
+    report.context = DiagnosticReport.breadcrumbContext(breadcrumbs)
+    report.consent = DiagnosticConsent(
+      userConsented: true, // manual, user-initiated
+      uploadEnabled: DiagnosticsConfig.isUploadEnabled,
+      containsPii: true, // free text + optional screenshot may carry PII
+      redacted: false
+    )
+
+    var attachmentBytes: [String: Data] = [:]
+    var contentTypes: [String: String] = [:]
+    if let screenshot, !screenshot.isEmpty {
+      report.attachments = [
+        DiagnosticAttachmentDeclaration(
+          slot: "screenshot",
+          kind: "screenshot",
+          contentType: "image/png",
+          byteSize: screenshot.count
+        ),
+      ]
+      attachmentBytes["screenshot"] = screenshot
+      contentTypes["screenshot"] = "image/png"
+    }
+
+    guard let response = await postReport(report) else { return false }
+    return await uploadAttachments(
+      response.attachmentUploads,
+      bytes: attachmentBytes,
+      contentTypes: contentTypes,
+      reportId: response.id,
+      idempotencyKey: report.idempotencyKey
+    )
+  }
+
   // MARK: Networking
 
   private func postReport(_ report: DiagnosticReport) async -> DiagnosticReportResponse? {
@@ -276,9 +340,14 @@ public final class HTTPDiagnosticUploader: DiagnosticUploader, @unchecked Sendab
 
   /// PUT each presigned attachment, then acknowledge it. Returns true only if
   /// every upload the server asked for completed (or it asked for none).
+  /// `contentTypes` overrides the PUT `Content-Type` per slot (defaulting to
+  /// `application/json`) so a `screenshot` slot PUTs as `image/png` — the header
+  /// must match the content_type the server presigned the URL with, or R2 rejects
+  /// the signature.
   private func uploadAttachments(
     _ uploads: [DiagnosticAttachmentUpload]?,
     bytes: [String: Data],
+    contentTypes: [String: String] = [:],
     reportId: String,
     idempotencyKey: String
   ) async
@@ -289,7 +358,9 @@ public final class HTTPDiagnosticUploader: DiagnosticUploader, @unchecked Sendab
         // Server asked for a slot we didn't declare bytes for — nothing to send.
         continue
       }
-      guard await putAttachment(data, to: upload.presignedUrl) else { return false }
+      let contentType = contentTypes[upload.slot] ?? "application/json"
+      guard await putAttachment(data, contentType: contentType, to: upload.presignedUrl)
+      else { return false }
       guard await completeAttachment(
         reportId: reportId,
         idempotencyKey: idempotencyKey,
@@ -300,12 +371,16 @@ public final class HTTPDiagnosticUploader: DiagnosticUploader, @unchecked Sendab
     return true
   }
 
-  private func putAttachment(_ bytes: Data, to presignedUrl: String) async -> Bool {
+  private func putAttachment(
+    _ bytes: Data,
+    contentType: String,
+    to presignedUrl: String
+  ) async -> Bool {
     guard let url = URL(string: presignedUrl) else { return false }
     var request = URLRequest(url: url)
     request.httpMethod = "PUT"
     request.timeoutInterval = 60
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue(contentType, forHTTPHeaderField: "Content-Type")
     request.httpBody = bytes
     do {
       let (_, response) = try await session.data(for: request)

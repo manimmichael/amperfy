@@ -256,8 +256,15 @@ public struct CassetteAccount: Sendable, Decodable {
   /// decode → "high" for older deploys that don't emit it.
   public let downloadQuality: String
 
+  /// Cassette Diagnostics: account-level consent that gates AUTO diagnostic
+  /// reports (crash / hang / unhandled_error). Rides the same cross-device rail
+  /// as themeId/iconId — the web/dashboard owns it, the phone mirrors it. OPT-OUT:
+  /// optional decode → true for older deploys / anonymous, so uploads stay
+  /// always-on out of the box. Manual `user_feedback` is unaffected by this.
+  public let diagnosticsConsent: Bool
+
   enum CodingKeys: String, CodingKey {
-    case email, name, serverMode, sidecarPort, downloadQuality
+    case email, name, serverMode, sidecarPort, downloadQuality, diagnosticsConsent
   }
 
   public init(from decoder: Decoder) throws {
@@ -267,6 +274,8 @@ public struct CassetteAccount: Sendable, Decodable {
     self.serverMode = try c.decodeIfPresent(Bool.self, forKey: .serverMode) ?? false
     self.sidecarPort = try c.decodeIfPresent(Int.self, forKey: .sidecarPort)
     self.downloadQuality = try c.decodeIfPresent(String.self, forKey: .downloadQuality) ?? "high"
+    self.diagnosticsConsent = try c
+      .decodeIfPresent(Bool.self, forKey: .diagnosticsConsent) ?? true
   }
 }
 
@@ -367,6 +376,12 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     // download URL builder honors it synchronously (web-authoritative — the
     // Devices page owns this; the phone reads it here).
     defaults.set(account.downloadQuality, forKey: downloadQualityKey)
+
+    // Cassette Diagnostics: mirror the account-level diagnostics consent onto the
+    // device (same cross-device rail as theme/icon). This gates AUTO reports only;
+    // the effective gate is (local toggle AND this synced consent). Manual
+    // user_feedback is never gated. Web/dashboard is authoritative.
+    DiagnosticsConfig.syncedConsent = account.diagnosticsConsent
   }
 
   // MARK: Device identity
@@ -462,6 +477,23 @@ public final class CassetteSyncAPI: @unchecked Sendable {
       method: "PATCH",
       path: "/api/account/download-quality",
       json: ["download_quality_tier": tier]
+    )
+  }
+
+  /// Cassette Diagnostics: push the phone's diagnostics opt-out UP to the account
+  /// (the hub), so the choice rides the same cross-device rail as theme/icon and
+  /// the next `/api/sync/account` fetch reflects it instead of clobbering it. Also
+  /// updates the local synced-consent mirror so the gate applies immediately.
+  /// Signed-in only: with no bearer token the client is anonymous (always-on), so
+  /// there's nothing to sync and the device-local toggle governs alone.
+  /// Fire-and-forget from the Diagnostics toggle.
+  public func setDiagnosticsConsent(_ enabled: Bool) async throws {
+    guard Self.bearerToken != nil else { return }
+    DiagnosticsConfig.syncedConsent = enabled
+    _ = try await send(
+      method: "PATCH",
+      path: "/api/account/diagnostics",
+      json: ["diagnostics_consent": enabled]
     )
   }
 

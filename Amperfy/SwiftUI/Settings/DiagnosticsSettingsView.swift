@@ -83,7 +83,12 @@ struct DiagnosticsSettingsView: View {
         ) {
           Toggle("Automatically send crash reports", isOn: $autoUploadEnabled)
             .onChange(of: autoUploadEnabled) { _, newValue in
+              // Set the device-local toggle immediately, then sync the choice UP
+              // to the account so it rides the same cross-device rail as
+              // theme/icon (signed-in only; anonymous stays local). Fire-and-
+              // forget — the local toggle already governs this device.
               DiagnosticsConfig.isUploadEnabled = newValue
+              Task { try? await CassetteSyncAPI.shared.setDiagnosticsConsent(newValue) }
             }
         }
 
