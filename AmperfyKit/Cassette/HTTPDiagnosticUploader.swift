@@ -31,9 +31,12 @@ import os.log
 // MARK: - HTTPDiagnosticUploader
 
 public final class HTTPDiagnosticUploader: DiagnosticUploader, @unchecked Sendable {
-  // Inlined on purpose: CassetteSyncAPI.apiBase is private, so we do not (and
-  // cannot) reference it here. Same production host, kept in sync by hand.
-  private static let apiBase = "https://cassette.digital"
+  // The CANONICAL host. `cassette.digital` 307-redirects to `www.` — and on a
+  // redirect URLSession hands the delegate a `newRequest` with NO httpBody, so a
+  // POST re-issued to `www.` arrives body-less and the spine rejects it (every
+  // iOS report silently failed this way). Posting straight to `www.` avoids the
+  // redirect entirely, matching the Android client (Cassette.BASE_URL) + the web.
+  private static let apiBase = "https://www.cassette.digital"
 
   private let log = OSLog(subsystem: "Amperfy", category: "HTTPDiagnosticUploader")
 
