@@ -814,17 +814,30 @@ public final class IntentExecutor {
           expectedBytes: appliedOverrideCoverSize(forAlbumKey: job.albumKey)
         )
 
+      // Same reasoning as pickMissingLocally, for the artist's face: a LOCALLY broken
+      // artist image (a shared row, or missing bytes) must be repairable without the
+      // catalog having changed. Costs one main-context fetch per album that carries
+      // an artist image.
+      let artistImageBroken = job.artistImageUrl != nil
+        && !hasHealthyArtistImage(subsonicIds: job.subsonicIds)
+
       let versionChanged = stored != job.contentVersion
       guard versionChanged || mayPullCover || pickChanged || pickMissingLocally
+        || artistImageBroken
       else { continue }
       let force = stored != nil // first-run materializes once (no force needed)
 
-      if versionChanged, let imageUrl = job.artistImageUrl {
+      if versionChanged || artistImageBroken, let imageUrl = job.artistImageUrl {
+        if artistImageBroken, !versionChanged {
+          print("Cassette poll: repairing artist image - '\(job.albumKey)'")
+        }
         await materializeArtistImage(
           imageUrl: imageUrl,
           subsonicIds: job.subsonicIds,
           accountInfo: accountInfo,
-          force: force
+          // A broken row must be replaced even though the catalog is unchanged;
+          // the idempotent gate inside would otherwise keep the poisoned file.
+          force: force || artistImageBroken
         )
       }
       // Album cover: adopt the user's OWN pick (an override) onto the local library
@@ -1041,6 +1054,51 @@ public final class IntentExecutor {
       valid = checked > 0
     }
     return valid
+  }
+
+  /// Whether every ALBUM ARTIST behind these tracks has a usable image of its OWN.
+  ///
+  /// "Usable" means an artwork row this artist does not SHARE. A shared row is how a
+  /// featured artist ends up wearing the album artist's face (Laufey rendering Bon
+  /// Iver): one Artwork object attached to two artists, so whichever the surface
+  /// reads renders the same picture. That is a local identity fault — it is wrong no
+  /// matter where the bytes came from — and `materializeArtistImage` already knows
+  /// how to repair it by minting the artist its own row.
+  ///
+  /// The repair just could never RUN: it sits behind `versionChanged`, and an artist
+  /// whose catalog entry has not moved in months never trips that, so a device
+  /// carrying a shared row kept the wrong face indefinitely. Exactly the same shape
+  /// as the pick that could not re-adopt — a fix gated on "did the SOURCE change?"
+  /// cannot repair state that is broken LOCALLY.
+  ///
+  /// Deliberately checks only ALBUM artists (the entity the cloud keys the image on
+  /// and the one materializeArtistImage targets). Reporting a song-only featured
+  /// artist as broken would ask for a repair that never comes and re-trigger on
+  /// every poll forever.
+  private func hasHealthyArtistImage(subsonicIds: [String]) -> Bool {
+    guard !subsonicIds.isEmpty else { return true }
+    let context = AmperKit.shared.storage.main.context
+    var healthy = true
+    context.performAndWait {
+      let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
+      request.predicate = NSPredicate(format: "id IN %@", subsonicIds)
+      request.returnsObjectsAsFaults = false
+      let songMOs = (try? context.fetch(request)) ?? []
+
+      var seenArtists = Set<NSManagedObjectID>()
+      for songMO in songMOs {
+        guard let artist = Song(managedObject: songMO).album?.artist else { continue }
+        guard seenArtists.insert(artist.managedObject.objectID).inserted else { continue }
+        guard let artwork = artist.artwork else { healthy = false; return }
+        // Shared with another owner → poisoned, whoever it currently renders as.
+        if (artwork.managedObject.owners?.count ?? 0) > 1 { healthy = false; return }
+        guard artwork.status == .CustomImage,
+              let path = artwork.imagePath,
+              FileManager.default.fileExists(atPath: path)
+        else { healthy = false; return }
+      }
+    }
+    return healthy
   }
 
   private static let appliedOverrideCoverSizesKey = "cassette.appliedOverrideCoverSizes"
