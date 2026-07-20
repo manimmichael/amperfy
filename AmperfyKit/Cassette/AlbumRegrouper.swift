@@ -43,6 +43,28 @@ import CoreData
 import Foundation
 import os.log
 
+/// Artwork `type` for a Cassette-provisioned ALBUM cover.
+///
+/// An owned album's artwork deliberately carries its owned SONG's Subsonic
+/// cover-art id, because that is what makes the un-gated getCoverArt byte path
+/// serve the folder cover.* from the LAN Player. But `CacheFileManager
+/// .createRelPath(for:account:)` derives the cache path from that id, so with an
+/// empty type the album and the song resolve to the SAME file —
+/// `artworks/<id>.png` — and two rows write over one file: rendering the song
+/// re-fetched the folder cover straight over a cover the user had PICKED (art
+/// went back to the old one "only temporarily" after every pick).
+///
+/// A non-empty type nests the album under its own path space —
+/// `artworks/album/<id>.png` — while leaving the id (and therefore the fetch)
+/// untouched. Mirrors the "artist" type already used for artist images.
+/// SubsonicArtworkDownloadDelegate.prepareDownload only rejects the retired
+/// "cassette-album" type, so this fetches normally.
+///
+/// Every site that mints an album artwork identity MUST use this, or the two
+/// sites disagree and the collision comes back for whichever albums the other
+/// one touched.
+let cassetteAlbumArtworkType = "album"
+
 public final class AlbumRegrouper {
   public struct Summary: Sendable {
     public var movedSongs = 0
@@ -73,9 +95,15 @@ public final class AlbumRegrouper {
   /// per-track grouping from the device-inventory response, keyed by Subsonic
   /// track id (which equals SongMO.id on this device).
   @discardableResult
+  /// - Parameter pickedTrackIds: Subsonic track ids of albums the cloud reports as
+  ///   carrying a USER-PICKED cover. Those albums are left completely alone here — a
+  ///   pick is the user's choice and must never be re-pointed at the folder cover.
+  ///   Empty (the default) means "unknown", which is only safe before any manifest
+  ///   pass has run; callers that have the set should always pass it.
   public func regroup(
     items: [CassetteDeviceGroupingItem],
-    accountInfo: AccountInfo
+    accountInfo: AccountInfo,
+    pickedTrackIds: Set<String> = []
   )
     -> Summary {
     var summary = Summary()
@@ -197,11 +225,38 @@ public final class AlbumRegrouper {
           coverProvisioned.insert(album.id) // already has a good local cover
           return
         }
+        // A cover the USER PICKED is theirs. This runs on every regroup and knows
+        // nothing about the cloud manifest, so it consults the pick set the manifest
+        // pass published — otherwise this is a second, unguarded path that discards a
+        // pick (clearing relFilePath) exactly like the per-poll engine used to.
+        if !pickedTrackIds.isEmpty,
+           album.songs.contains(where: { pickedTrackIds.contains($0.id) }) {
+          coverProvisioned.insert(album.id)
+          return
+        }
         guard let nativeCover, !nativeCover.id.isEmpty else { return } // try a later song
         let aw = album.artwork ?? library.createArtwork(account: account)
-        let native = ArtworkRemoteInfo(id: nativeCover.id, type: nativeCover.type)
-        if aw.remoteInfo != native { aw.remoteInfo = native }
-        if aw.status != .CustomImage { aw.status = .NotChecked }
+        // PRESERVE a usable identity. An album legitimately carries its own
+        // al-<album>_<hex> while its songs carry al-<album>_0; replacing one with the
+        // other re-points every album and forces a full re-download (the library-wide
+        // cover flash). Only mint a new identity when the current one cannot be
+        // fetched at all — empty, or the retired "cassette-album" type.
+        let identityUnusable = aw.remoteInfo.id.isEmpty || isSyntheticShell
+        if identityUnusable {
+          // Keep the song's cover-art ID (that is what fetches the folder cover)
+          // but give the album its OWN path space — see cassetteAlbumArtworkType.
+          let native = ArtworkRemoteInfo(id: nativeCover.id, type: cassetteAlbumArtworkType)
+          if aw.remoteInfo != native { aw.remoteInfo = native }
+        }
+        // Reaching here means the album has NO valid on-disk cover (a good one already
+        // early-returned above), so re-arm it for re-fetch and NULL any stale path.
+        // The old `if aw.status != .CustomImage` was a no-op on exactly the
+        // materialized-wrong .CustomImage shell this function exists to reset, and it
+        // never cleared relFilePath — so such a shell served a dead/wrong file forever,
+        // contradicting this function's own contract. .FetchError is left as-is (the
+        // download manager already retries those) to avoid pointless status churn.
+        if aw.status != .FetchError { aw.status = .NotChecked }
+        if aw.relFilePath != nil { aw.relFilePath = nil }
         album.artwork = aw
         coverProvisioned.insert(album.id)
         provisionedCount += 1

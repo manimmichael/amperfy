@@ -335,9 +335,39 @@ actor DownloadManager: NSObject, DownloadManageable {
   func _resetFailedDownloads() async {
     let failedRequests = await requestManager.getAndResetFailedDownloads()
     guard isAllowedToTriggerDownload else { return }
-    for failedRequest in failedRequests {
+    for failedRequest in await validated(failedRequests, context: "failed") {
       addDownloadTaskOperation(downloadRequest: failedRequest)
     }
+  }
+
+  /// Re-apply the enqueue-time rule to requests being dispatched from STORAGE rather
+  /// than from a fresh `download(object:)` call.
+  ///
+  /// `preDownloadIsValidCheck` used to run only on the enqueue path, but the queue is
+  /// persisted: both the launch restore and the failed-download retry pull rows that
+  /// were validated against state which has since moved on. An artwork request created
+  /// while its row was empty therefore kept re-fetching after the row had been filled,
+  /// overwriting the cached image — including a cover the user had picked — on every
+  /// launch, forever, because the request is never cleared.
+  private func validated(
+    _ requests: [DownloadRequest],
+    context: String
+  ) async
+    -> [DownloadRequest] {
+    guard let isValidCheck = preDownloadIsValidCheck, !requests.isEmpty else { return requests }
+    let stillValid = Set(await isValidCheck(requests.map(\.info)))
+    let kept = requests.filter { stillValid.contains($0.info) }
+    if kept.count != requests.count {
+      os_log(
+        "Download Manager (%s): skipped %d stale %s request(s)",
+        log: self.log,
+        type: .info,
+        self.name,
+        requests.count - kept.count,
+        context
+      )
+    }
+    return kept
   }
 
   func storageExceedsCacheLimit() -> Bool {
@@ -347,7 +377,10 @@ actor DownloadManager: NSObject, DownloadManageable {
 
   private func setupDownloadQueue() async {
     guard isAllowedToTriggerDownload else { return }
-    let downloadRequests = await requestManager.getRequestedDownloads()
+    let downloadRequests = await validated(
+      await requestManager.getRequestedDownloads(),
+      context: "queued"
+    )
     for downloadRequest in downloadRequests {
       addDownloadTaskOperation(downloadRequest: downloadRequest)
     }

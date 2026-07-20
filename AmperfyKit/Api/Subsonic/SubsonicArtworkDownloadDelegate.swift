@@ -104,6 +104,17 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
         managedObject: asyncCompanion.context
           .object(with: downloadInfo.objectId) as! ArtworkMO
       )
+      // DIAGNOSTIC: this download is about to REPLACE bytes that are already cached
+      // for this artwork. For an album row that holds a user's picked cover, that is
+      // precisely the overwrite that makes a pick "only temporary" — and it is
+      // invisible from the poll's side, which only ever sees a file that exists.
+      // Prints the identity so the culprit can be matched against the pick log.
+      if artwork.status == .CustomImage, artwork.relFilePath != nil {
+        print(
+          "Cassette artwork: OVERWRITING cached cover - id '\(artwork.remoteInfo.id)' "
+            + "type '\(artwork.remoteInfo.type)'"
+        )
+      }
       return artwork.remoteInfo
     }
     guard let artworkRemoteInfo else { return }
