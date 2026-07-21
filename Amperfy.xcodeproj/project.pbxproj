@@ -763,6 +763,8 @@
 		504D26262D4168DE003FDEB3 /* Amperfy v41.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v41.xcdatamodel"; sourceTree = "<group>"; };
 		5050C50130000001000110A2 /* Amperfy v50.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v50.xcdatamodel"; sourceTree = "<group>"; };
 		CA55E0E0000000510000CAFE /* Amperfy v51.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v51.xcdatamodel"; sourceTree = "<group>"; };
+		CA55E0E0000000540000CAFE /* Amperfy v54.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v54.xcdatamodel"; sourceTree = "<group>"; };
+		CA55E0E0000000530000CAFE /* Amperfy v53.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v53.xcdatamodel"; sourceTree = "<group>"; };
 		CA55E0E0000000520000CAFE /* Amperfy v52.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v52.xcdatamodel"; sourceTree = "<group>"; };
 		505362D02C23682500846C53 /* AlbumsCollectionVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumsCollectionVC.swift; sourceTree = "<group>"; };
 		505362D22C2425C200846C53 /* AlbumsCommonVCInteractions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumsCommonVCInteractions.swift; sourceTree = "<group>"; };
@@ -3643,6 +3645,8 @@
 		500BB49521CAAA2700D367CF /* Amperfy.xcdatamodeld */ = {
 			isa = XCVersionGroup;
 			children = (
+				CA55E0E0000000540000CAFE /* Amperfy v54.xcdatamodel */,
+				CA55E0E0000000530000CAFE /* Amperfy v53.xcdatamodel */,
 				CA55E0E0000000520000CAFE /* Amperfy v52.xcdatamodel */,
 				CA55E0E0000000510000CAFE /* Amperfy v51.xcdatamodel */,
 				5050C50130000001000110A2 /* Amperfy v50.xcdatamodel */,
@@ -3696,7 +3700,7 @@
 				506B3A3823B4539D00E31F21 /* Amperfy v2.xcdatamodel */,
 				500BB49621CAAA2700D367CF /* Amperfy.xcdatamodel */,
 			);
-			currentVersion = CA55E0E0000000520000CAFE /* Amperfy v52.xcdatamodel */;
+			currentVersion = CA55E0E0000000540000CAFE /* Amperfy v54.xcdatamodel */;
 			path = Amperfy.xcdatamodeld;
 			sourceTree = "<group>";
 			versionGroupType = wrapper.xcdatamodel;
