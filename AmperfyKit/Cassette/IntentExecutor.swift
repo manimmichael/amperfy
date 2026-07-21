@@ -61,7 +61,6 @@ public final class IntentExecutor {
   /// any album: artwork IDENTITY cannot identify a pick (picks are materialized onto the
   /// album's existing song-keyed cover-art id), so the manifest flag is the only
   /// trustworthy signal — and getting this wrong overwrites a cover the user chose.
-  private var overrideTrackIds = Set<String>()
   /// Whether the LAST completed poll actually did something (executed an intent,
   /// refreshed artwork, or removed tracks). Drives the poll cadence: polling every
   /// 30s forever is a battery cost paid for nothing once a library has settled.
@@ -175,11 +174,9 @@ public final class IntentExecutor {
     if let accountInfo = AmperKit.shared.storage.settings.accounts.active {
       // Collision heal BEFORE the manifest pass: it clears the cached path of any
       // album still sharing a file with its song, which is exactly the signal the
-      // manifest pass reads (hasValidCoverOnDisk) to decide a pick needs re-adopting.
       // Run after it instead and a picked album would sit path-less for a whole poll.
       await healAlbumArtworkPathCollisionIfNeeded()
       // Must run BEFORE the manifest pass below, which is what reads these stamps.
-      healPickStampsIfNeeded()
       // DIAGNOSTIC: `.updateOncePerSession` makes the artwork queue re-download EVERY
       // rendered artwork once per launch regardless of it already being cached, which
       // would overwrite picks on every cold start; `.onlyOnce` leaves cached rows
@@ -294,8 +291,7 @@ public final class IntentExecutor {
     let context = AmperKit.shared.storage.main.context
     let summary = AlbumRegrouper(context: context).regroup(
       items: response.grouping,
-      accountInfo: accountInfo,
-      pickedTrackIds: overrideTrackIds
+      accountInfo: accountInfo
     )
 
     if AmperKit.shared.storage.settings.app.appliedGroupingModelVersion
@@ -393,7 +389,6 @@ public final class IntentExecutor {
     // closure can capture. Empty on the very first poll of a launch (the manifest has
     // not been read yet), which is why handlePendingIntents runs the manifest pass
     // BEFORE this one.
-    let pickedTrackIds = overrideTrackIds
     // Enumerate + gate OFF the main thread, on a background context.
     let artworkIDs: [NSManagedObjectID]
     do {
@@ -446,16 +441,11 @@ public final class IntentExecutor {
             continue
           }
 
-          // 2b. USER PICK. The cloud says this album carries an override, so its bytes
-          //     belong to the user's choice, not the folder. Artwork identity cannot
-          //     detect this (a pick is materialized onto the album's existing
-          //     song-keyed cover-art id), so the manifest flag is the only honest
-          //     signal — and re-pointing here would silently replace their pick with
-          //     the folder cover, which is exactly what went wrong before.
-          if !pickedTrackIds.isEmpty,
-             album.songs.contains(where: { pickedTrackIds.contains($0.id) }) {
-            continue
-          }
+          // NOTE: picked albums are deliberately NOT skipped any more. This used to
+          // exclude them so the folder cover could not replace a pick — correct while
+          // a pick existed only in the cloud. The hub now writes the pick INTO
+          // cover.jpg, so the folder cover IS the pick, and skipping these albums
+          // would exclude them from the only path that can deliver it.
 
           // 3. The native folder-cover key: an owned song's Subsonic id with an EMPTY
           //    type — exactly what the regroup provisions and what getCoverArt serves
@@ -717,7 +707,6 @@ public final class IntentExecutor {
     // pick. Deliberately not a name key — the album-name match here is deliberately
     // tolerant of catalog-vs-local drift ("Abbey Road" vs "Abbey Road (Remastered)"),
     // and re-deriving a stricter key downstream would silently stop protecting picks.
-    overrideTrackIds = Set(jobs.filter { $0.coverIsOverride }.flatMap { $0.subsonicIds })
     hasReadManifestThisLaunch = true
     guard !jobs.isEmpty else { return }
 
@@ -731,7 +720,6 @@ public final class IntentExecutor {
     var adoptedWithoutPull = 0
     // Pick adoption is network work too — bound it like the folder pulls, so a
     // library full of picks cannot fire dozens of serial downloads on one launch.
-    var adoptedPicks = 0
     // Evaluated ONCE: the loop below writes both maps this decision reads.
     let freshInstall = isFreshCoverInstall
     // Forced folder-cover pulls go over the LAN to the paired Mac. Off-LAN, each one
@@ -744,13 +732,18 @@ public final class IntentExecutor {
       if appliedThisPass.contains(job.albumKey) { continue }
       let stored = appliedArtworkVersion(forAlbumKey: job.albumKey)
 
-      // The album's FOLDER cover bytes changed on the Mac. This is the only signal
-      // for a user swapping cover.jpg: no cloud URL moves, so content_version below
+      // The album's FOLDER cover bytes changed on the Mac. This is THE signal for the
+      // art changing — a swapped cover.jpg moves no cloud URL, so content_version
       // structurally cannot see it and the phone would keep its first-fetched art
-      // forever. Gated on !coverIsOverride AND on the server having sent a version
-      // at all — while a pick is active the server sends nil, so a cover the user
-      // chose can never be taken back by the folder.
-      let localCover: String? = job.coverIsOverride ? nil : job.localCoverVersion
+      // forever.
+      //
+      // No longer gated on !coverIsOverride. That gate existed because a pick lived
+      // only in the cloud, so letting the folder win would have taken the user's
+      // cover back. A pick is now WRITTEN INTO the folder, so the folder IS the pick
+      // and this is the path by which a pick reaches the phone at all. Keeping the
+      // gate would have permanently excluded picked albums from the only mechanism
+      // that can update them.
+      let localCover: String? = job.localCoverVersion
       let storedCoverFp = appliedCoverFingerprint(forAlbumKey: job.albumKey)
       let coverBytesChanged = localCover != nil && localCover != storedCoverFp
 
@@ -775,46 +768,7 @@ public final class IntentExecutor {
       }
 
 
-      // A user PICK is gated on the pick's own URL, never on content_version: the
-      // url is cache-busted with the pick's updatedAt, so it moves exactly when the
-      // user chooses a new cover. Gating on content_version meant an album stamped
-      // long ago could never adopt a newer pick — and could sit showing the folder
-      // cover instead of the cover the user actually chose.
-      let pickChanged = job.coverIsOverride
-        && job.coverUrl != nil
-        && job.coverUrl != appliedOverrideCover(forAlbumKey: job.albumKey)
-
-      // The pick is gone (or never existed): drop any pick stamp so that re-picking
-      // the SAME cover later still reads as a change and gets adopted.
-      if !job.coverIsOverride, appliedOverrideCover(forAlbumKey: job.albumKey) != nil {
-        clearAppliedOverrideCover(forAlbumKey: job.albumKey)
-        // Drop the size stamp with the URL stamp, or a later re-pick of the SAME
-        // cover would be size-checked against a stale value.
-        setAppliedOverrideCoverSize(nil, forAlbumKey: job.albumKey)
-      }
-
-      // A pick whose LOCAL BYTES are gone must be re-adopted even though NOTHING in
-      // the manifest moved. This is its own term because all three signals above are
-      // structurally false in exactly that situation: contentVersion was stamped when
-      // the pick first landed, the pick URL is already recorded as applied, and the
-      // cloud deliberately sends no folder fingerprint while a pick is active. The
-      // album was therefore skipped here and the identical `!hasValidCoverOnDisk`
-      // test further down could never run — so a pick that lost its bytes (the
-      // album/song path collision overwrote them, a download failed, a cache was
-      // evicted) was lost PERMANENTLY and the folder-cover backfill then filled the
-      // gap: the founder's "updates to it are only temporary".
-      //
-      // The cloud is the authority on picks, so re-adopting is always safe; this
-      // costs one main-context fetch per OVERRIDE album (coverIsOverride
-      // short-circuits first), not per album.
-      let pickMissingLocally = job.coverIsOverride
-        && job.coverUrl != nil
-        && !hasValidCoverOnDisk(
-          subsonicIds: job.subsonicIds,
-          expectedBytes: appliedOverrideCoverSize(forAlbumKey: job.albumKey)
-        )
-
-      // Same reasoning as pickMissingLocally, for the artist's face: a LOCALLY broken
+      // A LOCALLY broken
       // artist image (a shared row, or missing bytes) must be repairable without the
       // catalog having changed. Costs one main-context fetch per album that carries
       // an artist image.
@@ -822,9 +776,7 @@ public final class IntentExecutor {
         && !hasHealthyArtistImage(subsonicIds: job.subsonicIds)
 
       let versionChanged = stored != job.contentVersion
-      guard versionChanged || mayPullCover || pickChanged || pickMissingLocally
-        || artistImageBroken
-      else { continue }
+      guard versionChanged || mayPullCover || artistImageBroken else { continue }
       let force = stored != nil // first-run materializes once (no force needed)
 
       if versionChanged || artistImageBroken, let imageUrl = job.artistImageUrl {
@@ -840,44 +792,12 @@ public final class IntentExecutor {
           force: force || artistImageBroken
         )
       }
-      // Album cover: adopt the user's OWN pick (an override) onto the local library
-      // when it changes. Gated on coverIsOverride so our catalog never overwrites
-      // their folder cover — only a cover THEY chose. Downloaded from the cloud
-      // override URL, so it doesn't depend on the LAN Player being reachable or on
-      // Navidrome noticing an in-place cover.jpg swap. (Native getCoverArt still
-      // fills a MISSING cover; this handles a CHANGED pick.)
-      let mayAdoptPick = adoptedPicks < Self.maxForcedCoverPullsPerPass
-      if mayAdoptPick, job.coverIsOverride, let coverUrl = job.coverUrl,
-         versionChanged || pickChanged || pickMissingLocally {
-        adoptedPicks += 1
-        // force when the PICK changed: the local bytes may be a folder cover that
-        // overwrote it, and the idempotent gate would otherwise refuse to replace them.
-        let writtenBytes = await materializeAlbumCover(
-          coverUrl: coverUrl,
-          subsonicIds: job.subsonicIds,
-          accountInfo: accountInfo,
-          force: true // the local bytes may be missing, or a folder cover that replaced the pick
-        )
-        if let writtenBytes {
-          setAppliedOverrideCover(coverUrl, forAlbumKey: job.albumKey)
-          // Remember HOW BIG the pick is, so the next poll can tell "the user's cover
-          // is still there" from "a file is still there".
-          setAppliedOverrideCoverSize(writtenBytes, forAlbumKey: job.albumKey)
-          // Forget the folder fingerprint we last applied. While a pick is active the
-          // server sends no folder version, so this stamp would otherwise sit frozen
-          // at its pre-pick value — and when the user later REMOVES the pick, the
-          // manifest re-emits that very same value, nothing reads as changed, and the
-          // phone shows the deleted pick forever. Clearing it makes the first
-          // post-removal manifest force exactly one folder pull.
-          clearAppliedCoverFingerprint(forAlbumKey: job.albumKey)
-          // Name the album AND why it was adopted. A pick that re-adopts on every
-          // poll (reason: bytes-missing, over and over for the same album) means
-          // something is overwriting it after we write it — the tell we would
-          // otherwise have to guess at from the user's description.
-          let reason = pickChanged ? "pick changed" : (versionChanged ? "version" : "bytes missing")
-          print("Cassette poll: adopted user pick - '\(job.albumKey)' (\(reason))")
-        }
-      }
+      // NOTE: there is deliberately NO cloud pick-adoption here any more. A cover the
+      // user picks is written into their folder cover.jpg by the hub, so it reaches
+      // this device through the folder-cover path below like any other change. The
+      // phone downloading picks straight from the cloud made it a SECOND writer to
+      // the same cache file, fighting the folder cover on every launch, and left the
+      // art depending on a live fetch to the archive that intermittently fails.
       // Folder cover changed on the Mac → re-pull it over the LAN and swap it in.
       // Stamped ONLY on confirmed success: if the Mac is unreachable we must leave
       // the fingerprint unstamped so the next poll retries, rather than recording a
@@ -1002,79 +922,23 @@ public final class IntentExecutor {
   /// Gates pick adoption on the PICK itself rather than on content_version: an album
   /// whose content_version was stamped long ago would otherwise never adopt a newer
   /// pick, and could sit forever showing the folder cover instead of the user's choice.
-  private static let appliedOverrideCoversKey = "cassette.appliedOverrideCovers"
-
-  /// Set once this install has completed a full artwork-manifest pass.
-  private static let coverSignalSeenKey = "cassette.coverSignalSeen"
-
-  /// Whether this album currently has a decodable cover file on disk. Used to notice
-  /// that a user's PICK has gone missing (cache purge, or a folder cover that replaced
-  /// it) so it can be re-materialized from their own URL rather than left as a
-  /// placeholder — or silently taken over by the folder cover.
-  /// True only when EVERY distinct local album these tracks belong to has a real
-  /// cover file. Checking one arbitrary album (the old `fetchLimit = 1`) reported
-  /// "valid" as soon as any single row was satisfied, so a sibling row still showing
-  /// the old art never re-triggered adoption and the album stayed visibly wrong.
-  /// Must stay the exact inverse of what `materializeAlbumCover` fills in.
-  private func hasValidCoverOnDisk(subsonicIds: [String], expectedBytes: Int? = nil) -> Bool {
-    guard !subsonicIds.isEmpty else { return false }
-    let context = AmperKit.shared.storage.main.context
-    var valid = false
-    context.performAndWait {
-      let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
-      request.predicate = NSPredicate(format: "id IN %@", subsonicIds)
-      request.returnsObjectsAsFaults = false
-      let songMOs = (try? context.fetch(request)) ?? []
-
-      var seenAlbums = Set<NSManagedObjectID>()
-      var checked = 0
-      for songMO in songMOs {
-        guard let album = Song(managedObject: songMO).album else { continue }
-        guard seenAlbums.insert(album.managedObject.objectID).inserted else { continue }
-        checked += 1
-        guard let artwork = album.artwork,
-              artwork.status == .CustomImage,
-              let path = artwork.imagePath,
-              FileManager.default.fileExists(atPath: path)
-        else { return } // this album is missing its cover → the bucket is not valid
-
-        // CONTENT, not just presence. A pick records the byte length we wrote; if the
-        // file is now a DIFFERENT length, something replaced the user's cover with
-        // other bytes (a getCoverArt folder cover landing on the same path is the
-        // known case). Existence alone reported "valid" and the pick was never
-        // restored — the album sat showing the wrong art indefinitely, which is the
-        // whole "it reverts and stays reverted" complaint. Byte length is a coarse
-        // fingerprint, but it is free (no decode, no hash) and a replacement cover
-        // is essentially never the exact same length.
-        if let expectedBytes {
-          let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size]) as? Int
-          guard size == expectedBytes else { return }
-        }
-      }
-      valid = checked > 0
-    }
-    return valid
-  }
-
   /// Whether every ALBUM ARTIST behind these tracks has a usable image of its OWN.
   ///
   /// "Usable" means an artwork row this artist does not SHARE. A shared row is how a
   /// featured artist ends up wearing the album artist's face (Laufey rendering Bon
   /// Iver): one Artwork object attached to two artists, so whichever the surface
-  /// reads renders the same picture. That is a local identity fault — it is wrong no
-  /// matter where the bytes came from — and `materializeArtistImage` already knows
-  /// how to repair it by minting the artist its own row.
+  /// reads renders the same picture. That is a local identity fault — wrong no matter
+  /// where the bytes came from — and `materializeArtistImage` already knows how to
+  /// repair it by minting the artist its own row.
   ///
-  /// The repair just could never RUN: it sits behind `versionChanged`, and an artist
+  /// The repair just could never RUN: it sat behind `versionChanged`, and an artist
   /// whose catalog entry has not moved in months never trips that, so a device
-  /// carrying a shared row kept the wrong face indefinitely. Exactly the same shape
-  /// as the pick that could not re-adopt — a fix gated on "did the SOURCE change?"
-  /// cannot repair state that is broken LOCALLY.
+  /// carrying a shared row kept the wrong face indefinitely. A heal gated on "did the
+  /// SOURCE change?" cannot fix state that is broken LOCALLY.
   ///
   /// Deliberately checks only ALBUM artists (the entity the cloud keys the image on
-  /// and the one materializeArtistImage targets). Reporting a song-only featured
-  /// artist as broken would ask for a repair that never comes and re-trigger on
-  /// every poll forever.
+  /// and the one materializeArtistImage targets). Flagging a song-only featured
+  /// artist would request a repair that never comes and re-trigger every poll.
   private func hasHealthyArtistImage(subsonicIds: [String]) -> Bool {
     guard !subsonicIds.isEmpty else { return true }
     let context = AmperKit.shared.storage.main.context
@@ -1101,54 +965,15 @@ public final class IntentExecutor {
     return healthy
   }
 
-  private static let appliedOverrideCoverSizesKey = "cassette.appliedOverrideCoverSizes"
+  private static let appliedOverrideCoversKey = "cassette.appliedOverrideCovers"
 
-  /// One-time re-adoption of every user pick.
-  ///
-  /// Picks adopted before the size stamp existed have no recorded length, so the
-  /// content check falls back to existence-only — which is exactly the test that
-  /// already reported these albums healthy while they displayed the wrong cover. They
-  /// would therefore never re-adopt and never gain a stamp: the repair cannot
-  /// bootstrap itself.
-  ///
-  /// Dropping the applied-pick stamps makes `pickChanged` true for every override on
-  /// the next manifest pass, so each one re-materializes from the cloud (the authority
-  /// on picks) and records its size on the way through. Bounded to 12 per pass by the
-  /// existing cap, so a library of picks converges over a few polls rather than firing
-  /// everything at once.
-  private func healPickStampsIfNeeded() {
-    // V2: V1 ran on-device but undid itself (see the migration note below), and it
-    // already recorded its flag — so the corrected pass needs a new key to fire at all.
-    let healKey = "cassette.pickResyncV2"
-    guard !UserDefaults.standard.bool(forKey: healKey) else { return }
-    let hadPicks = stringMap(Self.appliedOverrideCoversKey).count
-    for base in [Self.appliedOverrideCoversKey, Self.appliedOverrideCoverSizesKey] {
-      // Write an EMPTY map rather than removing the key, and clear the pre-scoping
-      // legacy key too. `migrateUnscopedMapIfNeeded` treats "scoped key absent" as
-      // "not migrated yet" and copies the unscoped map back in — so removing the key
-      // made this heal undo itself within the same poll (the device logged
-      // "carried 25 applied-artwork stamp(s)" immediately after "25 pick stamp(s)
-      // cleared", and not one pick re-adopted).
-      UserDefaults.standard.set([String: String](), forKey: scopedKey(base))
-      UserDefaults.standard.removeObject(forKey: base)
-    }
-    UserDefaults.standard.set(true, forKey: healKey)
-    print("Cassette: pick re-sync armed - \(hadPicks) pick stamp(s) cleared")
-  }
+  /// Set once this install has completed a full artwork-manifest pass.
+  private static let coverSignalSeenKey = "cassette.coverSignalSeen"
 
-  /// Byte length of the pick we last wrote for this album, if known. Absent for picks
-  /// adopted by an older build — those fall back to an existence-only check.
-  private func appliedOverrideCoverSize(forAlbumKey albumKey: String) -> Int? {
-    stringMap(Self.appliedOverrideCoverSizesKey)[albumKey].flatMap { Int($0) }
-  }
-
-  private func setAppliedOverrideCoverSize(_ bytes: Int?, forAlbumKey albumKey: String) {
-    setStringMapValue(
-      bytes.map(String.init),
-      key: albumKey,
-      in: Self.appliedOverrideCoverSizesKey
-    )
-  }
+  /// Whether this album currently has a decodable cover file on disk. Used to notice
+  /// that a user's PICK has gone missing (cache purge, or a folder cover that replaced
+  /// it) so it can be re-materialized from their own URL rather than left as a
+  /// placeholder — or silently taken over by the folder cover.
 
   private func appliedOverrideCover(forAlbumKey albumKey: String) -> String? {
     stringMap(Self.appliedOverrideCoversKey)[albumKey]
@@ -1211,7 +1036,6 @@ public final class IntentExecutor {
     for base in [
       Self.appliedCoverFingerprintsKey,
       Self.appliedOverrideCoversKey,
-      Self.appliedOverrideCoverSizesKey,
     ] {
       let map = stringMap(base)
       let pruned = map.filter { liveKeys.contains($0.key) }
@@ -1722,156 +1546,6 @@ public final class IntentExecutor {
   /// downloaded from the cloud override URL — so our catalog never overwrites their
   /// folder cover, and it doesn't depend on the LAN Player or Navidrome.
   @discardableResult
-  private func materializeAlbumCover(
-    coverUrl: String,
-    subsonicIds: [String],
-    accountInfo: AccountInfo,
-    force: Bool = false
-  ) async -> Int? {
-    guard AmperKit.shared.storage.settings.accounts
-      .getSetting(accountInfo).read.artworkDownloadSetting != .never else { return nil }
-    guard !subsonicIds.isEmpty else { return nil }
-
-    let context = AmperKit.shared.storage.main.context
-    // EVERY distinct local album these tracks belong to, not just one.
-    //
-    // This used to fetch a single song (`fetchLimit = 1`, no sort order) and write
-    // the pick onto THAT song's album. A manifest job is an album BUCKET keyed by
-    // name+artist, and its tracks can map to more than one local AlbumMO (a partial
-    // re-parent, a duplicate row, a multi-disc split). The pick then landed on one
-    // arbitrary row while the grid rendered another — the cover looked unchanged, and
-    // because the fetch had no ordering, WHICH row won could differ between calls, so
-    // the album never converged and its cover appeared to flash between two images.
-    var targets: [(objectID: NSManagedObjectID, remoteInfo: ArtworkRemoteInfo, uniqueID: String)] = []
-    var albumsSeen = 0
-    context.performAndWait {
-      let library = LibraryStorage(context: context)
-      let account = library.getAccount(info: accountInfo)
-
-      let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
-      request.predicate = NSPredicate(format: "id IN %@", subsonicIds)
-      request.returnsObjectsAsFaults = false
-      // NOTE: returns inside this performAndWait closure are Void — the enclosing
-      // function's Bool is decided after it, by whether `targets` is non-empty.
-      let songMOs = (try? context.fetch(request)) ?? []
-
-      var seenAlbums = Set<NSManagedObjectID>()
-      for songMO in songMOs {
-        guard let album = Song(managedObject: songMO).album else { continue }
-        guard seenAlbums.insert(album.managedObject.objectID).inserted else { continue }
-        albumsSeen += 1
-
-        // Ensure a UNIQUE, stable per-album cover identity before writing. A real
-        // per-album artwork (its own Subsonic cover-art id) is reused as-is. But a
-        // brand-new artwork OR a legacy synthetic "cassette-album" shell must get the
-        // album's OWN id: the shell shares ONE file path across every album that
-        // still holds it, so an override written there collides and clobbers a
-        // neighbor's cover (the "it removed the cover I set" bug). Re-typing it away
-        // from "cassette-album" also stops provisionNativeCover from migrating it out
-        // from under us.
-        //
-        // The type is the album path space (see cassetteAlbumArtworkType) — the pick
-        // bytes we are about to write land on artworks/album/<id>.png and can no
-        // longer be overwritten by the SONG artwork that shares this id.
-        let artwork = album.artwork ?? library.createArtwork(account: account)
-        if artwork.remoteInfo.id.isEmpty || artwork.remoteInfo.type == "cassette-album" {
-          let safeName = album.name
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: ":", with: "_")
-          let uniqueId = !album.id.isEmpty ? album.id : "cassette-album-\(safeName)"
-          artwork.remoteInfo = ArtworkRemoteInfo(id: uniqueId, type: cassetteAlbumArtworkType)
-          artwork.status = .NotChecked
-        }
-        album.artwork = artwork
-
-        // Idempotent gate unless forcing (the pick changed). Per album: one row
-        // already holding the pick must not stop a sibling row from getting it.
-        if !force,
-           artwork.status == .CustomImage,
-           let path = artwork.imagePath,
-           FileManager.default.fileExists(atPath: path) {
-          continue
-        }
-
-        // A freshly created artwork still carries a TEMPORARY objectID, which the
-        // re-wrap after the download could not resolve — the write would be silently
-        // dropped.
-        try? context.obtainPermanentIDs(for: [artwork.managedObject])
-        targets.append((artwork.managedObject.objectID, artwork.remoteInfo, artwork.uniqueID))
-      }
-      try? context.save()
-    }
-    if albumsSeen > 1 {
-      print("Cassette poll: album bucket spans \(albumsSeen) local album(s), \(targets.count) need the cover")
-    }
-    guard !targets.isEmpty else { return nil }
-
-    guard let url = URL(string: coverUrl) else { return nil }
-    let data: Data
-    do {
-      let (downloaded, response) = try await URLSession.shared.data(from: url)
-      guard let http = response as? HTTPURLResponse,
-            (200 ..< 300).contains(http.statusCode), !downloaded.isEmpty
-      else { return nil }
-      data = downloaded
-    } catch {
-      print("Cassette poll: album cover download failed - \(error.localizedDescription)")
-      return nil
-    }
-
-    // Write the SAME bytes to every target album's own path. Each row has its own
-    // remoteInfo, so these are distinct files; one failing must not abort the rest.
-    let fileManager = CacheFileManager.shared
-    var wroteAny = false
-    for target in targets {
-      guard let relFilePath = fileManager.createRelPath(
-        for: target.remoteInfo,
-        account: accountInfo
-      ),
-        let absFilePath = fileManager.getAbsoluteAmperfyPath(relFilePath: relFilePath)
-      else { continue }
-      do {
-        try fileManager.writeDataExcludedFromBackup(
-          data: data,
-          to: absFilePath,
-          accountInfo: accountInfo
-        )
-      } catch {
-        print("Cassette poll: album cover write failed - \(error.localizedDescription)")
-        continue
-      }
-      context.performAndWait {
-        // Void closure — a bare return here, not the function's Bool.
-        guard let artworkMO = try? context
-          .existingObject(with: target.objectID) as? ArtworkMO else { return }
-        let artwork = Artwork(managedObject: artworkMO)
-        artwork.status = .CustomImage
-        artwork.relFilePath = relFilePath
-        try? context.save()
-      }
-      // Regenerate the tiered thumb — the old one is stale after an overwrite, and
-      // ensureThumb skips when a thumb already exists, so drop it first.
-      let thumbPath = CoverImageStore.thumbPath(forFullPath: absFilePath.path)
-      try? FileManager.default.removeItem(atPath: thumbPath)
-      CoverImageStore.ensureThumb(forFullPath: absFilePath.path)
-      // Nudge mounted cover cells to re-decode from disk NOW — reuse the artwork
-      // download-finished notification the cells already observe (they evict the stale
-      // cache + refresh on it), so the new cover appears live, not after a restart.
-      let uniqueID = target.uniqueID
-      await MainActor.run {
-        AmperKit.shared.notificationHandler.post(
-          name: .downloadFinishedSuccess,
-          object: AmperKit.shared.getMeta(accountInfo).artworkDownloadManager,
-          userInfo: DownloadNotification(id: uniqueID).asNotificationUserInfo
-        )
-      }
-      wroteAny = true
-    }
-    guard wroteAny else { return nil }
-    print("Cassette poll: materialized album cover (\(data.count) bytes → \(targets.count) row(s))")
-    return data.count
-  }
-
   /// The album's FOLDER cover changed on the Mac — re-pull it over the LAN (Subsonic
   /// getCoverArt) and swap the new bytes in.
   ///

@@ -95,15 +95,9 @@ public final class AlbumRegrouper {
   /// per-track grouping from the device-inventory response, keyed by Subsonic
   /// track id (which equals SongMO.id on this device).
   @discardableResult
-  /// - Parameter pickedTrackIds: Subsonic track ids of albums the cloud reports as
-  ///   carrying a USER-PICKED cover. Those albums are left completely alone here — a
-  ///   pick is the user's choice and must never be re-pointed at the folder cover.
-  ///   Empty (the default) means "unknown", which is only safe before any manifest
-  ///   pass has run; callers that have the set should always pass it.
   public func regroup(
     items: [CassetteDeviceGroupingItem],
-    accountInfo: AccountInfo,
-    pickedTrackIds: Set<String> = []
+    accountInfo: AccountInfo
   )
     -> Summary {
     var summary = Summary()
@@ -225,15 +219,9 @@ public final class AlbumRegrouper {
           coverProvisioned.insert(album.id) // already has a good local cover
           return
         }
-        // A cover the USER PICKED is theirs. This runs on every regroup and knows
-        // nothing about the cloud manifest, so it consults the pick set the manifest
-        // pass published — otherwise this is a second, unguarded path that discards a
-        // pick (clearing relFilePath) exactly like the per-poll engine used to.
-        if !pickedTrackIds.isEmpty,
-           album.songs.contains(where: { pickedTrackIds.contains($0.id) }) {
-          coverProvisioned.insert(album.id)
-          return
-        }
+        // Picked albums are NOT skipped. The hub writes a pick into the album's
+        // cover.jpg, so provisioning the native cover id is how that pick reaches
+        // this device — the folder cover and the pick are the same bytes now.
         guard let nativeCover, !nativeCover.id.isEmpty else { return } // try a later song
         let aw = album.artwork ?? library.createArtwork(account: account)
         // PRESERVE a usable identity. An album legitimately carries its own
