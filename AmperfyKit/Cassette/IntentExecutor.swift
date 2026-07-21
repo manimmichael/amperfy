@@ -768,12 +768,14 @@ public final class IntentExecutor {
       }
 
 
-      // A LOCALLY broken
-      // artist image (a shared row, or missing bytes) must be repairable without the
-      // catalog having changed. Costs one main-context fetch per album that carries
-      // an artist image.
-      let artistImageBroken = job.artistImageUrl != nil
-        && !hasHealthyArtistImage(subsonicIds: job.subsonicIds)
+      // A LOCALLY broken artist image — a shared row, the wrong identity, or missing
+      // bytes — must be repairable without the catalog having changed.
+      //
+      // No longer requires the cloud to have sent an artist image URL. The photo now
+      // comes from the artist folder on the hub, so an artist we hold no catalog
+      // image for still has one on disk; gating on the cloud URL would have excluded
+      // exactly those artists from ever getting theirs.
+      let artistImageBroken = !hasHealthyArtistImage(subsonicIds: job.subsonicIds)
 
       let versionChanged = stored != job.contentVersion
       guard versionChanged || mayPullCover || artistImageBroken else { continue }
@@ -958,6 +960,17 @@ public final class IntentExecutor {
         guard let artwork = artist.artwork else { healthy = false; return }
         // Shared with another owner → poisoned, whoever it currently renders as.
         if (artwork.managedObject.owners?.count ?? 0) > 1 { healthy = false; return }
+        // RIGHT IDENTITY, not merely a usable one. An artwork still keyed on the old
+        // cloud-image identity is perfectly "healthy" — own row, .CustomImage, file
+        // present — while holding a photo of somebody else entirely, which is exactly
+        // how Laufey kept Bon Iver's face through several fixes. Only (artist id,
+        // "artist") resolves to the artist folder's own artist.* on the hub, so
+        // anything else is stale by definition and must be re-pointed.
+        if !artist.id.isEmpty,
+           artwork.remoteInfo != ArtworkRemoteInfo(id: artist.id, type: "artist") {
+          healthy = false
+          return
+        }
         guard artwork.status == .CustomImage,
               let path = artwork.imagePath,
               FileManager.default.fileExists(atPath: path)
