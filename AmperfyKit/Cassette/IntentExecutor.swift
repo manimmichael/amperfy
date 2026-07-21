@@ -1484,9 +1484,34 @@ public final class IntentExecutor {
         artist = resolved
       }
 
-      // Without a Subsonic id there is nothing for getCoverArt to resolve, and a
-      // synthetic id would only recreate the un-fetchable rows we just retired.
+      // Without a Subsonic id there is nothing for getCoverArt to resolve.
       guard !artist.id.isEmpty else { return }
+
+      // An artist minted ON DEVICE carries a synthetic id the hub has never seen, so
+      // getCoverArt can only 404 for it. Re-arming one destroys a working photo and
+      // replaces it with a guaranteed failure — which is exactly what the source
+      // migration did to every such artist (Adrianne Lenker, Green Day, Radiohead…).
+      // Leave them completely alone, and re-adopt the file if it is still on disk:
+      // clearing relFilePath does not delete the bytes, so the picture is usually
+      // recoverable without any fetch at all.
+      //
+      // The hub DOES hold a correct photo for these artists under its own artist id;
+      // reaching it needs that id resolved, which is a separate piece of work.
+      if artist.id.hasPrefix(Self.syntheticArtistIDPrefix) {
+        if let aw = artist.artwork, aw.relFilePath == nil,
+           let rel = CacheFileManager.shared.createRelPath(
+             for: aw.remoteInfo, account: accountInfo
+           ),
+           let abs = CacheFileManager.shared.getAbsoluteAmperfyPath(relFilePath: rel),
+           FileManager.default.fileExists(atPath: abs.path) {
+          aw.relFilePath = rel
+          aw.status = .CustomImage
+          try? context.save()
+          print("Cassette poll: recovered on-disk artist image - '\(artist.name)'")
+        }
+        return
+      }
+
       let want = ArtworkRemoteInfo(id: artist.id, type: "artist")
 
       let isSharedRow = (artist.artwork?.managedObject.owners?.count ?? 0) > 1
