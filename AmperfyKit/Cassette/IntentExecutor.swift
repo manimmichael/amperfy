@@ -779,12 +779,14 @@ public final class IntentExecutor {
       guard versionChanged || mayPullCover || artistImageBroken else { continue }
       let force = stored != nil // first-run materializes once (no force needed)
 
-      if versionChanged || artistImageBroken, let imageUrl = job.artistImageUrl {
+      // No longer gated on the cloud sending an artist image URL — the photo comes
+      // from the artist folder on the hub, so the only question is whether THIS
+      // device's copy is right.
+      if versionChanged || artistImageBroken {
         if artistImageBroken, !versionChanged {
           print("Cassette poll: repairing artist image - '\(job.albumKey)'")
         }
         await materializeArtistImage(
-          imageUrl: imageUrl,
           subsonicIds: job.subsonicIds,
           accountInfo: accountInfo,
           // A broken row must be replaced even though the catalog is unchanged;
@@ -1321,13 +1323,10 @@ public final class IntentExecutor {
     // Fast Album Art (artist photo): bundle the album artist's image so it's
     // on-device with the album. Covers come from native getCoverArt (the local-
     // drive cover.jpg over the LAN), not a bundled URL. Best-effort; idempotent.
-    if let albumArtist {
-      await materializeArtistImage(
-        imageUrl: albumArtist.imageUrl,
-        subsonicIds: tracks.map(\.subsonicTrackId),
-        accountInfo: accountInfo
-      )
-    }
+    await materializeArtistImage(
+      subsonicIds: tracks.map(\.subsonicTrackId),
+      accountInfo: accountInfo
+    )
 
     // Complete the intent once everything it covers is on disk. Otherwise
     // leave it `syncing`; a later poll (or the next foreground) finalizes it
@@ -1377,8 +1376,23 @@ public final class IntentExecutor {
   /// increment 2). The artist/artwork resolution + provisioning still runs; only
   /// the on-disk skip is suppressed. The default preserves the absence-only
   /// behavior of every existing caller.
+  /// Give an artist the image the HUB holds — the same way an album gets its cover.
+  ///
+  /// remoteInfo becomes (artist's Subsonic id, type "artist"), so the un-gated
+  /// getCoverArt path serves the artist folder's `artist.*` file straight off the
+  /// user's own disk. The phone no longer downloads artist photos from the cloud:
+  /// that was the last cloud→phone media path, and it is exactly why a wrong face
+  /// could persist on the device no matter what the library actually held.
+  ///
+  /// Two local faults are repaired here, because neither is visible upstream:
+  ///  • a SHARED artwork row (one Artwork attached to two artists) — how a featured
+  ///    artist ends up wearing the album artist's face. Confidently wrong art is
+  ///    worse than none, so a shared row is treated as poisoned and this artist is
+  ///    given its own.
+  ///  • an artwork still on an OLDER identity (a synthetic id, or bytes pulled from
+  ///    the cloud) — re-pointed so it re-fetches from the hub. This is what migrates
+  ///    a device that already cached the wrong photo.
   private func materializeArtistImage(
-    imageUrl: String,
     subsonicIds: [String],
     accountInfo: AccountInfo,
     force: Bool = false
@@ -1388,12 +1402,8 @@ public final class IntentExecutor {
     guard !subsonicIds.isEmpty else { return }
 
     let context = AmperKit.shared.storage.main.context
-
-    // Resolve (or provision) the artist's Artwork from any of the intent's
-    // tracks, attaching to the entity the UI reads (song.artist). Capture the
-    // artwork's objectID + remoteInfo; skip if a local image already exists.
     var artworkObjectID: NSManagedObjectID?
-    var remoteInfo: ArtworkRemoteInfo?
+    var repointedName: String?
     context.performAndWait {
       let library = LibraryStorage(context: context)
       let account = library.getAccount(info: accountInfo)
@@ -1404,13 +1414,8 @@ public final class IntentExecutor {
       guard let songMO = try? context.fetch(request).first else { return }
       let song = Song(managedObject: songMO)
 
-      // 1. Target artist: prefer the album's artist (matches the catalog
-      //    artist the server keyed the image on), else the song's own artist
-      //    (populated by SsSongParserDelegate), else create/link one by name.
-      //    The last branch is a defensive net — on device `song.artist` is the
-      //    populated relationship, and when it's nil there's no on-device name
-      //    string to key on, so provisioning only fires if the raw MO somehow
-      //    still carries an artist name.
+      // Target the ALBUM artist — the entity the hub keys the folder photo on —
+      // falling back to the song's own artist, then to one resolved by name.
       let artist: Artist
       if let albumArtist = song.album?.artist {
         artist = albumArtist
@@ -1424,59 +1429,22 @@ public final class IntentExecutor {
             created.name = artistName
             return created
           }()
-        // Link it onto the song so the on-device Artists list (keyed on
-        // song.artist) actually surfaces this artist.
         song.artist = resolved
         artist = resolved
       }
 
-      // DIAGNOSTIC: a second Artist row with the SAME NAME means the image can only
-      // ever land on one of them, and the Artists list may well render the other —
-      // the photo then looks permanently stale no matter how often we re-materialize.
-      // Only fires when a duplicate actually exists, so this is quiet on a clean library.
-      let dupRequest: NSFetchRequest<ArtistMO> = ArtistMO.fetchRequest()
-      dupRequest.predicate = NSPredicate(format: "name ==[c] %@", artist.name)
-      let sameName = (try? context.count(for: dupRequest)) ?? 0
-      if sameName > 1 {
-        print(
-          "Cassette poll: DUPLICATE artist rows - '\(artist.name)' x\(sameName); "
-            + "image goes to id '\(artist.id)' (albums: \(artist.managedObject.albums?.count ?? 0))"
-        )
-      }
+      // Without a Subsonic id there is nothing for getCoverArt to resolve, and a
+      // synthetic id would only recreate the un-fetchable rows we just retired.
+      guard !artist.id.isEmpty else { return }
+      let want = ArtworkRemoteInfo(id: artist.id, type: "artist")
 
-      // 2. Ensure the artist has an Artwork. Reuse the existing one (real
-      //    Subsonic coverArt id) when present; otherwise create one with a
-      //    stable synthetic remoteInfo — type "artist" nests it under its own
-      //    artwork subdir, so the file path never collides with album covers
-      //    (whose remoteInfo type is empty), and is stable across re-runs so
-      //    the idempotent gate holds.
-      // An artist's artwork must belong to THAT ARTIST ALONE.
-      //
-      // This previously "dual-attached": when a track's song artist and album artist
-      // differed, it pointed the SAME Artwork object at both so that whichever entity
-      // a surface happened to read would render something. That is why a featured
-      // artist showed the album artist's face — e.g. Laufey rendering Bon Iver — and
-      // it was self-sealing: the next pass saw she already had artwork and the
-      // idempotent gate saw a valid file, so it never corrected itself.
-      //
-      // A borrowed image is worse than no image: it is confidently wrong, and the user
-      // has no way to tell it apart from a real photo. So an artwork shared by more
-      // than one owner is treated as poisoned and this artist is given its own,
-      // which also HEALS devices already carrying a shared row.
       let isSharedRow = (artist.artwork?.managedObject.owners?.count ?? 0) > 1
       let artwork: Artwork
       if let existing = artist.artwork, !isSharedRow {
         artwork = existing
       } else {
         let created = library.createArtwork(account: account)
-        // Sanitize the name into a single safe path component (no separators).
-        let safeName = artist.name
-          .replacingOccurrences(of: "/", with: "_")
-          .replacingOccurrences(of: ":", with: "_")
-        let syntheticId = !artist.id.isEmpty
-          ? artist.id
-          : "cassette-artist-\(safeName)"
-        created.remoteInfo = ArtworkRemoteInfo(id: syntheticId, type: "artist")
+        created.remoteInfo = want
         created.status = .NotChecked
         artist.artwork = created
         artwork = created
@@ -1485,80 +1453,42 @@ public final class IntentExecutor {
         }
       }
 
-      // Idempotent gate: nothing to do if the image is already on disk —
-      // UNLESS forcing a refresh (the artist image changed in the catalog).
-      if !force,
-         artwork.status == .CustomImage,
-         let path = artwork.imagePath,
-         FileManager.default.fileExists(atPath: path) {
-        return
+      let needsRepoint = artwork.remoteInfo != want
+      if needsRepoint {
+        artwork.remoteInfo = want
+        repointedName = artist.name
       }
 
-      // Persist the (possibly newly created) artist/artwork + links before the
-      // download so the objectID resolves afterward.
+      // Already correct and on disk → nothing to do.
+      if !force, !needsRepoint, artwork.status == .CustomImage,
+         let path = artwork.imagePath, FileManager.default.fileExists(atPath: path) {
+        return
+      }
+      // Re-arm so the download manager will actually fetch it. .FetchError is left
+      // alone — that queue already retries those.
+      if artwork.status != .FetchError { artwork.status = .NotChecked }
+      if artwork.relFilePath != nil { artwork.relFilePath = nil }
+      // A freshly created row still carries a TEMPORARY objectID, which the
+      // main-context re-wrap below could not resolve — the download would be dropped.
+      try? context.obtainPermanentIDs(for: [artwork.managedObject])
       try? context.save()
       artworkObjectID = artwork.managedObject.objectID
-      remoteInfo = artwork.remoteInfo
-    }
-    guard let artworkObjectID, let remoteInfo else { return }
-
-    guard let url = URL(string: imageUrl) else { return }
-    let data: Data
-    do {
-      let (downloaded, response) = try await URLSession.shared.data(from: url)
-      guard let http = response as? HTTPURLResponse,
-            (200 ..< 300).contains(http.statusCode), !downloaded.isEmpty
-      else { return }
-      data = downloaded
-    } catch {
-      print("Cassette poll: artist image download failed - \(error.localizedDescription)")
-      return
     }
 
-    let fileManager = CacheFileManager.shared
-    guard let relFilePath = fileManager.createRelPath(for: remoteInfo, account: accountInfo),
-          let absFilePath = fileManager.getAbsoluteAmperfyPath(relFilePath: relFilePath)
+    guard let artworkObjectID else { return }
+    let mainContext = AmperKit.shared.storage.main.context
+    guard let mo = try? mainContext.existingObject(with: artworkObjectID) as? ArtworkMO
     else { return }
-    do {
-      try fileManager.writeDataExcludedFromBackup(
-        data: data,
-        to: absFilePath,
-        accountInfo: accountInfo
-      )
-    } catch {
-      print("Cassette poll: artist image write failed - \(error.localizedDescription)")
-      return
+    if let repointedName {
+      print("Cassette poll: artist image re-pointed at the hub - '\(repointedName)'")
     }
-    context.performAndWait {
-      guard let artworkMO = try? context.existingObject(with: artworkObjectID) as? ArtworkMO
-      else { return }
-      let artwork = Artwork(managedObject: artworkMO)
-      artwork.status = .CustomImage
-      artwork.relFilePath = relFilePath
-      try? context.save()
+    await MainActor.run {
+      AmperKit.shared.getMeta(accountInfo).artworkDownloadManager
+        .download(object: Artwork(managedObject: mo))
     }
-    print("Cassette poll: materialized artist image (\(data.count) bytes)")
   }
 
-  /// Adopt the user's chosen album cover (an override) onto the local library.
-  /// Mirrors materializeArtistImage but targets the ALBUM's Artwork and regenerates
-  /// the tiered thumb. Only ever called for a cover the user picked (coverIsOverride),
-  /// downloaded from the cloud override URL — so our catalog never overwrites their
-  /// folder cover, and it doesn't depend on the LAN Player or Navidrome.
-  @discardableResult
-  /// The album's FOLDER cover changed on the Mac — re-pull it over the LAN (Subsonic
-  /// getCoverArt) and swap the new bytes in.
-  ///
-  /// DOWNLOAD-THEN-SWAP: status is never demoted and the old file is never removed
-  /// first, so an unreachable Mac is an invisible no-op rather than an album that
-  /// renders a placeholder until the Mac comes back. Returns true only once new bytes
-  /// are actually on disk, so the caller stamps the fingerprint on real success only
-  /// and retries on the next poll otherwise — recording a refresh that never happened
-  /// would pin the album to stale art permanently.
-  ///
-  /// This only ever pulls the user's OWN folder cover from their own Mac. It is never
-  /// reached for an album with a user pick: the server sends no folder-cover version
-  /// while an override is active, so a pick can't be taken back by the folder.
+
   private func forceRefreshNativeCover(
     subsonicIds: [String],
     accountInfo: AccountInfo,
