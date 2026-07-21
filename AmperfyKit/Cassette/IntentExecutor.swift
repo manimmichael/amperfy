@@ -775,7 +775,8 @@ public final class IntentExecutor {
       // comes from the artist folder on the hub, so an artist we hold no catalog
       // image for still has one on disk; gating on the cloud URL would have excluded
       // exactly those artists from ever getting theirs.
-      let artistImageBroken = !hasHealthyArtistImage(subsonicIds: job.subsonicIds)
+      let artistImageBroken = artistImageSourceMigrationPending
+        || !hasHealthyArtistImage(subsonicIds: job.subsonicIds)
 
       let versionChanged = stored != job.contentVersion
       guard versionChanged || mayPullCover || artistImageBroken else { continue }
@@ -834,6 +835,11 @@ public final class IntentExecutor {
     if refreshed > 0 {
       print("Cassette poll: refreshed artwork for \(refreshed) owned album(s)")
     }
+    // The whole manifest was walked, so every artist image has now been re-pointed
+    // at the hub (or found to have nothing there). Stamped only HERE — stamping it
+    // earlier, or on a pass that bailed out, would leave devices half-migrated with
+    // no way to notice.
+    if artistImageSourceMigrationPending { markArtistImageSourceMigrated() }
   }
 
   // MARK: - Sync freshness (account-menu status line)
@@ -957,9 +963,19 @@ public final class IntentExecutor {
       for songMO in songMOs {
         guard let artist = Song(managedObject: songMO).album?.artist else { continue }
         guard seenArtists.insert(artist.managedObject.objectID).inserted else { continue }
+        // An artist minted ON DEVICE carries a synthetic id Navidrome has never heard
+        // of, so getCoverArt can only ever 404 for it. There is no hub photo to fetch,
+        // and flagging it would ask for the same failure on every single poll.
+        if artist.id.hasPrefix(Self.syntheticArtistIDPrefix) { continue }
+
         guard let artwork = artist.artwork else { healthy = false; return }
         // Shared with another owner → poisoned, whoever it currently renders as.
         if (artwork.managedObject.owners?.count ?? 0) > 1 { healthy = false; return }
+        // A fetch that ALREADY FAILED is settled, not broken — the hub simply has no
+        // photo for this artist. The download manager retries on its own schedule;
+        // re-flagging here just re-requests a known 404 forever, which is exactly the
+        // "repair that never comes" loop this check was written to avoid.
+        if artwork.status == .FetchError { continue }
         // RIGHT IDENTITY, not merely a usable one. An artwork still keyed on the old
         // cloud-image identity is perfectly "healthy" — own row, .CustomImage, file
         // present — while holding a photo of somebody else entirely, which is exactly
@@ -978,6 +994,28 @@ public final class IntentExecutor {
       }
     }
     return healthy
+  }
+
+  /// Prefix of an artist id minted ON DEVICE (see AlbumRegrouper). Navidrome has
+  /// never seen these, so they can never resolve to a hub photo.
+  private static let syntheticArtistIDPrefix = "cassette-synth-artist:"
+
+  /// One-time re-fetch of every artist image after the SOURCE changed from the cloud
+  /// to the hub's artist folder.
+  ///
+  /// The identity check alone cannot catch these: the previous code already used
+  /// (artist id, "artist") as the identity, and merely filled it with bytes
+  /// downloaded from R2. So a device holds a row that is correctly identified,
+  /// correctly unshared, present on disk — and showing the wrong person. Nothing
+  /// about its shape reveals that, which is why Laufey survived every earlier fix.
+  /// Changing where bytes come from means the bytes themselves must be re-pulled once.
+  private var artistImageSourceMigrationPending: Bool {
+    !UserDefaults.standard.bool(forKey: "cassette.artistImageSourceMigrationV1")
+  }
+
+  private func markArtistImageSourceMigrated() {
+    UserDefaults.standard.set(true, forKey: "cassette.artistImageSourceMigrationV1")
+    print("Cassette: artist images re-sourced from the hub")
   }
 
   private static let appliedOverrideCoversKey = "cassette.appliedOverrideCovers"
