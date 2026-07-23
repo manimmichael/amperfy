@@ -72,6 +72,17 @@ public final class IntentExecutor {
   /// folder cover, and an ownership break is worse than a delayed refresh.
   private var hasReadManifestThisLaunch = false
 
+  /// Throttle for the artwork manifest fetch (GET /devices/:id/artwork). It
+  /// re-evaluates every owned album, but artwork changes rarely, so pulling it on
+  /// every 30s poll is wasted chatter. We refetch on the first pass, when the owned
+  /// set changes, or after this interval — see backfillOwnedArtistImages.
+  private var lastArtworkManifestAt: Date?
+  private var lastManifestOwnedCount = -1
+  private static let artworkManifestMinInterval: TimeInterval = 300 // 5 min
+
+  /// Once per launch: drop leftover artwork downloads for unfetchable artist ids.
+  private var didSweepStaleArtistDownloadsThisLaunch = false
+
   // Sync Reconciliation (Phase 1): throttle for the periodic full-state
   // inventory report — the device's complete owned-set, posted on poll so the
   // server's "actual" self-heals. The per-transfer differential report keeps
@@ -137,6 +148,10 @@ public final class IntentExecutor {
     // backfills below can actually heal those albums instead of skipping them as
     // "unchanged" forever. No-op after the first run. See the helper for why.
     healLegacyArtworkPoisonIfNeeded()
+    // One-time per launch: drop any leftover artwork download for an artist getCoverArt
+    // can never resolve, so a synthetic-artist request from an older build stops
+    // oscillating failed → reset → retry in the queue.
+    await sweepStaleUnfetchableArtistDownloadsIfNeeded()
 
     if !hasRegisteredDevice {
       do {
@@ -611,6 +626,23 @@ public final class IntentExecutor {
   private func backfillOwnedArtistImages(accountInfo: AccountInfo) async {
     guard CassetteSyncAPI.bearerToken != nil else { return }
 
+    // Throttle the manifest fetch: refetch on the FIRST pass this launch, when the
+    // owned set CHANGES (a transfer/removal → new art to resolve), or after the
+    // interval (to catch a cloud-side enrichment or a new pick). Otherwise skip — the
+    // per-transfer Fast Album Art already arms a brand-new album's art, and
+    // backfillOwnedAlbumCovers heals missing covers from disk regardless. This turns
+    // the every-30s manifest GET into roughly one per 5 min at rest while still
+    // converging instantly on a real library change. `hasReadManifestThisLaunch`
+    // stays sticky once set, so the folder-cover pass below is never starved.
+    let ownedCount = DeviceOwnershipManager(context: AmperKit.shared.storage.main.context)
+      .fetchAllSubsonicTrackIds().count
+    let manifestDue = !hasReadManifestThisLaunch
+      || ownedCount != lastManifestOwnedCount
+      || (lastArtworkManifestAt.map {
+        Date().timeIntervalSince($0) >= Self.artworkManifestMinInterval
+      } ?? true)
+    guard manifestDue else { return }
+
     // Sendable value types so the @Sendable background closure captures only
     // immutable, concurrency-safe state. A candidate carries the manifest's
     // artwork URLs (either may be nil) + the album's content version.
@@ -638,6 +670,10 @@ public final class IntentExecutor {
       print("Cassette poll: artwork manifest fetch failed - \(error.localizedDescription)")
       return
     }
+    // Stamp only on success, so a failed fetch retries next poll rather than idling
+    // out the interval.
+    lastArtworkManifestAt = Date()
+    lastManifestOwnedCount = ownedCount
     var manifestByAlbum = [String: [ManifestCandidate]]()
     for album in manifest.albums {
       let albumNorm = Self.normalizeForVersionKey(album.albumName)
@@ -1101,6 +1137,41 @@ public final class IntentExecutor {
   private func markArtistImageSourceMigrated() {
     UserDefaults.standard.set(true, forKey: "cassette.artistImageSourceMigrationV1")
     print("Cassette: artist images re-sourced from the hub")
+  }
+
+  /// One-time-per-launch sweep of stale artwork downloads whose target artist id
+  /// getCoverArt can NEVER resolve (inherited-artist:/catalog-artist:/cassette-synth-
+  /// artist:). Such a request left in the queue by an older build oscillates
+  /// failed → reset → retry forever (getAndResetFailedDownloads re-arms any errored
+  /// download), so prepareDownload's guard keeps firing a guaranteed 404 every cycle.
+  /// These artists take their photo from the catalog (R2) via
+  /// materializeArtistImageFromUrl, never getCoverArt, so the queued request is pure
+  /// residue — delete it via the same background-context path the download queue's own
+  /// clearFinishedDownloads uses. Idempotent; once cleared, none remain.
+  private func sweepStaleUnfetchableArtistDownloadsIfNeeded() async {
+    guard !didSweepStaleArtistDownloadsThisLaunch else { return }
+    didSweepStaleArtistDownloadsThisLaunch = true
+    let removed = (
+      try? await AmperKit.shared.storage.async
+        .performAndGet { asyncCompanion -> Int in
+          let request: NSFetchRequest<DownloadMO> = DownloadMO.fetchRequest()
+          request.predicate = NSPredicate(
+            format: "artwork != nil AND artwork.type == %@ AND "
+              +
+              "(artwork.id BEGINSWITH %@ OR artwork.id BEGINSWITH %@ OR artwork.id BEGINSWITH %@)",
+            "artist", "cassette-synth-artist:", "inherited-artist:", "catalog-artist:"
+          )
+          let stale = (try? asyncCompanion.context.fetch(request)) ?? []
+          for downloadMO in stale {
+            asyncCompanion.library.deleteDownload(Download(managedObject: downloadMO))
+          }
+          if !stale.isEmpty { asyncCompanion.saveContext() }
+          return stale.count
+        }
+    ) ?? 0
+    if removed > 0 {
+      print("Cassette poll: cleared \(removed) stale unfetchable-artist download request(s)")
+    }
   }
 
   private static let appliedOverrideCoversKey = "cassette.appliedOverrideCovers"

@@ -225,6 +225,24 @@ public final class DeviceOwnershipManager {
     return result
   }
 
+  /// Resolve an owned track by its MusicBrainz recording id — the stable
+  /// cross-device key that survives the fingerprint drift between this phone and
+  /// the hub. Small predicate fetch over the ownership table (mbid is unindexed,
+  /// but the table is bounded to owned tracks).
+  public func fetchOne(mbid: String) throws -> DeviceOwnershipMO? {
+    var result: DeviceOwnershipMO?
+    var caught: Error?
+    context.performAndWait {
+      let request: NSFetchRequest<DeviceOwnershipMO> = DeviceOwnershipMO.fetchRequest()
+      request.predicate = NSPredicate(format: "mbid == %@", mbid)
+      request.fetchLimit = 1
+      do { result = try context.fetch(request).first }
+      catch { caught = error }
+    }
+    if let caught { throw caught }
+    return result
+  }
+
   /// Resolve the on-disk owned-file URL for a Subsonic track id, or nil if the
   /// track isn't owned (or the row is stale). Fully defensive — never throws —
   /// so it is safe to call inline at playback dispatch: any failure simply

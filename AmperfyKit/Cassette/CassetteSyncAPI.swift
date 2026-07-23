@@ -812,11 +812,13 @@ final class CassetteAuthPreservingDelegate: NSObject, URLSessionTaskDelegate {
 /// reconciler needs. Mirrors the server `PlayJson` wire shape.
 public struct CassetteCloudPlay: Decodable {
   public let cassetteLocalId: String
+  public let mbid: String?
   public let playedAt: Date
   public let sourceDevice: String?
 
   private enum CodingKeys: String, CodingKey {
     case cassetteLocalId = "cassette_local_id"
+    case mbid
     case playedAt = "played_at"
     case sourceDevice = "source_device"
   }
@@ -824,6 +826,7 @@ public struct CassetteCloudPlay: Decodable {
   public init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     self.cassetteLocalId = try c.decode(String.self, forKey: .cassetteLocalId)
+    self.mbid = try c.decodeIfPresent(String.self, forKey: .mbid)
     self.sourceDevice = try c.decodeIfPresent(String.self, forKey: .sourceDevice)
     let raw = try c.decode(String.self, forKey: .playedAt)
     guard let date = CassetteCloudPlay.parseISO(raw) else {
@@ -904,8 +907,11 @@ public enum CloudPlayReconciler {
 
     for play in plays {
       if play.sourceDevice != "ios" { fromOtherDevice += 1 }
-      guard let owned = try? ownership.fetchOne(cassetteLocalId: play.cassetteLocalId)
-      else { continue }
+      // Resolve by the stable mbid first (survives the fingerprint drift between
+      // this phone and the hub), then the cassette_local_id fingerprint.
+      let ownedOpt = (play.mbid.flatMap { try? ownership.fetchOne(mbid: $0) })
+        ?? (try? ownership.fetchOne(cassetteLocalId: play.cassetteLocalId))
+      guard let owned = ownedOpt else { continue }
       ownedMatch += 1
       guard let subsonicId = owned.subsonicTrackId else { continue }
       hadSubsonicId += 1

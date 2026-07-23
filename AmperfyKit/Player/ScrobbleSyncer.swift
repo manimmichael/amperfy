@@ -213,6 +213,8 @@ public class ScrobbleSyncer {
     )] = []
     var syncedEntries: [ScrobbleEntry] = []
     var stampedNonSong = false
+    // Owned tracks carry the hub's canonical id + mbid; look them up per play.
+    let ownership = DeviceOwnershipManager(context: storage.main.context)
 
     for entry in entries {
       guard let song = entry.playable?.asSong, let date = entry.date else {
@@ -222,14 +224,20 @@ public class ScrobbleSyncer {
         stampedNonSong = true
         continue
       }
-      let localId = CassetteLocalID.compute(
-        artist: song.artist?.name ?? "",
-        title: song.title,
-        durationSeconds: song.duration
-      )
+      // Prefer the hub's canonical identity when we own the track: the ownership
+      // row holds the id + mbid the hub minted, so other devices resolve it
+      // exactly. Fall back to the locally-computed fingerprint (which can diverge
+      // from the hub by a rounded second) and the Subsonic-embedded mbid.
+      let owned = try? ownership.fetchOne(subsonicTrackId: song.id)
+      let localId = owned?.cassetteLocalId
+        ?? CassetteLocalID.compute(
+          artist: song.artist?.name ?? "",
+          title: song.title,
+          durationSeconds: song.duration
+        )
       plays.append((
         cassetteLocalId: localId,
-        mbid: nil,
+        mbid: owned?.mbid ?? song.musicBrainzId,
         playedAt: date,
         durationPlayedSeconds: nil,
         completionRatio: nil
