@@ -139,8 +139,8 @@ public enum LibraryDisplayType: Int, CaseIterable, Sendable, Codable {
       return UIImage.lucideGenres
     case .radios:
       return UIImage.lucideRadio
-    case .directories, .downloads, .podcasts,
-         .favoriteSongs, .favoriteAlbums, .favoriteArtists:
+    case .directories, .downloads, .favoriteAlbums,
+         .favoriteArtists, .favoriteSongs, .podcasts:
       return image
     }
   }

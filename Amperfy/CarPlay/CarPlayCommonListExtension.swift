@@ -304,7 +304,10 @@ extension CarPlaySceneDelegate {
     ]
     section.handler = { [weak self] item, completion in
       guard let self = self else { completion(); return }
-      pushTemplateIfAllowed(makeAlbumDetailTemplate(for: album, onlyCached: onlyCached), animated: true)
+      pushTemplateIfAllowed(
+        makeAlbumDetailTemplate(for: album, onlyCached: onlyCached),
+        animated: true
+      )
       completion()
     }
     return section

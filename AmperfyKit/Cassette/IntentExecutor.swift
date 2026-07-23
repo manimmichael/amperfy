@@ -208,7 +208,8 @@ public final class IntentExecutor {
       // the queue or only repairing after the fact, so print it rather than assume.
       print(
         "Cassette poll: artworkDownloadSetting = "
-          + "\(AmperKit.shared.storage.settings.accounts.getSetting(accountInfo).read.artworkDownloadSetting)"
+          +
+          "\(AmperKit.shared.storage.settings.accounts.getSetting(accountInfo).read.artworkDownloadSetting)"
       )
       // Manifest pass FIRST: it learns which albums carry a user PICK, and the
       // folder-cover backfill below must know that before it touches anything —
@@ -798,7 +799,6 @@ public final class IntentExecutor {
         if canReachPlayer != true { mayPullCover = false }
       }
 
-
       // A LOCALLY broken artist image — a shared row, the wrong identity, or missing
       // bytes — must be repairable without the catalog having changed.
       //
@@ -866,7 +866,9 @@ public final class IntentExecutor {
     pruneAppliedMaps(keeping: Set(jobs.map { $0.albumKey }))
     markCoverSignalSeen()
     if adoptedWithoutPull > 0 {
-      print("Cassette poll: adopted \(adoptedWithoutPull) cover fingerprint(s) without re-pulling (fresh install)")
+      print(
+        "Cassette poll: adopted \(adoptedWithoutPull) cover fingerprint(s) without re-pulling (fresh install)"
+      )
     }
     if refreshed > 0 { artworkDidWorkThisPass = true }
     if refreshed > 0 {
@@ -954,7 +956,6 @@ public final class IntentExecutor {
     UserDefaults.standard.set(map, forKey: Self.appliedArtworkVersionsKey)
   }
 
-
   /// Per-album last-applied FOLDER-COVER fingerprint (`local_cover_version`), kept in
   /// UserDefaults as an [albumKey: fingerprint] map.
   ///
@@ -1000,10 +1001,11 @@ public final class IntentExecutor {
       for songMO in songMOs {
         guard let artist = Song(managedObject: songMO).album?.artist else { continue }
         guard seenArtists.insert(artist.managedObject.objectID).inserted else { continue }
-        // An artist minted ON DEVICE carries a synthetic id Navidrome has never heard
-        // of, so getCoverArt can only ever 404 for it. There is no hub photo to fetch,
-        // and flagging it would ask for the same failure on every single poll.
-        if artist.id.hasPrefix(Self.syntheticArtistIDPrefix) { continue }
+        // An artist keyed on an id the hub can't resolve — an on-device synthetic id
+        // or a cloud identity key — can only 404 on getCoverArt. There is no hub photo
+        // to fetch that way (the sidecar proxy handles it), and flagging it would ask
+        // for the same failure every poll.
+        if Self.isUnfetchableArtistId(artist.id) { continue }
 
         guard let artwork = artist.artwork else { healthy = false; return }
         // Shared with another owner → poisoned, whoever it currently renders as.
@@ -1036,6 +1038,19 @@ public final class IntentExecutor {
   /// Prefix of an artist id minted ON DEVICE (see AlbumRegrouper). Navidrome has
   /// never seen these, so they can never resolve to a hub photo.
   private static let syntheticArtistIDPrefix = "cassette-synth-artist:"
+
+  /// True for any artist id the hub's getCoverArt can NEVER resolve — an on-device
+  /// synthetic id OR a cloud identity key (`inherited-artist:` / `catalog-artist:`,
+  /// the artist_group_key the regroup now anchors to). getCoverArt can only 404 for
+  /// these, so the every-poll artist-image repair must skip them or it re-requests a
+  /// guaranteed 404 forever (the "repair that never comes" loop). Their real photos
+  /// will be sourced (Phase 2) from the sidecar artist-photo proxy keyed by an owned
+  /// track id — NOT wired yet, so until then these artists show a placeholder.
+  static func isUnfetchableArtistId(_ id: String) -> Bool {
+    id.hasPrefix(syntheticArtistIDPrefix)
+      || id.hasPrefix("inherited-artist:")
+      || id.hasPrefix("catalog-artist:")
+  }
 
   /// One-time re-fetch of every artist image after the SOURCE changed from the cloud
   /// to the hub's artist folder.
@@ -1105,7 +1120,9 @@ public final class IntentExecutor {
           !legacy.isEmpty
     else { return }
     defaults.set(legacy, forKey: scoped)
-    print("Cassette: carried \(legacy.count) applied-artwork stamp(s) into the account-scoped store")
+    print(
+      "Cassette: carried \(legacy.count) applied-artwork stamp(s) into the account-scoped store"
+    )
   }
 
   private func stringMap(_ base: String) -> [String: String] {
@@ -1534,7 +1551,7 @@ public final class IntentExecutor {
       //
       // The hub DOES hold a correct photo for these artists under its own artist id;
       // reaching it needs that id resolved, which is a separate piece of work.
-      if artist.id.hasPrefix(Self.syntheticArtistIDPrefix) {
+      if Self.isUnfetchableArtistId(artist.id) {
         if let aw = artist.artwork, aw.relFilePath == nil,
            let rel = CacheFileManager.shared.createRelPath(
              for: aw.remoteInfo, account: accountInfo
@@ -1601,12 +1618,12 @@ public final class IntentExecutor {
     }
   }
 
-
   private func forceRefreshNativeCover(
     subsonicIds: [String],
     accountInfo: AccountInfo,
     cacheBust: String
-  ) async -> Bool {
+  ) async
+    -> Bool {
     guard AmperKit.shared.storage.settings.accounts
       .getSetting(accountInfo).read.artworkDownloadSetting != .never else { return false }
     guard !subsonicIds.isEmpty else { return false }

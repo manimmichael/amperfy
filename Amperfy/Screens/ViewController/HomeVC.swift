@@ -138,7 +138,6 @@ final class HomeVC: UICollectionViewController {
     (tabBarController as? TabBarVC)?.cassetteUpdateMinimizeForScroll(scrollView)
   }
 
-
   @objc
   private func cassetteLibraryFilterChanged() {
     sharedHome.createFetchController()
@@ -864,5 +863,4 @@ extension UIFont {
     ])
     return UIFont(descriptor: descriptor, size: pointSize)
   }
-
 }

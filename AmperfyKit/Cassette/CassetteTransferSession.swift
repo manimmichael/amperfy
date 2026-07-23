@@ -176,13 +176,13 @@ extension CassetteTransferSession: URLSessionDownloadDelegate {
           let meta = try? JSONDecoder().decode(CassetteTransferMetadata.self, from: data)
     else {
       #if DEBUG
-      print("Cassette transfer: download finished with no/invalid metadata")
+        print("Cassette transfer: download finished with no/invalid metadata")
       #endif
       os_log("download finished with no/invalid metadata", log: self.log, type: .error)
       return
     }
     #if DEBUG
-    print("Cassette transfer: download finished for \(meta.cassetteLocalId), moving into place")
+      print("Cassette transfer: download finished for \(meta.cassetteLocalId), moving into place")
     #endif
 
     // The temp file at `location` is only valid synchronously here — move it
@@ -259,11 +259,11 @@ extension CassetteTransferSession: URLSessionDownloadDelegate {
     // touched from one place.
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
-      self.flushWorkItem?.cancel()
+      flushWorkItem?.cancel()
       let work = DispatchWorkItem { [weak self] in Task { await self?.flushPending() } }
-      self.flushWorkItem = work
+      flushWorkItem = work
       DispatchQueue.main.asyncAfter(
-        deadline: .now() + self.flushDebounceInterval,
+        deadline: .now() + flushDebounceInterval,
         execute: work
       )
     }
@@ -287,7 +287,8 @@ extension CassetteTransferSession: URLSessionDownloadDelegate {
     }
     guard !batch.isEmpty else { return }
 
-    let deviceId = await MainActor.run { UIDevice.current.identifierForVendor?.uuidString ?? "unknown-device" }
+    let deviceId = await MainActor
+      .run { UIDevice.current.identifierForVendor?.uuidString ?? "unknown-device" }
     let deviceLabel = await MainActor.run { UIDevice.current.name }
 
     // 1) Ownership — off-main, DURABLE (awaited). Must persist; if the save
@@ -328,7 +329,7 @@ extension CassetteTransferSession: URLSessionDownloadDelegate {
     }
     for chunk in Self.chunk(added, size: Self.maxInventoryPerRequest) {
       do {
-        try await self.syncAPI.reportDeviceInventory(
+        try await syncAPI.reportDeviceInventory(
           deviceId: deviceId,
           deviceLabel: deviceLabel,
           added: chunk,
@@ -344,10 +345,11 @@ extension CassetteTransferSession: URLSessionDownloadDelegate {
       }
     }
     #if DEBUG
-    print("Cassette transfer: durably persisted \(batch.count) ownership additions + reported inventory")
+      print(
+        "Cassette transfer: durably persisted \(batch.count) ownership additions + reported inventory"
+      )
     #endif
   }
-
 
   private static func chunk<T>(_ array: [T], size: Int) -> [[T]] {
     guard size > 0, array.count > size else { return array.isEmpty ? [] : [array] }

@@ -83,8 +83,10 @@ struct AccountSettingsView: View {
   /// the next re-pair. Hide it for Cassette accounts; manual (generic Subsonic)
   /// accounts still get it.
   private func isCassetteAccount(_ info: AccountInfo) -> Bool {
-    (appDelegate.storage.settings.accounts.getSetting(info).read
-      .loginCredentials?.username ?? "").hasPrefix("cassette-")
+    (
+      appDelegate.storage.settings.accounts.getSetting(info).read
+        .loginCredentials?.username ?? ""
+    ).hasPrefix("cassette-")
   }
 
   var body: some View {
@@ -107,7 +109,10 @@ struct AccountSettingsView: View {
               orientation: .vertical,
               splitPercentage: splitPercentage
             ) {
-              SecondaryText(CassetteSyncAPI.accountName ?? CassetteSyncAPI.accountEmail ?? "Connected")
+              SecondaryText(
+                CassetteSyncAPI.accountName ?? CassetteSyncAPI
+                  .accountEmail ?? "Connected"
+              )
             }
             if CassetteSyncAPI.accountName != nil,
                let email = CassetteSyncAPI.accountEmail {

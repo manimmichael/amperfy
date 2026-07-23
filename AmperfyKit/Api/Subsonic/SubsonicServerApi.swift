@@ -335,7 +335,7 @@ final class SubsonicServerApi: URLCleanser, Sendable {
     switch UserDefaults.standard.string(forKey: CassetteSyncAPI.downloadQualityKey) {
     case "lossless":
       effectiveFormat = .raw
-    case "high", "efficient":
+    case "efficient", "high":
       effectiveFormat = .mp3
     default:
       effectiveFormat = settings.user.cacheTranscodingFormatPreference

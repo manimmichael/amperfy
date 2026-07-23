@@ -630,7 +630,11 @@ public class LibraryStorage: PlayableFileCachable {
   /// `isUploaded` flag — the cloud sync runs in on-device mode too. Oldest-first
   /// and capped so a long offline backlog drains in bounded batches (the endpoint
   /// accepts at most 500 plays per request).
-  public func getUnsyncedCloudPlayEntries(for account: Account, fetchLimit: Int) -> [ScrobbleEntry] {
+  public func getUnsyncedCloudPlayEntries(
+    for account: Account,
+    fetchLimit: Int
+  )
+    -> [ScrobbleEntry] {
     let fetchRequest = ScrobbleEntryMO.fetchRequest()
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
       getFetchPredicate(forAccount: account),

@@ -156,7 +156,10 @@ extension CarPlaySceneDelegate {
             animated: true
           )
         } else if let artist = selectedPlayable as? Artist,
-                  let template = self.makeArtistDetailTemplate(for: artist, onlyCached: isOfflineMode) {
+                  let template = self.makeArtistDetailTemplate(
+                    for: artist,
+                    onlyCached: isOfflineMode
+                  ) {
           self.pushTemplateIfAllowed(template, animated: true)
         } else if let playlist = selectedPlayable as? Playlist {
           self.pushPlaylistDetail(playlist)

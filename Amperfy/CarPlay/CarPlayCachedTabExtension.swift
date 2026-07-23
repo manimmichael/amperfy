@@ -32,7 +32,7 @@ extension LibraryDisplayType {
     // cassette (favorites rip-out): the three Favorite surfaces are hidden from
     // the cached CarPlay tab (the handler-switch cases below are kept for
     // exhaustiveness but are now unreachable).
-    case .favoriteAlbums, .favoriteArtists, .favoriteSongs, .directories, .downloads, .radios,
+    case .directories, .downloads, .favoriteAlbums, .favoriteArtists, .favoriteSongs, .radios,
          .songs:
       return false
     case .playlists:

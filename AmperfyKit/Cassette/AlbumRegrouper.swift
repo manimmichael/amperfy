@@ -65,10 +65,16 @@ import os.log
 /// one touched.
 let cassetteAlbumArtworkType = "album"
 
+// MARK: - AlbumRegrouper
+
 public final class AlbumRegrouper {
   public struct Summary: Sendable {
     public var movedSongs = 0
     public var purgedAlbums = 0
+    /// Emptied on-device synthetic artist rows (cassette-synth-artist:*) purged this
+    /// pass — the identity anchor re-keyed their songs+albums onto the cloud artist
+    /// identity, leaving the old synthetic row ownerless. Steady-state 0 once folded.
+    public var purgedArtists = 0
     public var groups = 0
     public var createdAlbums = 0
     /// SongMOs materialized this pass for OWNED tracks that had a grouping entry
@@ -137,6 +143,51 @@ public final class AlbumRegrouper {
       let library = LibraryStorage(context: context)
       let account = library.getAccount(info: accountInfo)
 
+      // Cassette artist-identity anchor. Resolve the ONE Artist whose IDENTITY is the
+      // cloud's normalized artist key (item.artistGroupKey — inherited-artist:<x> /
+      // catalog-artist:<id>) while its NAME stays the library-stylized display, so an
+      // artist matches the web while "fun." still shows over the catalog "Fun".
+      // Find-or-create by that id; an existing row is RE-KEYED onto it, folding
+      // "Fun"/"fun." toward one identity (same-id duplicates then merge). Falls back
+      // to today's synthetic id when the cloud payload predates artist_group_key, so
+      // nothing regresses pre-deploy.
+      func artistIdentity(for item: CassetteDeviceGroupingItem, songArtist: Artist?) -> Artist {
+        // Anchor to the cloud identity ONLY in on-device-only mode. In Server Mode the
+        // artists are REAL Navidrome rows — SHARED across the artist's whole catalog —
+        // that getCoverArt resolves; re-keying one would fork it into a duplicate on the
+        // next getArtists sync and drag its non-owned albums along. A nil key (cloud
+        // predates the field) is likewise never allowed to re-key. Both fall to today's
+        // behavior: reuse an existing artist by display name, else the song's own, else
+        // mint a synthetic — NEVER re-key an existing row.
+        guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly,
+              let artistId = item.artistGroupKey
+        else {
+          if let named = library.getArtistByExactName(for: account, name: item.displayArtist) {
+            return named
+          }
+          if let songArtist { return songArtist }
+          let created = library.createArtist(account: account)
+          created.id = "cassette-synth-artist:\(item.displayArtist)"
+          created.name = item.displayArtist
+          return created
+        }
+        // Cloud identity present → find-or-create by the key, re-keying an existing row
+        // onto it so "Fun"/"fun." fold to one identity while its NAME is untouched.
+        if let existing = library.getArtist(for: account, id: artistId) { return existing }
+        if let songArtist {
+          if songArtist.id != artistId { songArtist.id = artistId }
+          return songArtist
+        }
+        if let named = library.getArtistByExactName(for: account, name: item.displayArtist) {
+          if named.id != artistId { named.id = artistId }
+          return named
+        }
+        let created = library.createArtist(account: account)
+        created.id = artistId
+        created.name = item.displayArtist
+        return created
+      }
+
       // PRE-PASS (cassette owned==visible heal): materialize a SongMO for any
       // OWNED track that has a grouping entry but no catalog record yet. Runs
       // before the fetch below so the newly-created songs are picked up and
@@ -161,18 +212,10 @@ public final class AlbumRegrouper {
           // Native cover id is provisioned in the main loop below (for ANY owned
           // song lacking artwork), so a heal also fixes songs an earlier build
           // created coverless — not only the ones created this pass.
-          // An artist so the Artists list + the album's artist line aren't blank:
-          // reuse an existing artist by the cloud's display name, else mint one
-          // (display name IS the canonical artist; the app's name-dedup folds any
-          // later real-sync duplicate). The album link is set by the loop below.
-          if let artist = library.getArtistByExactName(for: account, name: item.displayArtist) {
-            song.artist = artist
-          } else {
-            let artist = library.createArtist(account: account)
-            artist.id = "cassette-synth-artist:\(item.displayArtist)"
-            artist.name = item.displayArtist
-            song.artist = artist
-          }
+          // Anchor the freshly-materialized song to the ONE cloud-keyed artist
+          // identity (name = the cloud display). Its album link converges on the SAME
+          // identity in the main loop's adoptArtistIdentity below.
+          song.artist = artistIdentity(for: item, songArtist: nil)
           summary.createdSongs += 1
         }
       }
@@ -250,31 +293,21 @@ public final class AlbumRegrouper {
         provisionedCount += 1
       }
 
-      // Adopt the album's DISPLAY artist every pass — the move-gate twin of the
-      // cover bug. A settled device (moved=0) reaches ONLY the no-move branch, so
-      // artist adoption must run there too or the card's artist line stays blank.
-      // Deduped per album id; idempotent (an album that already has an artist is
-      // left alone, no churn). Source order:
-      //  1. a local Artist that ALREADY exists by the cloud's display name (the
-      //     catalog-canonical name when the library has it) — never mint a synthetic
-      //     artist (that would pollute the Artists list).
-      //  2. else the owned song's OWN local artist — the library's stylized name
-      //     ("fun." where the catalog ships "Fun"), so the card never blanks on
-      //     catalog-vs-tag drift. (Display follows the library; grouping stays the
-      //     normalized group_key. See the artist-name model notes.)
-      //  3. neither → leave nil; a later song may carry one.
-      func adoptDisplayArtist(on album: Album, displayArtist: String, songArtist: Artist?) {
+      // Anchor the album's artist to the ONE cloud-keyed identity every pass — the
+      // move-gate twin of the cover heal. A settled device (moved=0) reaches ONLY the
+      // no-move branch, so this must run there too. Points BOTH the song and the album
+      // at one artist row (id == the cloud key, name == the library-stylized display),
+      // so the Artists list, the album's artist line, and the song row all resolve to
+      // one identity. Deduped per album id; idempotent — re-pointing when already
+      // correct writes nothing. (The old blanket "album.artist != nil → skip" is gone:
+      // an album stuck on a stale synthetic id must re-point to the cloud key, which
+      // the .id guards below make a no-op once correct.)
+      func adoptArtistIdentity(on album: Album, for item: CassetteDeviceGroupingItem, song: Song) {
         guard !artistAdopted.contains(album.id) else { return }
-        if album.artist != nil { artistAdopted.insert(album.id); return } // already set
-        if let artist = library.getArtistByExactName(for: account, name: displayArtist) {
-          album.artist = artist
-          artistAdopted.insert(album.id)
-          return
-        }
-        if let songArtist {
-          album.artist = songArtist
-          artistAdopted.insert(album.id)
-        }
+        let artist = artistIdentity(for: item, songArtist: song.artist)
+        if song.artist?.id != artist.id { song.artist = artist }
+        if album.artist?.id != artist.id { album.artist = artist }
+        artistAdopted.insert(album.id)
       }
 
       func target(for item: CassetteDeviceGroupingItem, nativeCover: ArtworkRemoteInfo?) -> Album {
@@ -346,7 +379,7 @@ public final class AlbumRegrouper {
           // stays blank.
           if let current {
             provisionNativeCover(on: current, nativeCover: nativeCover)
-            adoptDisplayArtist(on: current, displayArtist: item.displayArtist, songArtist: song.artist)
+            adoptArtistIdentity(on: current, for: item, song: song)
           }
           continue
         }
@@ -354,7 +387,7 @@ public final class AlbumRegrouper {
         // Pass the owned song's native Subsonic cover id so getCoverArt can load
         // the album's local-drive cover.jpg over the LAN.
         let targetAlbum = target(for: item, nativeCover: nativeCover)
-        adoptDisplayArtist(on: targetAlbum, displayArtist: item.displayArtist, songArtist: song.artist)
+        adoptArtistIdentity(on: targetAlbum, for: item, song: song)
 
         if let legacy = current, legacy.id != item.groupKey {
           if !mergedLegacyIds.contains(legacy.id) {
@@ -426,7 +459,25 @@ public final class AlbumRegrouper {
         summary.purgedAlbums += 1
       }
 
-      // SAVE #2 — the purge of emptied legacy albums.
+      // PURGE emptied on-device synthetic artist rows. The identity anchor re-keys an
+      // existing artist onto the cloud key (item.artistGroupKey); when two spellings
+      // ("Fun"/"fun.") fold onto one identity, the loser keeps its old
+      // cassette-synth-artist:* id but its songs + albums were re-pointed to the winner
+      // above — so it is now ownerless and meaningless. Scoped to the synthetic prefix
+      // (never a real or cloud-keyed artist) + zero owners, mirroring the album purge.
+      // Idempotent: once folded, none remain (steady-state purgedArtists == 0).
+      let artistReq: NSFetchRequest<ArtistMO> = ArtistMO.fetchRequest()
+      artistReq.predicate = NSPredicate(
+        format: "%K BEGINSWITH %@", #keyPath(ArtistMO.id), "cassette-synth-artist:"
+      )
+      let synthArtists = (try? context.fetch(artistReq)) ?? []
+      for artistMO in synthArtists
+        where (artistMO.songs?.count ?? 0) == 0 && (artistMO.albums?.count ?? 0) == 0 {
+        context.delete(artistMO)
+        summary.purgedArtists += 1
+      }
+
+      // SAVE #2 — the purges (emptied legacy albums + folded synthetic artists).
       do {
         try context.save()
       } catch {

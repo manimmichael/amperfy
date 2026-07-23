@@ -64,7 +64,7 @@ class AlbumRegrouperTest: XCTestCase {
   // memberwise init (internal, reachable via @testable) is used rather than JSON
   // (JSON rejects an unescaped control character).
   private func item(
-    sid: String, key: String, album: String, artist: String
+    sid: String, key: String, album: String, artist: String, artistKey: String? = nil
   )
     -> CassetteDeviceGroupingItem {
     CassetteDeviceGroupingItem(
@@ -73,7 +73,11 @@ class AlbumRegrouperTest: XCTestCase {
       groupKey: key,
       displayAlbum: album,
       displayArtist: artist,
-      albumArtRef: nil
+      artistGroupKey: artistKey,
+      albumArtRef: nil,
+      trackTitle: nil,
+      duration: nil,
+      discTrackIndex: nil
     )
   }
 
@@ -122,6 +126,86 @@ class AlbumRegrouperTest: XCTestCase {
 
     try! context.save()
     return items
+  }
+
+  // The present-key path: two spellings of one artist ("Fun"/"fun.") resolve to ONE
+  // cloud identity; existing synthetic rows are re-keyed/folded onto it and the emptied
+  // loser is purged. Guards the CORE of the artist-identity anchor — the other tests
+  // pass a nil key and so exercise only the legacy fallback.
+  func testArtistIdentityAnchorFoldsSpellingsAndPurgesSynthetic() throws {
+    // On-device-only mode is the anchor's precondition (Server Mode never re-keys).
+    UserDefaults.standard.set(false, forKey: CassetteLibraryFilterProvider.serverModeDefaultsKey)
+
+    let albA = seedAlbum(id: "subs-fun-a", name: "Some Nights")
+    let albB = seedAlbum(id: "subs-fun-b", name: "Aim and Ignite")
+    let sA = seedSong(id: "fun-a", album: albA, owned: true)
+    let sB = seedSong(id: "fun-b", album: albB, owned: true)
+    // Pre-anchor world: each spelling is its OWN synthetic artist, owning its song+album.
+    let synthFun = library.createArtist(account: account)
+    synthFun.id = "cassette-synth-artist:Fun"
+    synthFun.name = "Fun"
+    let synthFunDot = library.createArtist(account: account)
+    synthFunDot.id = "cassette-synth-artist:fun."
+    synthFunDot.name = "fun."
+    library.getSong(for: account, id: sA)?.artist = synthFun
+    library.getSong(for: account, id: sB)?.artist = synthFunDot
+    albA.artist = synthFun
+    albB.artist = synthFunDot
+    try context.save()
+
+    let artistKey = "inherited-artist:fun"
+    let items = [
+      item(
+        sid: sA,
+        key: "fun\u{0}some nights",
+        album: "Some Nights",
+        artist: "Fun",
+        artistKey: artistKey
+      ),
+      item(
+        sid: sB,
+        key: "fun\u{0}aim and ignite",
+        album: "Aim and Ignite",
+        artist: "fun.",
+        artistKey: artistKey
+      ),
+    ]
+
+    let summary = AlbumRegrouper(context: context).regroup(items: items, accountInfo: account.info)
+
+    // Exactly ONE artist under the cloud identity; both synthetic rows gone.
+    XCTAssertNotNil(
+      library.getArtist(for: account, id: artistKey),
+      "anchored on the cloud identity"
+    )
+    XCTAssertNil(
+      library.getArtist(for: account, id: "cassette-synth-artist:Fun"),
+      "Fun re-keyed onto identity"
+    )
+    XCTAssertNil(
+      library.getArtist(for: account, id: "cassette-synth-artist:fun."),
+      "fun. folded + purged"
+    )
+    XCTAssertGreaterThanOrEqual(summary.purgedArtists, 1, "the emptied loser synthetic is purged")
+
+    // Both group albums' artist line resolves to that one identity.
+    let gotA = library.getAlbum(
+      for: account,
+      id: "fun\u{0}some nights",
+      isDetailFaultResolution: false
+    )
+    let gotB = library.getAlbum(
+      for: account,
+      id: "fun\u{0}aim and ignite",
+      isDetailFaultResolution: false
+    )
+    XCTAssertEqual(gotA?.artist?.id, artistKey)
+    XCTAssertEqual(gotB?.artist?.id, artistKey)
+
+    // Idempotent: a second pass folds nothing, purges nothing.
+    let again = AlbumRegrouper(context: context).regroup(items: items, accountInfo: account.info)
+    XCTAssertEqual(again.movedSongs, 0, "steady state: no moves")
+    XCTAssertEqual(again.purgedArtists, 0, "steady state: nothing to purge")
   }
 
   func testRegroupCollapsesSplitKeepsBoxSetSeparatePreservesGhost() throws {

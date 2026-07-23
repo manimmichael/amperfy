@@ -144,7 +144,7 @@ extension CarPlaySceneDelegate {
     case .albums: return albumsSection
     case .artists: return artistsSection
     // cassette (favorites rip-out): .favoriteSongs now falls through to nil.
-    case .directories, .downloads, .favoriteSongs, .favoriteAlbums, .favoriteArtists, .genres,
+    case .directories, .downloads, .favoriteAlbums, .favoriteArtists, .favoriteSongs, .genres,
          .newestAlbums, .playlists, .podcasts, .radios, .recentAlbums, .songs:
       return nil
     }

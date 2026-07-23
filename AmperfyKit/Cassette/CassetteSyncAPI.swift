@@ -195,6 +195,12 @@ public struct CassetteDeviceGroupingItem: Sendable, Decodable {
   public let groupKey: String
   public let displayAlbum: String
   public let displayArtist: String
+  /// The artist's NORMALIZED cloud identity key (the web's artist_group_key —
+  /// `inherited-artist:<name>` / `catalog-artist:<id>`). The device keys its
+  /// ArtistMO by it so an artist's IDENTITY matches the web while its NAME stays
+  /// the library-stylized display. Optional so an older cloud response (before the
+  /// field) still decodes → the regroup falls back to today's synthetic id.
+  public let artistGroupKey: String?
   public let albumArtRef: String?
   /// The track's own title + duration (additive). Present once the cloud deploy
   /// includes them; lets the device materialize a SongMO for an owned track it
@@ -212,6 +218,7 @@ public struct CassetteDeviceGroupingItem: Sendable, Decodable {
     case groupKey = "group_key"
     case displayAlbum = "display_album"
     case displayArtist = "display_artist"
+    case artistGroupKey = "artist_group_key"
     case albumArtRef = "album_art_ref"
     case trackTitle = "track_title"
     case duration
@@ -634,7 +641,8 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   public func fetchPlays(
     since: Date?,
     excludeSource: String? = nil
-  ) async throws -> [CassetteCloudPlay] {
+  ) async throws
+    -> [CassetteCloudPlay] {
     var query: [String] = []
     if let since {
       // Match `recordPlays`' formatter (second precision); the server parses
@@ -815,8 +823,8 @@ public struct CassetteCloudPlay: Decodable {
 
   public init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
-    cassetteLocalId = try c.decode(String.self, forKey: .cassetteLocalId)
-    sourceDevice = try c.decodeIfPresent(String.self, forKey: .sourceDevice)
+    self.cassetteLocalId = try c.decode(String.self, forKey: .cassetteLocalId)
+    self.sourceDevice = try c.decodeIfPresent(String.self, forKey: .sourceDevice)
     let raw = try c.decode(String.self, forKey: .playedAt)
     guard let date = CassetteCloudPlay.parseISO(raw) else {
       throw DecodingError.dataCorruptedError(
@@ -825,7 +833,7 @@ public struct CassetteCloudPlay: Decodable {
         debugDescription: "played_at is not an ISO-8601 timestamp: \(raw)"
       )
     }
-    playedAt = date
+    self.playedAt = date
   }
 
   /// The server emits JS `toISOString()` (fractional seconds + `Z`); tolerate a
@@ -912,7 +920,8 @@ public enum CloudPlayReconciler {
     }
     print(
       "Cassette recency: \(plays.count) plays (\(fromOtherDevice) off-device) → "
-        + "\(ownedMatch) owned / \(hadSubsonicId) with subsonicId / \(songResolved) song resolved / "
+        +
+        "\(ownedMatch) owned / \(hadSubsonicId) with subsonicId / \(songResolved) song resolved / "
         + "\(advanced) recency advanced"
     )
 

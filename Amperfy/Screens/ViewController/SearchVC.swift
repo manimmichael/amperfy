@@ -649,17 +649,25 @@ class SearchVC: BasicTableViewController {
         self.isSearchActive = true
         self.searchHistory = []
         self.artists = searchResult.artistsIDs
-          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? ArtistMO }
+          .compactMap {
+            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? ArtistMO
+          }
           .compactMap { Artist(managedObject: $0) }
         self.albums = searchResult.albumsIDs
-          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? AlbumMO }
+          .compactMap {
+            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? AlbumMO
+          }
           .compactMap { Album(managedObject: $0) }
         self.playlists = searchResult.playlistsIDs
-          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? PlaylistMO }
+          .compactMap {
+            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? PlaylistMO
+          }
           .compactMap { Playlist(library: self.appDelegate.storage.main.library, managedObject: $0)
           }
         self.songs = searchResult.songsIDs
-          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? SongMO }
+          .compactMap {
+            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? SongMO
+          }
           .compactMap { Song(managedObject: $0) }
         self.tableView.separatorStyle = .singleLine
         self.updateDataSource(animated: false)
@@ -720,17 +728,25 @@ class SearchVC: BasicTableViewController {
         self.isSearchActive = true
         self.searchHistory = []
         self.artists = searchResult.artistsIDs
-          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? ArtistMO }
+          .compactMap {
+            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? ArtistMO
+          }
           .compactMap { Artist(managedObject: $0) }
         self.albums = searchResult.albumsIDs
-          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? AlbumMO }
+          .compactMap {
+            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? AlbumMO
+          }
           .compactMap { Album(managedObject: $0) }
         self.playlists = searchResult.playlistsIDs
-          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? PlaylistMO }
+          .compactMap {
+            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? PlaylistMO
+          }
           .compactMap { Playlist(library: self.appDelegate.storage.main.library, managedObject: $0)
           }
         self.songs = searchResult.songsIDs
-          .compactMap { (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? SongMO }
+          .compactMap {
+            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? SongMO
+          }
           .compactMap { Song(managedObject: $0) }
         self.tableView.separatorStyle = .singleLine
         self.updateDataSource(animated: false)

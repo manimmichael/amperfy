@@ -221,7 +221,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         type: .info
       )
       activeAccount = nil
-      self.interfaceController?.setRootTemplate(
+      interfaceController?.setRootTemplate(
         disconnectedTemplate,
         animated: true,
         completion: nil
@@ -244,7 +244,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
       guard let self else { return }
       updateHomeSections()
     }
-    self.interfaceController?.setRootTemplate(
+    interfaceController?.setRootTemplate(
       rootBarTemplate,
       animated: false,
       completion: nil
@@ -677,38 +677,50 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
                       let managedObjectID = objectIdInfo.value as? NSManagedObjectID {
               switch ownerType {
               case .song:
-                let mo = (try? appDelegate.storage.main.context
-                  .existingObject(with: managedObjectID)) as? SongMO
+                let mo = (
+                  try? appDelegate.storage.main.context
+                    .existingObject(with: managedObjectID)
+                ) as? SongMO
                 if let mo = mo {
                   playable = Song(managedObject: mo)
                 }
               case .album:
-                let mo = (try? appDelegate.storage.main.context
-                  .existingObject(with: managedObjectID)) as? AlbumMO
+                let mo = (
+                  try? appDelegate.storage.main.context
+                    .existingObject(with: managedObjectID)
+                ) as? AlbumMO
                 if let mo = mo {
                   entity = Album(managedObject: mo)
                 }
               case .artist:
-                let mo = (try? appDelegate.storage.main.context
-                  .existingObject(with: managedObjectID)) as? ArtistMO
+                let mo = (
+                  try? appDelegate.storage.main.context
+                    .existingObject(with: managedObjectID)
+                ) as? ArtistMO
                 if let mo = mo {
                   entity = Artist(managedObject: mo)
                 }
               case .podcast:
-                let mo = (try? appDelegate.storage.main.context
-                  .existingObject(with: managedObjectID)) as? PodcastMO
+                let mo = (
+                  try? appDelegate.storage.main.context
+                    .existingObject(with: managedObjectID)
+                ) as? PodcastMO
                 if let mo = mo {
                   entity = Podcast(managedObject: mo)
                 }
               case .podcastEpisode:
-                let mo = (try? appDelegate.storage.main.context
-                  .existingObject(with: managedObjectID)) as? PodcastEpisodeMO
+                let mo = (
+                  try? appDelegate.storage.main.context
+                    .existingObject(with: managedObjectID)
+                ) as? PodcastEpisodeMO
                 if let mo = mo {
                   playable = PodcastEpisode(managedObject: mo)
                 }
               case .radio:
-                let mo = (try? appDelegate.storage.main.context
-                  .existingObject(with: managedObjectID)) as? RadioMO
+                let mo = (
+                  try? appDelegate.storage.main.context
+                    .existingObject(with: managedObjectID)
+                ) as? RadioMO
                 if let mo = mo {
                   playable = Radio(managedObject: mo)
                 }

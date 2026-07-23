@@ -208,7 +208,9 @@ class TabBarVC: UITabBarController {
     cassetteLastToggleAt = now
     tabBarMinimizeBehavior = desired
     #if DEBUG
-    print("CASSETTE-NAV: \(desired == .never ? "REVEAL" : "hide") dy=\(String(format: "%.1f", dy))")
+      print(
+        "CASSETTE-NAV: \(desired == .never ? "REVEAL" : "hide") dy=\(String(format: "%.1f", dy))"
+      )
     #endif
   }
 

@@ -296,15 +296,15 @@ public final class DeviceOwnershipManager {
   /// A read-only snapshot of the on-device ownership vs visibility state — the
   /// on-device half of the desktop<->phone sync probe. Nothing here mutates.
   public struct SyncSelfCheck: Sendable {
-    public let ownedTrackCount: Int          // ownership rows with a subsonicTrackId
-    public let renderableTrackCount: Int     // of those, how many have a matching SongMO
-    public let invisibleTrackCount: Int      // owned but NO SongMO → renders nowhere
-    public let renderedAlbumCount: Int       // distinct albums reachable from owned SongMOs
-    public let filesOnDisk: Int              // ownership rows whose backing file exists
-    public let filesMissing: Int             // ownership rows whose file is gone (stranding)
-    public let invisibleButOnDisk: Int       // invisible AND file present → the SongMO-graph gap
-    public let serverModeOn: Bool            // stale server-mode would show catalog, not owned-only
-    public let sampleInvisible: [String]     // a few invisible rows for spot-checking
+    public let ownedTrackCount: Int // ownership rows with a subsonicTrackId
+    public let renderableTrackCount: Int // of those, how many have a matching SongMO
+    public let invisibleTrackCount: Int // owned but NO SongMO → renders nowhere
+    public let renderedAlbumCount: Int // distinct albums reachable from owned SongMOs
+    public let filesOnDisk: Int // ownership rows whose backing file exists
+    public let filesMissing: Int // ownership rows whose file is gone (stranding)
+    public let invisibleButOnDisk: Int // invisible AND file present → the SongMO-graph gap
+    public let serverModeOn: Bool // stale server-mode would show catalog, not owned-only
+    public let sampleInvisible: [String] // a few invisible rows for spot-checking
   }
 
   /// Compute the sync self-check. Safe to call on the main actor with the main

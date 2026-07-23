@@ -388,7 +388,8 @@ public final class HTTPDiagnosticUploader: DiagnosticUploader, @unchecked Sendab
     _ bytes: Data,
     contentType: String,
     to presignedUrl: String
-  ) async -> Bool {
+  ) async
+    -> Bool {
     guard let url = URL(string: presignedUrl) else { return false }
     var request = URLRequest(url: url)
     request.httpMethod = "PUT"

@@ -90,7 +90,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     let mo = album.managedObject
     guard mo.isDeleted || (deleted?.contains(mo) ?? false) else { return }
     DispatchQueue.main.async { [weak self] in
-      guard let self, let nav = self.navigationController else { return }
+      guard let self, let nav = navigationController else { return }
       if nav.topViewController === self {
         nav.popViewController(animated: true)
       } else {
