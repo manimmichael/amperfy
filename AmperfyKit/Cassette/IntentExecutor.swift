@@ -754,6 +754,11 @@ public final class IntentExecutor {
     // library full of picks cannot fire dozens of serial downloads on one launch.
     // Evaluated ONCE: the loop below writes both maps this decision reads.
     let freshInstall = isFreshCoverInstall
+    // Artist-photo source depends on mode, fixed for the pass so read once: an
+    // on-device library anchors artists to a cloud identity and takes their face from
+    // the catalog (R2) via job.artistImageUrl; Server Mode uses the real Navidrome
+    // artist + getCoverArt.
+    let onDeviceOnly = CassetteLibraryFilterProvider.shared.isOnDeviceOnly
     // Forced folder-cover pulls go over the LAN to the paired Mac. Off-LAN, each one
     // is a serial awaited request that converges nothing and holds the poll's
     // single-flight lock, blocking the next poll's intents and removals. Probe ONCE
@@ -800,25 +805,47 @@ public final class IntentExecutor {
       }
 
       // A LOCALLY broken artist image — a shared row, the wrong identity, or missing
-      // bytes — must be repairable without the catalog having changed.
-      //
-      // No longer requires the cloud to have sent an artist image URL. The photo now
-      // comes from the artist folder on the hub, so an artist we hold no catalog
-      // image for still has one on disk; gating on the cloud URL would have excluded
-      // exactly those artists from ever getting theirs.
-      let artistImageBroken = artistImageSourceMigrationPending
-        || !hasHealthyArtistImage(subsonicIds: job.subsonicIds)
+      // bytes — must be repairable without the catalog having changed. What "broken"
+      // means depends on the mode:
+      //  • on-device: the anchored artist's face comes from the catalog (R2), so it's
+      //    broken when a catalog URL exists yet its bytes aren't on disk yet. An
+      //    artist we hold NO catalog image for is not broken — it just has no face
+      //    (the hub-folder photo over the LAN is Phase 3), so it never re-fires.
+      //  • Server Mode: the getCoverArt/folder photo — the existing health check.
+      let artistImageBroken = onDeviceOnly
+        ? (job.artistImageUrl != nil && onDeviceArtistPhotoMissing(subsonicIds: job.subsonicIds))
+        : (
+          artistImageSourceMigrationPending
+            || !hasHealthyArtistImage(subsonicIds: job.subsonicIds)
+        )
 
       let versionChanged = stored != job.contentVersion
       guard versionChanged || mayPullCover || artistImageBroken else { continue }
       let force = stored != nil // first-run materializes once (no force needed)
 
-      // No longer gated on the cloud sending an artist image URL — the photo comes
-      // from the artist folder on the hub, so the only question is whether THIS
-      // device's copy is right.
-      if versionChanged || artistImageBroken {
+      // Route the artist photo by mode. On-device: the anchored identity's face is the
+      // catalog primary (job.artistImageUrl), downloaded straight from R2 onto the
+      // identity artist — never getCoverArt, which can only 404 for a cloud id. Server
+      // Mode: the real Navidrome artist via getCoverArt, exactly as before.
+      if onDeviceOnly {
+        if let imageUrl = job.artistImageUrl, versionChanged || artistImageBroken {
+          // A version change always re-pulls; a missing photo with no version change is
+          // throttled so an artist mid-fetch isn't hammered. Idempotent inside.
+          let mayRepair = versionChanged || mayRetryArtwork("artistimg:" + job.albumKey)
+          if mayRepair {
+            await materializeArtistImageFromUrl(
+              subsonicIds: job.subsonicIds,
+              imageUrl: imageUrl,
+              accountInfo: accountInfo,
+              force: versionChanged
+            )
+          }
+        }
+        // No catalog face for an on-device identity artist → no getCoverArt fallback
+        // (it can only 404 here); leave the placeholder until the LAN folder photo
+        // path lands (Phase 3, BUG-078).
+      } else if versionChanged || artistImageBroken {
         // A version change always re-fetches. A "broken" image with no version change
-        // is the perpetual case — a synthetic artist, or one with no hub folder photo,
         // reads as broken every poll and would re-fetch forever — so throttle that path.
         let mayRepair = versionChanged || mayRetryArtwork("artistimg:" + job.albumKey)
         if mayRepair {
@@ -1042,10 +1069,13 @@ public final class IntentExecutor {
   /// True for any artist id the hub's getCoverArt can NEVER resolve — an on-device
   /// synthetic id OR a cloud identity key (`inherited-artist:` / `catalog-artist:`,
   /// the artist_group_key the regroup now anchors to). getCoverArt can only 404 for
-  /// these, so the every-poll artist-image repair must skip them or it re-requests a
-  /// guaranteed 404 forever (the "repair that never comes" loop). Their real photos
-  /// will be sourced (Phase 2) from the sidecar artist-photo proxy keyed by an owned
-  /// track id — NOT wired yet, so until then these artists show a placeholder.
+  /// these, so the getCoverArt repair path (materializeArtistImage / hasHealthyArtistImage)
+  /// must skip them or it re-requests a guaranteed 404 forever (the "repair that never
+  /// comes" loop). Their real photo is now sourced (Phase 2) from the catalog primary
+  /// (R2) that the artwork manifest delivers as `artist_image_url`, downloaded straight
+  /// onto the identity artist by `materializeArtistImageFromUrl` in on-device mode —
+  /// never through getCoverArt. An artist with no catalog face still shows a placeholder
+  /// until the LAN hub-folder photo path lands (Phase 3, BUG-078).
   static func isUnfetchableArtistId(_ id: String) -> Bool {
     id.hasPrefix(syntheticArtistIDPrefix)
       || id.hasPrefix("inherited-artist:")
@@ -1616,6 +1646,173 @@ public final class IntentExecutor {
       AmperKit.shared.getMeta(accountInfo).artworkDownloadManager
         .download(object: Artwork(managedObject: mo))
     }
+  }
+
+  /// True when this album's ANCHORED artist still lacks its catalog face on disk —
+  /// the signal to pull `job.artistImageUrl` from R2. Unlike `hasHealthyArtistImage`
+  /// this does NOT skip cloud-identity ids (`inherited-artist:`/`catalog-artist:`):
+  /// those are exactly the artists whose photo now comes from the catalog (Phase 2),
+  /// not getCoverArt. A shared, wrongly-identified, or fileless row all read missing.
+  private func onDeviceArtistPhotoMissing(subsonicIds: [String]) -> Bool {
+    guard !subsonicIds.isEmpty else { return false }
+    let context = AmperKit.shared.storage.main.context
+    var missing = false
+    context.performAndWait {
+      let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
+      request.predicate = NSPredicate(format: "id IN %@", subsonicIds)
+      request.returnsObjectsAsFaults = false
+      let songMOs = (try? context.fetch(request)) ?? []
+      var seen = Set<NSManagedObjectID>()
+      for songMO in songMOs {
+        let song = Song(managedObject: songMO)
+        guard let artist = song.album?.artist ?? song.artist else { continue }
+        guard seen.insert(artist.managedObject.objectID).inserted else { continue }
+        guard !artist.id.isEmpty,
+              let artwork = artist.artwork,
+              (artwork.managedObject.owners?.count ?? 0) <= 1,
+              artwork.remoteInfo == ArtworkRemoteInfo(id: artist.id, type: "artist"),
+              artwork.status == .CustomImage,
+              let path = artwork.imagePath,
+              FileManager.default.fileExists(atPath: path)
+        else { missing = true; return }
+      }
+    }
+    return missing
+  }
+
+  /// Give an on-device ARTIST IDENTITY its face from the catalog (Phase 2).
+  ///
+  /// The identity anchor (AlbumRegrouper) keys every on-device artist on a cloud
+  /// identity that getCoverArt can only 404 for, so `materializeArtistImage` leaves
+  /// them a placeholder. Their real photo is the SAME catalog primary the web Artists
+  /// wall shows; the artwork manifest already delivers its R2 URL per owned album
+  /// (`job.artistImageUrl`). This downloads that plain URL directly and stores it onto
+  /// the identity artist's own `(id,"artist")` Artwork — bypassing Navidrome's
+  /// stale/wrong image cache (BUG-082) entirely, so the phone's faces match the web.
+  ///
+  /// Stores STRAIGHT to `.CustomImage` (never `.NotChecked`) so the getCoverArt
+  /// download delegate never re-fetches over the catalog bytes. Idempotent: unless
+  /// `force`, an artist already carrying its photo on disk is left untouched (no
+  /// network). Un-shares a poisoned shared row first so the photo can't leak onto a
+  /// featured artist. Models `forceRefreshNativeCover` (the album-cover twin).
+  @discardableResult
+  private func materializeArtistImageFromUrl(
+    subsonicIds: [String],
+    imageUrl: String,
+    accountInfo: AccountInfo,
+    force: Bool
+  ) async
+    -> Bool {
+    guard AmperKit.shared.storage.settings.accounts
+      .getSetting(accountInfo).read.artworkDownloadSetting != .never else { return false }
+    guard !subsonicIds.isEmpty, let url = URL(string: imageUrl) else { return false }
+
+    let context = AmperKit.shared.storage.main.context
+    var artworkObjectID: NSManagedObjectID?
+    var remoteInfo: ArtworkRemoteInfo?
+    var artworkUniqueID: String?
+    var artistName: String?
+    context.performAndWait {
+      let library = LibraryStorage(context: context)
+      let account = library.getAccount(info: accountInfo)
+      let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
+      request.predicate = NSPredicate(format: "id IN %@", subsonicIds)
+      request.fetchLimit = 1
+      guard let songMO = try? context.fetch(request).first else { return }
+      let song = Song(managedObject: songMO)
+
+      // Target the ALBUM artist — the identity the anchor keyed and the Artists list
+      // renders — falling back to the song's own artist.
+      guard let artist = song.album?.artist ?? song.artist, !artist.id.isEmpty else { return }
+
+      // Store under (id,"artist"): the display reads it exactly like a getCoverArt
+      // photo, and onDeviceArtistPhotoMissing recognizes it as the artist's own row.
+      let want = ArtworkRemoteInfo(id: artist.id, type: "artist")
+
+      // Un-share a poisoned shared row (owners > 1) so this photo can't render on a
+      // featured artist that happens to share the Artwork.
+      let isSharedRow = (artist.artwork?.managedObject.owners?.count ?? 0) > 1
+      let artwork: Artwork
+      if let existing = artist.artwork, !isSharedRow {
+        artwork = existing
+      } else {
+        let created = library.createArtwork(account: account)
+        created.remoteInfo = want
+        created.status = .NotChecked
+        artist.artwork = created
+        artwork = created
+        if isSharedRow { print("Cassette poll: un-sharing artist image - '\(artist.name)'") }
+      }
+      if artwork.remoteInfo != want { artwork.remoteInfo = want }
+
+      // Idempotent: already carrying its photo on disk → nothing to fetch.
+      if !force, artwork.status == .CustomImage,
+         let path = artwork.imagePath, FileManager.default.fileExists(atPath: path) {
+        return
+      }
+      // A freshly created row still carries a TEMPORARY objectID; make it permanent so
+      // the re-wrap after the download can resolve it.
+      try? context.obtainPermanentIDs(for: [artwork.managedObject])
+      try? context.save()
+      artworkObjectID = artwork.managedObject.objectID
+      remoteInfo = want
+      artworkUniqueID = artwork.uniqueID
+      artistName = artist.name
+    }
+    guard let artworkObjectID, let remoteInfo else { return false }
+
+    var urlRequest = URLRequest(url: url)
+    // Well under URLSession's 60s default: these run serially inside the poll.
+    urlRequest.timeoutInterval = 15
+    let data: Data
+    do {
+      let (downloaded, response) = try await URLSession.shared.data(for: urlRequest)
+      guard let http = response as? HTTPURLResponse,
+            (200 ..< 300).contains(http.statusCode), !downloaded.isEmpty,
+            CoverImageStore.isDecodable(downloaded)
+      else { return false }
+      data = downloaded
+    } catch {
+      print("Cassette poll: artist photo fetch failed - \(error.localizedDescription)")
+      return false
+    }
+
+    let fileManager = CacheFileManager.shared
+    guard let relFilePath = fileManager.createRelPath(for: remoteInfo, account: accountInfo),
+          let absFilePath = fileManager.getAbsoluteAmperfyPath(relFilePath: relFilePath)
+    else { return false }
+    do {
+      try fileManager.writeDataExcludedFromBackup(
+        data: data, to: absFilePath, accountInfo: accountInfo
+      )
+    } catch {
+      print("Cassette poll: artist photo write failed - \(error.localizedDescription)")
+      return false
+    }
+
+    context.performAndWait {
+      guard let artworkMO = try? context.existingObject(with: artworkObjectID) as? ArtworkMO
+      else { return }
+      let artwork = Artwork(managedObject: artworkMO)
+      artwork.status = .CustomImage
+      artwork.relFilePath = relFilePath
+      try? context.save()
+    }
+
+    // Invalidate every layer keyed by this (unchanged) path so the new face paints.
+    let thumbPath = CoverImageStore.thumbPath(forFullPath: absFilePath.path)
+    try? FileManager.default.removeItem(atPath: thumbPath)
+    CoverImageStore.ensureThumb(forFullPath: absFilePath.path)
+    LibraryEntityImage.evictCache(forFullPath: absFilePath.path)
+    if let artworkUniqueID {
+      AmperKit.shared.notificationHandler.post(
+        name: .downloadFinishedSuccess,
+        object: AmperKit.shared.getMeta(accountInfo).artworkDownloadManager,
+        userInfo: DownloadNotification(id: artworkUniqueID).asNotificationUserInfo
+      )
+    }
+    if let artistName { print("Cassette poll: artist photo set from catalog - '\(artistName)'") }
+    return true
   }
 
   private func forceRefreshNativeCover(
