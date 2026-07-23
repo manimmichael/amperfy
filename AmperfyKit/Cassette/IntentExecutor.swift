@@ -80,6 +80,30 @@ public final class IntentExecutor {
   private var lastFullInventoryReportAt: Date?
   private let fullInventoryReportMinInterval: TimeInterval = 120
 
+  // Per-artwork retry back-off. The cover + artist-image backfills re-evaluate the
+  // whole owned set every poll; without this they re-fetch a cover/photo the source
+  // CANNOT provide — a synthetic artist with no real image, an album whose cover.jpg
+  // is off-LAN or genuinely absent — on EVERY 30s poll, forever (the "Artwork not
+  // found" / "OVERWRITING cached cover" churn). We stamp each attempt and skip a
+  // re-attempt inside the cooldown. First attempts and genuine content changes bypass
+  // it, so healthy art still heals on the very next poll (a ripped CD's cover appears
+  // right away) — only the doomed retries are throttled. In-memory on purpose: a
+  // relaunch clears it and gives everything one fresh attempt.
+  private var artworkRetryAt: [String: Date] = [:]
+  private let artworkRetryCooldown: TimeInterval = 600 // 10 min
+
+  /// Returns true (and stamps `key`) when it has NOT been attempted within the
+  /// cooldown, false to skip this poll. A caller acting on a real content change
+  /// should NOT consult this — it should fetch straight away.
+  private func mayRetryArtwork(_ key: String) -> Bool {
+    let now = Date()
+    if let last = artworkRetryAt[key], now.timeIntervalSince(last) < artworkRetryCooldown {
+      return false
+    }
+    artworkRetryAt[key] = now
+    return true
+  }
+
   public init() {}
 
   /// Entry point for polling (foreground + 30s timer). No-op if no account or
@@ -510,9 +534,16 @@ public final class IntentExecutor {
       guard let mo = try? mainContext.existingObject(with: id) as? ArtworkMO else { return nil }
       return Artwork(managedObject: mo)
     }
-    guard !artworks.isEmpty else { return }
-    print("Cassette poll: backfilling covers for \(artworks.count) owned album(s)")
-    AmperKit.shared.getMeta(accountInfo).artworkDownloadManager.download(objects: artworks)
+    // Back off covers just attempted. An album whose cover the hub can't serve (off-LAN,
+    // or none exists) is re-collected here on every poll; without this gate it re-downloads
+    // every 30s forever. Keyed by the artwork's stable objectID. A newly-missing cover is
+    // absent from the map, so it still fetches on the next poll.
+    let eligible = artworks.filter {
+      mayRetryArtwork("albumcover:" + $0.managedObject.objectID.uriRepresentation().absoluteString)
+    }
+    guard !eligible.isEmpty else { return }
+    print("Cassette poll: backfilling covers for \(eligible.count) owned album(s)")
+    AmperKit.shared.getMeta(accountInfo).artworkDownloadManager.download(objects: eligible)
   }
 
   /// cassette §art-collapse: one-time re-tier heal. Walks the account's artworks
@@ -786,16 +817,22 @@ public final class IntentExecutor {
       // from the artist folder on the hub, so the only question is whether THIS
       // device's copy is right.
       if versionChanged || artistImageBroken {
-        if artistImageBroken, !versionChanged {
-          print("Cassette poll: repairing artist image - '\(job.albumKey)'")
+        // A version change always re-fetches. A "broken" image with no version change
+        // is the perpetual case — a synthetic artist, or one with no hub folder photo,
+        // reads as broken every poll and would re-fetch forever — so throttle that path.
+        let mayRepair = versionChanged || mayRetryArtwork("artistimg:" + job.albumKey)
+        if mayRepair {
+          if artistImageBroken, !versionChanged {
+            print("Cassette poll: repairing artist image - '\(job.albumKey)'")
+          }
+          await materializeArtistImage(
+            subsonicIds: job.subsonicIds,
+            accountInfo: accountInfo,
+            // A broken row must be replaced even though the catalog is unchanged;
+            // the idempotent gate inside would otherwise keep the poisoned file.
+            force: force || artistImageBroken
+          )
         }
-        await materializeArtistImage(
-          subsonicIds: job.subsonicIds,
-          accountInfo: accountInfo,
-          // A broken row must be replaced even though the catalog is unchanged;
-          // the idempotent gate inside would otherwise keep the poisoned file.
-          force: force || artistImageBroken
-        )
       }
       // NOTE: there is deliberately NO cloud pick-adoption here any more. A cover the
       // user picks is written into their folder cover.jpg by the hub, so it reaches

@@ -149,6 +149,15 @@ public struct CassetteDeviceArtworkAlbum: Sendable, Decodable {
   public let artistThumbUrl: String?
   public let coverUrl: String?
   public let coverThumbUrl: String?
+  /// True when cover_url is the user's OWN chosen cover (an override), not our
+  /// catalog. The phone adopts the cover onto the local library only when this is
+  /// true. Optional so an older server response (without the field) still decodes.
+  public let coverIsOverride: Bool?
+  /// Fingerprint of the LAN folder cover's bytes on the paired Mac. Non-nil ONLY
+  /// when the album has no user pick — the server nulls it whenever coverIsOverride
+  /// is true — so acting on it can never take a pick back. Optional so a response
+  /// from an older server still decodes.
+  public let localCoverVersion: String?
   public let contentVersion: String
 
   enum CodingKeys: String, CodingKey {
@@ -158,6 +167,8 @@ public struct CassetteDeviceArtworkAlbum: Sendable, Decodable {
     case artistThumbUrl = "artist_thumb_url"
     case coverUrl = "cover_url"
     case coverThumbUrl = "cover_thumb_url"
+    case coverIsOverride = "cover_is_override"
+    case localCoverVersion = "local_cover_version"
     case contentVersion = "content_version"
   }
 }
@@ -615,6 +626,39 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     _ = try await send(method: "POST", path: "/api/sync/plays", json: ["plays": rows])
   }
 
+  /// GET /api/sync/plays?since=<iso> — cloud play history, newest first, plays
+  /// strictly newer than `since` (server default page size when `since == nil`).
+  /// Strictly READ-ONLY. Used by `CloudPlayReconciler` to fold in plays made on
+  /// the user's OTHER devices (e.g. their computer) so recency is synchronized
+  /// cross-device.
+  public func fetchPlays(
+    since: Date?,
+    excludeSource: String? = nil
+  ) async throws -> [CassetteCloudPlay] {
+    var query: [String] = []
+    if let since {
+      // Match `recordPlays`' formatter (second precision); the server parses
+      // either. `get(path:)` does no percent-encoding, so encode here.
+      let iso = ISO8601DateFormatter()
+      let sinceStr = iso.string(from: since)
+      let encoded = sinceStr
+        .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? sinceStr
+      query.append("since=\(encoded)")
+    }
+    // Drop our OWN device's plays server-side so the newest-N page is spent on
+    // cross-device history, not our own listening (which is already local recency).
+    if let excludeSource {
+      query.append("exclude_source=\(excludeSource)")
+    }
+    let path = query.isEmpty ? "/api/sync/plays" : "/api/sync/plays?\(query.joined(separator: "&"))"
+    let data = try await get(path: path)
+    return try JSONDecoder().decode(PlaysResponse.self, from: data).plays
+  }
+
+  private struct PlaysResponse: Decodable {
+    let plays: [CassetteCloudPlay]
+  }
+
   // MARK: On-demand convergence (B2 pull-to-refresh)
 
   public enum ConvergeResult: Sendable {
@@ -751,5 +795,128 @@ final class CassetteAuthPreservingDelegate: NSObject, URLSessionTaskDelegate {
       newRequest.setValue(auth, forHTTPHeaderField: "Authorization")
     }
     completionHandler(newRequest)
+  }
+}
+
+// MARK: - CassetteCloudPlay
+
+/// One play returned by `GET /api/sync/plays` — the subset the Home recency
+/// reconciler needs. Mirrors the server `PlayJson` wire shape.
+public struct CassetteCloudPlay: Decodable {
+  public let cassetteLocalId: String
+  public let playedAt: Date
+  public let sourceDevice: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case cassetteLocalId = "cassette_local_id"
+    case playedAt = "played_at"
+    case sourceDevice = "source_device"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    cassetteLocalId = try c.decode(String.self, forKey: .cassetteLocalId)
+    sourceDevice = try c.decodeIfPresent(String.self, forKey: .sourceDevice)
+    let raw = try c.decode(String.self, forKey: .playedAt)
+    guard let date = CassetteCloudPlay.parseISO(raw) else {
+      throw DecodingError.dataCorruptedError(
+        forKey: .playedAt,
+        in: c,
+        debugDescription: "played_at is not an ISO-8601 timestamp: \(raw)"
+      )
+    }
+    playedAt = date
+  }
+
+  /// The server emits JS `toISOString()` (fractional seconds + `Z`); tolerate a
+  /// plain second-precision stamp too.
+  private static func parseISO(_ s: String) -> Date? {
+    let withFrac = ISO8601DateFormatter()
+    withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let d = withFrac.date(from: s) { return d }
+    let plain = ISO8601DateFormatter()
+    plain.formatOptions = [.withInternetDateTime]
+    return plain.date(from: s)
+  }
+}
+
+// MARK: - CloudPlayReconciler
+
+/// Folds cloud play history made on the user's OTHER devices (e.g. their
+/// computer) into this device's local recency, so the Home "Recent" shelf
+/// reflects cross-device listening. It only ever ADVANCES a `Song`'s
+/// `lastTimePlayed` (never decrements, never touches `playCount`), and is
+/// read-only against the network (`GET /api/sync/plays`).
+///
+/// Identity chain: a cloud play's `cassette_local_id` → the indexed
+/// `DeviceOwnershipMO` (owned/downloaded tracks) → its `subsonicTrackId` → the
+/// local `Song`. Cloud plays for tracks not on this device have no local Song
+/// and are skipped — they couldn't appear in a local shelf anyway.
+public enum CloudPlayReconciler {
+  /// How far back to re-scan cloud plays on every run. A forward-only "newest
+  /// playedAt" watermark stranded cross-device history: the phone's OWN plays are
+  /// always the newest, so the watermark raced to "now" and every play from
+  /// another device — always at an earlier timestamp — fell permanently behind it
+  /// and was never fetched again. Instead we re-scan this bounded recent window
+  /// every run and lean on advance-only idempotency (re-applying a play already
+  /// folded in is a no-op), so cross-device plays are always caught and the pass
+  /// self-heals. The server caps the page at its own limit, newest-first, which is
+  /// plenty for a "Recent" shelf.
+  nonisolated private static let recencyWindow: TimeInterval = 60 * 60 * 24 * 90 // 90 days
+
+  /// Fetch recent cloud plays and advance the matching local Songs'
+  /// `lastTimePlayed` so the Home "Recent" shelf reflects listening on the user's
+  /// OTHER devices (e.g. their computer). Returns `true` if any Song changed, so
+  /// the caller can refresh recency-driven UI. Advance-only (never decrements,
+  /// never bumps `playCount`) and read-only against the network — safe to re-run.
+  @MainActor
+  public static func reconcile(storage: PersistentStorage, account: Account) async -> Bool {
+    guard CassetteSyncAPI.bearerToken != nil else { return false }
+
+    let since = Date().addingTimeInterval(-recencyWindow)
+    let plays: [CassetteCloudPlay]
+    do {
+      // exclude our own "ios" plays — we only need OTHER devices' listening, and
+      // dropping ours keeps the newest-N page spent on cross-device history.
+      plays = try await CassetteSyncAPI.shared.fetchPlays(since: since, excludeSource: "ios")
+    } catch {
+      print("Cassette recency: fetchPlays FAILED: \(error)")
+      return false
+    }
+    // cassette recency diagnostics — temporary. Founder pastes the Xcode console;
+    // this maps the funnel from cloud plays → local recency advances so we can see
+    // exactly where cross-device recency is (or isn't) landing. Remove once green.
+    print("Cassette recency: fetched \(plays.count) cloud plays since \(since)")
+    guard !plays.isEmpty else { return false }
+
+    let ownership = DeviceOwnershipManager(context: storage.main.context)
+    var changed = false
+    // Funnel counters: how many plays survive each resolution step.
+    var fromOtherDevice = 0, ownedMatch = 0, hadSubsonicId = 0, songResolved = 0, advanced = 0
+
+    for play in plays {
+      if play.sourceDevice != "ios" { fromOtherDevice += 1 }
+      guard let owned = try? ownership.fetchOne(cassetteLocalId: play.cassetteLocalId)
+      else { continue }
+      ownedMatch += 1
+      guard let subsonicId = owned.subsonicTrackId else { continue }
+      hadSubsonicId += 1
+      guard let song = storage.main.library.getSong(for: account, id: subsonicId)
+      else { continue }
+      songResolved += 1
+      // Advance-only: never move a Song's recency backwards, never bump count.
+      if let current = song.lastTimePlayed, current >= play.playedAt { continue }
+      song.lastTimePlayed = play.playedAt
+      advanced += 1
+      changed = true
+    }
+    print(
+      "Cassette recency: \(plays.count) plays (\(fromOtherDevice) off-device) → "
+        + "\(ownedMatch) owned / \(hadSubsonicId) with subsonicId / \(songResolved) song resolved / "
+        + "\(advanced) recency advanced"
+    )
+
+    if changed { storage.main.saveContext() }
+    return changed
   }
 }

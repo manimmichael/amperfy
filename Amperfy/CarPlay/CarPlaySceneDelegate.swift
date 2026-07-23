@@ -606,7 +606,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         useCache: false
       )
       for rowImage in imageRowImages {
-        rowImage.image = image.carPlayImage(carTraitCollection: traits)
+        rowImage.image = carPlayEntityImage(image, for: container.entity)
       }
     }
 
@@ -628,7 +628,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
             useCache: false
           )
           let newElement = CPListImageRowItemRowElement(
-            image: image.carPlayImage(carTraitCollection: traits),
+            image: carPlayEntityImage(image, for: container.entity),
             title: container.item.playableContainable.name,
             subtitle: container.item.playableContainable.subtitle
           )
@@ -724,13 +724,16 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
               item.setImage(getImage(for: playable, isTrackDisplayed: isTrackDisplayed))
             } else if let entity = entity {
               item.setImage(
-                LibraryEntityImage.getImageToDisplayImmediately(
-                  libraryEntity: entity,
-                  themePreference: getPreference(activeAccountInfo).theme,
-                  artworkDisplayPreference: getPreference(activeAccountInfo)
-                    .artworkDisplayPreference,
-                  useCache: false
-                ).carPlayImage(carTraitCollection: traits)
+                carPlayEntityImage(
+                  LibraryEntityImage.getImageToDisplayImmediately(
+                    libraryEntity: entity,
+                    themePreference: getPreference(activeAccountInfo).theme,
+                    artworkDisplayPreference: getPreference(activeAccountInfo)
+                      .artworkDisplayPreference,
+                    useCache: false
+                  ),
+                  for: entity
+                )
               )
             }
           }

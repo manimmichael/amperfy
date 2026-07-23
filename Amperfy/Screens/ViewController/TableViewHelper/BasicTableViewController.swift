@@ -150,6 +150,80 @@ class BasicTableViewController: KeyCommandTableViewController {
   /// header detail VCs set this; every other screen ignores it.
   var isHeaderTransitionFrozen = false
 
+  /// cassette (swipe-back band fix): the destination screen's real nav-bar
+  /// appearance slots, held for the duration of an interactive pop so they can
+  /// be put back exactly as they were. Deliberately a value the completion
+  /// closure captures STRONGLY rather than a property on the popped view
+  /// controller: a successful pop releases that controller, and a restore that
+  /// depended on it would silently leave the destination's bar transparent
+  /// forever.
+  private struct DestinationBarAppearanceStash {
+    let item: UINavigationItem
+    let standard: UINavigationBarAppearance?
+    let compact: UINavigationBarAppearance?
+    let scrollEdge: UINavigationBarAppearance?
+    let compactScrollEdge: UINavigationBarAppearance?
+
+    /// Put the destination's real bar appearance back. Runs on completion
+    /// whether the swipe finished or was reversed.
+    func restore() {
+      UIView.performWithoutAnimation {
+        item.standardAppearance = standard
+        item.compactAppearance = compact
+        item.scrollEdgeAppearance = scrollEdge
+        item.compactScrollEdgeAppearance = compactScrollEdge
+      }
+    }
+  }
+
+  /// cassette (swipe-back band fix): a translucent bar slid in over the album
+  /// artwork during an edge-swipe back to Albums, but not back to Home.
+  ///
+  /// The detail screens draw their artwork UNDER the navigation bar
+  /// (`contentInsetAdjustmentBehavior = .never` plus a header that only insets
+  /// by the status-bar height), and they keep all four bar appearance slots
+  /// transparent so the cover reads clean at rest. During a pop the navigation
+  /// bar is shared: UIKit cross-fades its background to whatever the
+  /// DESTINATION asks for while the outgoing detail view — artwork and all —
+  /// is still filling most of the screen. So the destination's bar background
+  /// paints over the cover on its way in, and mid-swipe it is at partial
+  /// opacity, which is exactly the translucent band.
+  ///
+  /// Home never showed it because Home is the one list screen that overrides
+  /// the bar with a system material (`configureWithDefaultBackground()`, no
+  /// background colour, no shadow) — fading a blur of the cover in over the
+  /// cover is invisible. Every other list screen, Albums included, inherits
+  /// the global opaque proxy (solid `bg` + an `ink4` hairline), and a solid
+  /// fill over artwork is very visible.
+  ///
+  /// Fix: hold the destination's bar background transparent for the length of
+  /// the pop, then restore its real appearance the moment the transition ends.
+  /// The restore is invisible because the destination's own content does not
+  /// extend under the bar — the strip behind the bar is flat `bg` either way.
+  /// Doing it here rather than in one list screen covers every route into a
+  /// detail page (Albums, Artists, Search, Genre, Playlists).
+  private func neutralizeDestinationBarBackground(
+    using coordinator: UIViewControllerTransitionCoordinator
+  )
+    -> DestinationBarAppearanceStash? {
+    guard let destination = coordinator.viewController(forKey: .to) else { return nil }
+    let item = destination.navigationItem
+    let stash = DestinationBarAppearanceStash(
+      item: item,
+      standard: item.standardAppearance,
+      compact: item.compactAppearance,
+      scrollEdge: item.scrollEdgeAppearance,
+      compactScrollEdge: item.compactScrollEdgeAppearance
+    )
+    let transparent = UINavigationBarAppearance()
+    transparent.configureWithTransparentBackground()
+    item.standardAppearance = transparent
+    item.compactAppearance = transparent
+    item.scrollEdgeAppearance = transparent
+    item.compactScrollEdgeAppearance = transparent
+    return stash
+  }
+
   /// cassette (header-pop fix, round 3): call from `viewWillDisappear` of a
   /// collapsing-header detail VC when `isMovingFromParent` (an actual pop,
   /// including the interactive edge-swipe). Freezes the header for the whole
@@ -172,7 +246,13 @@ class BasicTableViewController: KeyCommandTableViewController {
       isHeaderTransitionFrozen = false
       return
     }
+    // cassette (swipe-back band fix): hold the destination's bar background
+    // transparent so it cannot paint over the outgoing artwork mid-swipe. The
+    // stash is captured strongly by the completion below, so the restore runs
+    // even once this (popped) controller is gone.
+    let barStash = neutralizeDestinationBarBackground(using: coordinator)
     coordinator.animate(alongsideTransition: nil) { [weak self] context in
+      barStash?.restore()
       guard let self else { return }
       isHeaderTransitionFrozen = false
       if context.isCancelled {

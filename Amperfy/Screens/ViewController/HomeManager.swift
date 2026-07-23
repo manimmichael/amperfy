@@ -278,7 +278,10 @@ class HomeManager: NSObject {
   }
 
   func updateFromRemote() {
-    guard storage.settings.user.isOnlineMode else { return }
+    guard storage.settings.user.isOnlineMode else {
+      print("Cassette recency: updateFromRemote SKIPPED — app is in offline mode")
+      return
+    }
     Task { @MainActor in
       do {
         try await AutoDownloadLibrarySyncer(
@@ -324,6 +327,16 @@ class HomeManager: NSObject {
           isBackground: true
         )
       }
+    }
+    // cassette: fold plays made on the user's OTHER devices (e.g. their
+    // computer) into local recency, so the Home "Recent" shelf reflects
+    // cross-device listening. Advance-only; read-only against the network.
+    Task { @MainActor in
+      let changed = await CloudPlayReconciler.reconcile(
+        storage: self.storage,
+        account: self.account
+      )
+      if changed { self.scheduleRecompute() }
     }
   }
 
@@ -607,8 +620,16 @@ class HomeManager: NSObject {
       applySnapshotCB?()
       return
     }
-    data[.yourPlaylists] = playlistMOs.prefix(Self.shelfCarouselCap)
+    // cassette: dedup by stableID like every other shelf builder (updateRecent's
+    // seenIDs, filledShelf's seen, blendForgotten). Two PlaylistMOs sharing a
+    // playlist id — a row materialized twice, or a degenerate/empty id on a
+    // local playlist — otherwise map to two identical HomeItems in one section,
+    // a duplicate diffable identifier that hard-crashes applySnapshot (SIGTRAP).
+    var seenPlaylistIDs = Set<String>()
+    data[.yourPlaylists] = playlistMOs
       .compactMap { Playlist(library: storage.main.library, managedObject: $0) }
+      .filter { seenPlaylistIDs.insert(Self.stableID(for: $0)).inserted }
+      .prefix(Self.shelfCarouselCap)
       .map { HomeItem(
         section: .yourPlaylists,
         stableID: Self.stableID(for: $0),

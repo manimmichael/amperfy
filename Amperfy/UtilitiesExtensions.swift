@@ -415,6 +415,29 @@ extension UIImage {
     imageAsset.register(self, with: traits)
     return imageAsset.image(with: traits)
   }
+
+  /// cassette: crop to a centered circle. Used for CarPlay artist rows so they
+  /// match the round artist artwork the iOS app renders via `EntityImageView`
+  /// (CarPlay's `CPListItem` / image-row elements can't apply a shape). The
+  /// image is center-cropped to a square, then clipped to a circle.
+  func croppedToCircle() -> UIImage {
+    let side = min(size.width, size.height)
+    guard side > 0 else { return self }
+    let outputSize = CGSize(width: side, height: side)
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = scale
+    format.opaque = false
+    let renderer = UIGraphicsImageRenderer(size: outputSize, format: format)
+    return renderer.image { _ in
+      UIBezierPath(ovalIn: CGRect(origin: .zero, size: outputSize)).addClip()
+      // Draw the full image offset so its centered square region fills the circle.
+      let origin = CGPoint(
+        x: -(size.width - side) / 2.0,
+        y: -(size.height - side) / 2.0
+      )
+      draw(in: CGRect(origin: origin, size: size))
+    }
+  }
 }
 
 extension UICollectionViewLayout {

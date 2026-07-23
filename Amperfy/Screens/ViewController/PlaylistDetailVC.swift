@@ -324,10 +324,11 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   }
 
   // Patch 026: playlist metadata line. Year doesn't apply for playlists,
-  // so we surface scope: "Playlist · 14 songs · 56m". Counts and
-  // duration are skipped when missing.
+  // so we surface scope: "14 songs · 56m". Counts and duration are skipped
+  // when missing. cassette: leading type noun dropped, matching the other
+  // detail pages.
   private func refreshPlaylistMetadataLine() {
-    var parts = ["Playlist"]
+    var parts: [String] = []
     if playlist.songCount > 0 {
       parts.append("\(playlist.songCount) song\(playlist.songCount == 1 ? "" : "s")")
     }

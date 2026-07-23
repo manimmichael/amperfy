@@ -73,6 +73,15 @@ final class HomeVC: UICollectionViewController {
     super.viewDidLoad()
     // ensures that the collection view stops placing items under the sidebar
     collectionView.contentInsetAdjustmentBehavior = .scrollableAxes
+
+    // Pull-to-refresh on Home. This is what lets the passive poll back off to a long
+    // idle interval without ever feeling stale: the gesture is the responsive path,
+    // so the timer does not have to be.
+    #if !targetEnvironment(macCatalyst)
+      let refresh = UIRefreshControl()
+      refresh.addTarget(self, action: #selector(handleCassetteRefresh(_:)), for: .valueChanged)
+      collectionView.refreshControl = refresh
+    #endif
     collectionView.backgroundColor = CassetteTheme.UIColors.bg
     title = "Home"
 
@@ -143,20 +152,16 @@ final class HomeVC: UICollectionViewController {
 
   private func configureHomeNavigationBar() {
     title = "Home"
-    navigationItem.largeTitleDisplayMode = .always
-    navigationController?.navigationBar.prefersLargeTitles = true
+    // cassette: Home wears its name inline, the way Library wears "Albums".
+    // The large title used to eat a full title-height band at the top and
+    // then animate away on the first scroll — two different-looking Homes for
+    // the same screen. Inline at `.sectionTitle` (the exact token the Library
+    // dropdown uses) means the header never changes and the first shelf sits
+    // that much higher.
+    navigationItem.largeTitleDisplayMode = .never
+    navigationController?.navigationBar.prefersLargeTitles = false
     let appearance = UINavigationBarAppearance()
     appearance.configureWithDefaultBackground()
-    appearance.largeTitleTextAttributes = [
-      .font: UIFont.cassette(.heroTitle),
-      .foregroundColor: CassetteTheme.UIColors.ink,
-    ]
-    // cassette Polish 2 (A1/H): the collapsed/inline title previously fell
-    // back to the global 18pt semibold, so scrolling produced a jarring
-    // font-swap "slide-up" into the Barlow Condensed large title. Pin the
-    // inline title to the same Barlow Condensed family (sectionTitle, the
-    // exact token the Library "Artists ▾" dropdown uses) so the collapse is
-    // a clean scale with no typeface change.
     appearance.titleTextAttributes = [
       .font: UIFont.cassette(.sectionTitle),
       .foregroundColor: CassetteTheme.UIColors.ink,
@@ -402,8 +407,15 @@ final class HomeVC: UICollectionViewController {
     let category: LibraryDisplayType
     switch section {
     case .yourPlaylists: category = .playlists
-    case .recentlyAdded: category = .albums
+    // cassette: the "Albums" shelf on Home is `.forgottenAlbums` (retitled),
+    // not `.recentlyAdded` — that swap happened when the shelf was reworked
+    // and this map was never updated, so the one shelf actually on screen
+    // called "Albums" was the only typed shelf you couldn't tap into.
+    // `.recentlyAdded` stays mapped for the legacy/editor path.
+    case .forgottenAlbums, .recentlyAdded: category = .albums
     case .recentlyPlayedArtists: category = .artists
+    // `.recent` is deliberately presentational: it mixes albums, playlists
+    // and artists, so there is no single Library category to land on.
     default: return nil
     }
     return { [weak self] in
@@ -420,8 +432,18 @@ final class HomeVC: UICollectionViewController {
   private func applySnapshot(animated: Bool = true) {
     var snapshot = NSDiffableDataSourceSnapshot<HomeSection, HomeItem>()
     var totalItems = 0
+    // cassette: a diffable snapshot HARD-crashes (SIGTRAP) on a duplicate section
+    // or item identifier. Shelf builders already dedup by stableID, but guard the
+    // one render chokepoint too so a single missed dedup upstream degrades to a
+    // dropped repeat instead of taking the whole app down. Belt to updatePlaylists'
+    // suspenders after the applySnapshot crash cluster (build 2.1.1(3)).
+    var seenSections = Set<HomeSection>()
     for section in sharedHome.orderedVisibleSections {
-      let items = sharedHome.data[section] ?? []
+      guard seenSections.insert(section).inserted else { continue }
+      var seenItemIDs = Set<String>()
+      let items = (sharedHome.data[section] ?? []).filter {
+        seenItemIDs.insert($0.stableID).inserted
+      }
       guard !items.isEmpty else { continue }
       snapshot.appendSections([section])
       snapshot.appendItems(items, toSection: section)
@@ -572,6 +594,16 @@ final class HomeVC: UICollectionViewController {
       navigationController?.navigationBar.prefersLargeTitles = false
     }
   }
+
+  /// Home pull-to-refresh: converge with the paired Mac, then run a full poll. Mirrors
+  /// the library list's handleRefresh so both gestures mean the same thing.
+  @objc
+  private func handleCassetteRefresh(_ sender: UIRefreshControl) {
+    Task { @MainActor in
+      await IntentExecutor.shared.convergeAndRefresh()
+      sender.endRefreshing()
+    }
+  }
 }
 
 extension HomeVC {
@@ -695,9 +727,20 @@ final class SectionHeaderView: UICollectionReusableView {
   private let chevronImageView: UIImageView = {
     let iv = UIImageView()
     iv.translatesAutoresizingMaskIntoConstraints = false
-    iv.image = UIImage(systemName: "chevron.right")
-    iv.tintColor = CassetteTheme.UIColors.ink2
-    iv.contentMode = .scaleAspectFit
+    // cassette: the chevron was a hairline — default (regular) weight scaled
+    // into a 12x16 box next to 22pt Barlow Condensed Bold, so it read as a
+    // stray tick rather than an affordance. Bold at 13pt matches the stroke
+    // of the title it sits beside, and ink (not ink2) stops it looking
+    // half-disabled. The Library dropdown chevron is semibold/12 for the same
+    // reason.
+    iv.image = UIImage(
+      systemName: "chevron.right",
+      withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)
+    )
+    iv.tintColor = CassetteTheme.UIColors.ink
+    // `.center`, not `.scaleAspectFit`: aspect-fit would rescale the glyph to
+    // the box and throw away the point size we just set.
+    iv.contentMode = .center
     iv.isHidden = true
     return iv
   }()
@@ -794,8 +837,8 @@ final class SectionHeaderView: UICollectionReusableView {
         constant: -16
       ),
       chevronImageView.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-      chevronImageView.widthAnchor.constraint(equalToConstant: 12),
-      chevronImageView.heightAnchor.constraint(equalToConstant: 16),
+      chevronImageView.widthAnchor.constraint(equalToConstant: 14),
+      chevronImageView.heightAnchor.constraint(equalToConstant: 18),
 
       refreshButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
       refreshButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
@@ -821,4 +864,5 @@ extension UIFont {
     ])
     return UIFont(descriptor: descriptor, size: pointSize)
   }
+
 }

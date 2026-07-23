@@ -159,7 +159,11 @@ struct AmbientCoverBackdrop: View {
             // Restrained: quiet/dark covers stay quiet (a dim cover → a dim
             // room is the intended behaviour, not a bug). Slight lift while
             // playing, settling when paused.
-            .opacity(model.isPlaying ? 0.68 : 0.5)
+            // cassette: dialled back from 0.68/0.5 — a bright cover (pale or
+            // high-key artwork) washed the whole queue in its own colour and
+            // the rows lost contrast against it. The lamp should light the
+            // room, not be the room.
+            .opacity(model.isPlaying ? 0.5 : 0.38)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.9), value: model.isPlaying)
         }
         .transition(.opacity)
@@ -173,7 +177,7 @@ struct AmbientCoverBackdrop: View {
       // Warm scrim: keep the room dim and the title/controls legible. Radial
       // darken toward the edges + a stronger floor under the transport.
       RadialGradient(
-        colors: [.clear, base.opacity(0.55)],
+        colors: [.clear, base.opacity(0.68)],
         center: .init(x: 0.5, y: 0.36),
         startRadius: 80,
         endRadius: 520

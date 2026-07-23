@@ -252,9 +252,10 @@ class GenreDetailVC: MultiSourceTableViewController {
     }
   }
 
-  // Patch 026: genre metadata line — "Genre · 23 artists · 412 songs".
+  // Patch 026: genre metadata line — "23 artists · 412 songs". cassette:
+  // leading type noun dropped, matching the other detail pages.
   private func refreshGenreMetadataLine() {
-    var parts = ["Genre"]
+    var parts: [String] = []
     if genre.artistCount > 0 {
       parts.append("\(genre.artistCount) artist\(genre.artistCount == 1 ? "" : "s")")
     }

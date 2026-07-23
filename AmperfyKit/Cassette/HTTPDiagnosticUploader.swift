@@ -58,21 +58,31 @@ public final class HTTPDiagnosticUploader: DiagnosticUploader, @unchecked Sendab
 
   // MARK: Crash drain
 
+  /// Claim the single-flight drain slot. Synchronous on purpose: NSLock's
+  /// lock()/unlock() are unavailable from async contexts (they can block a
+  /// cooperative-pool thread), so the guarded check-and-set stays OUT of the async
+  /// drain and the lock is never held across an await. False = a drain is running.
+  private func claimDrainSlot() -> Bool {
+    drainGate.lock()
+    defer { drainGate.unlock() }
+    if isDraining { return false }
+    isDraining = true
+    return true
+  }
+
+  private func releaseDrainSlot() {
+    drainGate.lock()
+    defer { drainGate.unlock() }
+    isDraining = false
+  }
+
   public func drainPendingCrashReports() async {
     guard DiagnosticsConfig.isUploadEnabled else { return }
 
-    drainGate.lock()
-    if isDraining {
-      drainGate.unlock()
-      return
-    }
-    isDraining = true
-    drainGate.unlock()
-    defer {
-      drainGate.lock()
-      isDraining = false
-      drainGate.unlock()
-    }
+    // Single-flight: claim/release through the synchronous helpers above so NSLock
+    // is never touched from this async context.
+    guard claimDrainSlot() else { return }
+    defer { releaseDrainSlot() }
 
     guard let dir = DiagnosticLog.diagnosticsDirectory(),
           let files = try? FileManager.default.contentsOfDirectory(

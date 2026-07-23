@@ -133,9 +133,15 @@ class GenericDetailTableHeader: UIView {
   var isEditing = false
 
   /// Optional one-line metadata that replaces the auto-generated info
-  /// text (e.g. "Album · 2024 · 23m"). Detail VCs set this in their
-  /// existing refresh path; nil falls back to the entity's default
+  /// text (e.g. "2024 · 23m"). Detail VCs set this in their existing
+  /// refresh path; nil falls back to the entity's default
   /// `info(for:details:)` output.
+  ///
+  /// cassette: an EMPTY string is meaningful and distinct from nil — it
+  /// means "this screen has nothing worth putting on the line, show no
+  /// line." Previously empty was treated like nil and fell through to the
+  /// verbose default, so a record with no year and no duration couldn't
+  /// end up with a clean header.
   var metadataOverride: String? {
     didSet { refresh() }
   }
@@ -451,9 +457,10 @@ class GenericDetailTableHeader: UIView {
     }
 
     let infoText: String
-    if let metadataOverride, !metadataOverride.isEmpty {
+    if let metadataOverride {
       // Patch 026: detail VCs supply a curated metadata line (e.g.
-      // "Album · 2024 · 23m") so we skip the verbose default info text.
+      // "2024 · 23m") so we skip the verbose default info text. Empty is a
+      // deliberate "no line" (see the property doc), not a fall-through.
       infoText = metadataOverride
     } else {
       var isCountInfoHidden = false

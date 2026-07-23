@@ -391,10 +391,13 @@ class ArtistDetailVC: MultiSourceTableViewController {
   }
 
   // Patch 026: artist metadata line. Year doesn't apply, so we surface
-  // catalog scope instead: "Artist · 12 albums · 187 songs". Counts are
-  // suppressed when missing rather than rendered as zeros.
+  // catalog scope instead: "12 albums · 187 songs". Counts are suppressed
+  // when missing rather than rendered as zeros.
+  //
+  // cassette: the leading type noun is gone across every detail page. It
+  // only ever told you which page you were already looking at.
   private func refreshArtistMetadataLine() {
-    var parts = ["Artist"]
+    var parts: [String] = []
     if artist.albumCount > 0 {
       parts.append("\(artist.albumCount) album\(artist.albumCount == 1 ? "" : "s")")
     }
@@ -485,31 +488,30 @@ class ArtistDetailVC: MultiSourceTableViewController {
   }
 
   // Patch 111 (1/2): custom section headers — leading at the shared content
-  // margin (16pt, matching rows and the album carousel) and the single kept
-  // divider (subtle hairline) between the top-level sections, drawn at the top
-  // of the Albums header.
+  // margin (16pt, matching rows and the album carousel). cassette: the
+  // hairline divider that used to sit atop the Popular header was removed.
   override func tableView(
     _ tableView: UITableView,
     viewForHeaderInSection section: Int
   )
     -> UIView? {
-    // cassette: Albums leads (no top divider — it's the first content section);
-    // the single kept hairline divider now sits atop the demoted Popular header.
+    // cassette: section headers are just the uppercased label now — no
+    // dividers between the top-level sections.
     switch BodySection(rawValue: section) {
     case .albums:
       guard (albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0) > 0 else {
         return nil
       }
-      return makeSectionHeaderView(title: "Albums", showTopDivider: false)
+      return makeSectionHeaderView(title: "Albums")
     case .popular:
       guard popularTotalCount > 0 else { return nil }
-      return makeSectionHeaderView(title: "Popular", showTopDivider: true)
+      return makeSectionHeaderView(title: "Popular")
     default:
       return nil
     }
   }
 
-  private func makeSectionHeaderView(title: String, showTopDivider: Bool) -> UIView {
+  private func makeSectionHeaderView(title: String) -> UIView {
     let container = UIView()
     container.backgroundColor = .clear
     let label = UILabel()
@@ -525,27 +527,6 @@ class ArtistDetailVC: MultiSourceTableViewController {
       ),
       label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
     ])
-    if showTopDivider {
-      let divider = UIView()
-      divider.backgroundColor = CassetteTheme.UIColors.ink4
-      divider.translatesAutoresizingMaskIntoConstraints = false
-      container.addSubview(divider)
-      NSLayoutConstraint.activate([
-        divider.topAnchor.constraint(equalTo: container.topAnchor),
-        divider.leadingAnchor.constraint(
-          equalTo: container.leadingAnchor,
-          constant: UIView.defaultMarginCellX
-        ),
-        divider.trailingAnchor.constraint(
-          equalTo: container.trailingAnchor,
-          constant: -UIView.defaultMarginCellX
-        ),
-        divider.heightAnchor.constraint(equalToConstant: 1.0 / max(
-          traitCollection.displayScale,
-          1.0
-        )),
-      ])
-    }
     return container
   }
 

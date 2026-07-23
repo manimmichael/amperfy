@@ -114,11 +114,14 @@ class AlbumCollectionCell: BasicCollectionCell {
     subtitleLabel.font = UIFont.cassette(.caption)
     subtitleLabel.textColor = CassetteTheme.UIColors.ink2
     contentView.backgroundColor = CassetteTheme.UIColors.bg
+    // cassette: album covers get a minimal 3pt corner (.verySmall), matching the
+    // album detail hero, so bordered / edge-to-edge cover art keeps crisp corners
+    // instead of having its edge shaved by the rounding. (Was .big = 15pt.)
     entityImage.display(
       theme: appDelegate.storage.settings.accounts.getSetting(container.account?.info).read
         .themePreference,
       container: container,
-      cornerRadius: .big
+      cornerRadius: .verySmall
     )
     // cassette redesign (Surface 3): subtle content-level highlight — a
     // hairline ink ring that lifts dark covers off the dark background.

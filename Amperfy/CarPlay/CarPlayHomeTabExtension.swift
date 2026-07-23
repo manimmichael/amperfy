@@ -215,13 +215,24 @@ extension CarPlaySceneDelegate {
           }
         }
       }
-      let displayImage = image?.carPlayImage(carTraitCollection: traits) ?? UIImage
-        .getGeneratedArtwork(
+      // cassette: artist tiles render as circles on CarPlay to match iOS
+      // (albums, playlists, etc. stay square). Applies to both the real
+      // artwork and the generated-monogram fallback.
+      let isArtistTile = item.playableContainable is Artist
+      let displayImage: UIImage
+      if let image {
+        displayImage = isArtistTile
+          ? image.croppedToCircle().carPlayImage(carTraitCollection: traits)
+          : image.carPlayImage(carTraitCollection: traits)
+      } else {
+        let generated = UIImage.getGeneratedArtwork(
           theme: getPreference(activeAccountInfo).theme,
           artworkType: item.playableContainable
             .getArtworkCollection(theme: getPreference(activeAccountInfo).theme).defaultArtworkType,
           name: nil
         )
+        displayImage = isArtistTile ? generated.croppedToCircle() : generated
+      }
 
       let element = CPListImageRowItemRowElement(
         image: displayImage,

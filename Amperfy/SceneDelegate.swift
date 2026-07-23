@@ -90,8 +90,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   var window: UIWindow?
 
   // Cassette fork — Layer 3 (Phase 3.1): foreground polling for sync intents.
-  // 30s cadence is for testing; background polling is out of scope for 3.1.
+  // ADAPTIVE cadence — see scheduleNextCassettePoll. Background polling is still
+  // out of scope; foregrounding and pull-to-refresh are the responsive triggers.
   private var cassetteIntentPollTimer: Timer?
+  /// While work is in flight (intents executing, artwork still converging) — keeps a
+  /// transfer's completion snappy.
+  private static let cassetteActivePollInterval: TimeInterval = 30
+  /// Once a poll does nothing. A settled library needs no chatter; a gesture or a
+  /// foreground brings it back instantly.
+  private static let cassetteIdlePollInterval: TimeInterval = 15 * 60
   // Cassette fork — graceful unpair handling: when the bearer token starts
   // 401ing (the device was removed on the dashboard), show one reconnect
   // alert per launch instead of silently going dead.
@@ -198,16 +205,42 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     #if DEBUG
     print("Cassette poll: app became active -> triggering poll")
     #endif
-    Task { await IntentExecutor.shared.handlePendingIntents() }
+    Task { @MainActor in
+      await IntentExecutor.shared.handlePendingIntents()
+      self.scheduleNextCassettePoll()
+    }
+  }
+
+  /// ADAPTIVE cadence, not a fixed interval.
+  ///
+  /// The old timer polled every 30s for the life of the foreground session — two
+  /// network round-trips a minute, forever, on battery, long after a settled library
+  /// had nothing left to do. (It was labelled "for testing" and never revisited.)
+  ///
+  /// But a flat long interval is wrong too: a transfer only flips to "completed" when
+  /// a LATER poll finds every track present, so a 10-minute timer would leave a
+  /// finished download showing "syncing" for ten minutes.
+  ///
+  /// So: poll briskly only while something is actually in flight, and back off hard
+  /// once a poll does no work. A user gesture (pull-to-refresh) or foregrounding the
+  /// app always polls immediately, which is what makes the idle interval affordable.
+  private func scheduleNextCassettePoll() {
     cassetteIntentPollTimer?.invalidate()
+    let didWork = IntentExecutor.shared.lastPollDidWork
+    let interval: TimeInterval = didWork
+      ? Self.cassetteActivePollInterval
+      : Self.cassetteIdlePollInterval
+    #if DEBUG
+    print("Cassette poll: next in \(Int(interval))s (\(didWork ? "active" : "idle"))")
+    #endif
     cassetteIntentPollTimer = Timer.scheduledTimer(
-      withTimeInterval: 30,
-      repeats: true
+      withTimeInterval: interval,
+      repeats: false
     ) { _ in
-      #if DEBUG
-      print("Cassette poll: 30s timer fired -> triggering poll")
-      #endif
-      Task { await IntentExecutor.shared.handlePendingIntents() }
+      Task { @MainActor in
+        await IntentExecutor.shared.handlePendingIntents()
+        self.scheduleNextCassettePoll()
+      }
     }
   }
 

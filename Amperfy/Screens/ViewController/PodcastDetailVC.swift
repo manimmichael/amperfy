@@ -156,10 +156,11 @@ class PodcastDetailVC: SingleFetchedResultsTableViewController<PodcastEpisodeMO>
     }
   }
 
-  // Patch 026: podcast metadata line — "Podcast · 142 episodes". Episode
-  // count comes straight off the synced podcast entity.
+  // Patch 026: podcast metadata line — "142 episodes". Episode count comes
+  // straight off the synced podcast entity. cassette: leading type noun
+  // dropped, matching the other detail pages.
   private func refreshPodcastMetadataLine() {
-    var parts = ["Podcast"]
+    var parts: [String] = []
     if podcast.episodeCount > 0 {
       parts.append("\(podcast.episodeCount) episode\(podcast.episodeCount == 1 ? "" : "s")")
     }

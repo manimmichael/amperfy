@@ -67,6 +67,17 @@ extension LibraryEntityImage {
 public class LibraryEntityImage: RoundedImage {
   static private let cache: NSCache<NSString, UIImage> = NSCache()
 
+  /// Drop the cached bitmap(s) for a cover whose bytes changed on disk (both the full
+  /// and thumb tiers). The cache is keyed by tier source PATH, and a re-download
+  /// overwrites at the SAME path — so without this the stale image survives until the
+  /// app restarts. Also called directly by the Cassette folder-cover refresh, where
+  /// every other invalidation hook keys on path or entity identity and so sees nothing
+  /// change.
+  static func evictCache(forFullPath fullPath: String) {
+    cache.removeObject(forKey: fullPath as NSString)
+    cache.removeObject(forKey: CoverImageStore.thumbPath(forFullPath: fullPath) as NSString)
+  }
+
   private let appDelegate: AmperKit
 
   private var entity: AbstractLibraryEntity?
@@ -251,8 +262,13 @@ public class LibraryEntityImage: RoundedImage {
     let matchesArtwork = entity.artwork?.uniqueID == downloadNotification.id
     guard matchesPlayable || matchesArtwork else { return }
     Task { @MainActor in
-      // The cover (and its thumb, generated at ingestion) now exist — re-resolve
-      // the tier and load it.
+      // The cover (and its thumb) now exist — or its bytes CHANGED (a pick
+      // re-download overwrites at the same path). Drop the stale cache first so
+      // refresh() re-decodes the new file instead of serving the old bitmap, then
+      // re-resolve the tier and load it.
+      if let fullPath = self.entityImagePathToDisplay {
+        Self.evictCache(forFullPath: fullPath)
+      }
       self.loadedSourcePath = nil
       self.refresh()
     }

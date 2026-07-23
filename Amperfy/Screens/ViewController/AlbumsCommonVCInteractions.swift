@@ -528,15 +528,7 @@ class AlbumsCommonVCInteractions {
       image: appDelegate.storage.settings.user.albumsStyleSetting == .table ? .check : nil,
       handler: { _ in
         self.appDelegate.storage.settings.user.albumsStyleSetting = .table
-        self.rootVC?.navigationController?.replaceCurrentlyActiveVC(
-          with: AppStoryboard.Main
-            .createAlbumsVC(
-              account: self.account,
-              style: self.appDelegate.storage.settings.user.albumsStyleSetting,
-              category: self.displayFilter
-            ),
-          animated: false
-        )
+        self.applyAlbumsStyleChange()
       }
     )
     let gridStyle = UIAction(
@@ -544,15 +536,7 @@ class AlbumsCommonVCInteractions {
       image: appDelegate.storage.settings.user.albumsStyleSetting == .grid ? .check : nil,
       handler: { _ in
         self.appDelegate.storage.settings.user.albumsStyleSetting = .grid
-        self.rootVC?.navigationController?.replaceCurrentlyActiveVC(
-          with: AppStoryboard.Main
-            .createAlbumsVC(
-              account: self.account,
-              style: self.appDelegate.storage.settings.user.albumsStyleSetting,
-              category: self.displayFilter
-            ),
-          animated: false
-        )
+        self.applyAlbumsStyleChange()
       }
     )
     let changeGridSize = UIAction(title: "Change Grid Size", image: .resize, handler: { _ in
@@ -567,6 +551,29 @@ class AlbumsCommonVCInteractions {
       options: [],
       children: [tableStyle, gridStyle, changeGridSize, createGroupingMenu()]
     )
+  }
+
+  /// cassette: apply a grid ⇄ list style change. In the Library tab the album
+  /// VC is an embedded child of `LibraryContainerVC`, which owns the nav bar
+  /// (dropdown title + right-bar controls), so we ask the container to swap
+  /// the child in place — the header survives. The old path called
+  /// `replaceCurrentlyActiveVC` on the shared nav stack, which dropped the
+  /// container and left a bare album VC with no header ("the header randomly
+  /// stops rendering when I change the view type"). When the album VC was
+  /// pushed standalone (e.g. Newest/Recent deep links, where it *is* the top
+  /// of the stack), fall back to the nav-stack replace.
+  private func applyAlbumsStyleChange() {
+    guard let rootVC else { return }
+    let newVC = AppStoryboard.Main.createAlbumsVC(
+      account: account,
+      style: appDelegate.storage.settings.user.albumsStyleSetting,
+      category: displayFilter
+    )
+    if let container = rootVC.parent as? LibraryContainerVC {
+      container.replaceEmbeddedChild(with: newVC)
+    } else {
+      rootVC.navigationController?.replaceCurrentlyActiveVC(with: newVC, animated: false)
+    }
   }
 
   /// cassette: adaptive-grouping override, surfaced inline in the Style menu.
@@ -743,6 +750,12 @@ class AlbumsCommonVCInteractions {
           isBackground: true
         )
       }
+      // Cassette: also run the sync/cover drain so a pull-to-refresh re-checks owned
+      // album covers. The stock syncer above only fetches newest library ELEMENTS;
+      // changed cover art is reconciled by handlePendingIntents (backfillOwnedAlbumCovers,
+      // content_version-gated), which otherwise runs only on app foreground. Bare
+      // (non-throwing) with its own single-flight guard — safe to call here.
+      await IntentExecutor.shared.handlePendingIntents()
       self.endRefreshCB?()
     }
   }

@@ -191,11 +191,17 @@ final class LibraryContainerVC: UIViewController {
       account: account,
       settings: appDelegate.storage.settings
     )
-    // Force `viewDidLoad` on the child so its search controller and
-    // right-bar buttons exist before we copy them through. Each
-    // shipping category VC sets up `navigationItem.searchController`
-    // in `viewDidLoad` (see `configureSearchController` in
-    // `BasicTableViewController`).
+    embed(child: child)
+  }
+
+  /// Shared embedding mechanics. Touching `child.view` forces `viewDidLoad`
+  /// on the child so its search controller and right-bar buttons exist
+  /// before we copy them up: each shipping category VC installs
+  /// `navigationItem.searchController` in `viewDidLoad`, and the album VCs
+  /// populate their right-bar options button synchronously there too (via
+  /// `applyFilter()` → `change(sortType:)` → `updateRightBarButtonItems()`).
+  /// We never display the child's own navigation bar — the container owns it.
+  private func embed(child: UIViewController) {
     addChild(child)
     child.view.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(child.view)
@@ -208,8 +214,6 @@ final class LibraryContainerVC: UIViewController {
     child.didMove(toParent: self)
     embeddedChild = child
 
-    // Copy nav-bar surface up to the container. We never display
-    // the child's own navigation bar — the container owns the bar.
     navigationItem.searchController = child.navigationItem.searchController
     navigationItem.hidesSearchBarWhenScrolling = true
     navigationItem.rightBarButtonItems = child.navigationItem.rightBarButtonItems
@@ -224,6 +228,19 @@ final class LibraryContainerVC: UIViewController {
     embeddedChild = nil
     navigationItem.searchController = nil
     navigationItem.rightBarButtonItems = nil
+  }
+
+  /// cassette: swap the embedded album VC for a different display style
+  /// (grid ⇄ list) in place, keeping this container — and therefore the
+  /// dropdown title and right-bar controls it owns — intact. Previously the
+  /// album grid/list toggle called `replaceCurrentlyActiveVC` on the shared
+  /// nav stack, which dropped the container entirely and pushed a bare album
+  /// VC with no dropdown header (the "header randomly stops rendering when I
+  /// change the view type" bug). Category (`currentCategory`) and the
+  /// dropdown title are unchanged — only the child's layout style differs.
+  public func replaceEmbeddedChild(with newChild: UIViewController) {
+    unembedCurrentChild()
+    embed(child: newChild)
   }
 
   // MARK: - Category switching

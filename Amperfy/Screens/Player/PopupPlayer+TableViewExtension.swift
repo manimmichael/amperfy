@@ -41,6 +41,11 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     tableView.estimatedRowHeight = PlayableTableCell.rowHeight
     tableView.backgroundColor = UIColor.clear
     tableView.sectionHeaderTopPadding = 0.0
+    // cassette: no hairlines in the queue. The rows already read as rows via
+    // artwork + the reorder grips; separators on top of the ambient backdrop
+    // just added a grid the rest of the player doesn't have (the detail
+    // screens are `.none` too).
+    tableView.separatorStyle = .none
   }
 
   func clearUserQueue() {

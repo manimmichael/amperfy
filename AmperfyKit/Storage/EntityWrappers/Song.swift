@@ -208,16 +208,26 @@ extension Array where Element: Song {
   }
 
   public func sortByTrackNumber() -> [Element] {
-    sorted {
-      if $0.disk != $1.disk {
-        return $0.disk ?? "" < $1.disk ?? ""
-      } else if $0.track != $1.track {
-        return $0.track < $1.track
-      } else if $0.title != $1.title {
-        return $0.title < $1.title
-      } else {
-        return $0.id < $1.id
+    sorted { lhs, rhs in
+      // cassette: disc compared numerically via `localizedStandardCompare` so
+      // "2" orders before "10" (plain String `<` sorted "10" first). A missing
+      // or empty disc is treated as disc "1", so single-disc rips without a
+      // disc tag interleave with disc 1 instead of floating to the very top.
+      let lDisk = (lhs.disk?.isEmpty == false) ? lhs.disk! : "1"
+      let rDisk = (rhs.disk?.isEmpty == false) ? rhs.disk! : "1"
+      switch lDisk.localizedStandardCompare(rDisk) {
+      case .orderedAscending: return true
+      case .orderedDescending: return false
+      case .orderedSame: break
       }
+      // Un-numbered tracks (track == 0, e.g. owned songs materialized by
+      // AlbumRegrouper without a rip position) sort AFTER numbered tracks
+      // within the same disc rather than jumping to the front as two "0" rows.
+      let lTrack = lhs.track > 0 ? lhs.track : Int.max
+      let rTrack = rhs.track > 0 ? rhs.track : Int.max
+      if lTrack != rTrack { return lTrack < rTrack }
+      if lhs.title != rhs.title { return lhs.title < rhs.title }
+      return lhs.id < rhs.id
     }
   }
 

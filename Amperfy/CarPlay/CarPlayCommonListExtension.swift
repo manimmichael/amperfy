@@ -175,16 +175,28 @@ extension CarPlaySceneDelegate {
     return items
   }
 
+  /// cassette: produce a CarPlay bitmap for a library entity, cropping artists
+  /// to a circle so they match the round artist artwork iOS renders (CarPlay
+  /// list items / image-row elements can't apply a shape themselves). Albums,
+  /// podcasts, playlists, etc. stay square.
+  func carPlayEntityImage(_ image: UIImage, for entity: AbstractLibraryEntity?) -> UIImage {
+    let shaped = (entity is Artist) ? image.croppedToCircle() : image
+    return shaped.carPlayImage(carTraitCollection: traits)
+  }
+
   func createDetailTemplate(for artist: Artist, onlyCached: Bool) -> CPListItem {
     let section = CPListItem(
       text: artist.name,
       detailText: artist.subtitle,
-      image: LibraryEntityImage.getImageToDisplayImmediately(
-        libraryEntity: artist,
-        themePreference: getPreference(activeAccountInfo).theme,
-        artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference,
-        useCache: false
-      ).carPlayImage(carTraitCollection: traits),
+      image: carPlayEntityImage(
+        LibraryEntityImage.getImageToDisplayImmediately(
+          libraryEntity: artist,
+          themePreference: getPreference(activeAccountInfo).theme,
+          artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference,
+          useCache: false
+        ),
+        for: artist
+      ),
       accessoryImage: nil,
       accessoryType: .disclosureIndicator
     )

@@ -78,6 +78,14 @@ public class Artwork: NSObject {
   public func markErrorIfNeeded() {
     if status != .CustomImage {
       status = .FetchError
+    } else if relFilePath.map({ !fileManager.fileExits(relFilePath: $0) }) ?? true {
+      // A .CustomImage row whose backing file is GONE is not a real custom cover —
+      // demote + clear it so it stops serving a dead path and becomes re-fetchable.
+      // Without this, every download failure was a no-op on exactly the broken rows
+      // (they stayed .CustomImage forever and never fell back to a placeholder).
+      // A present file — a real folder cover or a user's pick — is never touched.
+      status = .FetchError
+      relFilePath = nil
     }
   }
 
@@ -93,18 +101,22 @@ public class Artwork: NSObject {
     }
   }
 
+  /// The on-disk path of this artwork's image, or nil when there genuinely isn't one.
+  ///
+  /// The existence check is load-bearing. A row can carry .CustomImage plus a
+  /// relFilePath whose file is GONE — a retired synthetic shell, or a cover removed
+  /// out from under us. Returning that dead path made every surface hand it to the
+  /// image decoder (the "can't open ... (fileExists == false)" spam and the
+  /// black-band covers) AND made every "does this already have a good cover?" gate
+  /// lie, so the backfills skipped the broken albums and nothing ever re-fetched
+  /// them. Returning nil instead means the UI falls back to its generated
+  /// placeholder and the backfills correctly see the cover as missing and heal it.
   public var imagePath: String? {
-    var imgPath: String?
-    switch status {
-    case .CustomImage:
-      if let relFilePath = relFilePath,
-         let absFilePath = fileManager.getAbsoluteAmperfyPath(relFilePath: relFilePath) {
-        imgPath = absFilePath.path
-      }
-    default:
-      break
-    }
-    return imgPath
+    guard status == .CustomImage, let relFilePath else { return nil }
+    guard fileManager.fileExits(relFilePath: relFilePath),
+          let absFilePath = fileManager.getAbsoluteAmperfyPath(relFilePath: relFilePath)
+    else { return nil }
+    return absFilePath.path
   }
 
   public var owners: [AbstractLibraryEntity] {
