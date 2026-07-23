@@ -68,6 +68,20 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
       guard artwork.remoteInfo.type != "cassette-album" else {
         throw DownloadError.fetchFailed
       }
+      // Cassette identity artists carry an id getCoverArt can NEVER resolve
+      // (inherited-artist:/catalog-artist:/cassette-synth-artist:). On CarPlay replug
+      // the render layer re-enqueues every visible artist's artwork; without this each
+      // such id fires a guaranteed 404 (network churn), and a faceless one settles to
+      // .FetchError. Their real face comes from the catalog (R2) via
+      // IntentExecutor.materializeArtistImageFromUrl, never getCoverArt — so skip the
+      // fetch here. A present-file .CustomImage is untouched (markErrorIfNeeded never
+      // demotes a live file), so the photo Phase 2 stored keeps rendering.
+      guard !(
+        artwork.remoteInfo.type == "artist"
+          && IntentExecutor.isUnfetchableArtistId(artwork.id)
+      ) else {
+        throw DownloadError.fetchFailed
+      }
       return artwork.id
     }
     return try await subsonicServerApi.generateUrl(forArtworkId: artworkId)

@@ -1064,7 +1064,7 @@ public final class IntentExecutor {
 
   /// Prefix of an artist id minted ON DEVICE (see AlbumRegrouper). Navidrome has
   /// never seen these, so they can never resolve to a hub photo.
-  private static let syntheticArtistIDPrefix = "cassette-synth-artist:"
+  nonisolated private static let syntheticArtistIDPrefix = "cassette-synth-artist:"
 
   /// True for any artist id the hub's getCoverArt can NEVER resolve — an on-device
   /// synthetic id OR a cloud identity key (`inherited-artist:` / `catalog-artist:`,
@@ -1076,7 +1076,10 @@ public final class IntentExecutor {
   /// onto the identity artist by `materializeArtistImageFromUrl` in on-device mode —
   /// never through getCoverArt. An artist with no catalog face still shows a placeholder
   /// until the LAN hub-folder photo path lands (Phase 3, BUG-078).
-  static func isUnfetchableArtistId(_ id: String) -> Bool {
+  // nonisolated: a pure prefix check over immutable constants, so the artwork
+  // download delegate can call it from its background Core Data closure (the
+  // CarPlay-replug getCoverArt guard) without hopping to the main actor.
+  nonisolated static func isUnfetchableArtistId(_ id: String) -> Bool {
     id.hasPrefix(syntheticArtistIDPrefix)
       || id.hasPrefix("inherited-artist:")
       || id.hasPrefix("catalog-artist:")
