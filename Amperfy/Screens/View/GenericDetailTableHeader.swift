@@ -102,7 +102,8 @@ class GenericDetailTableHeader: UIView {
 
   private let infoLabel: UILabel = {
     let label = UILabel()
-    label.font = UIFont.cassette(.metadata)
+    // Quiet mono caption (year / album·song counts) — not Barlow.
+    label.font = UIFont.cassette(.caption)
     label.textColor = CassetteTheme.UIColors.ink2
     label.numberOfLines = 2
     label.setContentCompressionResistancePriority(.required, for: .vertical)
@@ -452,12 +453,11 @@ class GenericDetailTableHeader: UIView {
     )
     titleLabel.text = entityContainer.name
 
-    // Subtitle is quiet secondary metadata; on albums it is also the way to
-    // the artist. Orange matches Android's tappable artist line so the link
-    // reads as a place, not as inert caption text.
+    // Album artist is the tappable link (Barlow, accent). Other entities keep
+    // quiet mono under the title. Year lives on infoLabel in mono caption.
     var subtitleAttributes = AttributeContainer()
-    subtitleAttributes.font = UIFont.cassette(.rowTitle)
     let subtitleIsLink = entityContainer is Album
+    subtitleAttributes.font = UIFont.cassette(subtitleIsLink ? .rowTitle : .cardSubtitle)
     subtitleAttributes.foregroundColor = subtitleIsLink
       ? CassetteTheme.UIColors.orange
       : CassetteTheme.UIColors.ink2
@@ -493,10 +493,21 @@ class GenericDetailTableHeader: UIView {
     }
     infoLabel.isHidden = infoText.isEmpty
     infoLabel.text = infoText
-    // Year (or other quiet meta) sits tight under the artist - phone header
-    // should read as one stack, not three floating bands.
-    if !subtitleButton.isHidden, !infoText.isEmpty {
-      contentColumn.setCustomSpacing(2, after: subtitleButton)
+    // Quiet meta (year) sits tight under the artist. When that line is absent,
+    // keep real air between artist and the play controls — a hidden infoLabel
+    // collapses its trailing spacing and used to leave play crushed under the
+    // artist (stack default xs).
+    if !subtitleButton.isHidden {
+      if infoText.isEmpty {
+        contentColumn.setCustomSpacing(CassetteTheme.Spacing.lg, after: subtitleButton)
+      } else {
+        // Year under artist: stack default xs (4) was too tight against the
+        // UIButton subtitle's intrinsic padding; 2 was worse. Match the air
+        // between title and artist (xs) plus a little — 8pt reads as one
+        // quiet meta line, not glued to the name.
+        contentColumn.setCustomSpacing(8, after: subtitleButton)
+        contentColumn.setCustomSpacing(CassetteTheme.Spacing.lg, after: infoLabel)
+      }
     }
 
     let textAlignment: NSTextAlignment = isCompactWidth ? .center : .left

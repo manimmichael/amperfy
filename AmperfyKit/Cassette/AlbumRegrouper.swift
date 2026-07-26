@@ -328,6 +328,13 @@ public final class AlbumRegrouper {
           if album.name != item.displayAlbum { album.name = item.displayAlbum }
           targetByKey[item.groupKey] = album
         }
+        // Cloud year (catalog / display override), same number the web rail
+        // shows. Subsonic tags are often empty for rips; don't invent from
+        // track years. Apply on both fresh and cached targets so a model
+        // bump heals albums already in the map.
+        if let year = item.year, year > 0, album.year != year {
+          album.year = year
+        }
         provisionNativeCover(on: album, nativeCover: nativeCover)
         return album
       }

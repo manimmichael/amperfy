@@ -77,7 +77,8 @@ class AlbumRegrouperTest: XCTestCase {
       albumArtRef: nil,
       trackTitle: nil,
       duration: nil,
-      discTrackIndex: nil
+      discTrackIndex: nil,
+      year: nil
     )
   }
 

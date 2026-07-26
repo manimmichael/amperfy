@@ -238,6 +238,10 @@ public struct CassetteDeviceGroupingItem: Sendable, Decodable {
   /// The track's 1-based position on its disc, so a materialized SongMO sorts in
   /// album order. Optional/nullable (only ripped-and-linked tracks carry it).
   public let discTrackIndex: Int?
+  /// Album release year from the cloud (override ?? catalog), same source as
+  /// the web rail. Optional so older deploys still decode; nil means leave the
+  /// local Subsonic year alone.
+  public let year: Int?
 
   enum CodingKeys: String, CodingKey {
     case cassetteLocalId = "cassette_local_id"
@@ -250,6 +254,7 @@ public struct CassetteDeviceGroupingItem: Sendable, Decodable {
     case trackTitle = "track_title"
     case duration
     case discTrackIndex = "disc_track_index"
+    case year
   }
 }
 

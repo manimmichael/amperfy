@@ -168,9 +168,24 @@ class PlayableTableCell: BasicTableCell {
     downloadButton.isHidden = true
   }
 
-  // Extra vertical room for track lists (was 9+9 margins -> 66pt).
-  static let rowHeight: CGFloat = 48 + 14 + 14
+  // Extra vertical room for track lists. Height and layoutMargins must agree —
+  // bumping only rowHeight left 9pt BasicTableCell margins and dead air under
+  // the content, so rows still felt tight/uneven.
+  private static let trackListMarginY: CGFloat = 14
+  static let rowHeight: CGFloat = 48 + trackListMarginY + trackListMarginY
   private static let touchAnimation = 0.4
+
+  override var layoutMargins: UIEdgeInsets {
+    get {
+      UIEdgeInsets(
+        top: Self.trackListMarginY,
+        left: UIView.defaultMarginCellX,
+        bottom: Self.trackListMarginY,
+        right: UIView.defaultMarginCellX
+      )
+    }
+    set {}
+  }
 
   private var style = PlayableTableCellStyle.none
   private var playerIndexCb: GetPlayerIndexFromTableCellCallback?

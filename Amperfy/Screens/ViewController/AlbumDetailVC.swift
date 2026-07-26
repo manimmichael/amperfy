@@ -249,6 +249,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     updateHideUniformArtistSubtitle()
     snapshotDidChange = { [weak self] in
       self?.updateHideUniformArtistSubtitle()
+      // Song years may arrive after the first header paint — re-resolve year.
+      self?.refreshAlbumMetadataLine()
     }
 
     containableAtIndexPathCallback = { indexPath in
@@ -383,8 +385,9 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   }
 
   private func refreshAlbumMetadataLine() {
-    // Year only, directly under the artist (web/Android parity). Genre and
-    // album-type chips stay out of this quiet header line.
+    // Year only, directly under the artist. Source of truth is album.year,
+    // which the cloud regroup fills from the same catalog/override path as
+    // the web rail — not track-tag averages.
     detailOperationsView?.metadataOverride = album.year > 0 ? "\(album.year)" : ""
   }
 
