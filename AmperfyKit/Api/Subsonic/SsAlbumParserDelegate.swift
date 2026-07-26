@@ -77,7 +77,13 @@ class SsAlbumParserDelegate: SsXmlLibWithArtworkParser {
       }
       albumBuffer?.rating = Int(attributeDict["userRating"] ?? "0") ?? 0
       albumBuffer?.isFavorite = attributeDict["starred"] != nil
-      if let attributeYear = attributeDict["year"], let year = Int(attributeYear) {
+      // Cassette: cloud regroup stamps catalog/override year onto AlbumMO. Navidrome
+      // often returns year=0 for rips; writing that would wipe the cloud year the
+      // instant the album detail re-fetches. Only fill an empty year from Subsonic.
+      if let attributeYear = attributeDict["year"],
+         let year = Int(attributeYear),
+         year > 0,
+         (albumBuffer?.year ?? 0) == 0 {
         albumBuffer?.year = year
       }
       if let attributeSongCount = attributeDict["songCount"],

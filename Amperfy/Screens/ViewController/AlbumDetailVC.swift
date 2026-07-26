@@ -274,6 +274,9 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     ) {
       album = fresh
     }
+    // Regroup may have stamped year while we were away — refresh the header line
+    // from the (possibly new) album wrapper.
+    refreshAlbumMetadataLine()
     navigationController?.navigationBar.prefersLargeTitles = false
   }
 
