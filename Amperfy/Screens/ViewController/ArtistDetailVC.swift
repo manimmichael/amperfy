@@ -600,7 +600,13 @@ class ArtistDetailVC: MultiSourceTableViewController {
       }
       let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
       guard let song = frozenPopularSong(at: indexPath.row) else { return UITableViewCell() }
-      cell.display(playable: song, playContextCb: convertCellViewToPlayContext, rootView: self)
+      // Artist page: repeating the page's artist under every Popular row is noise.
+      cell.display(
+        playable: song,
+        playContextCb: convertCellViewToPlayContext,
+        rootView: self,
+        contextArtistName: artist.name
+      )
       return cell
     default:
       return UITableViewCell()

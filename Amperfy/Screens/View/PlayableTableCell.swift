@@ -179,6 +179,8 @@ class PlayableTableCell: BasicTableCell {
   private var rootView: UIViewController?
   private var isDislayAlbumTrackNumberStyle: Bool = false
   private var hideArtistSubtitle = false
+  /// Album/artist page primary — when set, subtitle is feat-aware vs this name.
+  private var contextArtistName: String?
   private var displayMode: DisplayMode = .normal
   // Cassette fork — Layer 3 Phase 3.2 (library filtering). Detail views show
   // every track but dim the ones not on this phone. nil = not in a filtered
@@ -312,6 +314,7 @@ class PlayableTableCell: BasicTableCell {
     playerIndexCb: GetPlayerIndexFromTableCellCallback? = nil,
     isDislayAlbumTrackNumberStyle: Bool = false,
     hideArtistSubtitle: Bool = false,
+    contextArtistName: String? = nil,
     download: Download? = nil,
     isMarked: Bool = false,
     cassetteIsOwned: Bool? = nil
@@ -323,6 +326,7 @@ class PlayableTableCell: BasicTableCell {
     self.rootView = rootView
     self.isDislayAlbumTrackNumberStyle = isDislayAlbumTrackNumberStyle
     self.hideArtistSubtitle = hideArtistSubtitle
+    self.contextArtistName = contextArtistName
     self.download = download
     self.isMarked = isMarked
     self.cassetteIsOwned = cassetteIsOwned
@@ -520,8 +524,20 @@ class PlayableTableCell: BasicTableCell {
   func refresh() {
     guard let playable = playable else { return }
     titleLabel.text = playable.title
-    artistLabel.text = playable.creatorName
-    artistLabel.isHidden = hideArtistSubtitle
+    if let context = contextArtistName {
+      if let sub = CassetteTrackSubtitle.contextual(
+        trackArtist: playable.creatorName,
+        contextArtist: context
+      ) {
+        artistLabel.text = sub
+        artistLabel.isHidden = false
+      } else {
+        artistLabel.isHidden = true
+      }
+    } else {
+      artistLabel.text = playable.creatorName
+      artistLabel.isHidden = hideArtistSubtitle
+    }
 
     configureStyle(
       playable: playable,
@@ -901,3 +917,53 @@ class PlayableTableCell: BasicTableCell {
     }
   #endif
 }
+
+// MARK: - CassetteTrackSubtitle
+
+/// Display-time track subtitle for album / artist contexts. Keep aligned with
+/// apps/cassette/src/lib/dashboard/track-subtitle.ts.
+enum CassetteTrackSubtitle {
+  private static let featInfixPattern =
+    #"^(.*?)\s+(feat\.|featuring|ft\.|with)\s+(.+)$"#
+  private static let featParenPattern =
+    #"^(.*?)\s*[\[({]\s*(feat\.|featuring|ft\.|with)\s+(.+?)\s*[\])}]\s*$"#
+
+  static func contextual(trackArtist: String?, contextArtist: String?) -> String? {
+    let track = trackArtist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if track.isEmpty { return nil }
+    let ctx = contextArtist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if ctx.isEmpty { return track }
+
+    // Exact match only — a normalize that strips "feat." would hide guests.
+    if track.lowercased() == ctx.lowercased() { return nil }
+
+    for pattern in [featInfixPattern, featParenPattern] {
+      guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+      else { continue }
+      let range = NSRange(track.startIndex..<track.endIndex, in: track)
+      guard let match = regex.firstMatch(in: track, options: [], range: range),
+            match.numberOfRanges >= 4,
+            let primaryRange = Range(match.range(at: 1), in: track),
+            let guestsRange = Range(match.range(at: 3), in: track)
+      else { continue }
+      let primary = String(track[primaryRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+      let guests = String(track[guestsRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+      if !primary.isEmpty, !guests.isEmpty, sameArtist(primary, ctx) {
+        let collapsed = guests.replacingOccurrences(
+          of: #"\s+"#,
+          with: " ",
+          options: .regularExpression
+        )
+        return "feat. \(collapsed)"
+      }
+    }
+    if sameArtist(track, ctx) { return nil }
+    return track
+  }
+
+  private static func sameArtist(_ a: String, _ b: String) -> Bool {
+    a.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      == b.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+  }
+}
+

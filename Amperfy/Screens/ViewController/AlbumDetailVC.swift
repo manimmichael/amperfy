@@ -446,7 +446,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       playContextCb: convertCellViewToPlayContext,
       rootView: self,
       isDislayAlbumTrackNumberStyle: true,
-      hideArtistSubtitle: hideUniformArtistSubtitle,
+      contextArtistName: album.artist?.name,
       cassetteIsOwned: cassetteOwnedTrackIds.contains(song.id)
     )
     return cell

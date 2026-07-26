@@ -39,6 +39,18 @@ struct DetailHeaderConfiguration {
   var extendsUnderNavigationBar: Bool = false
 }
 
+// MARK: - DetailSubtitleButton
+
+/// Artist line on album detail: keeps the visual size of the title, but
+/// expands the touch target vertically so it clears ~44pt.
+private final class DetailSubtitleButton: UIButton {
+  private let verticalHitSlop: CGFloat = 12
+
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    bounds.insetBy(dx: 0, dy: -verticalHitSlop).contains(point)
+  }
+}
+
 // MARK: - GenericDetailTableHeader
 
 /// cassette Patch 104 (Root 2): rebuilt programmatically. The old XIB was a
@@ -83,7 +95,7 @@ class GenericDetailTableHeader: UIView {
   // the subtitle label picked up the iOS 26 glass capsule. The subtitle is
   // now a single bare-configured button (label + action in one view).
   private let subtitleButton: UIButton = {
-    let button = UIButton(configuration: .cassetteBare())
+    let button = DetailSubtitleButton(configuration: .cassetteBare())
     button.configuration?.contentInsets = .zero
     return button
   }()
@@ -440,18 +452,23 @@ class GenericDetailTableHeader: UIView {
     )
     titleLabel.text = entityContainer.name
 
-    // cassette Patch 048 (Phase C): subtitle is quiet secondary metadata in
-    // ink2; it acts as a link (album -> artist) only where the action exists.
+    // Subtitle is quiet secondary metadata; on albums it is also the way to
+    // the artist. Orange matches Android's tappable artist line so the link
+    // reads as a place, not as inert caption text.
     var subtitleAttributes = AttributeContainer()
     subtitleAttributes.font = UIFont.cassette(.rowTitle)
-    subtitleAttributes.foregroundColor = CassetteTheme.UIColors.ink2
+    let subtitleIsLink = entityContainer is Album
+    subtitleAttributes.foregroundColor = subtitleIsLink
+      ? CassetteTheme.UIColors.orange
+      : CassetteTheme.UIColors.ink2
     if let subtitle = entityContainer.subtitle {
       subtitleButton.configuration?.attributedTitle = AttributedString(
         subtitle,
         attributes: subtitleAttributes
       )
       subtitleButton.isHidden = false
-      subtitleButton.isUserInteractionEnabled = entityContainer is Album
+      subtitleButton.isUserInteractionEnabled = subtitleIsLink
+      subtitleButton.accessibilityTraits = subtitleIsLink ? .link : .staticText
     } else {
       subtitleButton.isHidden = true
     }
