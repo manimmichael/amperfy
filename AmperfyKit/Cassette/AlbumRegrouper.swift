@@ -310,6 +310,16 @@ public final class AlbumRegrouper {
         artistAdopted.insert(album.id)
       }
 
+      // Cloud year (catalog / display override), same number the web rail shows.
+      // Subsonic tags are often empty for rips; don't invent from track years.
+      // Must run on the no-move branch too: a settled library (moved=0) never
+      // calls target(), so year would stay 0 forever if it only lived there.
+      func applyCloudYear(on album: Album, from item: CassetteDeviceGroupingItem) {
+        if let year = item.year, year > 0, album.year != year {
+          album.year = year
+        }
+      }
+
       func target(for item: CassetteDeviceGroupingItem, nativeCover: ArtworkRemoteInfo?) -> Album {
         let album: Album
         if let cached = targetByKey[item.groupKey] {
@@ -328,13 +338,7 @@ public final class AlbumRegrouper {
           if album.name != item.displayAlbum { album.name = item.displayAlbum }
           targetByKey[item.groupKey] = album
         }
-        // Cloud year (catalog / display override), same number the web rail
-        // shows. Subsonic tags are often empty for rips; don't invent from
-        // track years. Apply on both fresh and cached targets so a model
-        // bump heals albums already in the map.
-        if let year = item.year, year > 0, album.year != year {
-          album.year = year
-        }
+        applyCloudYear(on: album, from: item)
         provisionNativeCover(on: album, nativeCover: nativeCover)
         return album
       }
@@ -380,13 +384,14 @@ public final class AlbumRegrouper {
         let current = song.album
         let nativeCover = song.artwork?.remoteInfo
         if current?.id == item.groupKey {
-          // Already grouped → no move, but STILL provision the cover AND adopt the
-          // display artist. A steady-state device (moved=0) reaches ONLY this
-          // branch, so without this its covers never paint and its artist line
-          // stays blank.
+          // Already grouped → no move, but STILL provision the cover, adopt the
+          // display artist, and stamp cloud year. A steady-state device
+          // (moved=0) reaches ONLY this branch, so without this its covers
+          // never paint, its artist line stays blank, and year stays 0.
           if let current {
             provisionNativeCover(on: current, nativeCover: nativeCover)
             adoptArtistIdentity(on: current, for: item, song: song)
+            applyCloudYear(on: current, from: item)
           }
           continue
         }

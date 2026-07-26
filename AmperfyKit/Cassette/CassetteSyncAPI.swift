@@ -628,7 +628,16 @@ public final class CassetteSyncAPI: @unchecked Sendable {
       return row
     }
     let data = try await send(method: "POST", path: "/api/sync/device-inventory", json: body)
-    return try? JSONDecoder().decode(CassetteDeviceInventoryResponse.self, from: data)
+    do {
+      return try JSONDecoder().decode(CassetteDeviceInventoryResponse.self, from: data)
+    } catch {
+      // Silent nil used to hide decode failures (e.g. a single bad grouping
+      // row), which meant regroup never ran and album years stayed empty.
+      print(
+        "Cassette sync: device-inventory response decode failed - \(error.localizedDescription)"
+      )
+      return nil
+    }
   }
 
   // MARK: Play spine (cross-surface listening history)
