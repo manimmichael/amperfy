@@ -49,21 +49,21 @@ class ArtistDetailVC: MultiSourceTableViewController {
   private var detailOperationsView: GenericDetailTableHeader?
   private let stickyHeader = DetailStickyHeaderView()
 
-  /// Patch 110 (3a): the Popular list is capped to the top
-  /// `popularCollapsedLimit` tracks (ranked by play count — `sortByPlayCount`
-  /// is already wired below) with a trailing "Show more" row that expands to
-  /// the full list. Ranking reflects device-local play history; when sparse it
-  /// falls back to the FRC's secondary track order.
+  /// Patch 110 (3a): Popular is capped to `popularCollapsedLimit` with a
+  /// "Show more" that expands to `popularTeaserLimit` (shared contract with
+  /// web/Android). Order comes from cloud play counts via
+  /// `POST /api/sync/popular-rank`; offline falls back to the FRC's local
+  /// play-count sort with the same caps.
   private static let popularCollapsedLimit = 5
+  private static let popularTeaserLimit = 20
   private var isPopularExpanded = false
+  /// Bumps when a new rank request starts so a late response can't paint stale.
+  private var popularRankGeneration = 0
 
-  /// cassette: the Popular list is ranked by play count, and countPlayed bumps
-  /// it on every play — which live-reorders the FRC and shuffles the list under
-  /// the user. So the ranked order is SNAPSHOTTED on viewWillAppear and rendered
-  /// in that fixed order for the lifetime of the presentation; it re-ranks only
-  /// on the next appearance, never live. The now-playing row indicator stays
-  /// live (it's the cell's own state, keyed off the current track) — only the
-  /// row ORDER is frozen.
+  /// cassette: Popular order is SNAPSHOTTED for the presentation so a live
+  /// play-count bump never reorders rows under the user. Cloud rank is
+  /// awaited before the first paint (empty until then) so a local/hub tally
+  /// never flashes then re-ranks. Re-ranks on the next appearance only.
   private var frozenPopularSongs: [Song] = []
 
   private func frozenPopularSong(at row: Int) -> Song? {
@@ -71,15 +71,54 @@ class ArtistDetailVC: MultiSourceTableViewController {
     return frozenPopularSongs[row]
   }
 
-  /// Re-snapshot the FRC's current ranked order. Called on each viewWillAppear.
+  /// Hold Popular empty, then paint once from cloud (or local fallback).
   private func freezePopularOrder() {
     let count = songsFetchedResultsController?.sections?[0].numberOfObjects ?? 0
-    frozenPopularSongs = (0 ..< count).compactMap {
+    let local = (0 ..< count).compactMap {
       songsFetchedResultsController?.getWrappedEntity(at: IndexPath(row: $0, section: 0))
     }
+    // Hold until ranked — mirrors web holding songs for the ranked fresh payload.
+    frozenPopularSongs = []
     if isViewLoaded, tableView.numberOfSections > BodySection.popular.rawValue {
       tableView.reloadSections(IndexSet(integer: BodySection.popular.rawValue), with: .none)
     }
+    guard !local.isEmpty else { return }
+    popularRankGeneration &+= 1
+    let generation = popularRankGeneration
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      let ranked = await self.rankPopularCloudOrLocal(local)
+      guard generation == self.popularRankGeneration else { return }
+      self.frozenPopularSongs = Array(ranked.prefix(Self.popularTeaserLimit))
+      if self.isViewLoaded, self.tableView.numberOfSections > BodySection.popular.rawValue {
+        self.tableView.reloadSections(IndexSet(integer: BodySection.popular.rawValue), with: .none)
+      }
+    }
+  }
+
+  /// Cloud union counts via popular-rank; unpaired / offline → FRC local order.
+  private func rankPopularCloudOrLocal(_ songs: [Song]) async -> [Song] {
+    guard CassetteSyncAPI.bearerToken != nil else {
+      return Array(songs.prefix(Self.popularTeaserLimit))
+    }
+    var byLocalId: [String: Song] = [:]
+    var inputs: [(cassetteLocalId: String, title: String)] = []
+    inputs.reserveCapacity(songs.count)
+    for song in songs {
+      let localId = CassetteCloudPlaylistBridge.cassetteLocalId(for: song)
+      byLocalId[localId] = song
+      inputs.append((localId, song.title))
+    }
+    do {
+      let ranked = try await CassetteSyncAPI.shared.rankPopular(items: inputs)
+      let ordered = ranked.compactMap { byLocalId[$0.cassetteLocalId] }
+      if !ordered.isEmpty {
+        return Array(ordered.prefix(Self.popularTeaserLimit))
+      }
+    } catch {
+      // Offline / network — fall through to local play-count FRC order.
+    }
+    return Array(songs.prefix(Self.popularTeaserLimit))
   }
 
   private var popularTotalCount: Int {
@@ -293,8 +332,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = false
-    // Snapshot the play-count ranking for this presentation so the list doesn't
-    // reorder live as tracks are played; re-ranks on the next appearance.
+    // Rank Popular from the cloud play store (hold until ranked so local
+    // counts never flash then re-order). Re-ranks on the next appearance.
     freezePopularOrder()
   }
 

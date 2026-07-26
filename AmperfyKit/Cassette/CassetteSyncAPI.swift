@@ -43,6 +43,33 @@ extension Notification.Name {
   /// expired. The app shows a one-per-launch "reconnect?" alert that runs
   /// the re-link flow instead of silently dying.
   public static let cassetteTokenRejected = Notification.Name("CassetteTokenRejected")
+
+  /// Posted (main thread) when `CassetteSyncStatus.isActive` flips — a library
+  /// sync wave started or finished. The Home screen swaps its "Syncing your
+  /// library" banner in over the Resume card while it is true.
+  public static let cassetteSyncActiveChanged = Notification.Name("CassetteSyncActiveChanged")
+}
+
+/// cassette: the one place the app asks "is a library sync wave moving right now?"
+///
+/// A wave = the phone still has owned tracks to pull. The intent executor is the
+/// authority: a poll that enqueues downloads, or leaves any intent `syncing`
+/// (downloads in flight), is active; a poll where everything it covers is already
+/// on disk is idle. This deliberately does NOT track the 30s poll itself — that
+/// would blink the banner on every quiet check. Counts (albums/tracks) are a
+/// follow-up; today this is just the on/off the banner needs.
+@MainActor
+public enum CassetteSyncStatus {
+  public private(set) static var isActive = false
+
+  /// Called at the end of each intent pass with whether real sync work remains.
+  /// Posts `.cassetteSyncActiveChanged` only on a real transition, so observers
+  /// don't churn on every poll.
+  public static func setActive(_ active: Bool) {
+    guard active != isActive else { return }
+    isActive = active
+    NotificationCenter.default.post(name: .cassetteSyncActiveChanged, object: nil)
+  }
 }
 
 // MARK: - CassetteSyncIntent
@@ -633,6 +660,124 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     _ = try await send(method: "POST", path: "/api/sync/plays", json: ["plays": rows])
   }
 
+  // MARK: Cloud playlists (user_playlists)
+
+  /// GET /api/sync/playlists — account playlists. Pass `includeItems: true` for
+  /// full membership (used to materialise local PlaylistMO rows).
+  public func listPlaylists(includeItems: Bool = false, since: Date? = nil) async throws
+    -> [CassetteCloudPlaylist] {
+    var query: [String] = []
+    if includeItems { query.append("include=items") }
+    if let since {
+      let iso = ISO8601DateFormatter().string(from: since)
+      let encoded = iso.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? iso
+      query.append("since=\(encoded)")
+    }
+    let path = query.isEmpty
+      ? "/api/sync/playlists"
+      : "/api/sync/playlists?\(query.joined(separator: "&"))"
+    let data = try await get(path: path)
+    return try JSONDecoder().decode(ListPlaylistsResponse.self, from: data).playlists
+  }
+
+  public func getPlaylist(id: String) async throws -> CassetteCloudPlaylist {
+    let data = try await get(path: "/api/sync/playlists/\(id)")
+    return try JSONDecoder().decode(PlaylistEnvelope.self, from: data).playlist
+  }
+
+  public func createPlaylist(
+    id: String,
+    name: String,
+    description: String? = nil
+  ) async throws -> CassetteCloudPlaylist {
+    var body: [String: Any] = ["id": id, "name": name]
+    if let description { body["description"] = description }
+    let data = try await send(method: "POST", path: "/api/sync/playlists", json: body)
+    return try JSONDecoder().decode(PlaylistEnvelope.self, from: data).playlist
+  }
+
+  public func updatePlaylist(
+    id: String,
+    name: String? = nil,
+    description: String? = nil
+  ) async throws -> CassetteCloudPlaylist {
+    var body: [String: Any] = [:]
+    if let name { body["name"] = name }
+    if let description { body["description"] = description }
+    let data = try await send(method: "PUT", path: "/api/sync/playlists/\(id)", json: body)
+    return try JSONDecoder().decode(PlaylistEnvelope.self, from: data).playlist
+  }
+
+  public func deletePlaylist(id: String) async throws {
+    _ = try await send(method: "DELETE", path: "/api/sync/playlists/\(id)", json: [:])
+  }
+
+  public func applyPlaylistOps(
+    playlistId: String,
+    ops: [CassettePlaylistOp]
+  ) async throws -> CassetteCloudPlaylist {
+    let bodyData = try JSONEncoder().encode(CassettePlaylistOpsBody(ops: ops))
+    let data = try await send(
+      method: "POST",
+      path: "/api/sync/playlists/\(playlistId)/ops",
+      body: bodyData
+    )
+    return try JSONDecoder().decode(PlaylistOpsEnvelope.self, from: data).playlist
+  }
+
+  // MARK: Cloud favorites / Saved
+
+  public func listFavorites(since: Date? = nil) async throws -> [CassetteCloudFavorite] {
+    var path = "/api/sync/favorites"
+    if let since {
+      let iso = ISO8601DateFormatter().string(from: since)
+      let encoded = iso.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? iso
+      path += "?since=\(encoded)"
+    }
+    let data = try await get(path: path)
+    return try JSONDecoder().decode(ListFavoritesResponse.self, from: data).favorites
+  }
+
+  public func upsertFavorite(
+    cassetteLocalId: String,
+    mbid: String?,
+    trackTitle: String?,
+    artistName: String?,
+    albumName: String?
+  ) async throws {
+    var body: [String: Any] = [
+      "cassette_local_id": cassetteLocalId,
+      "event_at": ISO8601DateFormatter().string(from: Date()),
+      "source_device": "ios",
+    ]
+    body["mbid"] = mbid as Any? ?? NSNull()
+    if let trackTitle { body["track_title"] = trackTitle }
+    if let artistName { body["artist_name"] = artistName }
+    if let albumName { body["album_name"] = albumName }
+    _ = try await send(method: "POST", path: "/api/sync/favorites", json: body)
+  }
+
+  public func removeFavorite(cassetteLocalId: String) async throws {
+    // DELETE with JSON body — URLSession needs httpBody on a custom request.
+    guard let token = Self.bearerToken else { throw CassetteSyncError.notAuthenticated }
+    guard let url = URL(string: Self.apiBase + "/api/sync/favorites") else {
+      throw CassetteSyncError.badURL
+    }
+    var request = URLRequest(url: url)
+    request.httpMethod = "DELETE"
+    request.timeoutInterval = 20
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    applyDeviceHeaders(&request)
+    let body: [String: Any] = [
+      "cassette_local_id": cassetteLocalId,
+      "event_at": ISO8601DateFormatter().string(from: Date()),
+    ]
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+    _ = try await perform(request)
+  }
+
   /// GET /api/sync/plays?since=<iso> — cloud play history, newest first, plays
   /// strictly newer than `since` (server default page size when `since == nil`).
   /// Strictly READ-ONLY. Used by `CloudPlayReconciler` to fold in plays made on
@@ -665,6 +810,46 @@ public final class CassetteSyncAPI: @unchecked Sendable {
 
   private struct PlaysResponse: Decodable {
     let plays: [CassetteCloudPlay]
+  }
+
+  /// One ranked song from `POST /api/sync/popular-rank`.
+  public struct PopularRankItem: Decodable, Sendable {
+    public let cassetteLocalId: String
+    public let title: String
+    public let playCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+      case cassetteLocalId = "cassette_local_id"
+      case title
+      case playCount = "play_count"
+    }
+  }
+
+  private struct PopularRankResponse: Decodable {
+    let items: [PopularRankItem]
+  }
+
+  /// POST /api/sync/popular-rank — cloud play-count ranking for an artist's
+  /// owned songs (same order as the web/desktop artist rail). Caller sends
+  /// cassette_local_id + title; server returns play_count ↓, title A→Z,
+  /// capped at 20. Offline callers should fall back to a local tally with
+  /// the same comparator.
+  public func rankPopular(
+    items: [(cassetteLocalId: String, title: String)]
+  ) async throws -> [PopularRankItem] {
+    guard !items.isEmpty else { return [] }
+    let rows: [[String: Any]] = items.map { item in
+      [
+        "cassette_local_id": item.cassetteLocalId,
+        "title": item.title,
+      ]
+    }
+    let data = try await send(
+      method: "POST",
+      path: "/api/sync/popular-rank",
+      json: ["items": rows]
+    )
+    return try JSONDecoder().decode(PopularRankResponse.self, from: data).items
   }
 
   // MARK: On-demand convergence (B2 pull-to-refresh)
@@ -733,6 +918,14 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   }
 
   private func send(method: String, path: String, json: [String: Any]) async throws -> Data {
+    try await send(
+      method: method,
+      path: path,
+      body: try JSONSerialization.data(withJSONObject: json)
+    )
+  }
+
+  private func send(method: String, path: String, body: Data) async throws -> Data {
     guard let token = Self.bearerToken else { throw CassetteSyncError.notAuthenticated }
     guard let url = URL(string: Self.apiBase + path) else { throw CassetteSyncError.badURL }
     var request = URLRequest(url: url)
@@ -742,7 +935,7 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     request.setValue("application/json", forHTTPHeaderField: "Accept")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     applyDeviceHeaders(&request)
-    request.httpBody = try JSONSerialization.data(withJSONObject: json)
+    request.httpBody = body
     return try await perform(request)
   }
 
@@ -804,6 +997,129 @@ final class CassetteAuthPreservingDelegate: NSObject, URLSessionTaskDelegate {
     }
     completionHandler(newRequest)
   }
+}
+
+// MARK: - CassettePlaylistOp
+
+/// Wire-shaped playlist mutation op for POST /api/sync/playlists/:id/ops.
+/// Sendable so MainActor callers can hand it to this nonisolated client.
+public enum CassettePlaylistOp: Encodable, Sendable {
+  case add(
+    itemId: String,
+    cassetteLocalId: String,
+    mbid: String?,
+    position: Double,
+    addedAt: String,
+    addedByDevice: String
+  )
+  case remove(itemId: String)
+  case reorder(itemId: String, position: Double)
+
+  private enum CodingKeys: String, CodingKey {
+    case op
+    case itemId = "item_id"
+    case cassetteLocalId = "cassette_local_id"
+    case mbid
+    case position
+    case addedAt = "added_at"
+    case addedByDevice = "added_by_device"
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    switch self {
+    case let .add(itemId, cassetteLocalId, mbid, position, addedAt, addedByDevice):
+      try container.encode("add", forKey: .op)
+      try container.encode(itemId, forKey: .itemId)
+      try container.encode(cassetteLocalId, forKey: .cassetteLocalId)
+      try container.encode(mbid, forKey: .mbid)
+      try container.encode(position, forKey: .position)
+      try container.encode(addedAt, forKey: .addedAt)
+      try container.encode(addedByDevice, forKey: .addedByDevice)
+    case let .remove(itemId):
+      try container.encode("remove", forKey: .op)
+      try container.encode(itemId, forKey: .itemId)
+    case let .reorder(itemId, position):
+      try container.encode("reorder", forKey: .op)
+      try container.encode(itemId, forKey: .itemId)
+      try container.encode(position, forKey: .position)
+    }
+  }
+}
+
+private struct CassettePlaylistOpsBody: Encodable {
+  let ops: [CassettePlaylistOp]
+}
+
+// MARK: - CassetteCloudPlaylist
+
+public struct CassetteCloudPlaylistItem: Sendable, Decodable {
+  public let id: String
+  public let cassetteLocalId: String
+  public let mbid: String?
+  public let position: Double
+  public let removedAt: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case cassetteLocalId = "cassette_local_id"
+    case mbid
+    case position
+    case removedAt = "removed_at"
+  }
+}
+
+public struct CassetteCloudPlaylist: Sendable, Decodable {
+  public let id: String
+  public let name: String
+  public let description: String?
+  public let coverImageUrl: String?
+  public let updatedAt: String?
+  public let deletedAt: String?
+  public let items: [CassetteCloudPlaylistItem]?
+
+  enum CodingKeys: String, CodingKey {
+    case id, name, description, items
+    case coverImageUrl = "cover_image_url"
+    case updatedAt = "updated_at"
+    case deletedAt = "deleted_at"
+  }
+}
+
+private struct ListPlaylistsResponse: Decodable {
+  let playlists: [CassetteCloudPlaylist]
+}
+
+private struct PlaylistEnvelope: Decodable {
+  let playlist: CassetteCloudPlaylist
+}
+
+private struct PlaylistOpsEnvelope: Decodable {
+  let playlist: CassetteCloudPlaylist
+}
+
+// MARK: - CassetteCloudFavorite
+
+public struct CassetteCloudFavorite: Sendable, Decodable {
+  public let cassetteLocalId: String
+  public let mbid: String?
+  public let trackTitle: String?
+  public let artistName: String?
+  public let albumName: String?
+  public let eventAt: String?
+
+  enum CodingKeys: String, CodingKey {
+    case cassetteLocalId = "cassette_local_id"
+    case mbid
+    case trackTitle = "track_title"
+    case artistName = "artist_name"
+    case albumName = "album_name"
+    case eventAt = "event_at"
+  }
+}
+
+private struct ListFavoritesResponse: Decodable {
+  let favorites: [CassetteCloudFavorite]
 }
 
 // MARK: - CassetteCloudPlay
