@@ -493,6 +493,11 @@ class GenericDetailTableHeader: UIView {
     }
     infoLabel.isHidden = infoText.isEmpty
     infoLabel.text = infoText
+    // Year (or other quiet meta) sits tight under the artist - phone header
+    // should read as one stack, not three floating bands.
+    if !subtitleButton.isHidden, !infoText.isEmpty {
+      contentColumn.setCustomSpacing(2, after: subtitleButton)
+    }
 
     let textAlignment: NSTextAlignment = isCompactWidth ? .center : .left
     titleLabel.textAlignment = textAlignment

@@ -382,32 +382,10 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     }
   }
 
-  // Patch 026: build the Spotify-style "Type · Year · Duration" metadata
-  // line. Type comes from OpenSubsonic releaseTypes. Year and duration are
-  // skipped when missing rather than rendered as zeros.
-  //
-  // cassette: the type is only worth a line when it says something the page
-  // doesn't already. "EP", "Single", "Compilation", "Live" earn their space;
-  // "Album" on an album page is the page telling you where you are. So we
-  // read `albumTypeRaw` (nil when the server never surfaced a type) instead
-  // of `albumType` (which invents "Album" as a fallback), and drop a plain
-  // "Album" even when the server did send it. On a record with no year and
-  // no duration that line used to be the single word "Album"; now it just
-  // isn't there.
   private func refreshAlbumMetadataLine() {
-    var parts: [String] = []
-    if let type = album.albumTypeRaw?.trimmingCharacters(in: .whitespaces),
-       !type.isEmpty,
-       type.caseInsensitiveCompare("Album") != .orderedSame {
-      parts.append(type)
-    }
-    if album.year > 0 {
-      parts.append("\(album.year)")
-    }
-    if album.duration > 0 {
-      parts.append(album.duration.asDurationShortString)
-    }
-    detailOperationsView?.metadataOverride = parts.joined(separator: " · ")
+    // Year only, directly under the artist (web/Android parity). Genre and
+    // album-type chips stay out of this quiet header line.
+    detailOperationsView?.metadataOverride = album.year > 0 ? "\(album.year)" : ""
   }
 
   override func viewDidAppear(_ animated: Bool) {

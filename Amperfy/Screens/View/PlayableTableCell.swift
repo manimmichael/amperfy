@@ -168,7 +168,8 @@ class PlayableTableCell: BasicTableCell {
     downloadButton.isHidden = true
   }
 
-  static let rowHeight: CGFloat = 48 + margin.bottom + margin.top
+  // Extra vertical room for track lists (was 9+9 margins -> 66pt).
+  static let rowHeight: CGFloat = 48 + 14 + 14
   private static let touchAnimation = 0.4
 
   private var style = PlayableTableCellStyle.none
@@ -228,6 +229,8 @@ class PlayableTableCell: BasicTableCell {
         // singleTapGestureRecognizer.require(toFail: doubleTapGestureRecognizer)
         self.addGestureRecognizer(singleTapGestureRecognizer)
       #endif
+      // Long-press overflow (web parity: duration stands in the trailing slot).
+      addInteraction(UIContextMenuInteraction(delegate: self))
 
       style = PlayableTableCellStyle.none
       registerPlayingSymbolNotificationsIfNeeded()
@@ -630,19 +633,16 @@ class PlayableTableCell: BasicTableCell {
     // configurable swipe actions instead.
     favoriteIconImage.isHidden = true
 
-    let isDurationVisible = !playable.isRadio &&
-      (
-        appDelegate.storage.settings.user
-          .isShowSongDuration || (traitCollection.horizontalSizeClass == .regular)
-      )
+    // Duration always stands in the trailing slot; overflow is long-press.
+    let isDurationVisible = !playable.isRadio
     let cacheIconWidth = (traitCollection.horizontalSizeClass == .regular) ? 17.0 : 15.0
     let durationWidth = (
       traitCollection.horizontalSizeClass == .regular &&
         traitCollection.userInterfaceIdiom != .mac
     ) ? 49.0 : 40.0
-    let isDisplayOptionButton = (playContextCb != nil) && (playerIndexCb == nil)
-    let durationTrailing = isDisplayOptionButton ?
-      ((traitCollection.horizontalSizeClass == .regular) ? 30 : 30.0) : 0.0
+    // Overflow icon retired - long-press via UIContextMenuInteraction.
+    let isDisplayOptionButton = false
+    let durationTrailing = 0.0
 
     // cassette redesign (Surface 2): download affordance only on off-device
     // tracks; on-device rows show nothing in this slot (the old cached-check
@@ -916,6 +916,40 @@ class PlayableTableCell: BasicTableCell {
       }
     }
   #endif
+}
+
+
+
+// MARK: - Long-press overflow
+
+extension PlayableTableCell: UIContextMenuInteractionDelegate {
+  func contextMenuInteraction(
+    _ interaction: UIContextMenuInteraction,
+    configurationForMenuAtLocation location: CGPoint
+  ) -> UIContextMenuConfiguration? {
+    guard let playable = playable,
+          let rootView = rootView,
+          playContextCb != nil,
+          playerIndexCb == nil,
+          displayMode == .normal,
+          !playable.isRadio
+    else { return nil }
+    // Same shape as the retired optionsButton menu: no-arg PlayContext look-up.
+    let playContext = { [weak self] () -> PlayContext? in
+      guard let self else { return nil }
+      return self.playContextCb?(self)
+    }
+    return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+      UIMenu(
+        children: EntityPreviewActionBuilder(
+          container: playable,
+          on: rootView,
+          playContextCb: playContext,
+          playerIndexCb: nil
+        ).createMenuActions()
+      )
+    }
+  }
 }
 
 // MARK: - CassetteTrackSubtitle
