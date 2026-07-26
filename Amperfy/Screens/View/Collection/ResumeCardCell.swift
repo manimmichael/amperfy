@@ -73,7 +73,8 @@ final class ResumeCardCell: BasicCollectionCell {
   private let subtitleLabel: UILabel = {
     let label = UILabel()
     label.translatesAutoresizingMaskIntoConstraints = false
-    label.font = UIFont.cassette(.metadata)
+    // Quiet artist line under the resume title - mono, same as album cards.
+    label.font = UIFont.cassette(.cardSubtitle)
     label.textColor = CassetteTheme.UIColors.ink2
     label.numberOfLines = 1
     label.lineBreakMode = .byTruncatingTail
@@ -89,6 +90,35 @@ final class ResumeCardCell: BasicCollectionCell {
     return button
   }()
 
+  // cassette: "Checking for updates" state. On a pull-to-refresh the card swaps its
+  // resume content for this centered spinner + label at the SAME height, instead of
+  // a pull spinner that opens and closes a gap at the top — the Home never changes
+  // height. See HomeVC.setCheckingForUpdates.
+  private let checkingSpinner: UIActivityIndicatorView = {
+    let view = UIActivityIndicatorView(style: .medium)
+    view.color = CassetteTheme.UIColors.ink2
+    view.hidesWhenStopped = false
+    return view
+  }()
+
+  private let checkingLabel: UILabel = {
+    let label = UILabel()
+    label.font = UIFont.cassette(.metadata)
+    label.textColor = CassetteTheme.UIColors.ink2
+    label.text = "Checking for updates"
+    return label
+  }()
+
+  private lazy var checkingStack: UIStackView = {
+    let stack = UIStackView(arrangedSubviews: [checkingSpinner, checkingLabel])
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    stack.axis = .horizontal
+    stack.spacing = 10
+    stack.alignment = .center
+    stack.isHidden = true
+    return stack
+  }()
+
   override init(frame: CGRect) {
     super.init(frame: frame)
     setupSubviews()
@@ -102,6 +132,22 @@ final class ResumeCardCell: BasicCollectionCell {
   override func prepareForReuse() {
     super.prepareForReuse()
     onPlayTapped = nil
+    setChecking(false)
+  }
+
+  /// Swap between the resume content and the "Checking for updates" state, in
+  /// place, at the same card height. The caller (HomeVC) turns it on for the
+  /// duration of a pull-to-refresh and off when the refresh settles.
+  func setChecking(_ checking: Bool) {
+    checkingStack.isHidden = !checking
+    if checking { checkingSpinner.startAnimating() } else { checkingSpinner.stopAnimating() }
+    artworkView.isHidden = checking
+    eyebrowLabel.isHidden = checking
+    titleLabel.isHidden = checking
+    playButton.isHidden = checking
+    // Keep the subtitle hidden if it was empty to begin with.
+    subtitleLabel.isHidden = checking || (subtitleLabel.text?.isEmpty ?? true)
+    isUserInteractionEnabled = !checking
   }
 
   private func setupSubviews() {
@@ -114,6 +160,7 @@ final class ResumeCardCell: BasicCollectionCell {
     glassContent.addSubview(titleLabel)
     glassContent.addSubview(subtitleLabel)
     glassContent.addSubview(playButton)
+    glassContent.addSubview(checkingStack)
 
     let pad = CassetteTheme.Spacing.md
     NSLayoutConstraint.activate([
@@ -121,6 +168,9 @@ final class ResumeCardCell: BasicCollectionCell {
       glassContainer.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
       glassContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
       glassContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+
+      checkingStack.centerXAnchor.constraint(equalTo: glassContent.centerXAnchor),
+      checkingStack.centerYAnchor.constraint(equalTo: glassContent.centerYAnchor),
 
       artworkView.leadingAnchor.constraint(equalTo: glassContent.leadingAnchor, constant: pad),
       artworkView.centerYAnchor.constraint(equalTo: glassContent.centerYAnchor),

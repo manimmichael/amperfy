@@ -991,6 +991,19 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func syncDownPlaylistsWithoutSongs() async throws {
     guard isSyncAllowed else { return }
+    // cassette: cloud user_playlists is the source of truth (not Subsonic).
+    if CassetteCloudPlaylistBridge.isCloudAvailable {
+      await CassetteCloudPlaylistBridge.importHubPlaylistsIfNeeded(
+        subsonicApi: subsonicServerApi,
+        storage: storage,
+        accountObjectId: accountObjectId
+      )
+      try await CassetteCloudPlaylistBridge.syncDownPlaylists(
+        storage: storage,
+        accountObjectId: accountObjectId
+      )
+      return
+    }
     let response = try await subsonicServerApi.requestPlaylists()
     try await storage.async.perform { asyncCompanion in
       let accountAsync = asyncCompanion.library.getAccount(managedObjectId: self.accountObjectId)
@@ -1005,6 +1018,14 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   func syncDown(playlist: Playlist) async throws {
     guard isSyncAllowed, playlist.id != "" else { return }
+    if CassetteCloudPlaylistBridge.isCloudAvailable {
+      try await CassetteCloudPlaylistBridge.syncDownPlaylistDetail(
+        playlist: playlist,
+        storage: storage,
+        accountObjectId: accountObjectId
+      )
+      return
+    }
     os_log("Playlist \"%s\": Download songs from server", log: self.log, type: .info, playlist.name)
     let response = try await subsonicServerApi.requestPlaylistSongs(id: playlist.id)
 
@@ -1057,6 +1078,10 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   func syncUpload(playlistToUpdateName playlist: Playlist) async throws {
     guard isSyncAllowed else { return }
     os_log("Upload name on playlist to: \"%s\"", log: log, type: .info, playlist.name)
+    if CassetteCloudPlaylistBridge.isCloudAvailable {
+      try await CassetteCloudPlaylistBridge.updateName(playlist: playlist)
+      return
+    }
     try await validatePlaylistId(playlist: playlist)
     let response = try await subsonicServerApi.requestPlaylistUpdate(
       id: playlist.id,
@@ -1071,6 +1096,10 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   func syncUpload(playlistToAddSongs playlist: Playlist, songs: [Song]) async throws {
     guard isSyncAllowed, !songs.isEmpty else { return }
     os_log("Upload SongsAdded on playlist \"%s\"", log: log, type: .info, playlist.name)
+    if CassetteCloudPlaylistBridge.isCloudAvailable {
+      try await CassetteCloudPlaylistBridge.addSongs(playlist: playlist, songs: songs)
+      return
+    }
     try await validatePlaylistId(playlist: playlist)
     let response = try await subsonicServerApi.requestPlaylistUpdate(
       id: playlist.id,
@@ -1091,6 +1120,10 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
       playlist.name,
       index
     )
+    if CassetteCloudPlaylistBridge.isCloudAvailable {
+      try await CassetteCloudPlaylistBridge.deleteSong(playlist: playlist, index: index)
+      return
+    }
     try await validatePlaylistId(playlist: playlist)
     let response = try await subsonicServerApi.requestPlaylistUpdate(
       id: playlist.id,
@@ -1105,6 +1138,10 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   func syncUpload(playlistToUpdateOrder playlist: Playlist) async throws {
     guard isSyncAllowed else { return }
     os_log("Upload OrderChange on playlist \"%s\"", log: log, type: .info, playlist.name)
+    if CassetteCloudPlaylistBridge.isCloudAvailable {
+      try await CassetteCloudPlaylistBridge.updateOrder(playlist: playlist)
+      return
+    }
     try await validatePlaylistId(playlist: playlist)
     let songIdsToAdd = playlist.playables.compactMap { $0.id }
     let songIndicesToRemove = Array(0 ... songIdsToAdd.count - 1)
@@ -1121,6 +1158,10 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   func syncUpload(playlistIdToDelete id: String) async throws {
     guard isSyncAllowed else { return }
     os_log("Upload Delete playlist \"%s\"", log: log, type: .info, id)
+    if CassetteCloudPlaylistBridge.isCloudAvailable {
+      try await CassetteCloudPlaylistBridge.deletePlaylist(id: id)
+      return
+    }
     let response = try await subsonicServerApi.requestPlaylistDelete(id: id)
     try parseForError(response: response)
   }
@@ -1230,6 +1271,31 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
       isFavorite ? "TRUE" : "FALSE",
       song.displayString
     )
+    // cassette: mirror into cloud Saved (user_favorites) so the web + phone
+    // share one holding pile. Hub Subsonic star stays for local Liked UX.
+    if CassetteSyncAPI.bearerToken != nil {
+      let localId = CassetteCloudPlaylistBridge.cassetteLocalId(for: song)
+      do {
+        if isFavorite {
+          try await CassetteSyncAPI.shared.upsertFavorite(
+            cassetteLocalId: localId,
+            mbid: song.musicBrainzId,
+            trackTitle: song.title,
+            artistName: song.artist?.name ?? song.album?.artist?.name,
+            albumName: song.album?.name
+          )
+        } else {
+          try await CassetteSyncAPI.shared.removeFavorite(cassetteLocalId: localId)
+        }
+      } catch {
+        os_log(
+          "Cloud Saved mirror failed: %{public}@",
+          log: log,
+          type: .info,
+          String(describing: error)
+        )
+      }
+    }
     let response = try await subsonicServerApi.requestSetFavorite(
       songId: song.id,
       isFavorite: isFavorite
@@ -1363,6 +1429,10 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
   @MainActor
   private func createPlaylistRemote(playlist: Playlist) async throws {
     os_log("Create playlist on server", log: log, type: .info)
+    if CassetteCloudPlaylistBridge.isCloudAvailable {
+      try await CassetteCloudPlaylistBridge.createPlaylistRemote(playlist: playlist)
+      return
+    }
     let response = try await subsonicServerApi.requestPlaylistCreate(name: playlist.name)
     let playlistObjectId = playlist.managedObject.objectID
     try await storage.async.perform { asyncCompanion in

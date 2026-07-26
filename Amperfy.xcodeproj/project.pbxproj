@@ -146,6 +146,7 @@
 		CA55E0E1000000200000CAFE /* DiagnosticInstallIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000100000CAFE /* DiagnosticInstallIdentity.swift */; };
 		CA55E0E10000001D0000CAFE /* DiagnosticPlayerObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E10000000D0000CAFE /* DiagnosticPlayerObserver.swift */; };
 		CA55E0E1000000130000CAFE /* CassetteSyncAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000030000CAFE /* CassetteSyncAPI.swift */; };
+		CA55E0E1000000330000CAFE /* CassetteCloudPlaylistBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000230000CAFE /* CassetteCloudPlaylistBridge.swift */; };
 		CA55E0E1000000160000CAFE /* CassetteLocalID.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000060000CAFE /* CassetteLocalID.swift */; };
 		CA55E0E1000000170000CAFE /* CassetteLocalIDTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000070000CAFE /* CassetteLocalIDTest.swift */; };
 		CA55E0EB0000001A0000CAFE /* AlbumRegrouperTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0EB0000000A0000CAFE /* AlbumRegrouperTest.swift */; };
@@ -868,6 +869,7 @@
 		CA55E0E1000000100000CAFE /* DiagnosticInstallIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticInstallIdentity.swift; sourceTree = "<group>"; };
 		CA55E0E10000000D0000CAFE /* DiagnosticPlayerObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticPlayerObserver.swift; sourceTree = "<group>"; };
 		CA55E0E1000000030000CAFE /* CassetteSyncAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteSyncAPI.swift; sourceTree = "<group>"; };
+		CA55E0E1000000230000CAFE /* CassetteCloudPlaylistBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteCloudPlaylistBridge.swift; sourceTree = "<group>"; };
 		CA55E0E1000000060000CAFE /* CassetteLocalID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteLocalID.swift; sourceTree = "<group>"; };
 		CA55E0E1000000070000CAFE /* CassetteLocalIDTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Cases/Cassette/CassetteLocalIDTest.swift"; sourceTree = "<group>"; };
 		CA55E0EB0000000A0000CAFE /* AlbumRegrouperTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Cases/Cassette/AlbumRegrouperTest.swift"; sourceTree = "<group>"; };
@@ -1997,6 +1999,7 @@
 				CA55E0E1000000020000CAFE /* DeviceOwnershipManager.swift */,
 				CA55E0EA0000000A0000CAFE /* AlbumRegrouper.swift */,
 				CA55E0E1000000030000CAFE /* CassetteSyncAPI.swift */,
+				CA55E0E1000000230000CAFE /* CassetteCloudPlaylistBridge.swift */,
 				CA55E0E1000000040000CAFE /* CassetteTransferSession.swift */,
 				CA55E0E1000000050000CAFE /* IntentExecutor.swift */,
 				CA55E0E1000000060000CAFE /* CassetteLocalID.swift */,
@@ -2941,6 +2944,7 @@
 				CA55E0E1000000200000CAFE /* DiagnosticInstallIdentity.swift in Sources */,
 				CA55E0E10000001D0000CAFE /* DiagnosticPlayerObserver.swift in Sources */,
 				CA55E0E1000000130000CAFE /* CassetteSyncAPI.swift in Sources */,
+				CA55E0E1000000330000CAFE /* CassetteCloudPlaylistBridge.swift in Sources */,
 				CA55E0E1000000140000CAFE /* CassetteTransferSession.swift in Sources */,
 				CA55E0E1000000150000CAFE /* IntentExecutor.swift in Sources */,
 				CA55E0E1000000160000CAFE /* CassetteLocalID.swift in Sources */,

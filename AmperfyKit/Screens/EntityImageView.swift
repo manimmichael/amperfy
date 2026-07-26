@@ -50,6 +50,8 @@ open class EntityImageView: UIView {
   weak var quadImage4: LibraryEntityImage!
 
   private var view: UIView!
+  /// Cancels stale cloud-cover loads when a cell is reused.
+  private var remoteCoverLoadID = UUID()
 
   private var quadImages: [LibraryEntityImage] {
     [
@@ -113,11 +115,56 @@ open class EntityImageView: UIView {
     container: PlayableContainable,
     cornerRadius: CornerRadius = .small
   ) {
+    // cassette: cloud playlist cover (web-chosen) wins over the song mosaic.
+    if let playlist = container as? Playlist,
+       let urlString = CassetteCloudPlaylistBridge.storedCoverUrl(for: playlist.id),
+       let url = URL(string: urlString) {
+      display(
+        theme: theme,
+        collection: container.getArtworkCollection(theme: theme),
+        cornerRadius: cornerRadius
+      )
+      loadRemoteCover(url)
+      return
+    }
+    remoteCoverLoadID = UUID()
     display(
       theme: theme,
       collection: container.getArtworkCollection(theme: theme),
       cornerRadius: cornerRadius
     )
+  }
+
+  private func loadRemoteCover(_ url: URL) {
+    let loadID = UUID()
+    remoteCoverLoadID = loadID
+    // Curated presets: prefer the bundled PNG (live site only has SVG today).
+    if let bundled = CassetteCloudPlaylistBridge.bundledPresetCoverImage(forCoverUrl: url.absoluteString)
+    {
+      applyRemoteCover(bundled, loadID: loadID)
+      return
+    }
+    Task { [weak self] in
+      do {
+        let (data, response) = try await URLSession.shared.data(from: url)
+        if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
+          return
+        }
+        guard let image = UIImage(data: data) else { return }
+        await MainActor.run {
+          self?.applyRemoteCover(image, loadID: loadID)
+        }
+      } catch {
+        // Keep the mosaic / placeholder already shown.
+      }
+    }
+  }
+
+  private func applyRemoteCover(_ image: UIImage, loadID: UUID) {
+    guard remoteCoverLoadID == loadID else { return }
+    quadImages.forEach { $0.isHidden = true }
+    singleImage.isHidden = false
+    singleImage.display(image: image)
   }
 
   public func configureStyling(

@@ -40,6 +40,14 @@ final class HomeVC: UICollectionViewController {
   private let account: Account
   private var accountNotificationHandler: AccountNotificationHandler?
   private let sharedHome: HomeManager
+  // cassette: "Syncing your library" banner. Floats fixed at the top of Home
+  // (pinned to the scroll view's safe-area guide, so it does not scroll) while a
+  // download wave is moving, covering the Resume card. See updateSyncBannerPresentation.
+  private let syncBanner = SyncBannerView()
+  // cassette: custom pull-to-refresh state. The Resume card shows "Checking for
+  // updates" in place (no height change) while a pull-triggered refresh runs.
+  private var isCheckingForUpdates = false
+  private var pullPastThreshold = false
 
   // MARK: - Init
 
@@ -74,14 +82,11 @@ final class HomeVC: UICollectionViewController {
     // ensures that the collection view stops placing items under the sidebar
     collectionView.contentInsetAdjustmentBehavior = .scrollableAxes
 
-    // Pull-to-refresh on Home. This is what lets the passive poll back off to a long
-    // idle interval without ever feeling stale: the gesture is the responsive path,
-    // so the timer does not have to be.
-    #if !targetEnvironment(macCatalyst)
-      let refresh = UIRefreshControl()
-      refresh.addTarget(self, action: #selector(handleCassetteRefresh(_:)), for: .valueChanged)
-      collectionView.refreshControl = refresh
-    #endif
+    // Pull-to-refresh on Home. A CUSTOM over-pull (see scrollViewDidScroll /
+    // scrollViewDidEndDragging) drives it instead of a UIRefreshControl: the stock
+    // spinner opens and closes a ~60pt gap at the top on every refresh, and the Home
+    // should never change height. The Resume card shows "Checking for updates" in
+    // place for the duration instead.
     collectionView.backgroundColor = CassetteTheme.UIColors.bg
     title = "Home"
 
@@ -112,7 +117,28 @@ final class HomeVC: UICollectionViewController {
     // shifted the section indices).
     collectionView.setCollectionViewLayout(makeLayout(), animated: false)
     sharedHome.createFetchController()
+
+    // cassette: the sync banner floats fixed at the top of the scroll view (pinned
+    // to the safe-area guide, NOT the content guide, so it does not scroll away).
+    // Content is inset below it only while it is visible; see updateSyncBannerPresentation.
+    syncBanner.isHidden = true
+    collectionView.addSubview(syncBanner)
+    NSLayoutConstraint.activate([
+      syncBanner.topAnchor.constraint(equalTo: collectionView.safeAreaLayoutGuide.topAnchor, constant: 8),
+      syncBanner.leadingAnchor.constraint(equalTo: collectionView.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+      syncBanner.trailingAnchor.constraint(equalTo: collectionView.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+    ])
+    // Observe via NotificationCenter.default — that is where CassetteSyncStatus posts.
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(cassetteSyncActiveChanged),
+      name: .cassetteSyncActiveChanged,
+      object: nil
+    )
+
     applySnapshot(animated: false)
+    // Reflect a wave that is already moving when Home first appears.
+    updateSyncBannerPresentation(animated: false)
 
     appDelegate.notificationHandler.register(
       self,
@@ -136,12 +162,80 @@ final class HomeVC: UICollectionViewController {
   // direction (see TabBarVC.cassetteUpdateMinimizeForScroll).
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
     (tabBarController as? TabBarVC)?.cassetteUpdateMinimizeForScroll(scrollView)
+    // Arm the custom pull-to-refresh once dragged past the threshold at the very top.
+    if scrollView.isDragging {
+      let pulled = -(scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
+      if pulled > Self.pullRefreshThreshold { pullPastThreshold = true }
+    }
+  }
+
+  // MARK: - Pull to refresh (custom — no UIRefreshControl, so nothing reserves height)
+
+  private static let pullRefreshThreshold: CGFloat = 92
+
+  override func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    pullPastThreshold = false
+  }
+
+  override func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    guard pullPastThreshold, !isCheckingForUpdates else { return }
+    pullPastThreshold = false
+    triggerCassetteRefresh()
+  }
+
+  private func triggerCassetteRefresh() {
+    Task { @MainActor in
+      setCheckingForUpdates(true)
+      await IntentExecutor.shared.convergeAndRefresh()
+      // convergeAndRefresh only reconciles the LIBRARY. Also fold in plays made on
+      // the user's OTHER devices so Recent catches up — otherwise cross-device
+      // recency only lands on Home-appear / app-foreground, and a track just played
+      // on Android won't surface here until then.
+      sharedHome.updateFromRemote()
+      setCheckingForUpdates(false)
+    }
+  }
+
+  /// Put the Resume card into (or out of) its in-place "Checking for updates" state.
+  /// No new section and no content-inset change, so the Home never changes height.
+  /// A no-op when there is no Resume card (fresh install with no history) — the
+  /// refresh still runs, just without the in-slot indicator.
+  private func setCheckingForUpdates(_ checking: Bool) {
+    isCheckingForUpdates = checking
+    var snapshot = dataSource.snapshot()
+    guard snapshot.sectionIdentifiers.contains(.resume) else { return }
+    snapshot.reconfigureItems(snapshot.itemIdentifiers(inSection: .resume))
+    dataSource.apply(snapshot, animatingDifferences: false)
   }
 
   @objc
   private func cassetteLibraryFilterChanged() {
     sharedHome.createFetchController()
     applySnapshot(animated: false)
+  }
+
+  @objc
+  private func cassetteSyncActiveChanged() {
+    updateSyncBannerPresentation(animated: true)
+  }
+
+  /// Show/hide the sync banner to match `CassetteSyncStatus.isActive`, inset the
+  /// content below it while it is up, and re-apply the snapshot so the Resume
+  /// section drops out (the banner covers it) and returns when the wave ends.
+  private func updateSyncBannerPresentation(animated: Bool) {
+    let active = CassetteSyncStatus.isActive
+    syncBanner.isHidden = !active
+    if active { syncBanner.startAnimating() } else { syncBanner.stopAnimating() }
+
+    // The banner's height is content-driven; lay it out, then inset the content by
+    // that height plus a small gap so the first shelf clears it.
+    view.layoutIfNeeded()
+    let topInset = active ? (syncBanner.frame.height + 18) : 0
+    collectionView.contentInset.top = topInset
+    collectionView.verticalScrollIndicatorInsets.top = topInset
+
+    // Resume is section-gated on the sync state inside applySnapshot.
+    applySnapshot(animated: animated)
   }
 
   override func viewWillAppear(_ animated: Bool) {
@@ -312,6 +406,9 @@ final class HomeVC: UICollectionViewController {
         ) as! ResumeCardCell
         let containable = item.playableContainable
         cell.display(container: containable)
+        // Reflect an in-flight pull-to-refresh: the card shows "Checking for
+        // updates" in place instead of a height-changing pull spinner.
+        cell.setChecking(isCheckingForUpdates)
         cell.onPlayTapped = { [weak self] in
           guard let self else { return }
           // Patch 110 (2b): resume the persisted queue at its last position
@@ -439,6 +536,11 @@ final class HomeVC: UICollectionViewController {
     var seenSections = Set<HomeSection>()
     for section in sharedHome.orderedVisibleSections {
       guard seenSections.insert(section).inserted else { continue }
+      // cassette: while a sync wave is moving, the "Syncing your library" banner
+      // takes the top slot — drop the Resume section so the banner covers it. It
+      // returns automatically when the wave finishes (updateSyncBannerPresentation
+      // re-applies the snapshot).
+      if section == .resume, CassetteSyncStatus.isActive { continue }
       var seenItemIDs = Set<String>()
       let items = (sharedHome.data[section] ?? []).filter {
         seenItemIDs.insert($0.stableID).inserted
@@ -591,16 +693,6 @@ final class HomeVC: UICollectionViewController {
         animated: true
       )
       navigationController?.navigationBar.prefersLargeTitles = false
-    }
-  }
-
-  /// Home pull-to-refresh: converge with the paired Mac, then run a full poll. Mirrors
-  /// the library list's handleRefresh so both gestures mean the same thing.
-  @objc
-  private func handleCassetteRefresh(_ sender: UIRefreshControl) {
-    Task { @MainActor in
-      await IntentExecutor.shared.convergeAndRefresh()
-      sender.endRefreshing()
     }
   }
 }
@@ -862,5 +954,138 @@ extension UIFont {
       UIFontDescriptor.AttributeName.traits: [UIFontDescriptor.TraitKey.weight: weight],
     ])
     return UIFont(descriptor: descriptor, size: pointSize)
+  }
+}
+
+// MARK: - SyncBannerView
+
+/// cassette: the iOS half of Android's "Syncing your library" home banner. It
+/// sits at the top of Home over the Resume card while a library download wave is
+/// moving (CassetteSyncStatus.isActive) and disappears when it finishes — a paired
+/// phone says what it is doing instead of showing a bare spinner. Simple v1: a
+/// spinner + label + an indeterminate bar; live album/track counts are the
+/// follow-up (see CassetteSyncStatus).
+///
+/// Defined here rather than in its own file on purpose: a standalone .swift needs
+/// adding to the Xcode target's Compile Sources or nothing can see it ("Cannot
+/// find 'SyncBannerView' in scope"). Living in HomeVC.swift — already in the
+/// target, and HomeVC is the only caller — sidesteps that.
+final class SyncBannerView: UIView {
+  private let spinner: UIActivityIndicatorView = {
+    let view = UIActivityIndicatorView(style: .medium)
+    view.translatesAutoresizingMaskIntoConstraints = false
+    view.color = CassetteTheme.UIColors.orange
+    view.hidesWhenStopped = false
+    return view
+  }()
+
+  private let titleLabel: UILabel = {
+    let label = UILabel()
+    label.translatesAutoresizingMaskIntoConstraints = false
+    label.textColor = CassetteTheme.UIColors.ink
+    label.attributedText = NSAttributedString(
+      string: "SYNCING YOUR LIBRARY",
+      attributes: [.font: UIFont.cassette(.rowTitle), .kern: 0.9]
+    )
+    return label
+  }()
+
+  private let detailLabel: UILabel = {
+    let label = UILabel()
+    label.translatesAutoresizingMaskIntoConstraints = false
+    label.font = UIFont.cassette(.metadata)
+    label.textColor = CassetteTheme.UIColors.ink2
+    label.text = "Fetching your albums and tracks"
+    return label
+  }()
+
+  // Indeterminate bar: a faint full-width track with an accent segment that
+  // pulses, so the banner reads as "working" without claiming a progress it can't
+  // measure yet. A pulse (opacity) is used over a moving segment on purpose — it
+  // needs no frame math and can't misbehave across layout passes.
+  private let barTrack: UIView = {
+    let view = UIView()
+    view.translatesAutoresizingMaskIntoConstraints = false
+    view.backgroundColor = CassetteTheme.UIColors.ink4
+    view.layer.cornerRadius = 2
+    view.clipsToBounds = true
+    return view
+  }()
+
+  private let barFill: UIView = {
+    let view = UIView()
+    view.translatesAutoresizingMaskIntoConstraints = false
+    view.backgroundColor = CassetteTheme.UIColors.orange
+    view.layer.cornerRadius = 2
+    return view
+  }()
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    setup()
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    setup()
+  }
+
+  private func setup() {
+    translatesAutoresizingMaskIntoConstraints = false
+    backgroundColor = CassetteTheme.UIColors.bg2
+    layer.cornerRadius = 14
+    layer.cornerCurve = .continuous
+    layer.borderWidth = 1
+    layer.borderColor = CassetteTheme.UIColors.ink4.cgColor
+
+    let textStack = UIStackView(arrangedSubviews: [titleLabel, detailLabel])
+    textStack.translatesAutoresizingMaskIntoConstraints = false
+    textStack.axis = .vertical
+    textStack.spacing = 2
+
+    addSubview(spinner)
+    addSubview(textStack)
+    addSubview(barTrack)
+    barTrack.addSubview(barFill)
+
+    NSLayoutConstraint.activate([
+      spinner.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+      spinner.centerYAnchor.constraint(equalTo: textStack.centerYAnchor),
+
+      textStack.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+      textStack.leadingAnchor.constraint(equalTo: spinner.trailingAnchor, constant: 12),
+      textStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+
+      barTrack.topAnchor.constraint(equalTo: textStack.bottomAnchor, constant: 8),
+      barTrack.leadingAnchor.constraint(equalTo: textStack.leadingAnchor),
+      barTrack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+      barTrack.heightAnchor.constraint(equalToConstant: 4),
+      barTrack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
+
+      // The fill spans ~45% of the track; the pulse carries the motion.
+      barFill.leadingAnchor.constraint(equalTo: barTrack.leadingAnchor),
+      barFill.topAnchor.constraint(equalTo: barTrack.topAnchor),
+      barFill.bottomAnchor.constraint(equalTo: barTrack.bottomAnchor),
+      barFill.widthAnchor.constraint(equalTo: barTrack.widthAnchor, multiplier: 0.45),
+    ])
+  }
+
+  /// Show the motion. Idempotent — safe to call whenever the banner appears.
+  func startAnimating() {
+    spinner.startAnimating()
+    barFill.layer.removeAllAnimations()
+    barFill.alpha = 1
+    UIView.animate(
+      withDuration: 0.85,
+      delay: 0,
+      options: [.repeat, .autoreverse, .curveEaseInOut, .allowUserInteraction],
+      animations: { self.barFill.alpha = 0.28 }
+    )
+  }
+
+  func stopAnimating() {
+    spinner.stopAnimating()
+    barFill.layer.removeAllAnimations()
+    barFill.alpha = 1
   }
 }

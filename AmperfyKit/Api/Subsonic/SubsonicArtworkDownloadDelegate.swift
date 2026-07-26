@@ -163,9 +163,11 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
     guard CoverImageStore.isDecodable(fileURL: fileURL) else { return nil }
     do {
       try fileManager.moveExcludedFromBackupItem(at: fileURL, to: absFilePath, accountInfo: account)
-      // cassette §art-collapse: defensively square + generate the ~480px thumb
-      // tier beside the lazily-downloaded full cover, before the artwork's
-      // relFilePath is published, so the display path finds both tiers.
+      // cassette §art-collapse: generate the ~480px thumb tier beside the
+      // lazily-downloaded full cover, before the artwork's relFilePath is
+      // published, so the display path finds both tiers. Native aspect for
+      // everything — nothing is squared, so no bars are ever baked in; the
+      // frame's aspectFill crops covers and artist photos alike to fill.
       CoverImageStore.processStoredCover(fullFileURL: absFilePath)
       return relFilePath
     } catch {

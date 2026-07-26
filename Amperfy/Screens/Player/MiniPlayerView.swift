@@ -98,9 +98,8 @@ class MiniPlayerView: UIView {
     label.backgroundColor = .clear
     label.numberOfLines = 1
     // cassette: mini-player (liquid glass) typography, sized explicitly rather
-    // than via the shared .miniTitle/.caption roles so the glass pill reads
-    // larger without lifting those roles app-wide. Title 18pt condensed semibold,
-    // subtitle 14pt mono (see refreshForTraitChange for the size-class variants).
+    // than via the shared roles so the glass pill reads larger without lifting
+    // those roles app-wide. Title 18pt Barlow; artist mono (see refreshForTraitChange).
     label.font = UIFont.cassetteDisplay(size: 18, weight: .semibold)
     label.textColor = CassetteTheme.UIColors.ink
     return label
@@ -112,6 +111,7 @@ class MiniPlayerView: UIView {
     label.backgroundColor = .clear
     label.textAlignment = .center
     label.numberOfLines = 1
+    // Quiet artist line - mono (matches album-card subtext).
     label.font = UIFont.cassetteMono(size: 14, weight: .regular)
     label.textColor = CassetteTheme.UIColors.ink2
     return label
@@ -746,17 +746,10 @@ class MiniPlayerView: UIView {
   }
 
   public func refreshForTraitChange(horizontalSizeClass: UIUserInterfaceSizeClass) {
-    // cassette Patch 032: marquee title stays miniTitle (14pt) across
-    // size classes; subtitle is metadata at .regular (12pt mono) and
-    // caption at .compact (12pt mono regular) — both honor the 12pt
-    // floor and differ only by weight.
-    if horizontalSizeClass == .regular {
-      titleLabel.font = UIFont.cassetteDisplay(size: 18, weight: .semibold)
-      subtitleLabel.font = UIFont.cassetteMono(size: 14, weight: .medium)
-    } else {
-      titleLabel.font = UIFont.cassetteDisplay(size: 18, weight: .semibold)
-      subtitleLabel.font = UIFont.cassetteMono(size: 14, weight: .regular)
-    }
+    // Barlow title + mono artist. Re-stamp on trait change so IB/size-class
+    // shifts can't leave a mixed face on the pill.
+    titleLabel.font = UIFont.cassetteDisplay(size: 18, weight: .semibold)
+    subtitleLabel.font = UIFont.cassetteMono(size: 14, weight: .regular)
   }
 
   private var playButtonTrailingConstraint: NSLayoutConstraint?

@@ -59,5 +59,15 @@ class NewPlaylistTableHeader: UIView {
     playlist.name = playlistName
     nameTextField.text = ""
     appDelegate.storage.main.saveContext()
+    // cassette: create in cloud immediately so the empty playlist survives the
+    // next cloud sync-down (Subsonic create used to wait until the first add).
+    Task { @MainActor in
+      do {
+        try await appDelegate.getMeta(account.info).librarySyncer
+          .syncUpload(playlistToUpdateName: playlist)
+      } catch {
+        appDelegate.eventLogger.report(topic: "Playlist Create", error: error)
+      }
+    }
   }
 }

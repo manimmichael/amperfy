@@ -137,10 +137,13 @@ extension Font {
 
 // MARK: - CassetteTextStyle
 
-/// Canonical typography scale for the Cassette iOS fork. Eight semantic
-/// roles map onto the existing Display (Barlow Condensed) / Mono (DM Mono)
-/// helpers, plus a system-font `.body` for SwiftUI lists and other places
-/// where SF Pro Text reads better than a condensed display face.
+/// Canonical typography scale for the Cassette iOS fork. Roles map onto
+/// Display (Barlow Condensed) / Mono (DM Mono), plus system `.body` where
+/// SF Pro Text reads better than a condensed face.
+///
+/// Album/track titles stay on Barlow. The quieter line under a card (artist
+/// name, resume artist) uses `.cardSubtitle`: DM Mono at the 13pt floor, which
+/// stays more legible at that size than condensed Barlow.
 ///
 /// Caption and `.metadata` share a size and are differentiated by weight
 /// only (medium vs regular mono). The 12pt floor is a Cassette product
@@ -151,7 +154,7 @@ extension Font {
 /// (roles, not per-screen sizes): heroTitle 28 -> 30, rowTitle 16 -> 18,
 /// miniTitle 14 -> 15, metadata/caption 12 -> 13. sectionTitle stays 22.
 /// `.greeting` is new: the Home greeting used to fall back to tiny 12pt
-/// mono (the prototype's Newsreader face isn't bundled) — it now gets a
+/// mono (the prototype's Newsreader face isn't bundled) - it now gets a
 /// real Barlow treatment at a legible size.
 public enum CassetteTextStyle {
   case heroTitle // Barlow Condensed Bold, 30pt
@@ -160,6 +163,7 @@ public enum CassetteTextStyle {
   case rowTitle // Barlow Condensed Semibold, 18pt
   case miniTitle // Barlow Condensed Semibold, 15pt
   case sectionLabel // Barlow Condensed Bold, 13pt (callers uppercase as needed)
+  case cardSubtitle // DM Mono Regular, 13pt (artist under an album/resume card)
   case metadata // DM Mono Medium, 13pt
   case caption // DM Mono Regular, 13pt
   case body // SF Pro Text Regular, 15pt (system font, not Cassette Display)
@@ -180,6 +184,8 @@ extension UIFont {
       return .cassetteDisplay(size: 15, weight: .semibold)
     case .sectionLabel:
       return .cassetteDisplay(size: 13, weight: .bold)
+    case .cardSubtitle:
+      return .cassetteMono(size: 13, weight: .regular)
     case .metadata:
       return .cassetteMono(size: 13, weight: .medium)
     case .caption:
@@ -205,6 +211,8 @@ extension Font {
       return .cassetteDisplay(size: 15, weight: .semibold)
     case .sectionLabel:
       return .cassetteDisplay(size: 13, weight: .bold)
+    case .cardSubtitle:
+      return .cassetteMono(size: 13, weight: .regular)
     case .metadata:
       return .cassetteMono(size: 13, weight: .medium)
     case .caption:

@@ -49,32 +49,22 @@
                                                 <variation key="widthClass=regular" constant="22"/>
                                             </constraint>
                                         </constraints>
-                                        <fontDescription key="fontDescription" type="system" pointSize="16"/>
+                                        <!-- Font owned in AlbumCollectionCell.applyCassetteType(); no IB variations. -->
+                                        <fontDescription key="fontDescription" type="system" pointSize="18"/>
                                         <nil key="textColor"/>
                                         <nil key="highlightedColor"/>
-                                        <variation key="widthClass=regular">
-                                            <fontDescription key="fontDescription" type="system" pointSize="17"/>
-                                        </variation>
-                                        <variation key="userInterfaceIdiom=mac-widthClass=regular">
-                                            <fontDescription key="fontDescription" type="system" pointSize="14"/>
-                                        </variation>
                                     </label>
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Subtitle" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="d1W-z7-anZ" userLabel="Subtitle Label">
                                         <rect key="frame" x="0.0" y="21" width="46.666666666666664" height="15"/>
                                         <constraints>
-                                            <constraint firstAttribute="height" constant="15" id="F1P-zn-bmx">
+                                            <constraint firstAttribute="height" constant="16" id="F1P-zn-bmx">
                                                 <variation key="widthClass=regular" constant="16"/>
                                             </constraint>
                                         </constraints>
+                                        <!-- Font owned in AlbumCollectionCell.applyCassetteType(); no IB variations. -->
                                         <fontDescription key="fontDescription" type="system" pointSize="13"/>
                                         <color key="textColor" systemColor="secondaryLabelColor"/>
                                         <nil key="highlightedColor"/>
-                                        <variation key="widthClass=regular">
-                                            <fontDescription key="fontDescription" type="system" pointSize="15"/>
-                                        </variation>
-                                        <variation key="userInterfaceIdiom=mac-widthClass=regular">
-                                            <fontDescription key="fontDescription" type="system" pointSize="13"/>
-                                        </variation>
                                     </label>
                                 </subviews>
                                 <constraints>

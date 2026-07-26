@@ -39,6 +39,31 @@ class AlbumCollectionCell: BasicCollectionCell {
   private var rootFlowLayout: UICollectionViewDelegateFlowLayout?
   private var itemWidth: CGFloat?
 
+  /// Single type path for album cards. IB size-class font variations used to
+  /// re-apply system SF after `display()`, so Home shelves mixed faces card
+  /// to card. Fonts are owned here only - awakeFromNib, every bind, and any
+  /// trait change - never by the XIB.
+  private func applyCassetteType() {
+    titleLabel?.font = UIFont.cassette(.rowTitle)
+    titleLabel?.textColor = CassetteTheme.UIColors.ink
+    titleLabel?.adjustsFontForContentSizeCategory = false
+    subtitleLabel?.font = UIFont.cassette(.cardSubtitle)
+    subtitleLabel?.textColor = CassetteTheme.UIColors.ink2
+    subtitleLabel?.adjustsFontForContentSizeCategory = false
+  }
+
+  override func awakeFromNib() {
+    super.awakeFromNib()
+    applyCassetteType()
+  }
+
+  override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    // IB variations can rewrite label fonts when size class / idiom shifts.
+    // Re-stamp the Cassette faces so the shelf never falls back to SF.
+    applyCassetteType()
+  }
+
   // cassette Patch 043: play overlay split. Tap on the artwork
   // body still navigates (handled by the collection view's
   // didSelectItemAt); tap on this 40pt circular orange button fires
@@ -106,13 +131,8 @@ class AlbumCollectionCell: BasicCollectionCell {
     self.rootView = rootView
     titleLabel.text = container.name
     subtitleLabel.text = container.subtitle
-    // cassette Patch 032: route through the canonical scale. Title bumps
-    // 15pt -> 16pt rowTitle to align with the rest of the row hierarchy;
-    // subtitle bumps 11pt -> 12pt caption (the user's 12pt mono floor).
-    titleLabel.font = UIFont.cassette(.rowTitle)
-    titleLabel.textColor = CassetteTheme.UIColors.ink
-    subtitleLabel.font = UIFont.cassette(.caption)
-    subtitleLabel.textColor = CassetteTheme.UIColors.ink2
+    // Barlow title + mono artist (legible at the 13pt floor).
+    applyCassetteType()
     contentView.backgroundColor = CassetteTheme.UIColors.bg
     // cassette: album covers get a minimal 3pt corner (.verySmall), matching the
     // album detail hero, so bordered / edge-to-edge cover art keeps crisp corners

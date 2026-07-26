@@ -198,7 +198,14 @@ public class LibraryEntityImage: RoundedImage {
     return CoverImageStore.preferredSourcePath(forFullPath: fullPath, smallSurface: smallSurface)
   }
 
-  private func refresh() {
+  /// `keepCurrentImageWhileLoading` suppresses the placeholder swap while we
+  /// re-decode NEW bytes for the SAME entity that already has a valid image on
+  /// screen — a cover re-check or pick overwrite. Without it every cover the sync
+  /// pass re-checks briefly flashes the gray placeholder before the (usually
+  /// identical) new bytes land, which is the "covers flash while it checks them"
+  /// blink. A fresh entity or a reused cell still shows the placeholder, because
+  /// there `loadedSourcePath` is nil AND this stays false (see the call sites).
+  private func refresh(keepCurrentImageWhileLoading: Bool = false) {
     guard let fullPath = entityImagePathToDisplay else {
       image = placeholderImage
       loadedSourcePath = nil
@@ -218,7 +225,7 @@ public class LibraryEntityImage: RoundedImage {
       return
     }
 
-    if loadedSourcePath == nil {
+    if loadedSourcePath == nil, !keepCurrentImageWhileLoading {
       image = placeholderImage
     }
     Task.detached(priority: .high) { [weak self] in
@@ -265,12 +272,15 @@ public class LibraryEntityImage: RoundedImage {
       // The cover (and its thumb) now exist — or its bytes CHANGED (a pick
       // re-download overwrites at the same path). Drop the stale cache first so
       // refresh() re-decodes the new file instead of serving the old bitmap, then
-      // re-resolve the tier and load it.
+      // re-resolve the tier and load it. Keep whatever is already on screen up
+      // until the new bytes are decoded (keepCurrentImageWhileLoading) — a re-check
+      // that lands the same or a better cover must never blink through the gray
+      // placeholder first.
       if let fullPath = self.entityImagePathToDisplay {
         Self.evictCache(forFullPath: fullPath)
       }
       self.loadedSourcePath = nil
-      self.refresh()
+      self.refresh(keepCurrentImageWhileLoading: true)
     }
   }
 }
@@ -290,12 +300,6 @@ public enum CoverImageStore {
   public static let heroMaxPixel = 1000
   /// Surfaces at or below this point size use the thumb tier.
   public static let smallSurfaceMaxPt: CGFloat = 200
-
-  /// Brand near-black used to pad a non-square cover to square (matches the
-  /// sidecar's coverPadColor #161310). Covers degrade to "square, uncropped".
-  private static let padColor = UIColor(
-    red: 0x16 / 255, green: 0x13 / 255, blue: 0x10 / 255, alpha: 1
-  )
 
   /// Thumb path for a full cover path: `…/al-x.png` → `…/al-x_thumb.png`.
   public static func thumbPath(forFullPath full: String) -> String {
@@ -415,45 +419,21 @@ public enum CoverImageStore {
     return (w, h)
   }
 
-  /// Pad a non-square image to a centered square on the brand near-black.
-  /// Returns the input unchanged when already square.
-  public static func paddedToSquare(_ image: UIImage) -> UIImage {
-    let w = image.size.width
-    let h = image.size.height
-    guard w > 0, h > 0, w != h else { return image }
-    let side = max(w, h)
-    let format = UIGraphicsImageRendererFormat.default()
-    format.scale = 1
-    format.opaque = true
-    return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
-      .image { ctx in
-        padColor.setFill()
-        ctx.fill(CGRect(x: 0, y: 0, width: side, height: side))
-        image.draw(in: CGRect(x: (side - w) / 2, y: (side - h) / 2, width: w, height: h))
-      }
-  }
-
-  /// Ingest a freshly-stored full cover: defensively pad it to square if needed
-  /// (heals lazy / un-backfilled sources the sidecar didn't square), then write
-  /// the ~480px square thumb beside it. Best-effort — failures leave the full
-  /// cover usable on its own. Safe to call off the main thread.
+  /// Ingest a freshly-stored full cover: write the ~480px thumb beside it, at the
+  /// source's NATIVE aspect. Best-effort — failures leave the full cover usable on
+  /// its own. Safe to call off the main thread.
+  ///
+  /// Nothing is padded to a square. We never bake bars into a stored image: album
+  /// covers are square already, and an artist photo is a portrait/landscape press
+  /// shot that would bar-out if squared. Every frame crops to fill (`.scaleAspectFill`
+  /// / the web's `object-fit: cover`), so native aspect is exactly what fills, and a
+  /// bar the crop can't remove is never created. The sidecar makes the same choice
+  /// (normalizeCover, native ratio) for the files it materializes.
   public static func processStoredCover(fullFileURL: URL) {
     let fullPath = fullFileURL.path
-
-    // Defensive square on the full file (the sidecar already squares; this is
-    // the fallback for older data or the lazy Subsonic path).
-    if let dims = pixelSize(atPath: fullPath), dims.width != dims.height,
-       let full = UIImage(contentsOfFile: fullPath) {
-      let squared = paddedToSquare(full)
-      if let data = squared.jpegData(compressionQuality: 0.9) {
-        try? data.write(to: fullFileURL)
-      }
-    }
-
-    // Thumb tier — square + capped.
+    // Thumb tier — native aspect, capped. No square-pad, ever.
     if let thumbSrc = downsampledImage(atPath: fullPath, maxPixel: thumbMaxPixel) {
-      let squaredThumb = paddedToSquare(thumbSrc)
-      if let data = squaredThumb.jpegData(compressionQuality: 0.85) {
+      if let data = thumbSrc.jpegData(compressionQuality: 0.85) {
         try? data.write(to: URL(fileURLWithPath: thumbPath(forFullPath: fullPath)))
       }
     }

@@ -49,6 +49,11 @@ public final class IntentExecutor {
   /// Set by executeRemoval when a remove intent deleted owned tracks; drives the
   /// single guaranteed library repaint at the end of a poll cycle.
   private var didRemoveThisCycle = false
+  /// Set by executeIntent when it leaves an intent `syncing` (owned tracks still
+  /// downloading). Read at the end of a pass to drive CassetteSyncStatus — the
+  /// "Syncing your library" banner — so the banner reflects a real download wave,
+  /// not the 30s poll itself.
+  private var downloadsInFlightThisPass = false
   // Once-per-launch device registration (user_devices upsert). The header
   // keep-alive rides every request; this full registration also refreshes
   // platform/model/app_version.
@@ -139,6 +144,7 @@ public final class IntentExecutor {
     isRunning = true
     defer { isRunning = false }
     didRemoveThisCycle = false
+    downloadsInFlightThisPass = false
     // Reset per-poll; set below by anything that constitutes real work.
     var pollDidWork = false
     artworkDidWorkThisPass = false
@@ -245,6 +251,11 @@ public final class IntentExecutor {
     if let inventoryResponse {
       await applyAlbumGrouping(inventoryResponse)
     }
+
+    // Publish the sync-active state for the Home banner: true while a real
+    // download wave is moving (an intent left `syncing`), false once every
+    // actionable intent's tracks are on disk. Only flips on a real change.
+    await CassetteSyncStatus.setActive(downloadsInFlightThisPass)
   }
 
   /// Pull-to-refresh entry point (B2). Drives the full on-demand convergence
@@ -848,10 +859,16 @@ public final class IntentExecutor {
       //    artist we hold NO catalog image for is not broken — it just has no face
       //    (the hub-folder photo over the LAN is Phase 3), so it never re-fires.
       //  • Server Mode: the getCoverArt/folder photo — the existing health check.
+      // The one-time square-heal forces a re-pull of every artist photo (both
+      // modes) so images stored padded-to-square before the aspect-aware fix are
+      // replaced at natural aspect and finally fill the circle.
+      let squareHealPending = artistImageSquareHealPending
       let artistImageBroken = onDeviceOnly
-        ? (job.artistImageUrl != nil && onDeviceArtistPhotoMissing(subsonicIds: job.subsonicIds))
+        ? (job.artistImageUrl != nil
+          && (squareHealPending || onDeviceArtistPhotoMissing(subsonicIds: job.subsonicIds)))
         : (
           artistImageSourceMigrationPending
+            || squareHealPending
             || !hasHealthyArtistImage(subsonicIds: job.subsonicIds)
         )
 
@@ -873,7 +890,9 @@ public final class IntentExecutor {
               subsonicIds: job.subsonicIds,
               imageUrl: imageUrl,
               accountInfo: accountInfo,
-              force: versionChanged
+              // The heal must overwrite the existing padded-square file, so it
+              // forces past materialize's idempotent "already on disk" gate.
+              force: versionChanged || squareHealPending
             )
           }
         }
@@ -942,6 +961,7 @@ public final class IntentExecutor {
     // earlier, or on a pass that bailed out, would leave devices half-migrated with
     // no way to notice.
     if artistImageSourceMigrationPending { markArtistImageSourceMigrated() }
+    if artistImageSquareHealPending { markArtistImageSquareHealed() }
   }
 
   // MARK: - Sync freshness (account-menu status line)
@@ -1137,6 +1157,21 @@ public final class IntentExecutor {
   private func markArtistImageSourceMigrated() {
     UserDefaults.standard.set(true, forKey: "cassette.artistImageSourceMigrationV1")
     print("Cassette: artist images re-sourced from the hub")
+  }
+
+  /// One-time re-fetch of every artist image after the art-collapse squaring was
+  /// made aspect-aware. Existing artist photos were stored padded to square (the
+  /// full file overwritten, the thumb squared), which no display contentMode can
+  /// crop — the brand-black bars showed inside the circle. Re-tiering alone can't
+  /// heal them (the padded full is all that's left on disk), so the bytes must be
+  /// re-pulled once at natural aspect. Mirrors artistImageSourceMigrationV1.
+  private var artistImageSquareHealPending: Bool {
+    !UserDefaults.standard.bool(forKey: "cassette.artistImageSquareHealV2")
+  }
+
+  private func markArtistImageSquareHealed() {
+    UserDefaults.standard.set(true, forKey: "cassette.artistImageSquareHealV2")
+    print("Cassette: artist images re-fetched at natural aspect")
   }
 
   /// One-time-per-launch sweep of stale artwork downloads whose target artist id
@@ -1546,6 +1581,7 @@ public final class IntentExecutor {
       try? await api.updateIntent(id: intent.id, state: "complete")
     } else {
       print("Cassette poll: intent \(intent.id) - downloads in flight, leaving syncing")
+      downloadsInFlightThisPass = true
     }
   }
 
@@ -1874,6 +1910,8 @@ public final class IntentExecutor {
     }
 
     // Invalidate every layer keyed by this (unchanged) path so the new face paints.
+    // The thumb is regenerated at native aspect (nothing squares now); aspectFill
+    // crops it to fill the circle, matching the web wall.
     let thumbPath = CoverImageStore.thumbPath(forFullPath: absFilePath.path)
     try? FileManager.default.removeItem(atPath: thumbPath)
     CoverImageStore.ensureThumb(forFullPath: absFilePath.path)
