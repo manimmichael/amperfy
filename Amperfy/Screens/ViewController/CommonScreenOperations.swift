@@ -250,8 +250,8 @@ extension UIViewController {
     extraLeadingMenuElements: [UIMenuElement] = []
   ) {
     // cassette: account avatar from /api/sync/account — photo when set, else
-    // the chosen default disc (silhouette / initials / color). Falls back to
-    // the person glyph the chip has always used.
+    // the chosen default (silhouette / initials / emoji). Silhouette is the
+    // cream person.circle.fill glyph; web + Android match this mark.
     let size: CGFloat = {
       #if targetEnvironment(macCatalyst)
         return 50
@@ -295,54 +295,31 @@ extension UIViewController {
       return silhouetteAvatar(size: size)
     }
     let preset = CassetteSyncAPI.accountAvatarPreset
-    switch preset {
-    case "initials":
+    if preset == "initials" {
       let label = CassetteSyncAPI.accountName ?? CassetteSyncAPI.accountEmail ?? "?"
       let initials = String(label.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2))
         .uppercased()
+      // Neutral grey disc — same family as the web IconButton key (--cs-bg3).
       return discAvatar(
         size: size,
-        colors: [UIColor(white: 0.28, alpha: 1), UIColor(white: 0.16, alpha: 1)],
-        text: initials.isEmpty ? "?" : initials
+        colors: [UIColor(red: 0.176, green: 0.157, blue: 0.125, alpha: 1)],
+        text: initials.isEmpty ? "?" : initials,
+        textColor: CassetteTheme.UIColors.ink
       )
-    case "ember":
-      return discAvatar(
-        size: size,
-        colors: [UIColor(red: 0.95, green: 0.45, blue: 0.15, alpha: 1),
-                 UIColor(red: 0.70, green: 0.28, blue: 0.08, alpha: 1)],
-        symbol: "music.note"
-      )
-    case "moss":
-      return discAvatar(
-        size: size,
-        colors: [UIColor(red: 0.24, green: 0.35, blue: 0.23, alpha: 1),
-                 UIColor(red: 0.12, green: 0.18, blue: 0.11, alpha: 1)],
-        symbol: "music.note"
-      )
-    case "marine":
-      return discAvatar(
-        size: size,
-        colors: [UIColor(red: 0.16, green: 0.42, blue: 0.43, alpha: 1),
-                 UIColor(red: 0.09, green: 0.20, blue: 0.22, alpha: 1)],
-        symbol: "music.note"
-      )
-    case "violet":
-      return discAvatar(
-        size: size,
-        colors: [UIColor(red: 0.42, green: 0.29, blue: 0.60, alpha: 1),
-                 UIColor(red: 0.18, green: 0.12, blue: 0.27, alpha: 1)],
-        symbol: "music.note"
-      )
-    case "rose":
-      return discAvatar(
-        size: size,
-        colors: [UIColor(red: 0.60, green: 0.29, blue: 0.38, alpha: 1),
-                 UIColor(red: 0.24, green: 0.12, blue: 0.16, alpha: 1)],
-        symbol: "music.note"
-      )
-    default:
-      return silhouetteAvatar(size: size)
     }
+    if preset.hasPrefix("emoji:") {
+      let emoji = String(preset.dropFirst("emoji:".count))
+      if !emoji.isEmpty {
+        return discAvatar(
+          size: size,
+          colors: [UIColor(red: 0.176, green: 0.157, blue: 0.125, alpha: 1)],
+          text: emoji,
+          textScale: 0.55,
+          textColor: CassetteTheme.UIColors.ink
+        )
+      }
+    }
+    return silhouetteAvatar(size: size)
   }
 
   private static func silhouetteAvatar(size: CGFloat) -> UIImage {
@@ -359,7 +336,8 @@ extension UIViewController {
     size: CGFloat,
     colors: [UIColor],
     text: String? = nil,
-    symbol: String? = nil
+    textScale: CGFloat = 0.38,
+    textColor: UIColor = .white
   ) -> UIImage {
     let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
     return renderer.image { ctx in
@@ -384,8 +362,8 @@ extension UIViewController {
       }
       if let text {
         let attrs: [NSAttributedString.Key: Any] = [
-          .font: UIFont.systemFont(ofSize: size * 0.38, weight: .semibold),
-          .foregroundColor: UIColor.white,
+          .font: UIFont.systemFont(ofSize: size * textScale, weight: .semibold),
+          .foregroundColor: textColor,
         ]
         let drawn = text as NSString
         let textSize = drawn.size(withAttributes: attrs)
@@ -393,18 +371,6 @@ extension UIViewController {
           at: CGPoint(x: (size - textSize.width) / 2, y: (size - textSize.height) / 2),
           withAttributes: attrs
         )
-      } else if let symbol,
-                let sym = UIImage(
-                  systemName: symbol,
-                  withConfiguration: UIImage.SymbolConfiguration(pointSize: size * 0.42, weight: .medium)
-                )?.withTintColor(.white, renderingMode: .alwaysOriginal) {
-        let symSize = sym.size
-        sym.draw(in: CGRect(
-          x: (size - symSize.width) / 2,
-          y: (size - symSize.height) / 2,
-          width: symSize.width,
-          height: symSize.height
-        ))
       }
     }
   }
