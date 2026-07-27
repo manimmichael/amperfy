@@ -249,33 +249,163 @@ extension UIViewController {
     userBarButtonItem: inout UIBarButtonItem?,
     extraLeadingMenuElements: [UIMenuElement] = []
   ) {
-    // cassette Patch 048 (Phase C): profile glyph pins to ink explicitly.
-    // Patch 046 already flipped `themePreference.asColor` to ink so the prior
-    // expression resolves to the same value, but pinning directly removes the
-    // indirection (and the implicit dependency on per-account settings) for
-    // this high-visibility nav button.
-    let image = UIImage.userCircle(withConfiguration: UIImage.SymbolConfiguration(
-      pointSize: 24,
-      weight: .regular
-    )).withTintColor(
-      CassetteTheme.UIColors.ink,
-      renderingMode: .alwaysTemplate
-    )
+    // cassette: account avatar from /api/sync/account — photo when set, else
+    // the chosen default disc (silhouette / initials / color). Falls back to
+    // the person glyph the chip has always used.
+    let size: CGFloat = {
+      #if targetEnvironment(macCatalyst)
+        return 50
+      #else
+        return 40
+      #endif
+    }()
 
-    let button = UIButton(type: .system)
-    button.setImage(image, for: .normal)
-    button.layer.cornerRadius = 20
+    let button = UIButton(type: .custom)
+    button.frame = CGRect(x: 0, y: 0, width: size, height: size)
+    button.layer.cornerRadius = size / 2
     button.clipsToBounds = true
-    #if targetEnvironment(macCatalyst)
-      button.frame = CGRect(x: 0, y: 0, width: 50, height: 50)
-    #else
-      button.frame = CGRect(x: 0, y: 0, width: 40, height: 40)
-    #endif
+    button.setImage(Self.cassetteAccountAvatarImage(size: size), for: .normal)
+    button.imageView?.contentMode = .scaleAspectFill
+    button.contentHorizontalAlignment = .fill
+    button.contentVerticalAlignment = .fill
     button.menu = createUserButtonMenu(extraLeadingMenuElements: extraLeadingMenuElements)
     button.showsMenuAsPrimaryAction = true
     userButton = button
 
     userBarButtonItem = UIBarButtonItem(customView: button)
     navigationItem.leftBarButtonItem = userBarButtonItem!
+
+    // Photo loads async; swap in when ready so the chip updates without a relaunch.
+    if let urlString = CassetteSyncAPI.accountImage, let url = URL(string: urlString) {
+      Task { [weak button] in
+        guard let (data, _) = try? await URLSession.shared.data(from: url),
+              let photo = UIImage(data: data) else { return }
+        await MainActor.run {
+          button?.setImage(photo, for: .normal)
+        }
+      }
+    }
+  }
+
+  /// Render the cached account avatar (preset or silhouette). Photo is loaded
+  /// separately once the URL resolves.
+  private static func cassetteAccountAvatarImage(size: CGFloat) -> UIImage {
+    if CassetteSyncAPI.accountImage != nil {
+      // Placeholder while the photo fetch lands — same silhouette as before.
+      return silhouetteAvatar(size: size)
+    }
+    let preset = CassetteSyncAPI.accountAvatarPreset
+    switch preset {
+    case "initials":
+      let label = CassetteSyncAPI.accountName ?? CassetteSyncAPI.accountEmail ?? "?"
+      let initials = String(label.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2))
+        .uppercased()
+      return discAvatar(
+        size: size,
+        colors: [UIColor(white: 0.28, alpha: 1), UIColor(white: 0.16, alpha: 1)],
+        text: initials.isEmpty ? "?" : initials
+      )
+    case "ember":
+      return discAvatar(
+        size: size,
+        colors: [UIColor(red: 0.95, green: 0.45, blue: 0.15, alpha: 1),
+                 UIColor(red: 0.70, green: 0.28, blue: 0.08, alpha: 1)],
+        symbol: "music.note"
+      )
+    case "moss":
+      return discAvatar(
+        size: size,
+        colors: [UIColor(red: 0.24, green: 0.35, blue: 0.23, alpha: 1),
+                 UIColor(red: 0.12, green: 0.18, blue: 0.11, alpha: 1)],
+        symbol: "music.note"
+      )
+    case "marine":
+      return discAvatar(
+        size: size,
+        colors: [UIColor(red: 0.16, green: 0.42, blue: 0.43, alpha: 1),
+                 UIColor(red: 0.09, green: 0.20, blue: 0.22, alpha: 1)],
+        symbol: "music.note"
+      )
+    case "violet":
+      return discAvatar(
+        size: size,
+        colors: [UIColor(red: 0.42, green: 0.29, blue: 0.60, alpha: 1),
+                 UIColor(red: 0.18, green: 0.12, blue: 0.27, alpha: 1)],
+        symbol: "music.note"
+      )
+    case "rose":
+      return discAvatar(
+        size: size,
+        colors: [UIColor(red: 0.60, green: 0.29, blue: 0.38, alpha: 1),
+                 UIColor(red: 0.24, green: 0.12, blue: 0.16, alpha: 1)],
+        symbol: "music.note"
+      )
+    default:
+      return silhouetteAvatar(size: size)
+    }
+  }
+
+  private static func silhouetteAvatar(size: CGFloat) -> UIImage {
+    UIImage.userCircle(withConfiguration: UIImage.SymbolConfiguration(
+      pointSize: size * 0.6,
+      weight: .regular
+    )).withTintColor(
+      CassetteTheme.UIColors.ink,
+      renderingMode: .alwaysOriginal
+    )
+  }
+
+  private static func discAvatar(
+    size: CGFloat,
+    colors: [UIColor],
+    text: String? = nil,
+    symbol: String? = nil
+  ) -> UIImage {
+    let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+    return renderer.image { ctx in
+      let rect = CGRect(x: 0, y: 0, width: size, height: size)
+      let path = UIBezierPath(ovalIn: rect)
+      path.addClip()
+      if colors.count >= 2 {
+        let gradient = CGGradient(
+          colorsSpace: CGColorSpaceCreateDeviceRGB(),
+          colors: colors.map(\.cgColor) as CFArray,
+          locations: [0, 1]
+        )!
+        ctx.cgContext.drawLinearGradient(
+          gradient,
+          start: .zero,
+          end: CGPoint(x: size, y: size),
+          options: []
+        )
+      } else {
+        colors.first?.setFill()
+        path.fill()
+      }
+      if let text {
+        let attrs: [NSAttributedString.Key: Any] = [
+          .font: UIFont.systemFont(ofSize: size * 0.38, weight: .semibold),
+          .foregroundColor: UIColor.white,
+        ]
+        let drawn = text as NSString
+        let textSize = drawn.size(withAttributes: attrs)
+        drawn.draw(
+          at: CGPoint(x: (size - textSize.width) / 2, y: (size - textSize.height) / 2),
+          withAttributes: attrs
+        )
+      } else if let symbol,
+                let sym = UIImage(
+                  systemName: symbol,
+                  withConfiguration: UIImage.SymbolConfiguration(pointSize: size * 0.42, weight: .medium)
+                )?.withTintColor(.white, renderingMode: .alwaysOriginal) {
+        let symSize = sym.size
+        sym.draw(in: CGRect(
+          x: (size - symSize.width) / 2,
+          y: (size - symSize.height) / 2,
+          width: symSize.width,
+          height: symSize.height
+        ))
+      }
+    }
   }
 }

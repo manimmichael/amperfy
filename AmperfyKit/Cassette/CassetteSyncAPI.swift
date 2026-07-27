@@ -290,6 +290,12 @@ public struct CassetteDeviceInventoryResponse: Sendable, Decodable {
 public struct CassetteAccount: Sendable, Decodable {
   public let email: String
   public let name: String?
+  /// Profile photo URL when set; null falls back to avatarPreset. Optional
+  /// decode so older deploys keep the silhouette glyph.
+  public let image: String?
+  /// Default disc when image is null: silhouette | initials | color id.
+  /// Optional decode → "silhouette" (the existing person glyph).
+  public let avatarPreset: String
   /// Cassette §C: account-sourced Server Mode (browse/stream filter). Optional
   /// decode so a server that doesn't yet emit the field — or an older deploy —
   /// decodes cleanly as `false` (on-device-only) instead of failing.
@@ -314,13 +320,16 @@ public struct CassetteAccount: Sendable, Decodable {
   public let diagnosticsConsent: Bool
 
   enum CodingKeys: String, CodingKey {
-    case email, name, serverMode, sidecarPort, downloadQuality, diagnosticsConsent
+    case email, name, image, avatarPreset, serverMode, sidecarPort, downloadQuality,
+      diagnosticsConsent
   }
 
   public init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     self.email = try c.decode(String.self, forKey: .email)
     self.name = try c.decodeIfPresent(String.self, forKey: .name)
+    self.image = try c.decodeIfPresent(String.self, forKey: .image)
+    self.avatarPreset = try c.decodeIfPresent(String.self, forKey: .avatarPreset) ?? "silhouette"
     self.serverMode = try c.decodeIfPresent(Bool.self, forKey: .serverMode) ?? false
     self.sidecarPort = try c.decodeIfPresent(Int.self, forKey: .sidecarPort)
     self.downloadQuality = try c.decodeIfPresent(String.self, forKey: .downloadQuality) ?? "high"
@@ -364,6 +373,8 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   /// relaunch and offline opens. `nil` until the first successful fetch.
   nonisolated private static let accountNameKey = "cassette.accountName"
   nonisolated private static let accountEmailKey = "cassette.accountEmail"
+  nonisolated private static let accountImageKey = "cassette.accountImage"
+  nonisolated private static let accountAvatarPresetKey = "cassette.accountAvatarPreset"
   nonisolated private static let sidecarPortKey = "cassette.sidecarPort"
   /// Cassette Phase 2b: last-known account-sourced download quality tier, read by
   /// the download URL builder so it honors the web-set quality synchronously.
@@ -388,6 +399,17 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     return (value?.isEmpty == false) ? value : nil
   }
 
+  /// Profile photo URL from `/api/sync/account`, cached for the nav chip.
+  public static var accountImage: String? {
+    let value = UserDefaults.standard.string(forKey: accountImageKey)
+    return (value?.isEmpty == false) ? value : nil
+  }
+
+  /// Default disc id when there is no photo (`silhouette` when unset).
+  public static var accountAvatarPreset: String {
+    UserDefaults.standard.string(forKey: accountAvatarPresetKey) ?? "silhouette"
+  }
+
   /// Store the fetched account so the menu can render it without a network
   /// round-trip. A `nil`/empty name clears the stored name (so a later
   /// name removal upstream doesn't leave a stale label).
@@ -399,6 +421,12 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     } else {
       defaults.removeObject(forKey: accountNameKey)
     }
+    if let image = account.image, !image.isEmpty {
+      defaults.set(image, forKey: accountImageKey)
+    } else {
+      defaults.removeObject(forKey: accountImageKey)
+    }
+    defaults.set(account.avatarPreset, forKey: accountAvatarPresetKey)
 
     // Persist the paired Player's sidecar port so the pull-to-refresh path can
     // reach the sidecar synchronously, off the main actor. 0 clears it (no
