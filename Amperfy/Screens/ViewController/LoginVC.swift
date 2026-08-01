@@ -94,9 +94,7 @@ class LoginVC: UIViewController {
   // Onboarding copy label shown above the Cassette sign-in button
   fileprivate lazy var cassetteOnboardingLabel: UILabel = {
     let label = UILabel()
-    label.text =
-      "Sit down at your computer with your phone nearby. We'll connect them automatically. " +
-      "Your phone needs to be on the same Wi-Fi as your computer for this to work."
+    label.text = "Just keep your phone and computer on the same Wi-Fi."
     label.font = UIFont.cassette(.body)
     label.textColor = CassetteTheme.UIColors.ink2
     label.numberOfLines = 0
@@ -324,16 +322,6 @@ class LoginVC: UIViewController {
     static let fontSize: CGFloat = 16
   #endif
 
-  fileprivate lazy var iconView: UIImageView = {
-    let imageView = UIImageView()
-    imageView.contentMode = .scaleAspectFit
-    imageView.image = .appIconTemplate
-    // cassette Patch 052 (Phase G): app icon glyph drops to ink2 (quiet
-    // secondary). Wordmark below carries the primary identity.
-    imageView.tintColor = CassetteTheme.UIColors.ink2
-    return imageView
-  }()
-
   fileprivate lazy var amperfyLabel: UILabel = {
     let label = UILabel()
     label.text = "Cassette"
@@ -467,8 +455,7 @@ class LoginVC: UIViewController {
   // Explanatory subtitle between the app title and the login form.
   fileprivate lazy var serverDescriptionLabel: UILabel = {
     let label = UILabel()
-    label.text =
-      "Sign in with your Cassette account to connect your library."
+    label.text = "Sign in to connect your library."
     label.font = UIFont.cassette(.body)
     label.textColor = CassetteTheme.UIColors.ink2
     label.numberOfLines = 0
@@ -784,7 +771,6 @@ class LoginVC: UIViewController {
     view.backgroundColor = CassetteTheme.UIColors.bg
 
     amperfyLabel.translatesAutoresizingMaskIntoConstraints = false
-    iconView.translatesAutoresizingMaskIntoConstraints = false
     serverDescriptionLabel.translatesAutoresizingMaskIntoConstraints = false
     formGlassContainer.translatesAutoresizingMaskIntoConstraints = false
     loginGlassContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -832,7 +818,6 @@ class LoginVC: UIViewController {
       manualSetupButton.bottomAnchor.constraint(equalTo: cassetteSignInContainer.bottomAnchor),
     ])
 
-    view.addSubview(iconView)
     view.addSubview(amperfyLabel)
     view.addSubview(serverDescriptionLabel)
     view.addSubview(cassetteSignInContainer) // Patch 013: primary sign-in section
@@ -859,15 +844,6 @@ class LoginVC: UIViewController {
     formWitdhConstraing = formGlassContainer.widthAnchor.constraint(lessThanOrEqualToConstant: 600)
     formWitdhConstraing?.priority = .required
 
-    iconView.addConstraint(NSLayoutConstraint(
-      item: iconView,
-      attribute: .height,
-      relatedBy: .equal,
-      toItem: iconView,
-      attribute: .width,
-      multiplier: 1.0,
-      constant: 0
-    ))
     NSLayoutConstraint.activate([
       // App title
       amperfyLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -926,11 +902,6 @@ class LoginVC: UIViewController {
         lessThanOrEqualTo: view.trailingAnchor, constant: -32
       ),
       cassetteSignInContainer.widthAnchor.constraint(lessThanOrEqualToConstant: 400),
-
-      // Background watermark icon
-      iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-      iconView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-      iconView.heightAnchor.constraint(equalTo: formGlassContainer.heightAnchor, constant: 40),
 
       // Close button top-right
       closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
