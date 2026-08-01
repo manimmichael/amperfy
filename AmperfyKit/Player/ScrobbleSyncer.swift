@@ -50,6 +50,12 @@ public class ScrobbleSyncer {
   private var songToBeScrobbled: Song?
   private var songHasBeenListendEnough = false
 
+  // Guards against overlapping cloud-play flushes. Both start() (app launch) and
+  // every completed play call flushCloudPlays(); without this, two flushes could
+  // read the same unsynced rows before either stamped cloudSyncedAt and POST them
+  // twice — duplicate plays in the cloud.
+  private var isFlushingCloudPlays = false
+
   init(
     player: PlayerFacade,
     networkMonitor: NetworkMonitorFacade,
@@ -200,6 +206,15 @@ public class ScrobbleSyncer {
   private func performCloudPlayFlush() async {
     // Not paired to a cassette account → nothing to report to.
     guard CassetteSyncAPI.bearerToken != nil else { return }
+
+    // Coalesce overlapping flushes. @MainActor serializes this check+set up to the
+    // first await below, so an overlapping flush drops out here rather than
+    // re-reading and re-POSTing the same unsynced rows. Its rows stay unsynced
+    // (cloudSyncedAt == nil) and flush on the next completed play or at launch —
+    // the same retry contract used when offline.
+    guard !isFlushingCloudPlays else { return }
+    isFlushingCloudPlays = true
+    defer { isFlushingCloudPlays = false }
 
     let entries = storage.main.library.getUnsyncedCloudPlayEntries(for: account, fetchLimit: 500)
     guard !entries.isEmpty else { return }
