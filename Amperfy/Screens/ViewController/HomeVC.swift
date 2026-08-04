@@ -69,6 +69,10 @@ final class HomeVC: UICollectionViewController {
       guard let self else { return }
       applySnapshot(animated: true)
     }
+    // cassette (CarPlay off-window crash): while CarPlay drives playback the phone
+    // Home stays alive but off-window; tell HomeManager to defer its rebuilds until
+    // Home is actually on screen again (flushed in viewIsAppearing).
+    sharedHome.isHostVisible = { [weak self] in self?.viewIfLoaded?.window != nil }
   }
 
   required init?(coder: NSCoder) {
@@ -269,6 +273,9 @@ final class HomeVC: UICollectionViewController {
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
+    // cassette (CarPlay off-window crash): run one coalesced recompute if any were
+    // deferred while Home was off-window (e.g. a drive's worth of track changes).
+    sharedHome.recomputeIfDeferred()
     sharedHome.updateFromRemote()
     // cassette (Forgotten Albums): opportunistic roll-off of aged hot-log rows
     // into the durable cold counters, then stamp the shelf's current impressions
@@ -550,7 +557,12 @@ final class HomeVC: UICollectionViewController {
       snapshot.appendItems(items, toSection: section)
       totalItems += items.count
     }
-    dataSource.apply(snapshot, animatingDifferences: animated)
+    // cassette (CarPlay off-window crash): never run the animated diff while Home is
+    // off-window (CarPlay is the active scene). An animated apply against a collection
+    // view that is not in any window is the production SIGTRAP; a non-animated apply
+    // still keeps the data current for when Home reappears.
+    let shouldAnimate = animated && (viewIfLoaded?.window != nil)
+    dataSource.apply(snapshot, animatingDifferences: shouldAnimate)
     refreshEmptyLibraryState(hasItems: totalItems > 0)
     // cassette (Forgotten Albums): the shelf may have just populated while Home
     // is visible — record the impression (per-day idempotent).

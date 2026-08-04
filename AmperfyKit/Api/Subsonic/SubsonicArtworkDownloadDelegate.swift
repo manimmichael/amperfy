@@ -54,10 +54,15 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
     guard downloadInfo.type == .artwork else { throw DownloadError.fetchFailed }
     guard networkMonitor.isConnectedToNetwork else { throw DownloadError.noConnectivity }
     let artworkId = try await storage.performAndGet { asyncCompanion in
-      let artwork = Artwork(
-        managedObject: asyncCompanion.context
-          .object(with: downloadInfo.objectId) as! ArtworkMO
-      )
+      // cassette (BUG-049 class): resolve the held objectID SAFELY. object(with:)
+      // returns a fault that throws an uncatchable NSObjectInaccessibleException on
+      // first access if the row was deleted (the CarPlay-driven regroup deletes
+      // superseded Artwork rows underfoot). existingObject returns nil instead.
+      guard let artworkMO = try? asyncCompanion.context
+        .existingObject(with: downloadInfo.objectId) as? ArtworkMO else {
+        throw DownloadError.fetchFailed
+      }
+      let artwork = Artwork(managedObject: artworkMO)
       // Migration safety (deferred deletion). The synthetic "cassette-album" cover
       // path is retired — no code mints these ids anymore. But an existing device
       // may still carry one until the next regroup re-points it to the native cover
@@ -114,10 +119,12 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
   ) async {
     guard downloadInfo.type == .artwork else { return }
     let artworkRemoteInfo = try? await storage.performAndGet { asyncCompanion in
-      let artwork = Artwork(
-        managedObject: asyncCompanion.context
-          .object(with: downloadInfo.objectId) as! ArtworkMO
-      )
+      // cassette (BUG-049 class): safe objectID resolution (see prepareDownload).
+      guard let artworkMO = try? asyncCompanion.context
+        .existingObject(with: downloadInfo.objectId) as? ArtworkMO else {
+        throw DownloadError.fetchFailed
+      }
+      let artwork = Artwork(managedObject: artworkMO)
       // DIAGNOSTIC: this download is about to REPLACE bytes that are already cached
       // for this artwork. For an album row that holds a user's picked cover, that is
       // precisely the overwrite that makes a pick "only temporary" — and it is
@@ -134,10 +141,10 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
     guard let artworkRemoteInfo else { return }
     let relFilePath = handleCustomImage(fileURL: fileURL, artworkRemoteInfo: artworkRemoteInfo)
     try? await storage.perform { asyncCompanion in
-      let artwork = Artwork(
-        managedObject: asyncCompanion.context
-          .object(with: downloadInfo.objectId) as! ArtworkMO
-      )
+      // cassette (BUG-049 class): safe objectID resolution (see prepareDownload).
+      guard let artworkMO = try? asyncCompanion.context
+        .existingObject(with: downloadInfo.objectId) as? ArtworkMO else { return }
+      let artwork = Artwork(managedObject: artworkMO)
       if let relFilePath {
         artwork.status = .CustomImage
         artwork.relFilePath = relFilePath
@@ -181,10 +188,10 @@ final class SubsonicArtworkDownloadDelegate: DownloadManagerDelegate {
   ) async {
     guard downloadInfo.type == .artwork else { return }
     try? await storage.perform { asyncCompanion in
-      let artwork = Artwork(
-        managedObject: asyncCompanion.context
-          .object(with: downloadInfo.objectId) as! ArtworkMO
-      )
+      // cassette (BUG-049 class): safe objectID resolution (see prepareDownload).
+      guard let artworkMO = try? asyncCompanion.context
+        .existingObject(with: downloadInfo.objectId) as? ArtworkMO else { return }
+      let artwork = Artwork(managedObject: artworkMO)
       artwork.markErrorIfNeeded()
       asyncCompanion.saveContext()
     }

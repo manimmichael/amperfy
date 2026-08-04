@@ -56,10 +56,13 @@ extension CarPlaySceneDelegate {
         }
       }
       for (index, fetchObject) in fetchObjects.enumerated() {
+        // cassette (LIST-2): cap BEFORE appending. A post-append `>=` check let each
+        // section overshoot by one, so across all sections the total could exceed
+        // CPListTemplate.maximumItemCount and throw an uncaught NSInvalidArgumentException.
+        if index >= maxSectionCount { break }
         let artist = Artist(managedObject: fetchObject)
         let detailTemplate = createDetailTemplate(for: artist, onlyCached: onlyCached)
         items.append(detailTemplate)
-        if index >= maxSectionCount { break }
       }
       let section = CPListSection(items: items, header: nil, sectionIndexTitle: indexTitle)
       sections.append(section)
@@ -89,10 +92,11 @@ extension CarPlaySceneDelegate {
         }
       }
       for (index, fetchObject) in fetchObjects.enumerated() {
+        // cassette (LIST-2): cap BEFORE appending (see createArtistItems).
+        if index >= maxSectionCount { break }
         let album = Album(managedObject: fetchObject)
         let detailTemplate = createDetailTemplate(for: album, onlyCached: onlyCached)
         items.append(detailTemplate)
-        if index >= maxSectionCount { break }
       }
       let section = CPListSection(items: items, header: nil, sectionIndexTitle: indexTitle)
       sections.append(section)
@@ -105,7 +109,8 @@ extension CarPlaySceneDelegate {
     var items = [CPListTemplateItem]()
     var playables = [AbstractPlayable]()
     guard let fetchedController = fetchedController else { return items }
-    for index in 0 ... (CPListTemplate.maximumSectionCount - 2) {
+    // cassette (LIST-3): iterate up to the item limit, not maximumSectionCount.
+    for index in 0 ..< carPlayLeafItemLimit(reserved: 1) {
       guard let entity = fetchedController.getWrappedEntity(at: index) else { break }
       playables.append(entity)
     }
@@ -139,16 +144,16 @@ extension CarPlaySceneDelegate {
       containable: playlist,
       playables: playlist.playables.filterCached(dependigOn: isOfflineMode)
     )))
-    let displayedSongs = playables.prefix(CPListTemplate.maximumSectionCount - 2)
+    // cassette (LIST-3): clamp by the ITEM limit, not maximumSectionCount (a section
+    // ceiling), so a long playlist isn't silently cut to a handful of rows. reserved:1
+    // leaves room for the Shuffle row prepended above.
+    let displayedSongs = playables.prefix(carPlayLeafItemLimit(reserved: 1))
     for (index, song) in displayedSongs.enumerated() {
       let listItem = createDetailTemplate(
         for: song,
         playContext: PlayContext(containable: playlist, index: index, playables: playables)
       )
       items.append(listItem)
-      if index >= CPListTemplate.maximumItemCount - 1 {
-        break
-      }
     }
     return items
   }
@@ -161,7 +166,8 @@ extension CarPlaySceneDelegate {
     var items = [CPListItem]()
 
     var playables = [AbstractPlayable]()
-    for index in 0 ... (CPListTemplate.maximumSectionCount - 2) {
+    // cassette (LIST-3): iterate up to the item limit, not maximumSectionCount.
+    for index in 0 ..< carPlayLeafItemLimit(reserved: 0) {
       guard let entity = fetchedController.getWrappedEntity(at: index) else { break }
       playables.append(entity)
     }

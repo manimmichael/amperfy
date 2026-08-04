@@ -262,10 +262,10 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     Task { @MainActor in
       os_log("CarPlay: didDisconnect", log: self.log, type: .info)
       DiagnosticLog.shared.log(.carplay, "CarPlay disconnected")
-      guard activeAccountInfo != nil, activeAccount != nil else {
-        os_log("CarPlay: no account available -> do nothing", log: self.log, type: .info)
-        return
-      }
+      // cassette (SCENE-2): teardown must be symmetric with the UNCONDITIONAL setup in
+      // didConnect. The old `guard account != nil else { return }` leaked the observers
+      // and interfaceController whenever CarPlay connected with no active account. Every
+      // removal below is idempotent, so run them regardless of account state.
       self.interfaceController = nil
       appDelegate.notificationHandler.remove(self, name: .fetchControllerSortChanged, object: nil)
       appDelegate.notificationHandler.remove(self, name: .offlineModeChanged, object: nil)
@@ -637,6 +637,10 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         }
       }
       container.detailRow = newCreatedRowImages
+      // cassette (SCENE-4): EntityImageRowContainer is a struct — write the mutated
+      // copy back, else the tracked detailRow keeps stale element refs and a later
+      // two-stage / re-arriving cover fails to match and no-ops its Home-detail refresh.
+      homeArtworkUpdate[downloadNotification.id] = container
     }
 
     // refresh List items
@@ -754,9 +758,23 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     }
   }
 
+  /// cassette (DRIFT-1): albumsSection/artistsSection are top-level TABS in
+  /// rootBarTemplate, not pushed templates — so `interfaceController.templates`
+  /// never contains them, and the old `templates.contains(...)` gate was always
+  /// false (a mid-drive sync never refreshed the visible Albums/Artists tab). A
+  /// tab child is reached via the tab bar's selectedTemplate, mirroring the
+  /// playlistTab/homeTab checks already used here.
+  private func isSelectedRootTab(_ template: CPListTemplate) -> Bool {
+    (interfaceController?.rootTemplate as? CPTabBarTemplate)?.selectedTemplate == template
+  }
+
   @objc
   private func refreshSort() {
     guard let templates = interfaceController?.templates else { return }
+    // cassette (SCENE-1): every branch below can build a fetch controller that
+    // force-unwraps activeAccount. If CarPlay connected with no active account
+    // (activeAccount == nil), a sort-changed notification would trap here — bail.
+    guard activeAccount != nil else { return }
 
     if let root = interfaceController?.rootTemplate as? CPTabBarTemplate,
        root.selectedTemplate == playlistTab,
@@ -765,8 +783,9 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
       createPlaylistFetchController()
       playlistTab.updateSections(createPlaylistsSections())
     }
-    if artistsFavoritesFetchController?.sortType != appDelegate.storage.settings.user
-      .artistsSortSetting {
+    if templates.contains(artistsFavoriteSection),
+       artistsFavoritesFetchController?.sortType != appDelegate.storage.settings.user
+       .artistsSortSetting {
       os_log("CarPlay: RefreshSort: ArtistsFavoritesFetchController", log: self.log, type: .info)
       createArtistsFavoritesFetchController()
       artistsFavoriteSection.updateSections(createArtistItems(
@@ -774,8 +793,9 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         onlyCached: isOfflineMode
       ))
     }
-    if artistsFavoritesCachedFetchController?.sortType != appDelegate.storage.settings.user
-      .artistsSortSetting {
+    if templates.contains(artistsFavoriteCachedSection),
+       artistsFavoritesCachedFetchController?.sortType != appDelegate.storage.settings.user
+       .artistsSortSetting {
       os_log(
         "CarPlay: RefreshSort: ArtistsFavoritesCachedFetchController",
         log: self.log,
@@ -908,7 +928,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         onlyCached: isOfflineMode
       ))
     }
-    if templates.contains(artistsSection) {
+    if isSelectedRootTab(artistsSection) {
       os_log(
         "CarPlay: OfflineModeChanged: artistsFetchController",
         log: self.log,
@@ -932,7 +952,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         onlyCached: isOfflineMode
       ))
     }
-    if templates.contains(albumsSection) {
+    if isSelectedRootTab(albumsSection) {
       os_log(
         "CarPlay: OfflineModeChanged: albumsFetchController",
         log: self.log,
@@ -1067,7 +1087,7 @@ extension CarPlaySceneDelegate: @preconcurrency NSFetchedResultsControllerDelega
           onlyCached: true
         ))
       }
-      if templates.contains(artistsSection),
+      if isSelectedRootTab(artistsSection),
          let artistsFetchController = artistsFetchController,
          controller == artistsFetchController.fetchResultsController {
         os_log(
@@ -1119,7 +1139,7 @@ extension CarPlaySceneDelegate: @preconcurrency NSFetchedResultsControllerDelega
           onlyCached: true
         ))
       }
-      if templates.contains(albumsSection),
+      if isSelectedRootTab(albumsSection),
          let albumsFetchController = albumsFetchController,
          controller == albumsFetchController.fetchResultsController {
         os_log(

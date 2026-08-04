@@ -154,6 +154,19 @@ class HomeManager: NSObject {
   // build in `createFetchController` runs immediately for first paint.
   private var pendingRecompute: DispatchWorkItem?
   private static let recomputeDebounce: TimeInterval = 0.12
+  // cassette (CarPlay off-window crash): when this HomeManager's host view is not
+  // on screen — the phone Home while CarPlay drives playback — defer recomputes
+  // instead of rebuilding and applying an animated snapshot to an off-window
+  // collection view (the production SIGTRAP cluster). The phone HomeVC sets this;
+  // CarPlay's own HomeManager leaves it nil so its templates keep updating live. A
+  // deferred recompute is flushed once by the host on next appearance
+  // (`recomputeIfDeferred()`).
+  public var isHostVisible: (() -> Bool)?
+  private var needsRecomputeWhileHidden = false
+  // cassette (CarPlay off-window crash): coalesce the per-builder snapshot
+  // callbacks fired within one `recomputeAllShelves` into a SINGLE apply, so a
+  // rebuild is one diff/animation instead of 4-6 overlapping animated applies.
+  private var isBatchingSnapshot = false
 
   init(
     account: Account,
@@ -363,10 +376,33 @@ class HomeManager: NSObject {
   /// transition callbacks into one recompute after the burst settles, so a play
   /// action or library sync applies a single snapshot instead of ~30.
   private func scheduleRecompute() {
+    if let isHostVisible, !isHostVisible() {
+      // Host (phone Home) is off-window — e.g. CarPlay is driving playback. Rebuilding
+      // and applying an animated snapshot to an off-window collection view is the
+      // production crash; defer and let the host flush one recompute on reappearance.
+      needsRecomputeWhileHidden = true
+      return
+    }
     pendingRecompute?.cancel()
     let work = DispatchWorkItem { [weak self] in self?.recomputeAllShelves() }
     pendingRecompute = work
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.recomputeDebounce, execute: work)
+  }
+
+  /// Flushed by the host (phone Home) when it becomes visible again: runs one
+  /// coalesced recompute if any were deferred while the host was off-window.
+  public func recomputeIfDeferred() {
+    guard needsRecomputeWhileHidden else { return }
+    needsRecomputeWhileHidden = false
+    scheduleRecompute()
+  }
+
+  /// Fire the host's snapshot callback, unless we're mid-rebuild — during a
+  /// `recomputeAllShelves` the per-builder calls are suppressed and collapse into
+  /// the single apply that recompute fires when the whole rebuild finishes.
+  private func notifySnapshot() {
+    guard !isBatchingSnapshot else { return }
+    applySnapshotCB?()
   }
 
   /// Rebuild the song-derived scores once, then every shelf. Order is Recent →
@@ -374,6 +410,13 @@ class HomeManager: NSObject {
   /// another (section-scoped `HomeItem` identity allows overlap), so this is a
   /// straight rebuild with no cross-shelf dedup.
   private func recomputeAllShelves() {
+    // Suppress the per-builder snapshot callbacks and fire exactly one apply for
+    // the whole rebuild (via defer, so it still fires if a builder bails early).
+    isBatchingSnapshot = true
+    defer {
+      isBatchingSnapshot = false
+      applySnapshotCB?()
+    }
     let songs = sampledSongs()
     albumScores = scoreContainers(from: songs) { $0.album }
     artistScores = scoreContainers(from: songs) { $0.artist }
@@ -577,7 +620,7 @@ class HomeManager: NSObject {
     data[.recent] = merged.prefix(Self.shelfCarouselCap).map {
       HomeItem(section: .recent, stableID: Self.stableID(for: $0), playableContainable: $0)
     }
-    applySnapshotCB?()
+    notifySnapshot()
   }
 
   /// cassette (Resume on-device gate): index of the first container in the
@@ -617,7 +660,7 @@ class HomeManager: NSObject {
   func updatePlaylists() {
     guard let playlistMOs = playlistsLastPlayedFetch?.fetchedObjects as? [PlaylistMO] else {
       data[.yourPlaylists] = []
-      applySnapshotCB?()
+      notifySnapshot()
       return
     }
     // cassette: dedup by stableID like every other shelf builder (updateRecent's
@@ -635,7 +678,7 @@ class HomeManager: NSObject {
         stableID: Self.stableID(for: $0),
         playableContainable: $0
       ) }
-    applySnapshotCB?()
+    notifySnapshot()
   }
 
   /// Albums ranked from maintained song play data: played first (recency then
@@ -650,7 +693,7 @@ class HomeManager: NSObject {
       atLargeMOs: albumsAllFetch?.fetchedObjects as? [AlbumMO],
       wrap: { Album(managedObject: $0) }
     )
-    applySnapshotCB?()
+    notifySnapshot()
   }
 
   /// cassette (BUG-036): rank by the REAL artist-play signal, not song-rollup.
@@ -678,7 +721,7 @@ class HomeManager: NSObject {
       atLargeMOs: artistsAllFetch?.fetchedObjects as? [ArtistMO],
       wrap: { Artist(managedObject: $0) }
     )
-    applySnapshotCB?()
+    notifySnapshot()
   }
 
   /// cassette (Job 1.3): "Recently Played Albums" — albums actually played
@@ -701,7 +744,7 @@ class HomeManager: NSObject {
         playableContainable: $0.container
       )
     }
-    applySnapshotCB?()
+    notifySnapshot()
   }
 
   /// cassette (Job 1.3): "Newest Albums" — albums by recency-of-addition
@@ -721,7 +764,7 @@ class HomeManager: NSObject {
       atLargeMOs: albumsAllFetch?.fetchedObjects as? [AlbumMO],
       wrap: { Album(managedObject: $0) }
     )
-    applySnapshotCB?()
+    notifySnapshot()
   }
 
   /// cassette (Forgotten Albums): the anti-recency shelf — owned albums the user
@@ -737,7 +780,7 @@ class HomeManager: NSObject {
   func updateForgottenAlbums() {
     guard let albumMOs = forgottenAlbumsFetch?.fetchedObjects as? [AlbumMO] else {
       data[.forgottenAlbums] = []
-      applySnapshotCB?()
+      notifySnapshot()
       return
     }
     // FRC is newest-first; the OLDER end approximates "added long ago".
@@ -818,7 +861,7 @@ class HomeManager: NSObject {
         playableContainable: $0
       )
     }
-    applySnapshotCB?()
+    notifySnapshot()
   }
 
   /// Forgotten-weighted interleave: ~3 forgotten-purchase to 1 secondary (deep-cut
