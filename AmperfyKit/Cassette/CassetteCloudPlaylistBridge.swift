@@ -177,7 +177,9 @@ public enum CassetteCloudPlaylistBridge {
         guard let playlist else { continue }
         playlist.name = remote.name
         playlist.updateChangeDate()
-        storeCoverUrl(remote.coverImageUrl, for: remote.id)
+        // cassette (cover unification): the user's own pick wins; else the server's
+        // deterministic preset (rendered from the bundled asset — local + offline).
+        storeCoverUrl(remote.coverImageUrl ?? remote.derivedCoverUrl, for: remote.id)
 
         // Rebuild items from resolved songs.
         playlist.removeAllItems()
@@ -222,7 +224,8 @@ public enum CassetteCloudPlaylistBridge {
         managedObject: asyncCompanion.context.object(with: playlistObjectId) as! PlaylistMO
       )
       playlistAsync.name = remote.name
-      storeCoverUrl(remote.coverImageUrl, for: remote.id)
+      // cassette (cover unification): user pick wins; else the server preset (bundled).
+      storeCoverUrl(remote.coverImageUrl ?? remote.derivedCoverUrl, for: remote.id)
       playlistAsync.removeAllItems()
       var itemIds: [String] = []
       let items = (remote.items ?? []).filter { $0.removedAt == nil }

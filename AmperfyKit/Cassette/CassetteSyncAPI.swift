@@ -1116,6 +1116,10 @@ public struct CassetteCloudPlaylist: Sendable, Decodable {
   public let name: String
   public let description: String?
   public let coverImageUrl: String?
+  // cassette (cover unification): server-picked preset for a playlist with no
+  // user cover. Optional (absent on older servers → nil). Rendered from the phone's
+  // BUNDLED preset asset, so it's local + offline; the user's own pick still wins.
+  public let derivedCoverUrl: String?
   public let updatedAt: String?
   public let deletedAt: String?
   public let items: [CassetteCloudPlaylistItem]?
@@ -1123,6 +1127,7 @@ public struct CassetteCloudPlaylist: Sendable, Decodable {
   enum CodingKeys: String, CodingKey {
     case id, name, description, items
     case coverImageUrl = "cover_image_url"
+    case derivedCoverUrl = "derived_cover_url"
     case updatedAt = "updated_at"
     case deletedAt = "deleted_at"
   }
