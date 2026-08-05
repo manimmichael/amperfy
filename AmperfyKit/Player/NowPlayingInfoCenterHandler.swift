@@ -84,8 +84,12 @@ public class NowPlayingInfoCenterHandler {
           .artworkDisplayPreference,
         useCache: true
       )
-      if let artwork = playable.artwork {
-        getArtworkDownloaderCB(accountInfo).download(object: artwork)
+      // cassette (C09): the hero displays the ALBUM-first cover, so enqueue the
+      // album's artwork (not just the song's own). Otherwise the completing
+      // download's id never matches what downloadFinishedSuccessful watches for and
+      // the hero never rebuilds (the CarPlay-replug placeholder).
+      if let heroArtwork = playable.asSong?.album?.artwork ?? playable.artwork {
+        getArtworkDownloaderCB(accountInfo).download(object: heroArtwork)
       }
     }
 
@@ -154,13 +158,13 @@ public class NowPlayingInfoCenterHandler {
     guard let downloadNotification = DownloadNotification.fromNotification(notification),
           let curPlayable = musicPlayer.currentlyPlaying
     else { return }
-    if curPlayable.uniqueID == downloadNotification.id {
-      Task { @MainActor in
-        updateNowPlayingInfo(playable: curPlayable)
-      }
-    }
-    if let artwork = curPlayable.artwork,
-       artwork.uniqueID == downloadNotification.id {
+    // cassette (C09): the hero renders the ALBUM-first cover, so match the album's
+    // artwork id too — otherwise an album-cover download completing never rebuilds
+    // the hero (song id and song-own artwork id both miss the album cover).
+    let albumArtworkID = curPlayable.asSong?.album?.artwork?.uniqueID
+    if curPlayable.uniqueID == downloadNotification.id
+      || curPlayable.artwork?.uniqueID == downloadNotification.id
+      || albumArtworkID == downloadNotification.id {
       Task { @MainActor in
         updateNowPlayingInfo(playable: curPlayable)
       }

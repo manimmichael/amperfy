@@ -198,6 +198,11 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         // ALBUM-FIRST cover (owned covers live on the album). Because Artwork.isCached
         // is hardcoded false the request re-completes, and .downloadFinishedSuccess
         // then drives NowPlayingInfoCenterHandler to rebuild the hero with the real art.
+        // cassette (C09): repaint the hero from the on-disk album cover IMMEDIATELY,
+        // no network. The re-request below is only a belt-and-suspenders refresh for
+        // the online case; in a car with no signal it never completes, and the hero
+        // rebuild guard is now album-aware so a late completion also lands.
+        self.appDelegate.player.notifyNowPlayingInfoChanged()
         let heroArtwork = (current as? Song)?.album?.artwork ?? current.artwork
         if let heroArtwork, let accountInfo = heroArtwork.account?.info {
           self.appDelegate.getMeta(accountInfo).artworkDownloadManager.download(object: heroArtwork)

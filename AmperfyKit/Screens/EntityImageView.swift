@@ -119,11 +119,15 @@ open class EntityImageView: UIView {
     if let playlist = container as? Playlist,
        let urlString = CassetteCloudPlaylistBridge.storedCoverUrl(for: playlist.id),
        let url = URL(string: urlString) {
-      display(
-        theme: theme,
-        collection: container.getArtworkCollection(theme: theme),
-        cornerRadius: cornerRadius
-      )
+      // cassette (D03): do NOT run the song-mosaic path (display(collection:)) first.
+      // It calls singleImage.displayAndUpdate(entity:), which spawns an async decode
+      // that fires AFTER applyRemoteCover nils the entity and repaints the grey
+      // placeholder OVER the cover (the clobber that greyed a playlist whose cover was
+      // set on the web). Set up a clean single-image placeholder, then load the cover.
+      if case .circle = shape { applyShape() } else { shape = .rounded(cornerRadius) }
+      quadImages.forEach { $0.isHidden = true }
+      singleImage.isHidden = false
+      singleImage.display(artworkType: .playlist)
       loadRemoteCover(url)
       return
     }

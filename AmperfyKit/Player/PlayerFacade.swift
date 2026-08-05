@@ -228,6 +228,10 @@ public protocol PlayerFacade {
 
   func addNotifier(notifier: MusicPlayable)
 
+  /// cassette (C09): repaint the now-playing observers (lock screen / CarPlay hero)
+  /// from the current item's on-disk cover, no network. Used on CarPlay reconnect.
+  func notifyNowPlayingInfoChanged()
+
   func updateEqualizerEnabled(isEnabled: Bool)
   func updateEqualizerSetting(eqSetting: EqualizerSetting)
 }
@@ -667,5 +671,9 @@ class PlayerFacadeImpl: PlayerFacade {
 
   func addNotifier(notifier: MusicPlayable) {
     musicPlayer.addNotifier(notifier: notifier)
+  }
+
+  func notifyNowPlayingInfoChanged() {
+    musicPlayer.notifyNowPlayingInfoChanged()
   }
 }

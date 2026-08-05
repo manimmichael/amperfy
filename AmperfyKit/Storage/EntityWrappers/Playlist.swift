@@ -58,7 +58,13 @@ public class Playlist: Identifyable {
   public func updateArtworkItems() {
     var updatedArtworkItems = [PlaylistItemMO]()
     for (index, playlistItem) in managedObject.items.enumerated() {
-      if playlistItem.playable.artwork != nil {
+      // cassette (D05): include a member song when EITHER its own OR its album's
+      // artwork resolves. A song that carries only album-level art (song.artwork nil,
+      // album.artwork present) was skipped, so a playlist of such songs derived NO
+      // cover and rendered the grey placeholder. The render path is already
+      // album-first, so this just stops the gate from excluding those songs.
+      if playlistItem.playable.artwork != nil
+        || (playlistItem.playable as? SongMO)?.album?.artwork != nil {
         updatedArtworkItems.append(playlistItem)
         if updatedArtworkItems.count >= 4 || index > Self.artworkItemMaxLookCount {
           break
