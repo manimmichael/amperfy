@@ -32,6 +32,13 @@ public class NowPlayingInfoCenterHandler {
   private var nowPlayingInfoCenter: MPNowPlayingInfoCenter
   private let getArtworkDownloaderCB: GetArtworkDownloadManagerCallback
   private var accountNotificationHandler: AccountNotificationHandler?
+  // cassette (art stability): the album-cover path currently applied to the
+  // now-playing artwork, set ONLY when a REAL cover (not a placeholder) is shown.
+  // Consecutive tracks of the same album share this path, so we leave the artwork
+  // untouched across a track change instead of rebuilding MPMediaItemArtwork and
+  // making CarPlay's hero blink. nil = a placeholder is showing (so the real cover,
+  // when it lands, is not mistaken for "already up to date").
+  private var currentArtworkKey: String?
 
   init(
     musicPlayer: AudioPlayer,
@@ -75,52 +82,74 @@ public class NowPlayingInfoCenterHandler {
     let albumTitle = playable.asSong?.album?.name ?? ""
     let nowPlaying = displayNowPlayingInfo(for: playable)
 
-    var artworkImage = UIImage()
+    // cassette (art stability): MUTATE the existing dict (like updateElapsedTime)
+    // instead of rebuilding it. Metadata changes every track; the artwork usually
+    // does NOT (all tracks of an album share one cover). Reassigning
+    // MPMediaItemArtwork on every track change makes CarPlay re-fetch and blink the
+    // hero — so we only touch the artwork when the cover actually changes.
+    var info = nowPlayingInfoCenter.nowPlayingInfo ?? [:]
+    info[MPNowPlayingInfoPropertyMediaType] =
+      NSNumber(value: MPNowPlayingInfoMediaType.audio.rawValue)
+    info[MPNowPlayingInfoPropertyServiceIdentifier] = AmperKit.name
+    info[MPMediaItemPropertyIsCloudItem] = !playable.isCached
+    info[MPMediaItemPropertyTitle] = nowPlaying.title
+    info[MPMediaItemPropertyAlbumTitle] = albumTitle
+    info[MPMediaItemPropertyArtist] = nowPlaying.artist
+    info[MPMediaItemPropertyPlaybackDuration] = backendAudioPlayer.duration
+    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = backendAudioPlayer.elapsedTime
+    info[MPNowPlayingInfoPropertyIsLiveStream] = playable.isRadio
+    info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = NSNumber(value: 1.0)
+    info[MPNowPlayingInfoPropertyPlaybackRate] =
+      NSNumber(value: backendAudioPlayer.playbackRate.asDouble)
+
     if let accountInfo = playable.account?.info {
-      artworkImage = LibraryEntityImage.getImageToDisplayImmediately(
-        libraryEntity: playable,
-        themePreference: storage.settings.accounts.getSetting(accountInfo).read.themePreference,
-        artworkDisplayPreference: storage.settings.accounts.getSetting(accountInfo).read
-          .artworkDisplayPreference,
-        useCache: true
-      )
-      // cassette (C09): the hero displays the ALBUM-first cover, so enqueue the
-      // album's artwork (not just the song's own). Otherwise the completing
-      // download's id never matches what downloadFinishedSuccessful watches for and
-      // the hero never rebuilds (the CarPlay-replug placeholder).
+      let settings = storage.settings.accounts.getSetting(accountInfo).read
+      // Album-first cover path; nil when no cover file is on disk (yet).
+      let coverKey = playable.imagePath(setting: settings.artworkDisplayPreference)
+      let hasArtwork = info[MPMediaItemPropertyArtwork] != nil
+
+      if coverKey != nil, coverKey == currentArtworkKey, hasArtwork {
+        // Same album cover already shown — leave the artwork untouched (no blink).
+      } else if coverKey != nil {
+        // A real cover is on disk — apply it once and remember its identity.
+        let img = LibraryEntityImage.getImageToDisplayImmediately(
+          libraryEntity: playable,
+          themePreference: settings.themePreference,
+          artworkDisplayPreference: settings.artworkDisplayPreference,
+          useCache: true
+        )
+        info[MPMediaItemPropertyArtwork] = makeNowPlayingArtwork(img)
+        currentArtworkKey = coverKey
+      } else if !hasArtwork {
+        // No cover on disk AND nothing shown yet — show the placeholder for now;
+        // downloadFinishedSuccessful replaces it when the real cover lands.
+        let img = LibraryEntityImage.getImageToDisplayImmediately(
+          libraryEntity: playable,
+          themePreference: settings.themePreference,
+          artworkDisplayPreference: settings.artworkDisplayPreference,
+          useCache: true
+        )
+        info[MPMediaItemPropertyArtwork] = makeNowPlayingArtwork(img)
+        currentArtworkKey = nil
+      }
+      // else: no cover on disk yet but something is already showing — KEEP it rather
+      // than flashing a placeholder while the new cover downloads.
+
+      // Enqueue the album-first cover so a missing one lands (C09).
       if let heroArtwork = playable.asSong?.album?.artwork ?? playable.artwork {
         getArtworkDownloaderCB(accountInfo).download(object: heroArtwork)
       }
     }
 
-    let concurrentSafeArtworkImage = artworkImage
-    nowPlayingInfoCenter.nowPlayingInfo = [
-      MPNowPlayingInfoPropertyMediaType: NSNumber(value: MPNowPlayingInfoMediaType.audio.rawValue),
-      MPNowPlayingInfoPropertyServiceIdentifier: AmperKit.name,
+    nowPlayingInfoCenter.nowPlayingInfo = info
+  }
 
-      MPMediaItemPropertyIsCloudItem: !playable.isCached,
-      MPMediaItemPropertyTitle: nowPlaying.title,
-      MPMediaItemPropertyAlbumTitle: albumTitle,
-      MPMediaItemPropertyArtist: nowPlaying.artist,
-
-      MPMediaItemPropertyPlaybackDuration: backendAudioPlayer.duration,
-      MPNowPlayingInfoPropertyElapsedPlaybackTime: backendAudioPlayer.elapsedTime,
-      MPNowPlayingInfoPropertyIsLiveStream: playable.isRadio,
-
-      MPNowPlayingInfoPropertyDefaultPlaybackRate: NSNumber(value: 1.0),
-      MPNowPlayingInfoPropertyPlaybackRate: NSNumber(
-        value: backendAudioPlayer.playbackRate
-          .asDouble
-      ),
-
-      MPMediaItemPropertyArtwork: MPMediaItemArtwork(
-        boundsSize: concurrentSafeArtworkImage.size,
-        requestHandler: { @Sendable size -> UIImage in
-          // this completion handler is not called in main thread!
-          return concurrentSafeArtworkImage
-        }
-      ),
-    ]
+  private func makeNowPlayingArtwork(_ image: UIImage) -> MPMediaItemArtwork {
+    let safe = image
+    return MPMediaItemArtwork(boundsSize: safe.size) { @Sendable _ -> UIImage in
+      // this completion handler is not called on the main thread!
+      safe
+    }
   }
 
   /// Patch 113 (responsiveness, step 1): per-second elapsed updates must NOT
