@@ -48,6 +48,12 @@ extension Notification.Name {
   /// sync wave started or finished. The Home screen swaps its "Syncing your
   /// library" banner in over the Resume card while it is true.
   public static let cassetteSyncActiveChanged = Notification.Name("CassetteSyncActiveChanged")
+
+  /// Posted (main thread) when a fresh /api/sync/account pull changes the account
+  /// avatar (the chosen preset/emoji or the photo URL) — set on another device.
+  /// The nav-bar account chip re-renders in place, so a change made on desktop
+  /// shows up here without a relaunch or a navigation.
+  public static let cassetteAccountAvatarChanged = Notification.Name("CassetteAccountAvatarChanged")
 }
 
 /// cassette: the one place the app asks "is a library sync wave moving right now?"
@@ -415,6 +421,10 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   /// name removal upstream doesn't leave a stale label).
   nonisolated static func persistAccount(_ account: CassetteAccount) {
     let defaults = UserDefaults.standard
+    // Snapshot the avatar-affecting fields BEFORE we overwrite them, so a change
+    // pulled from another device can repaint the account chip in place.
+    let previousAvatarPreset = defaults.string(forKey: accountAvatarPresetKey)
+    let previousImage = defaults.string(forKey: accountImageKey)
     defaults.set(account.email, forKey: accountEmailKey)
     if let name = account.name, !name.isEmpty {
       defaults.set(name, forKey: accountNameKey)
@@ -427,6 +437,16 @@ public final class CassetteSyncAPI: @unchecked Sendable {
       defaults.removeObject(forKey: accountImageKey)
     }
     defaults.set(account.avatarPreset, forKey: accountAvatarPresetKey)
+
+    // Avatar changed on another device → repaint the account chip in place (the
+    // preset/emoji or the photo URL moved). Same "detect change, post, refresh
+    // without a relaunch" pattern Server Mode uses below.
+    let newImage = (account.image?.isEmpty == false) ? account.image : nil
+    if previousAvatarPreset != account.avatarPreset || previousImage != newImage {
+      DispatchQueue.main.async {
+        NotificationCenter.default.post(name: .cassetteAccountAvatarChanged, object: nil)
+      }
+    }
 
     // Persist the paired Player's sidecar port so the pull-to-refresh path can
     // reach the sidecar synchronously, off the main actor. 0 clears it (no

@@ -285,6 +285,31 @@ extension UIViewController {
         }
       }
     }
+
+    // Repaint the chip in place when the account avatar changes on another device
+    // (persistAccount posts this on a fresh /api/sync/account pull) — so a new
+    // profile emoji picked on desktop shows here without a relaunch or navigation.
+    // Only the persistent tab roots (Home / Library / Search) set this button up,
+    // so the observer lives with a long-lived button rather than accumulating;
+    // [weak button] simply no-ops if the button is ever gone.
+    _ = NotificationCenter.default.addObserver(
+      forName: .cassetteAccountAvatarChanged,
+      object: nil,
+      queue: .main
+    ) { [weak button] _ in
+      // Delivered on .main (queue: .main), so we are on the main actor at runtime.
+      MainActor.assumeIsolated {
+        guard let button else { return }
+        button.setImage(Self.cassetteAccountAvatarImage(size: size), for: .normal)
+        if let urlString = CassetteSyncAPI.accountImage, let url = URL(string: urlString) {
+          Task { [weak button] in
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let photo = UIImage(data: data) else { return }
+            await MainActor.run { button?.setImage(photo, for: .normal) }
+          }
+        }
+      }
+    }
   }
 
   /// Render the cached account avatar (preset or silhouette). Photo is loaded

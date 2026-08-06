@@ -58,9 +58,12 @@ public final class IntentExecutor {
   // keep-alive rides every request; this full registration also refreshes
   // platform/model/app_version.
   private var hasRegisteredDevice = false
-  // Once-per-launch account-identity refresh (name/email for the account
-  // menu). Reset only on relaunch; the persisted copy carries between runs.
-  private var hasRefreshedAccountIdentity = false
+  // Throttled account refresh (name/email + avatar + appearance skin/icon +
+  // server mode + download quality — the whole /api/sync/account blob, ~300
+  // bytes). Re-fetched on a short interval instead of once per launch, so a
+  // change made on another device (e.g. a new profile emoji) shows up here
+  // promptly. `nil` until the first fetch.
+  private var lastAccountRefreshAt: Date?
   /// Album keys the cloud reports as carrying a USER PICK (cover_is_override), learned
   /// from the artwork manifest. The folder-cover backfill consults this before touching
   /// any album: artwork IDENTITY cannot identify a pick (picks are materialized onto the
@@ -193,12 +196,11 @@ public final class IntentExecutor {
     // in-memory lastFullInventoryReportAt) so it survives relaunch.
     Self.recordSuccessfulSync()
 
-    // Refresh the caller's ACCOUNT identity (name/email) so the account menu
-    // shows the user's Cassette account — not the paired Player's LAN
-    // hostname. Best-effort, once per launch (the 30s foreground timer must
-    // not hammer it); the persisted copy survives relaunch, so a missed fetch
-    // just keeps the last-known label. Off the critical path of intent work.
-    await refreshAccountIdentityIfNeeded()
+    // Refresh the caller's ACCOUNT (name/email, avatar, appearance, server mode,
+    // download quality) so anything changed on another device shows up here. On a
+    // short throttle (not once-per-launch): the payload is tiny and these are
+    // things a person expects to sync promptly. Best-effort, off the critical path.
+    await refreshAccountIfDue()
     for intent in intents {
       await executeIntent(intent)
     }
@@ -988,15 +990,20 @@ public final class IntentExecutor {
   /// (or email) instead of the paired Player's hostname. Best-effort: a
   /// failure just leaves the last-persisted value (or "Connected" before any
   /// fetch) and retries next launch. `getAccount()` persists internally.
-  private func refreshAccountIdentityIfNeeded() async {
-    guard !hasRefreshedAccountIdentity else { return }
+  private func refreshAccountIfDue() async {
+    // Throttle to once per 30s (the poll cadence): re-fetches on foreground and
+    // roughly every poll, so an avatar / skin / server-mode change on another
+    // device lands within ~30s here, while a hot loop can't hammer the endpoint.
+    if let last = lastAccountRefreshAt, Date().timeIntervalSince(last) < 30 { return }
     do {
+      // persistAccount (inside getAccount) applies every field and posts
+      // cassetteAccountAvatarChanged if the avatar moved, so the chip repaints.
       let account = try await api.getAccount()
-      hasRefreshedAccountIdentity = true
-      print("Cassette poll: account identity refreshed (\(account.name ?? account.email))")
+      lastAccountRefreshAt = Date()
+      print("Cassette poll: account refreshed (\(account.name ?? account.email))")
     } catch {
-      // Leave hasRefreshedAccountIdentity false so the next poll retries.
-      print("Cassette poll: account identity fetch failed - \(error.localizedDescription)")
+      // Leave lastAccountRefreshAt unchanged so the next poll retries.
+      print("Cassette poll: account fetch failed - \(error.localizedDescription)")
     }
   }
 
