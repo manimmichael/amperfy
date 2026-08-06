@@ -134,6 +134,15 @@ public enum CassetteCloudPlaylistBridge {
     UserDefaults.standard.removeObject(forKey: materializedUrlKey(playlistId))
   }
 
+  /// The playlist's cover as a LOCAL image — a bundled preset, or a materialized
+  /// pick — or nil if a pick hasn't been materialized yet. Fully synchronous, for
+  /// surfaces (CarPlay rows) that need an image up front rather than an async fetch.
+  nonisolated public static func localCoverImage(for playlistId: String) -> UIImage? {
+    guard let urlString = storedCoverUrl(for: playlistId) else { return nil }
+    if let bundled = bundledPresetCoverImage(forCoverUrl: urlString) { return bundled }
+    return materializedCoverImage(for: playlistId, url: urlString)
+  }
+
   /// UserDefaults only — safe to call from a background Core Data perform.
   nonisolated private static func storeItemIds(_ ids: [String], for playlistId: String) {
     UserDefaults.standard.set(ids, forKey: itemIdsKey(playlistId))

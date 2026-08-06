@@ -365,10 +365,19 @@ extension CarPlaySceneDelegate {
           library: appDelegate.storage.main.library,
           managedObject: fetchObject
         )
+        // cassette (Wave 2b): playlists used to render blank in CarPlay (image: nil).
+        // Resolve the LOCAL cover — a bundled preset, or a materialized pick — else a
+        // generated playlist placeholder, so every playlist shows art in the car.
+        let cover = CassetteCloudPlaylistBridge.localCoverImage(for: playlist.id)
+          ?? UIImage.getGeneratedArtwork(
+            theme: getPreference(activeAccountInfo).theme,
+            artworkType: .playlist,
+            name: playlist.name
+          )
         let item = CPListItem(
           text: playlist.name,
           detailText: playlist.subtitle,
-          image: nil,
+          image: carPlayEntityImage(cover, for: nil),
           accessoryImage: nil,
           accessoryType: .disclosureIndicator
         )

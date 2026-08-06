@@ -217,6 +217,11 @@ extension CarPlaySceneDelegate {
             appDelegate.getMeta(accountInfo).artworkDownloadManager.download(object: entityArtwork)
           }
         }
+      } else if let playlist = item.playableContainable as? Playlist {
+        // cassette (Wave 2b): a Playlist is NOT an AbstractLibraryEntity, so the
+        // cast above missed and the Home tile fell to a placeholder. Resolve its
+        // LOCAL cover (bundled preset or materialized pick) so playlists show art.
+        image = CassetteCloudPlaylistBridge.localCoverImage(for: playlist.id)
       }
       // cassette: artist tiles render as circles on CarPlay to match iOS
       // (albums, playlists, etc. stay square). Applies to both the real
