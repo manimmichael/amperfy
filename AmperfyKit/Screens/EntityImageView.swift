@@ -128,7 +128,7 @@ open class EntityImageView: UIView {
       quadImages.forEach { $0.isHidden = true }
       singleImage.isHidden = false
       singleImage.display(artworkType: .playlist)
-      loadRemoteCover(url)
+      loadRemoteCover(url, playlistId: playlist.id, urlKey: urlString)
       return
     }
     remoteCoverLoadID = UUID()
@@ -139,13 +139,18 @@ open class EntityImageView: UIView {
     )
   }
 
-  private func loadRemoteCover(_ url: URL) {
+  private func loadRemoteCover(_ url: URL, playlistId: String, urlKey: String) {
     let loadID = UUID()
     remoteCoverLoadID = loadID
-    // Curated presets: prefer the bundled PNG (live site only has SVG today).
+    // Curated presets: prefer the bundled PNG (live site only has SVG today) — local.
     if let bundled = CassetteCloudPlaylistBridge.bundledPresetCoverImage(forCoverUrl: url.absoluteString)
     {
       applyRemoteCover(bundled, loadID: loadID)
+      return
+    }
+    // A picked cover already materialized on disk for THIS url — local, offline, no flash.
+    if let local = CassetteCloudPlaylistBridge.materializedCoverImage(for: playlistId, url: urlKey) {
+      applyRemoteCover(local, loadID: loadID)
       return
     }
     Task { [weak self] in
@@ -155,6 +160,8 @@ open class EntityImageView: UIView {
           return
         }
         guard let image = UIImage(data: data) else { return }
+        // Persist so the next cold/offline launch reads local (best-effort, off-main).
+        CassetteCloudPlaylistBridge.storeMaterializedCover(data, for: playlistId, url: urlKey)
         await MainActor.run {
           self?.applyRemoteCover(image, loadID: loadID)
         }

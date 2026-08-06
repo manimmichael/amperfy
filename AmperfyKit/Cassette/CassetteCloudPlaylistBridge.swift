@@ -75,6 +75,65 @@ public enum CassetteCloudPlaylistBridge {
     return "playlist-cover-\(urlString[slugRange].lowercased())"
   }
 
+  // MARK: - Local-first materialized pick covers (offline / cold launch)
+
+  // A playlist's own cover comes from three places: a bundled abstract preset
+  // (already local), or a user PICK — a remote uploaded image. The pick used to be
+  // re-fetched over the network on every render and never persisted, so it blanked
+  // on a cold/offline launch (the one image type that wasn't local-first). We now
+  // cache the picked bytes on disk keyed by playlist id; the source url carries
+  // ?v=updated_at, so a changed pick misses the cache and re-materializes, and a
+  // stale file is overwritten. Presets never come here — they render from the bundle.
+
+  nonisolated private static func coverCacheDir() -> URL? {
+    guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+    else { return nil }
+    let dir = caches.appendingPathComponent("cassette-playlist-covers", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+  }
+
+  nonisolated private static func coverFileURL(_ playlistId: String) -> URL? {
+    guard !playlistId.isEmpty, let dir = coverCacheDir() else { return nil }
+    return dir.appendingPathComponent(playlistId + ".img")
+  }
+
+  nonisolated private static func materializedUrlKey(_ playlistId: String) -> String {
+    "cassette.playlistCoverMaterializedUrl." + playlistId
+  }
+
+  /// The playlist's picked cover already on disk, IF it was materialized for this
+  /// exact url — so a cold/offline launch renders it with no network.
+  nonisolated public static func materializedCoverImage(for playlistId: String, url: String) -> UIImage? {
+    guard UserDefaults.standard.string(forKey: materializedUrlKey(playlistId)) == url,
+          let file = coverFileURL(playlistId),
+          let data = try? Data(contentsOf: file),
+          let image = UIImage(data: data)
+    else { return nil }
+    return image
+  }
+
+  /// Persist freshly-downloaded pick bytes so the next cold/offline launch reads local.
+  nonisolated public static func storeMaterializedCover(
+    _ data: Data,
+    for playlistId: String,
+    url: String
+  ) {
+    guard let file = coverFileURL(playlistId) else { return }
+    do {
+      try data.write(to: file, options: .atomic)
+      UserDefaults.standard.set(url, forKey: materializedUrlKey(playlistId))
+    } catch {
+      // Best-effort cache — a failed write just means the next launch re-fetches.
+    }
+  }
+
+  /// Drop a playlist's materialized cover (on delete / cover cleared).
+  nonisolated private static func removeMaterializedCover(_ playlistId: String) {
+    if let file = coverFileURL(playlistId) { try? FileManager.default.removeItem(at: file) }
+    UserDefaults.standard.removeObject(forKey: materializedUrlKey(playlistId))
+  }
+
   /// UserDefaults only — safe to call from a background Core Data perform.
   nonisolated private static func storeItemIds(_ ids: [String], for playlistId: String) {
     UserDefaults.standard.set(ids, forKey: itemIdsKey(playlistId))
@@ -86,6 +145,10 @@ public enum CassetteCloudPlaylistBridge {
       UserDefaults.standard.set(normalized, forKey: coverUrlKey(playlistId))
     } else {
       UserDefaults.standard.removeObject(forKey: coverUrlKey(playlistId))
+      // Cover cleared / playlist gone — drop the on-disk pick too. A CHANGED pick
+      // reuses the same per-playlist file (overwritten on re-materialize), so only
+      // removal needs cleanup; no orphans accumulate.
+      removeMaterializedCover(playlistId)
     }
   }
 
