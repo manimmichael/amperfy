@@ -267,7 +267,16 @@ public class LibraryEntityImage: RoundedImage {
     else { return }
     let matchesPlayable = (entity as? AbstractPlayable)?.uniqueID == downloadNotification.id
     let matchesArtwork = entity.artwork?.uniqueID == downloadNotification.id
-    guard matchesPlayable || matchesArtwork else { return }
+    // cassette: a song shows its ALBUM's cover (AbstractPlayable.imagePath is
+    // album-first), and the album artwork is a DISTINCT Core Data row from the
+    // song's own — so an owned-album cover backfill completing carries the album
+    // artwork id, which the two ids above both miss, and the now-playing hero /
+    // any song cell stays on the gray placeholder until the next track change or a
+    // layout pass. Match the album artwork id too. Mirrors the C09 patch already in
+    // NowPlayingInfoCenterHandler (lock screen); this is the same fix for the in-app view.
+    let matchesAlbumArtwork =
+      (entity as? AbstractPlayable)?.asSong?.album?.artwork?.uniqueID == downloadNotification.id
+    guard matchesPlayable || matchesArtwork || matchesAlbumArtwork else { return }
     Task { @MainActor in
       // The cover (and its thumb) now exist — or its bytes CHANGED (a pick
       // re-download overwrites at the same path). Drop the stale cache first so

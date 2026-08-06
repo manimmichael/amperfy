@@ -212,13 +212,15 @@ extension PopupPlayerVC {
     guard let downloadNotification = DownloadNotification.fromNotification(notification),
           let curPlayable = player.currentlyPlaying
     else { return }
-    if curPlayable.uniqueID == downloadNotification.id {
-      Task { @MainActor in
-        refreshBackgroundItemArtwork()
-      }
-    }
-    if let artwork = curPlayable.artwork,
-       artwork.uniqueID == downloadNotification.id {
+    // cassette: the backdrop is blurred from the ALBUM-first cover, whose artwork
+    // is a distinct Core Data row from the song's own — so an owned-album cover
+    // backfill (its notification carries the album artwork id) was missed by both
+    // checks and the backdrop stayed on the old/placeholder cover until the next
+    // track. Match the album artwork id too, mirroring the C09 lock-screen patch
+    // and the in-app LibraryEntityImage handler.
+    if curPlayable.uniqueID == downloadNotification.id
+      || curPlayable.artwork?.uniqueID == downloadNotification.id
+      || curPlayable.asSong?.album?.artwork?.uniqueID == downloadNotification.id {
       Task { @MainActor in
         refreshBackgroundItemArtwork()
       }
