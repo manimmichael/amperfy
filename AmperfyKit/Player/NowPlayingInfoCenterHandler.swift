@@ -39,6 +39,11 @@ public class NowPlayingInfoCenterHandler {
   // making CarPlay's hero blink. nil = a placeholder is showing (so the real cover,
   // when it lands, is not mistaken for "already up to date").
   private var currentArtworkKey: String?
+  // The album identity behind the currently-shown artwork. Lets us tell a
+  // genuinely different (also cover-less) album apart from the same album still
+  // downloading its cover — so advancing between two cover-less albums swaps to the
+  // new album's monogram instead of keeping the previous one's.
+  private var currentArtworkAlbumKey: String?
 
   init(
     musicPlayer: AudioPlayer,
@@ -107,6 +112,8 @@ public class NowPlayingInfoCenterHandler {
       // Album-first cover path; nil when no cover file is on disk (yet).
       let coverKey = playable.imagePath(setting: settings.artworkDisplayPreference)
       let hasArtwork = info[MPMediaItemPropertyArtwork] != nil
+      // Stable per-album identity so a cover-less album is told apart from another.
+      let albumKey = playable.asSong?.album?.id ?? playable.uniqueID
 
       if coverKey != nil, coverKey == currentArtworkKey, hasArtwork {
         // Same album cover already shown — leave the artwork untouched (no blink).
@@ -120,9 +127,12 @@ public class NowPlayingInfoCenterHandler {
         )
         info[MPMediaItemPropertyArtwork] = makeNowPlayingArtwork(img)
         currentArtworkKey = coverKey
-      } else if !hasArtwork {
-        // No cover on disk AND nothing shown yet — show the placeholder for now;
-        // downloadFinishedSuccessful replaces it when the real cover lands.
+        currentArtworkAlbumKey = albumKey
+      } else if !hasArtwork || albumKey != currentArtworkAlbumKey {
+        // No cover on disk. Show THIS album's placeholder when nothing is shown yet,
+        // OR when a DIFFERENT (also cover-less) album is now playing — otherwise the
+        // lock screen keeps the previous album's monogram. downloadFinishedSuccessful
+        // replaces it when a real cover lands.
         let img = LibraryEntityImage.getImageToDisplayImmediately(
           libraryEntity: playable,
           themePreference: settings.themePreference,
@@ -131,9 +141,10 @@ public class NowPlayingInfoCenterHandler {
         )
         info[MPMediaItemPropertyArtwork] = makeNowPlayingArtwork(img)
         currentArtworkKey = nil
+        currentArtworkAlbumKey = albumKey
       }
-      // else: no cover on disk yet but something is already showing — KEEP it rather
-      // than flashing a placeholder while the new cover downloads.
+      // else: SAME cover-less album, cover still downloading — KEEP what's shown
+      // rather than flashing a placeholder.
 
       // Enqueue the album-first cover so a missing one lands (C09).
       if let heroArtwork = playable.asSong?.album?.artwork ?? playable.artwork {
@@ -194,6 +205,12 @@ public class NowPlayingInfoCenterHandler {
     if curPlayable.uniqueID == downloadNotification.id
       || curPlayable.artwork?.uniqueID == downloadNotification.id
       || albumArtworkID == downloadNotification.id {
+      // Force a re-apply: a cover CORRECTED in place (a folder swap re-pulled to the
+      // SAME file path) leaves coverKey unchanged, so updateNowPlayingInfo's
+      // same-key guard would otherwise keep the stale artwork on the lock screen /
+      // CarPlay hero until the album changed. Clearing the key drops into the
+      // apply branch, which re-decodes the now-evicted cache from the new bytes.
+      currentArtworkKey = nil
       Task { @MainActor in
         updateNowPlayingInfo(playable: curPlayable)
       }

@@ -128,7 +128,7 @@ open class EntityImageView: UIView {
       quadImages.forEach { $0.isHidden = true }
       singleImage.isHidden = false
       singleImage.display(artworkType: .playlist)
-      loadRemoteCover(url, playlistId: playlist.id, urlKey: urlString)
+      loadRemoteCover(url, playlistId: playlist.id, urlKey: urlString, theme: theme, container: container)
       return
     }
     remoteCoverLoadID = UUID()
@@ -139,7 +139,13 @@ open class EntityImageView: UIView {
     )
   }
 
-  private func loadRemoteCover(_ url: URL, playlistId: String, urlKey: String) {
+  private func loadRemoteCover(
+    _ url: URL,
+    playlistId: String,
+    urlKey: String,
+    theme: ThemePreference,
+    container: PlayableContainable
+  ) {
     let loadID = UUID()
     remoteCoverLoadID = loadID
     // Curated presets: prefer the bundled PNG (live site only has SVG today) — local.
@@ -157,18 +163,34 @@ open class EntityImageView: UIView {
       do {
         let (data, response) = try await URLSession.shared.data(from: url)
         if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
+          await self?.fallBackToSongMosaic(theme: theme, container: container, loadID: loadID)
           return
         }
-        guard let image = UIImage(data: data) else { return }
+        guard let image = UIImage(data: data) else {
+          await self?.fallBackToSongMosaic(theme: theme, container: container, loadID: loadID)
+          return
+        }
         // Persist so the next cold/offline launch reads local (best-effort, off-main).
         CassetteCloudPlaylistBridge.storeMaterializedCover(data, for: playlistId, url: urlKey)
         await MainActor.run {
           self?.applyRemoteCover(image, loadID: loadID)
         }
       } catch {
-        // Keep the mosaic / placeholder already shown.
+        // Offline / unreachable: fall through to the song mosaic instead of leaving
+        // the generic playlist glyph (a picked cover that hasn't materialized yet
+        // otherwise reads as art-less until the network returns).
+        await self?.fallBackToSongMosaic(theme: theme, container: container, loadID: loadID)
       }
     }
+  }
+
+  @MainActor
+  private func fallBackToSongMosaic(theme: ThemePreference, container: PlayableContainable, loadID: UUID) {
+    // Only if no newer display started (a real cover landing must win). Safe here —
+    // unlike the D03 clobber, this runs AFTER the remote load has FAILED, so there is
+    // no async cover decode racing to repaint over the mosaic.
+    guard remoteCoverLoadID == loadID else { return }
+    display(theme: theme, collection: container.getArtworkCollection(theme: theme))
   }
 
   private func applyRemoteCover(_ image: UIImage, loadID: UUID) {
