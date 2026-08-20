@@ -99,8 +99,8 @@ public struct HomeShelves: Codable, Equatable {
 
 // MARK: - Configuration (mirrors config.ts; the one place to tune)
 
-public struct ShelfConfig {
-  public struct Albums {
+public struct ShelfConfig: Sendable {
+  public struct Albums: Sendable {
     public let deepCutMinTracks: Int
     public let deepCutPlayedMin: Int
     public let deepCutPlayedMax: Int
@@ -109,13 +109,13 @@ public struct ShelfConfig {
     public let turnoverDays: Int
     public let forgottenPerSecondary: Int
   }
-  public struct Artists {
+  public struct Artists: Sendable {
     public let coldDays: Int
     public let turnoverDays: Int
     public let affinityRecentDays: Int
     public let blendCycle: [String]
   }
-  public struct Recent {
+  public struct Recent: Sendable {
     public let max: Int
     public let splitResume: Bool
   }
