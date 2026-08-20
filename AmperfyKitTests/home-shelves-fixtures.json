@@ -1,0 +1,574 @@
+{
+  "contractVersion": 1,
+  "note": "CANONICAL home-shelf conformance fixtures. Generated from the TS engine by scripts/gen-home-shelf-fixtures.ts. Web/iOS/Android conformance tests feed each `input` to their own shelf code and must reproduce `expected`.",
+  "scenarios": [
+    {
+      "name": "rich_library",
+      "description": "Exercises every pool: forgotten/deep-cut/rekindle albums, added/cold/affinity artists, a mixed Recent with a Resume head and cross-shelf exclusion.",
+      "input": {
+        "albums": [
+          {
+            "key": "rock:never1",
+            "title": "rock:never1",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1698080000000
+          },
+          {
+            "key": "rock:never2",
+            "title": "rock:never2",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1702400000000
+          },
+          {
+            "key": "rock:never3",
+            "title": "rock:never3",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1706720000000
+          },
+          {
+            "key": "rock:never4",
+            "title": "rock:never4",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1711040000000
+          },
+          {
+            "key": "rock:deep",
+            "title": "rock:deep",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 1,
+            "totalPlays": 3,
+            "lastPlayedAt": 1713632000000,
+            "addedAt": 1706720000000
+          },
+          {
+            "key": "rock:rekindle",
+            "title": "rock:rekindle",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 12,
+            "playedTrackCount": 8,
+            "totalPlays": 25,
+            "lastPlayedAt": 1716224000000,
+            "addedAt": 1706720000000
+          },
+          {
+            "key": "folk:recent1",
+            "title": "folk:recent1",
+            "artist": "Artist",
+            "genre": "Folk",
+            "trackCount": 10,
+            "playedTrackCount": 5,
+            "totalPlays": 10,
+            "lastPlayedAt": 1723913600000,
+            "addedAt": 1706720000000
+          },
+          {
+            "key": "folk:recent2",
+            "title": "folk:recent2",
+            "artist": "Artist",
+            "genre": "Folk",
+            "trackCount": 10,
+            "playedTrackCount": 3,
+            "totalPlays": 6,
+            "lastPlayedAt": 1723827200000,
+            "addedAt": 1706720000000
+          }
+        ],
+        "artists": [
+          {
+            "key": "artist:newfolk",
+            "name": "artist:newfolk",
+            "genre": "Folk",
+            "trackCount": 10,
+            "albumCount": 1,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1723827200000
+          },
+          {
+            "key": "artist:newrock",
+            "name": "artist:newrock",
+            "genre": "Rock",
+            "trackCount": 10,
+            "albumCount": 1,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1723568000000
+          },
+          {
+            "key": "artist:coldpop",
+            "name": "artist:coldpop",
+            "genre": "Pop",
+            "trackCount": 10,
+            "albumCount": 1,
+            "totalPlays": 10,
+            "lastPlayedAt": 1713632000000,
+            "addedAt": 1706720000000
+          },
+          {
+            "key": "artist:recentfolk",
+            "name": "artist:recentfolk",
+            "genre": "Folk",
+            "trackCount": 10,
+            "albumCount": 1,
+            "totalPlays": 4,
+            "lastPlayedAt": 1723913600000,
+            "addedAt": 1706720000000
+          }
+        ],
+        "playlists": [
+          {
+            "key": "pl:chill",
+            "name": "Chill",
+            "lastPlayedAt": 1723956800000
+          }
+        ],
+        "recentArtistKeys": [
+          "artist:recentfolk"
+        ],
+        "now": 1724000000000,
+        "seed": "fixture"
+      },
+      "expected": {
+        "resume": {
+          "kind": "playlist",
+          "key": "pl:chill"
+        },
+        "recent": [
+          {
+            "kind": "album",
+            "key": "folk:recent1"
+          },
+          {
+            "kind": "artist",
+            "key": "artist:recentfolk"
+          },
+          {
+            "kind": "album",
+            "key": "folk:recent2"
+          },
+          {
+            "kind": "album",
+            "key": "rock:rekindle"
+          },
+          {
+            "kind": "album",
+            "key": "rock:deep"
+          }
+        ],
+        "albums": [
+          {
+            "key": "rock:never2",
+            "reason": "forgotten"
+          },
+          {
+            "key": "rock:never3",
+            "reason": "forgotten"
+          },
+          {
+            "key": "rock:never4",
+            "reason": "forgotten"
+          },
+          {
+            "key": "rock:never1",
+            "reason": "forgotten"
+          }
+        ],
+        "artists": [
+          {
+            "key": "artist:newrock",
+            "reason": "added"
+          },
+          {
+            "key": "artist:coldpop",
+            "reason": "cold"
+          },
+          {
+            "key": "artist:newfolk",
+            "reason": "affinity"
+          }
+        ]
+      }
+    },
+    {
+      "name": "never_played",
+      "description": "A fresh library, nothing played: forgotten albums (oldest-added led) and added artists (newest-added led), empty Recent + Resume.",
+      "input": {
+        "albums": [
+          {
+            "key": "a:1",
+            "title": "a:1",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1689440000000
+          },
+          {
+            "key": "a:2",
+            "title": "a:2",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1698080000000
+          },
+          {
+            "key": "a:3",
+            "title": "a:3",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1706720000000
+          },
+          {
+            "key": "a:4",
+            "title": "a:4",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1715360000000
+          },
+          {
+            "key": "a:5",
+            "title": "a:5",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1719680000000
+          }
+        ],
+        "artists": [
+          {
+            "key": "ar:1",
+            "name": "ar:1",
+            "genre": null,
+            "trackCount": 10,
+            "albumCount": 1,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1689440000000
+          },
+          {
+            "key": "ar:2",
+            "name": "ar:2",
+            "genre": null,
+            "trackCount": 10,
+            "albumCount": 1,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1698080000000
+          },
+          {
+            "key": "ar:3",
+            "name": "ar:3",
+            "genre": null,
+            "trackCount": 10,
+            "albumCount": 1,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1715360000000
+          }
+        ],
+        "playlists": [],
+        "recentArtistKeys": [],
+        "now": 1724000000000,
+        "seed": "fixture"
+      },
+      "expected": {
+        "resume": null,
+        "recent": [],
+        "albums": [
+          {
+            "key": "a:3",
+            "reason": "forgotten"
+          },
+          {
+            "key": "a:4",
+            "reason": "forgotten"
+          },
+          {
+            "key": "a:5",
+            "reason": "forgotten"
+          },
+          {
+            "key": "a:1",
+            "reason": "forgotten"
+          },
+          {
+            "key": "a:2",
+            "reason": "forgotten"
+          }
+        ],
+        "artists": [
+          {
+            "key": "ar:1",
+            "reason": "added"
+          },
+          {
+            "key": "ar:3",
+            "reason": "added"
+          },
+          {
+            "key": "ar:2",
+            "reason": "added"
+          }
+        ]
+      }
+    },
+    {
+      "name": "single_recent",
+      "description": "One played album: it becomes the Resume head, the Recent remainder is empty, and it's excluded from the Albums shelf.",
+      "input": {
+        "albums": [
+          {
+            "key": "p:played",
+            "title": "p:played",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 4,
+            "totalPlays": 12,
+            "lastPlayedAt": 1723913600000,
+            "addedAt": 1706720000000
+          },
+          {
+            "key": "p:forgot1",
+            "title": "p:forgot1",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1698080000000
+          },
+          {
+            "key": "p:forgot2",
+            "title": "p:forgot2",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1706720000000
+          }
+        ],
+        "artists": [
+          {
+            "key": "p:ar1",
+            "name": "p:ar1",
+            "genre": null,
+            "trackCount": 10,
+            "albumCount": 1,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1723136000000
+          }
+        ],
+        "playlists": [],
+        "recentArtistKeys": [],
+        "now": 1724000000000,
+        "seed": "fixture"
+      },
+      "expected": {
+        "resume": {
+          "kind": "album",
+          "key": "p:played"
+        },
+        "recent": [],
+        "albums": [
+          {
+            "key": "p:forgot2",
+            "reason": "forgotten"
+          },
+          {
+            "key": "p:forgot1",
+            "reason": "forgotten"
+          }
+        ],
+        "artists": [
+          {
+            "key": "p:ar1",
+            "reason": "added"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rotation_next_day",
+      "description": "Same never-played library as never_played but three days later — the daily rotation must shift the order while keeping the same members. Pins the (seed, day) hash across platforms.",
+      "input": {
+        "albums": [
+          {
+            "key": "a:1",
+            "title": "a:1",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1689440000000
+          },
+          {
+            "key": "a:2",
+            "title": "a:2",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1698080000000
+          },
+          {
+            "key": "a:3",
+            "title": "a:3",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1706720000000
+          },
+          {
+            "key": "a:4",
+            "title": "a:4",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1715360000000
+          },
+          {
+            "key": "a:5",
+            "title": "a:5",
+            "artist": "Artist",
+            "genre": null,
+            "trackCount": 10,
+            "playedTrackCount": 0,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1719680000000
+          }
+        ],
+        "artists": [
+          {
+            "key": "ar:1",
+            "name": "ar:1",
+            "genre": null,
+            "trackCount": 10,
+            "albumCount": 1,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1689440000000
+          },
+          {
+            "key": "ar:2",
+            "name": "ar:2",
+            "genre": null,
+            "trackCount": 10,
+            "albumCount": 1,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1698080000000
+          },
+          {
+            "key": "ar:3",
+            "name": "ar:3",
+            "genre": null,
+            "trackCount": 10,
+            "albumCount": 1,
+            "totalPlays": 0,
+            "lastPlayedAt": null,
+            "addedAt": 1715360000000
+          }
+        ],
+        "playlists": [],
+        "recentArtistKeys": [],
+        "now": 1724259200000,
+        "seed": "fixture"
+      },
+      "expected": {
+        "resume": null,
+        "recent": [],
+        "albums": [
+          {
+            "key": "a:5",
+            "reason": "forgotten"
+          },
+          {
+            "key": "a:1",
+            "reason": "forgotten"
+          },
+          {
+            "key": "a:2",
+            "reason": "forgotten"
+          },
+          {
+            "key": "a:3",
+            "reason": "forgotten"
+          },
+          {
+            "key": "a:4",
+            "reason": "forgotten"
+          }
+        ],
+        "artists": [
+          {
+            "key": "ar:1",
+            "reason": "added"
+          },
+          {
+            "key": "ar:3",
+            "reason": "added"
+          },
+          {
+            "key": "ar:2",
+            "reason": "added"
+          }
+        ]
+      }
+    }
+  ]
+}
