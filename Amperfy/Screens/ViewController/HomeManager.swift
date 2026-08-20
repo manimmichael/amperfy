@@ -425,16 +425,24 @@ class HomeManager: NSObject {
     updateRecent()
     updatePlaylists()
     updateAlbums()
-    updateRecentArtists()
+    // cassette: the Albums + Artists shelves now run the SHARED home-shelf engine
+    // (the same algorithm as web + Android, kept in sync by the conformance
+    // fixtures). Built ONCE from Core Data here, AFTER Recent so its items can be
+    // excluded. The old updateRecentArtists / updateForgottenAlbums are retired in
+    // favour of the engine (their forgotten/deep-dive logic is what the engine was
+    // ported from; the engine additionally gives Artists the added/cold/affinity
+    // blend iOS lacked).
+    let shelfInput = buildShelfInput()
+    updateArtistsViaEngine(shelfInput)
     // cassette (Job 1.3): CarPlay-only album-forward shelves. Gated so iOS
     // neither computes nor snapshots them.
     if buildsAlbumShelves {
       updateRecentlyPlayedAlbums()
       updateNewestAlbums()
     }
-    // cassette (Forgotten Albums): iOS-only anti-recency shelf.
+    // cassette (Forgotten Albums): iOS-only anti-recency shelf, now engine-backed.
     if buildsForgottenShelf {
-      updateForgottenAlbums()
+      updateAlbumsViaEngine(shelfInput)
     }
   }
 
@@ -721,6 +729,116 @@ class HomeManager: NSObject {
       atLargeMOs: artistsAllFetch?.fetchedObjects as? [ArtistMO],
       wrap: { Artist(managedObject: $0) }
     )
+    notifySnapshot()
+  }
+
+  // MARK: - Engine-backed shelves (shared home-shelf algorithm)
+
+  /// cassette: the Albums + Artists shelves run the SHARED home-shelf engine
+  /// (`AmperfyKit/HomeShelfEngine`) — the same algorithm the web and Android run,
+  /// kept genuinely in sync by the golden conformance fixtures. `HomeManager`'s job
+  /// is only the adapter: turn Core Data into the engine's `ShelfInput`, call the
+  /// engine, and map its ordered keys back to `HomeItem`s. Recent stays iOS's own
+  /// `updateRecent` (its Resume split + live-queue prepend are iOS-specific).
+  private struct EngineShelfData {
+    let input: ShelfInput
+    let albumsByKey: [String: Album]
+    let artistsByKey: [String: Artist]
+  }
+
+  /// Adapt Core Data → `ShelfInput` (+ key→container maps to render the result).
+  /// Candidate pools reuse the existing fetches (forgotten-album + all-artist)
+  /// unioned with the played containers from the song sample, then each candidate's
+  /// tracks are rolled up into the engine's per-container signals. Keys are the same
+  /// stableIDs the rest of Home uses, so exclusion and mapping line up. On the phone
+  /// (a deliberate subset of the full library) this per-candidate roll-up is bounded.
+  private func buildShelfInput() -> EngineShelfData {
+    func ms(_ d: Date?) -> Int64? { d.map { Int64($0.timeIntervalSince1970 * 1000) } }
+
+    // Albums: forgotten-candidate fetch ∪ played albums from the sample.
+    var albumsByKey: [String: Album] = [:]
+    for mo in (forgottenAlbumsFetch?.fetchedObjects as? [AlbumMO]) ?? [] {
+      let album = Album(managedObject: mo)
+      albumsByKey[Self.stableID(for: album)] = album
+    }
+    for (_, scored) in albumScores {
+      albumsByKey[Self.stableID(for: scored.container)] = scored.container
+    }
+    var shelfAlbums: [ShelfAlbum] = []
+    for (key, album) in albumsByKey {
+      let tracks = album.playables
+      var played = 0, total = 0
+      var last: Date?, added: Date?
+      for track in tracks {
+        if track.playCount > 0 { played += 1 }
+        total += track.playCount
+        if let lp = track.lastTimePlayed, last == nil || lp > last! { last = lp }
+        if let ad = (track as? Song)?.addedDate, added == nil || ad < added! { added = ad }
+      }
+      shelfAlbums.append(ShelfAlbum(
+        key: key, title: album.name, artist: album.artist?.name ?? "",
+        genre: album.genre?.name, trackCount: tracks.count,
+        playedTrackCount: played, totalPlays: total,
+        lastPlayedAt: ms(last), addedAt: ms(added)))
+    }
+
+    // Artists: all-artist fetch ∪ played artists from the sample.
+    var artistsByKey: [String: Artist] = [:]
+    for mo in (artistsAllFetch?.fetchedObjects as? [ArtistMO]) ?? [] {
+      let artist = Artist(managedObject: mo)
+      artistsByKey[Self.stableID(for: artist)] = artist
+    }
+    for (_, scored) in artistScores {
+      artistsByKey[Self.stableID(for: scored.container)] = scored.container
+    }
+    var shelfArtists: [ShelfArtist] = []
+    for (key, artist) in artistsByKey {
+      let songs = artist.songs
+      var total = 0
+      var last: Date?, added: Date?
+      for song in songs {
+        total += song.playCount
+        if let lp = song.lastTimePlayed, last == nil || lp > last! { last = lp }
+        if let ad = (song as? Song)?.addedDate, added == nil || ad < added! { added = ad }
+      }
+      shelfArtists.append(ShelfArtist(
+        key: key, name: artist.name, genre: artist.genre?.name,
+        trackCount: songs.count, albumCount: artist.albums.count,
+        totalPlays: total, lastPlayedAt: ms(last), addedAt: ms(added)))
+    }
+
+    let input = ShelfInput(
+      albums: shelfAlbums, artists: shelfArtists, playlists: [],
+      recentArtistKeys: nil,
+      now: Int64(Date().timeIntervalSince1970 * 1000),
+      seed: "cassette-home")
+    return EngineShelfData(input: input, albumsByKey: albumsByKey, artistsByKey: artistsByKey)
+  }
+
+  /// Keys already surfaced in Resume/Recent — excluded from the engine shelves so
+  /// nothing shows twice (matches the web engine's cross-shelf exclusion).
+  private func recentExclusions() -> Set<String> {
+    var out = Set<String>()
+    for section in [HomeSection.resume, .recent] {
+      for item in data[section] ?? [] { out.insert(item.stableID) }
+    }
+    return out
+  }
+
+  private func updateAlbumsViaEngine(_ shelf: EngineShelfData) {
+    let picks = buildAlbums(
+      shelf.input.albums, HOME_SHELF_CONFIG, shelf.input.now, shelf.input.seed, recentExclusions())
+    data[.forgottenAlbums] = picks.compactMap { shelf.albumsByKey[$0.key] }.map {
+      HomeItem(section: .forgottenAlbums, stableID: Self.stableID(for: $0), playableContainable: $0)
+    }
+    notifySnapshot()
+  }
+
+  private func updateArtistsViaEngine(_ shelf: EngineShelfData) {
+    let picks = buildArtists(shelf.input, HOME_SHELF_CONFIG, recentExclusions())
+    data[.recentlyPlayedArtists] = picks.compactMap { shelf.artistsByKey[$0.key] }.map {
+      HomeItem(section: .recentlyPlayedArtists, stableID: Self.stableID(for: $0), playableContainable: $0)
+    }
     notifySnapshot()
   }
 

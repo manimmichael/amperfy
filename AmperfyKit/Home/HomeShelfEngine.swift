@@ -219,7 +219,7 @@ private func buildRecent(_ input: ShelfInput, _ cfg: ShelfConfig) -> (resume: Re
 
 // MARK: - Albums shelf (albums.ts)
 
-private func buildAlbums(_ albums: [ShelfAlbum], _ cfg: ShelfConfig, _ now: Int64,
+public func buildAlbums(_ albums: [ShelfAlbum], _ cfg: ShelfConfig, _ now: Int64,
                          _ seed: String, _ exclude: Set<String>) -> [AlbumPick] {
   let c = cfg.albums
   let eligible = albums.filter { !exclude.contains($0.key) }
@@ -301,7 +301,7 @@ private func buildAlbums(_ albums: [ShelfAlbum], _ cfg: ShelfConfig, _ now: Int6
 
 // MARK: - Artists shelf (artists.ts)
 
-private func buildArtists(_ input: ShelfInput, _ cfg: ShelfConfig, _ exclude: Set<String>) -> [ArtistPick] {
+public func buildArtists(_ input: ShelfInput, _ cfg: ShelfConfig, _ exclude: Set<String>) -> [ArtistPick] {
   let c = cfg.artists
   let now = input.now
   let eligible = input.artists.filter { !exclude.contains($0.key) }
