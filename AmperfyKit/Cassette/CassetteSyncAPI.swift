@@ -214,6 +214,42 @@ public struct CassetteDeviceArtworkResponse: Sendable, Decodable {
   public let albums: [CassetteDeviceArtworkAlbum]
 }
 
+// MARK: - CassetteTrackFreshnessEntry
+
+/// One owned track in the content-freshness sweep manifest: the audio
+/// sibling of CassetteDeviceArtworkAlbum. Keyed by cassetteLocalId (the
+/// same identity DeviceOwnershipMO stores), with subsonicTrackId carried
+/// too since some lookups key on it instead.
+///
+/// `audioVersion` is a content fingerprint of the track's own file on the
+/// paired Mac. nil means UNKNOWN (the hub hasn't successfully hashed this
+/// file yet) — never treat nil as "changed". A device that has never
+/// recorded a fingerprint for this track ADOPTS whatever value arrives
+/// here on first sight rather than re-fetching (the file it already has
+/// IS current; there's nothing to correct). Only a stored, non-nil value
+/// that differs from this one means the bytes actually changed — e.g. a
+/// re-rip that fixed an audio-quality issue without changing the title or
+/// duration, which cassetteLocalId can't see by design.
+public struct CassetteTrackFreshnessEntry: Sendable, Decodable {
+  public let cassetteLocalId: String
+  public let subsonicTrackId: String
+  public let audioVersion: String?
+
+  enum CodingKeys: String, CodingKey {
+    case cassetteLocalId = "cassette_local_id"
+    case subsonicTrackId = "subsonic_track_id"
+    case audioVersion = "audio_version"
+  }
+}
+
+// MARK: - CassetteTrackFreshnessResponse
+
+/// The `/devices/:device_id/track-freshness` envelope: the content-freshness
+/// sweep manifest for every track the device owns.
+public struct CassetteTrackFreshnessResponse: Sendable, Decodable {
+  public let tracks: [CassetteTrackFreshnessEntry]
+}
+
 // MARK: - CassetteDeviceGroupingItem
 
 /// One owned track's catalog-blind album grouping, returned additively on the
@@ -605,6 +641,19 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     ) ?? deviceId
     let data = try await get(path: "/api/sync/devices/\(encoded)/artwork")
     return try JSONDecoder().decode(CassetteDeviceArtworkResponse.self, from: data)
+  }
+
+  /// Read-only content-freshness sweep manifest for a device's owned tracks —
+  /// the audio sibling of getDeviceArtwork. Used to notice a re-rip that
+  /// changed a track's bytes without changing its identity (title/duration),
+  /// which is otherwise invisible to every other sync signal.
+  public func getTrackFreshness(deviceId: String) async throws
+    -> CassetteTrackFreshnessResponse {
+    let encoded = deviceId.addingPercentEncoding(
+      withAllowedCharacters: .urlPathAllowed
+    ) ?? deviceId
+    let data = try await get(path: "/api/sync/devices/\(encoded)/track-freshness")
+    return try JSONDecoder().decode(CassetteTrackFreshnessResponse.self, from: data)
   }
 
   public func updateIntent(
@@ -1038,6 +1087,62 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     }
     return data
   }
+
+  // MARK: - Mixtape
+
+  /// POST /api/mixtape/generate — whole-library "Smart Mixtape", no seed, no
+  /// body. Ephemeral: the server never saves anything until `saveMixtape` is
+  /// called explicitly.
+  public func generateMixtape() async throws -> CassetteMixtapeResponse {
+    let data = try await send(method: "POST", path: "/api/mixtape/generate", json: [:])
+    return try JSONDecoder().decode(CassetteMixtapeResponse.self, from: data)
+  }
+
+  /// POST /api/mixtape/radio — seeded from one track. Pass whatever identity
+  /// is on hand; the server matches on cassette_local_id, mbid, or
+  /// subsonic_track_id, in that priority order.
+  public func startMixtapeRadio(
+    cassetteLocalId: String?,
+    mbid: String?,
+    subsonicTrackId: String?
+  ) async throws -> CassetteMixtapeResponse {
+    let body: [String: Any] = [
+      "cassette_local_id": cassetteLocalId as Any? ?? NSNull(),
+      "mbid": mbid as Any? ?? NSNull(),
+      "subsonic_track_id": subsonicTrackId as Any? ?? NSNull(),
+    ]
+    let data = try await send(method: "POST", path: "/api/mixtape/radio", json: body)
+    return try JSONDecoder().decode(CassetteMixtapeResponse.self, from: data)
+  }
+
+  /// POST /api/mixtape/door — one of the six mood presets. Cached server-side
+  /// once per (account, door) per day; `rebuild: true` forces a fresh take
+  /// and replaces that day's cached build.
+  public func generateDoorMixtape(
+    doorKey: String,
+    rebuild: Bool = false
+  ) async throws -> CassetteMixtapeResponse {
+    let body: [String: Any] = ["door_key": doorKey, "rebuild": rebuild]
+    let data = try await send(method: "POST", path: "/api/mixtape/door", json: body)
+    return try JSONDecoder().decode(CassetteMixtapeResponse.self, from: data)
+  }
+
+  /// POST /api/mixtape/save — the only mixtape endpoint that writes anything.
+  /// Post back exactly the name/description/tracks a generate/radio/door call
+  /// returned; the server persists it as a real playlist and returns its id.
+  public func saveMixtape(
+    name: String,
+    description: String,
+    tracks: [CassetteMixtapeTrack]
+  ) async throws -> String {
+    let bodyData = try JSONEncoder().encode(CassetteSaveMixtapeBody(
+      name: name,
+      description: description,
+      tracks: tracks
+    ))
+    let data = try await send(method: "POST", path: "/api/mixtape/save", body: bodyData)
+    return try JSONDecoder().decode(CassetteSaveMixtapeResponse.self, from: data).playlistId
+  }
 }
 
 // MARK: - CassetteAuthPreservingDelegate
@@ -1187,6 +1292,50 @@ public struct CassetteCloudFavorite: Sendable, Decodable {
 
 private struct ListFavoritesResponse: Decodable {
   let favorites: [CassetteCloudFavorite]
+}
+
+// MARK: - Mixtape DTOs
+
+/// One track as returned by generate/radio/door and posted back to save —
+/// same shape both directions, matching the web app's SavedMixtapeTrack.
+public struct CassetteMixtapeTrack: Sendable, Codable {
+  public let title: String
+  public let artist: String
+  public let album: String?
+  public let durationSeconds: Int?
+  public let cassetteLocalId: String
+  public let mbid: String?
+  public let subsonicTrackId: String?
+}
+
+/// Procedural art motif for a mood-door mixtape (shape + hex color) — nil for
+/// the whole-library/radio generators, which render a plain gradient instead.
+public struct CassetteMixtapeArt: Sendable, Codable {
+  public let shape: String
+  public let color: String
+}
+
+/// The response shape ALL THREE generators (generate/radio/door) return.
+/// Ephemeral — nothing is saved server-side until `saveMixtape` posts this
+/// exact shape back to /api/mixtape/save.
+public struct CassetteMixtapeResponse: Sendable, Decodable {
+  public let name: String
+  public let description: String?
+  public let art: CassetteMixtapeArt?
+  public let tracks: [CassetteMixtapeTrack]
+  /// Present only for a door-seeded mixtape — which mood preset generated it,
+  /// needed to wire up the Rebuild action. nil for generate/radio.
+  public let doorKey: String?
+}
+
+private struct CassetteSaveMixtapeBody: Encodable {
+  let name: String
+  let description: String
+  let tracks: [CassetteMixtapeTrack]
+}
+
+private struct CassetteSaveMixtapeResponse: Decodable {
+  let playlistId: String
 }
 
 // MARK: - CassetteCloudPlay

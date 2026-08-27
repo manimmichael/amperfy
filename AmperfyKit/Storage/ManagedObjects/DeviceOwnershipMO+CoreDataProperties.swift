@@ -39,4 +39,11 @@ extension DeviceOwnershipMO {
   public var fileSizeBytes: Int64
   @NSManaged
   public var subsonicTrackId: String?
+  /// Content fingerprint of this track's own file, as last applied from the
+  /// server's track-freshness manifest (audio_version). Written once a
+  /// download completes; compared against the manifest on the next sweep so
+  /// a re-rip that changes bytes without changing title/duration (invisible
+  /// to cassetteLocalId by design) still gets noticed and re-fetched.
+  @NSManaged
+  public var contentFingerprint: String?
 }

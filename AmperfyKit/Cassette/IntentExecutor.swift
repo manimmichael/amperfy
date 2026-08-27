@@ -88,6 +88,15 @@ public final class IntentExecutor {
   private var lastManifestOwnedCount = -1
   private static let artworkManifestMinInterval: TimeInterval = 300 // 5 min
 
+  /// Throttle for the track-freshness manifest fetch (GET
+  /// /devices/:id/track-freshness) — the audio sibling of the artwork
+  /// manifest throttle above. A re-rip that changes a track's bytes without
+  /// changing its title/duration is rare enough that checking every 30s poll
+  /// would be wasted chatter; this runs on the same cadence as the artwork
+  /// pass for the same reason.
+  private var lastTrackFreshnessSweepAt: Date?
+  private static let trackFreshnessMinInterval: TimeInterval = 300 // 5 min
+
   /// Once per launch: drop leftover artwork downloads for unfetchable artist ids.
   private var didSweepStaleArtistDownloadsThisLaunch = false
 
@@ -242,6 +251,10 @@ public final class IntentExecutor {
       // cassette §art-collapse: re-tier existing local covers (generate the
       // ~480px thumb) for any that predate tiering. Idempotent + off-main.
       await backfillCoverThumbnails(accountInfo: accountInfo)
+      // Content-freshness sweep: notice a re-rip that changed an owned track's
+      // bytes without changing its title/duration (invisible to every other
+      // sync signal). Throttled the same as the artwork manifest above.
+      await sweepTrackFreshnessIfDue()
     }
 
     // Sync Reconciliation (Phase 1): report the device's COMPLETE owned-set so
@@ -330,6 +343,79 @@ public final class IntentExecutor {
     } catch {
       print("Cassette poll: full-state inventory report failed - \(error.localizedDescription)")
       return nil
+    }
+  }
+
+  /// Content-freshness sweep: for every owned track, compare the hub's current
+  /// content fingerprint (from GET /devices/:id/track-freshness) against what
+  /// this device last applied.
+  ///
+  /// cassetteLocalId is deliberately content-blind (artist+title+duration), so
+  /// a re-rip that fixes an audio-quality issue without changing the title or
+  /// duration is invisible to every other signal — the device already has
+  /// "that identity" and never looks again. This is the periodic check-in that
+  /// closes the gap, the audio sibling of the artwork manifest's
+  /// local_cover_version handling.
+  ///
+  /// - A track this device has never stamped (contentFingerprint == nil)
+  ///   ADOPTS the manifest's value silently — the file it already has IS
+  ///   current, there's nothing to correct, and treating "never checked" as
+  ///   "changed" would force a one-time re-download of the entire library the
+  ///   moment this feature ships.
+  /// - A track whose STORED fingerprint differs from the manifest's is a real
+  ///   change: delete the local copy via the existing remove() path (file +
+  ///   ownership row, exactly what a normal removal does). This does NOT
+  ///   re-download immediately — the next full-inventory report naturally
+  ///   omits the now-missing track, the server's reconciler sees it's still
+  ///   DESIRED but no longer ACTUAL, and queues a normal add intent that a
+  ///   subsequent poll executes through the already-proven download path.
+  ///   Reusing that path (rather than hand-rolling a second one here) is the
+  ///   whole safety argument for this feature.
+  private func sweepTrackFreshnessIfDue() async {
+    if let last = lastTrackFreshnessSweepAt,
+       Date().timeIntervalSince(last) < Self.trackFreshnessMinInterval {
+      return
+    }
+    guard let deviceId = UIDevice.current.identifierForVendor?.uuidString else { return }
+
+    let manifest: CassetteTrackFreshnessResponse
+    do {
+      manifest = try await api.getTrackFreshness(deviceId: deviceId)
+    } catch {
+      print("Cassette poll: track-freshness manifest fetch failed - \(error.localizedDescription)")
+      return
+    }
+    lastTrackFreshnessSweepAt = Date()
+
+    let manager = DeviceOwnershipManager(context: AmperKit.shared.storage.main.context)
+    var adopted = 0, staleRemoved = 0
+    for entry in manifest.tracks {
+      guard let manifestVersion = entry.audioVersion else { continue } // UNKNOWN — no signal yet
+      guard let owned = try? manager.fetchOne(cassetteLocalId: entry.cassetteLocalId)
+      else { continue } // not actually on this device, or the fetch failed — nothing to check
+      let stored = owned.contentFingerprint
+      if stored == nil {
+        try? manager.stampContentFingerprint(
+          cassetteLocalId: entry.cassetteLocalId,
+          fingerprint: manifestVersion
+        )
+        adopted += 1
+      } else if stored != manifestVersion {
+        try? manager.remove(cassetteLocalId: entry.cassetteLocalId)
+        staleRemoved += 1
+      }
+    }
+    if adopted > 0 || staleRemoved > 0 {
+      print(
+        "Cassette poll: track-freshness sweep — \(adopted) adopted, \(staleRemoved) stale (queued for re-fetch)"
+      )
+      if staleRemoved > 0 {
+        // A removal just happened outside the normal removal-intent path — same
+        // repaint the loop already does after didRemoveThisCycle, so a stale
+        // track disappears from the on-device-only library immediately rather
+        // than waiting for the next full poll's FRC rebuild.
+        await MainActor.run { CassetteOwnershipNotifier.shared.ownershipDidChangeNow() }
+      }
     }
   }
 

@@ -132,6 +132,25 @@ public final class DeviceOwnershipManager {
     if let caught { throw caught }
   }
 
+  /// Record the content fingerprint last confirmed for an owned track — the
+  /// content-freshness sweep's "adopt" path. Does NOT touch the file; this is
+  /// purely bookkeeping so the NEXT sweep can tell whether the hub's fingerprint
+  /// has moved since. No-op if the track isn't owned (nothing to stamp).
+  public func stampContentFingerprint(cassetteLocalId: String, fingerprint: String) throws {
+    var caught: Error?
+    context.performAndWait {
+      do {
+        guard let existing = try fetchOneInternal(cassetteLocalId: cassetteLocalId)
+        else { return }
+        existing.contentFingerprint = fingerprint
+        try context.save()
+      } catch {
+        caught = error
+      }
+    }
+    if let caught { throw caught }
+  }
+
   /// Delete the ownership record and its backing file. Idempotent.
   public func remove(cassetteLocalId: String) throws {
     var caught: Error?
