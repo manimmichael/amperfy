@@ -70,11 +70,11 @@ extension CarPlaySceneDelegate {
         let requestedData = sharedHome.data[section]
         if alreadyCreatedData !=
           requestedData {
-          let imageRowElements = createHomeRowImageElements(section: section, isDetail: false)
+          let imageRowElements = createHomeRowImageElements(section: section)
           row.elements = imageRowElements
         }
         imageRows.append(row)
-      } else if let row = createHomeRow(section: section, isDetailTemplate: false) {
+      } else if let row = createHomeRow(section: section) {
         homeImageRows[section] = row
         imageRows.append(row)
       }
@@ -82,48 +82,31 @@ extension CarPlaySceneDelegate {
     return imageRows
   }
 
-  func createHomeRow(section: HomeSection, isDetailTemplate: Bool) -> CPListImageRowItem? {
+  func createHomeRow(section: HomeSection) -> CPListImageRowItem? {
     guard let sharedHome else { return nil }
     let alreadyCreatedData = homeRowData[section]
     let requestedData = sharedHome.data[section]
-    if !isDetailTemplate,
-       alreadyCreatedData ==
-       requestedData {
+    if alreadyCreatedData ==
+      requestedData {
       return homeImageRows[section]
     }
 
-    let imageRowElements = createHomeRowImageElements(section: section, isDetail: isDetailTemplate)
-    let isRandomSection = section.isRandomSection
-
-    var title: String?
-    if !isDetailTemplate {
-      title = section.title
-    } else if isRandomSection {
-      title = "Refresh"
-    }
-
+    let imageRowElements = createHomeRowImageElements(section: section)
     let row = CPListImageRowItem(
-      text: title,
+      text: section.title,
       elements: imageRowElements,
-      allowsMultipleLines: isDetailTemplate
+      allowsMultipleLines: false
     )
     // handler CB is called when user pressed the section title
     row.handler = { [weak self] selectedRow, completion in
       guard let self else { completion(); return }
-      if !isDetailTemplate {
-        Task { @MainActor in
-          let detailSectionRow = createHomeRow(section: section, isDetailTemplate: true)
-          let detailListTemplate = CPListTemplate(title: section.title, sections: [
-            CPListSection(items: detailSectionRow != nil ? [detailSectionRow!] : []),
-          ])
-          self.pushTemplateIfAllowed(detailListTemplate, animated: true)
-          completion()
-        }
-      } else {
-        // cassette Patch 035: random/podcast/radio shelves are no
-        // longer materialised by HomeManager, so CarPlay never has
-        // a refresh action to dispatch — the three Cassette shelves
-        // are all deterministic.
+      Task { @MainActor in
+        // cassette (BUG-338): the shelf title opens a plain row list of the shelf's items,
+        // never a wrapped tile grid (see makeHomeShelfListTemplate).
+        self.pushTemplateIfAllowed(
+          self.makeHomeShelfListTemplate(section: section),
+          animated: true
+        )
         completion()
       }
     }
@@ -133,14 +116,10 @@ extension CarPlaySceneDelegate {
       // Resolve the tap against the snapshot that backs the *visible* elements,
       // not the live shelf data: recomputeAllShelves() rebuilds sharedHome.data
       // on every play/pause/stop and FRC change, so re-indexing it can hit nil
-      // or the wrong item (the dead tap). For the home carousel that snapshot
-      // is homeRowData[section] (kept in lockstep with row.elements); for a
-      // pushed detail list it is homeDetailRowData[section], captured at build
-      // time. Match by stableID, preferring the live item so playback uses a
-      // current managed object when one still exists.
-      let renderedItems = isDetailTemplate
-        ? (homeDetailRowData[section] ?? [])
-        : (homeRowData[section] ?? [])
+      // or the wrong item (the dead tap). That snapshot is homeRowData[section]
+      // (kept in lockstep with row.elements). Match by stableID, preferring the
+      // live item so playback uses a current managed object when one still exists.
+      let renderedItems = homeRowData[section] ?? []
       guard index >= 0, index < renderedItems.count else { completion(); return }
       let tappedID = renderedItems[index].stableID
       let liveItem = sharedHome.data[section]?.first { $0.stableID == tappedID }
@@ -173,28 +152,16 @@ extension CarPlaySceneDelegate {
     return row
   }
 
-  func createHomeRowImageElements(
-    section: HomeSection,
-    isDetail: Bool
-  )
-    -> [CPListImageRowItemRowElement] {
+  func createHomeRowImageElements(section: HomeSection) -> [CPListImageRowItemRowElement] {
     guard let sharedHome else { return [] }
 
     let alreadyCreatedData = homeRowData[section]
     let requestedData = sharedHome.data[section]
-    if !isDetail,
-       alreadyCreatedData ==
-       requestedData {
+    if alreadyCreatedData ==
+      requestedData {
       return homeImageRows[section]?.elements as? [CPListImageRowItemRowElement] ?? []
     }
-    if !isDetail {
-      homeRowData[section] = requestedData
-    } else {
-      homeDetailRowData[section] = requestedData
-      for var container in homeArtworkUpdate {
-        container.value.detailRow.removeAll()
-      }
-    }
+    homeRowData[section] = requestedData
 
     var imageRowElements = [CPListImageRowItemRowElement]()
     let items = requestedData ?? []
@@ -252,11 +219,8 @@ extension CarPlaySceneDelegate {
           homeArtworkUpdate[artwork.uniqueID] = EntityImageRowContainer(
             entity: entity,
             item: item,
-            homeRow: isDetail ? [] : [element],
-            detailRow: isDetail ? [element] : []
+            homeRow: [element]
           )
-        } else if isDetail {
-          homeArtworkUpdate[artwork.uniqueID]?.detailRow.append(element)
         } else {
           homeArtworkUpdate[artwork.uniqueID]?.homeRow.append(element)
         }
@@ -264,5 +228,56 @@ extension CarPlaySceneDelegate {
       imageRowElements.append(element)
     }
     return imageRowElements
+  }
+
+  /// cassette (BUG-338): the shelf detail is a plain row list, never a wrapped tile grid, because the
+  /// phone cannot learn the head unit's column count. Rows are the library's own detail rows, so a
+  /// tap opens the same view a Home tile tap opens, and artwork lands through the "refresh List items"
+  /// walk in downloadFinishedSuccessful because the rows carry userInfo. Built at push time as a
+  /// snapshot of the shelf, like the grid was.
+  func makeHomeShelfListTemplate(section: HomeSection) -> CPListTemplate {
+    let items = (sharedHome?.data[section] ?? []).prefix(carPlayLeafItemLimit(reserved: 0))
+    var rows = [CPListItem]()
+    for item in items {
+      let containable = item.playableContainable
+      if let album = containable as? Album {
+        rows.append(createDetailTemplate(for: album, onlyCached: isOfflineMode))
+      } else if let artist = containable as? Artist {
+        rows.append(createDetailTemplate(for: artist, onlyCached: isOfflineMode))
+      } else if let playlist = containable as? Playlist {
+        rows.append(createPlaylistRow(playlist))
+      } else {
+        // Unreachable for the four CarPlay shelves today; exists so nothing is ever
+        // silently skipped if a shelf of another kind is added.
+        rows.append(makePlayContainableRow(containable))
+      }
+    }
+    let template = CPListTemplate(title: section.title, sections: [CPListSection(items: rows)])
+    template.emptyViewTitleVariants = ["Nothing here yet"]
+    return template
+  }
+
+  /// cassette (BUG-338): the fallback row for a shelf item without a detail view: the old
+  /// tile behaviour, play the item then show Now Playing. Generated artwork only.
+  private func makePlayContainableRow(_ containable: PlayableContainable) -> CPListItem {
+    let theme = getPreference(activeAccountInfo).theme
+    let image = UIImage.getGeneratedArtwork(
+      theme: theme,
+      artworkType: containable.getArtworkCollection(theme: theme).defaultArtworkType,
+      name: nil
+    )
+    let row = CPListItem(
+      text: containable.name,
+      detailText: containable.subtitle,
+      image: image.carPlayImage(carTraitCollection: traits),
+      accessoryImage: nil,
+      accessoryType: .none
+    )
+    row.handler = { [weak self] _, completion in
+      guard let self = self else { completion(); return }
+      appDelegate.player.play(context: PlayContext(containable: containable))
+      displayNowPlaying { completion() }
+    }
+    return row
   }
 }

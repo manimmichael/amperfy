@@ -39,7 +39,8 @@ struct CarPlayShortPreference {
 class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   static let maxTreeDepth = 4
 
-  private let log = OSLog(subsystem: "Amperfy", category: "CarPlay")
+  // cassette (BUG-337): not private, so the CarPlay extension files can log through it.
+  let log = OSLog(subsystem: "Amperfy", category: "CarPlay")
   private static let assistantConfig = CPAssistantCellConfiguration(
     position: .top,
     visibility: .always,
@@ -153,6 +154,33 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
       appDelegate.player.addNotifier(notifier: self)
       CPNowPlayingTemplate.shared.add(self)
       self.interfaceController = interfaceController
+      // cassette (JOB 1, BUG-337): record what this head unit reports at connect, and the
+      // browse budget the app derived from it, so the diagnostics export can answer whether
+      // the car draws what it reports (section 8.3 of the BUG-337 spec).
+      let carTraits = interfaceController.carTraitCollection
+      let shelfImage = CPListImageRowItemRowElement.maximumImageSize
+      let rowImage = CPListItem.maximumImageSize
+      let budgetContext: [String: String] = [
+        "maxItems": String(CPListTemplate.maximumItemCount),
+        "maxSections": String(CPListTemplate.maximumSectionCount),
+        "maxTabs": String(CPTabBarTemplate.maximumTabCount),
+        "shelfImage": "\(Int(shelfImage.width))x\(Int(shelfImage.height))",
+        "rowImage": "\(Int(rowImage.width))x\(Int(rowImage.height))",
+        "scale": String(describing: carTraits.displayScale),
+        "browseBudget": String(carPlayBrowseItemBudget),
+        "browseCeiling": String(Self.carPlayBrowseBudgetCeiling),
+      ]
+      DiagnosticLog.shared.log(.carplay, "CarPlay budget", context: budgetContext)
+      os_log(
+        "CarPlay: budget maxItems=%i maxSections=%i maxTabs=%i browse=%i scale=%{public}@",
+        log: self.log,
+        type: .info,
+        CPListTemplate.maximumItemCount,
+        CPListTemplate.maximumSectionCount,
+        CPTabBarTemplate.maximumTabCount,
+        carPlayBrowseItemBudget,
+        String(describing: carTraits.displayScale)
+      )
       self.interfaceController?.delegate = self
       self.configureNowPlayingTemplate()
 
@@ -218,6 +246,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   /// change. Safe to call repeatedly; the same account simply rebinds.
   private func applyActiveAccount(_ accountInfo: AccountInfo?) {
     resetFetchController()
+    resetBrowsePages()
     activeAccountInfo = accountInfo
     guard let accountInfo else {
       os_log(
@@ -299,6 +328,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
       lastConfiguredNowPlayingMode = nil
 
       resetFetchController()
+      resetBrowsePages()
     }
   }
 
@@ -357,15 +387,10 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     let entity: AbstractLibraryEntity
     let item: HomeItem
     var homeRow: [CPListImageRowItemRowElement]
-    var detailRow: [CPListImageRowItemRowElement]
   }
 
   var homeImageRows: [HomeSection: CPListImageRowItem] = [:]
   var homeRowData: [HomeSection: [HomeItem]] = [:]
-  /// Snapshot backing a pushed Home *detail* list, captured at build time so a
-  /// tap resolves against the items the user actually sees rather than
-  /// re-indexing live shelf data that `recomputeAllShelves()` may have changed.
-  var homeDetailRowData: [HomeSection: [HomeItem]] = [:]
   var homeArtworkUpdate: [String: EntityImageRowContainer] = [:] // String is Artwork.uniqueID
 
   // D5: the "Cached" tab is removed from the IA. CarPlayCachedTabExtension and
@@ -414,6 +439,9 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     ])
     // cassette (Job 3): promoted to a top-level CarPlay tab.
     template.tabImage = UIImage.artist
+    // cassette (BUG-337): the tab is a browse list; its descriptor lives in userInfo.
+    template.userInfo = CarPlayBrowseDescriptor(kind: .artists, bucket: nil)
+    template.emptyViewTitleVariants = ["No artists on this phone yet"]
     return template
   }()
 
@@ -444,6 +472,9 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     ])
     // cassette (Job 3): promoted to a top-level CarPlay tab.
     template.tabImage = UIImage.album
+    // cassette (BUG-337): the tab is a browse list; its descriptor lives in userInfo.
+    template.userInfo = CarPlayBrowseDescriptor(kind: .albums, bucket: nil)
+    template.emptyViewTitleVariants = ["No albums on this phone yet"]
     return template
   }()
 
@@ -594,6 +625,14 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     podcastDetailFetchController = nil
   }
 
+  /// cassette (BUG-337): fresh browse descriptors (page 0, no log signature) on the two
+  /// tabs. Called on account bind (setRootTemplate then discards any pushed range list) and
+  /// on disconnect (the stack is released). Nothing else holds browse state.
+  private func resetBrowsePages() {
+    albumsSection.userInfo = CarPlayBrowseDescriptor(kind: .albums, bucket: nil)
+    artistsSection.userInfo = CarPlayBrowseDescriptor(kind: .artists, bucket: nil)
+  }
+
   @objc
   private func downloadFinishedSuccessful(notification: Notification) {
     guard let downloadNotification = DownloadNotification.fromNotification(notification)
@@ -601,51 +640,19 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     guard let templates = interfaceController?.templates else { return }
 
     // refresh Home image rows
+    // cassette (BUG-338): the pushed shelf detail is a plain CPListTemplate of library rows
+    // now, so it is refreshed by the "refresh List items" walk below like every other list;
+    // only the single-line Home shelf still tracks image-row elements here.
     if let container = homeArtworkUpdate[downloadNotification.id] {
-      var imageRowImages = container.homeRow
-      imageRowImages.append(contentsOf: container.detailRow)
       let image = LibraryEntityImage.getImageToDisplayImmediately(
         libraryEntity: container.entity,
         themePreference: getPreference(activeAccountInfo).theme,
         artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference,
         useCache: false
       )
-      for rowImage in imageRowImages {
+      for rowImage in container.homeRow {
         rowImage.image = carPlayEntityImage(image, for: container.entity)
       }
-    }
-
-    // refresh Home Detail rows
-    if templates.count == 2,
-       let tabBarTemplate = templates.first as? CPTabBarTemplate,
-       homeTab == tabBarTemplate.selectedTemplate,
-       let listTemplate = templates.last as? CPListTemplate,
-       listTemplate.sections.count == 1,
-       let detailRow = listTemplate.sections.first?.items.first as? CPListImageRowItem,
-       var container = homeArtworkUpdate[downloadNotification.id] {
-      var newCreatedRowImages = [CPListImageRowItemRowElement]()
-      for detailRowImage in container.detailRow {
-        if let elementIndex = detailRow.elements.firstIndex(where: { $0 == detailRowImage }) {
-          let image = LibraryEntityImage.getImageToDisplayImmediately(
-            libraryEntity: container.entity,
-            themePreference: getPreference(activeAccountInfo).theme,
-            artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference,
-            useCache: false
-          )
-          let newElement = CPListImageRowItemRowElement(
-            image: carPlayEntityImage(image, for: container.entity),
-            title: container.item.playableContainable.name,
-            subtitle: container.item.playableContainable.subtitle
-          )
-          detailRow.elements[elementIndex] = newElement
-          newCreatedRowImages.append(newElement)
-        }
-      }
-      container.detailRow = newCreatedRowImages
-      // cassette (SCENE-4): EntityImageRowContainer is a struct — write the mutated
-      // copy back, else the tracked detailRow keeps stale element refs and a later
-      // two-stage / re-arriving cover fails to match and no-ops its Home-detail refresh.
-      homeArtworkUpdate[downloadNotification.id] = container
     }
 
     // refresh List items
@@ -940,10 +947,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         type: .info
       )
       createArtistsFetchController()
-      artistsSection.updateSections(createArtistItems(
-        from: artistsFetchController,
-        onlyCached: isOfflineMode
-      ))
+      renderBrowseList(artistsSection)
     }
     if templates.contains(artistsFavoriteSection) {
       os_log(
@@ -964,11 +968,13 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         type: .info
       )
       createAlbumsFetchController()
-      albumsSection.updateSections(createAlbumItems(
-        from: albumsFetchController,
-        onlyCached: isOfflineMode
-      ))
+      renderBrowseList(albumsSection)
     }
+    // cassette (BUG-337): every pushed range list re-renders from its own keys against the
+    // rebuilt fetch controller (grew past the budget -> pages; keys reaped -> empty view).
+    // Unconditional; each no-ops when no list of that kind is on the stack.
+    refreshPushedBrowseLists(kind: .artists, in: templates)
+    refreshPushedBrowseLists(kind: .albums, in: templates)
     if templates.contains(albumsFavoriteSection) {
       os_log(
         "CarPlay: OfflineModeChanged: albumsFavoritesFetchController",
@@ -1100,10 +1106,12 @@ extension CarPlaySceneDelegate: @preconcurrency NSFetchedResultsControllerDelega
           log: self.log,
           type: .info
         )
-        artistsSection.updateSections(createArtistItems(
-          from: artistsFetchController,
-          onlyCached: isOfflineMode
-        ))
+        renderBrowseList(artistsSection)
+      }
+      // cassette (BUG-337): pushed Artists range lists refresh on the FRC identity alone.
+      if let artistsFetchController,
+         controller == artistsFetchController.fetchResultsController {
+        refreshPushedBrowseLists(kind: .artists, in: templates)
       }
       if templates.contains(artistsCachedSection),
          let artistsCachedFetchController = artistsCachedFetchController,
@@ -1152,10 +1160,12 @@ extension CarPlaySceneDelegate: @preconcurrency NSFetchedResultsControllerDelega
           log: self.log,
           type: .info
         )
-        albumsSection.updateSections(createAlbumItems(
-          from: albumsFetchController,
-          onlyCached: isOfflineMode
-        ))
+        renderBrowseList(albumsSection)
+      }
+      // cassette (BUG-337): pushed Albums range lists refresh on the FRC identity alone.
+      if let albumsFetchController,
+         controller == albumsFetchController.fetchResultsController {
+        refreshPushedBrowseLists(kind: .albums, in: templates)
       }
       if templates.contains(albumsCachedSection),
          let albumsCachedFetchController = albumsCachedFetchController,
@@ -1380,10 +1390,7 @@ extension CarPlaySceneDelegate: CPInterfaceControllerDelegate {
         )
         if artistsFetchController ==
           nil { createArtistsFetchController() }
-        artistsSection.updateSections(createArtistItems(
-          from: artistsFetchController,
-          onlyCached: isOfflineMode
-        ))
+        renderBrowseList(artistsSection)
       } else if aTemplate == artistsCachedSection {
         os_log(
           "CarPlay: templateWillAppear artistsCachedSection",
@@ -1411,10 +1418,7 @@ extension CarPlaySceneDelegate: CPInterfaceControllerDelegate {
       } else if aTemplate == albumsSection {
         os_log("CarPlay: templateWillAppear albumsSection", log: self.log, type: .info)
         if albumsFetchController == nil { createAlbumsFetchController() }
-        albumsSection.updateSections(createAlbumItems(
-          from: albumsFetchController,
-          onlyCached: isOfflineMode
-        ))
+        renderBrowseList(albumsSection)
       } else if aTemplate == albumsCachedSection {
         os_log("CarPlay: templateWillAppear albumsCachedSection", log: self.log, type: .info)
         if albumsCachedFetchController == nil { createAlbumsCachedFetchController() }
@@ -1539,6 +1543,12 @@ extension CarPlaySceneDelegate: CPInterfaceControllerDelegate {
           .updateSections(
             [CPListSection(items: createPodcastDetailItems(from: podcastDetailFetchController))]
           )
+      } else if let list = aTemplate as? CPListTemplate,
+                let d = list.userInfo as? CarPlayBrowseDescriptor, d.bucket != nil {
+        // cassette (BUG-337): a pushed range list re-renders from its own keys on push and
+        // on every pop back to it (an album or artist detail closed after a mid-drive change).
+        os_log("CarPlay: templateWillAppear browse range list", log: self.log, type: .info)
+        renderBrowseList(list)
       }
     }
   }

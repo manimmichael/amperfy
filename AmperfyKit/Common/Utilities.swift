@@ -233,6 +233,206 @@ extension String {
   }
 }
 
+// MARK: - AlphabeticSectionCount
+
+/// One fetched-results section as the CarPlay browse planner sees it: the one-character
+/// section key (`sectionInitial`) and how many rows sit under it. Pure counts, no objects.
+public struct AlphabeticSectionCount: Sendable, Equatable {
+  public let name: String
+  public let count: Int
+
+  public init(name: String, count: Int) {
+    self.name = name
+    self.count = count
+  }
+}
+
+// MARK: - AlphabeticBucket
+
+/// A contiguous run of section keys that fits one CarPlay list, or one slice of a section
+/// that is on its own too big for a list. Every entry of the library lands in exactly one
+/// bucket. Buckets are values: a pushed range list carries the one it was planned from and
+/// re-renders its keys against the live fetch controller without ever re-planning.
+public struct AlphabeticBucket: Sendable, Equatable {
+  public struct ChunkRef: Sendable, Equatable {
+    /// 0-based slice index.
+    public let index: Int
+    /// How many slices the section was split into when planned.
+    public let count: Int
+
+    public init(index: Int, count: Int) {
+      self.index = index
+      self.count = count
+    }
+  }
+
+  /// Contiguous fetch-controller keys in fetch-controller order.
+  public let sectionNames: [String]
+  /// Non-nil only for one slice of an oversized section.
+  public let chunk: ChunkRef?
+  /// Rows this bucket held when planned (the index row's subtitle).
+  public let itemCount: Int
+
+  public var isChunk: Bool { chunk != nil }
+
+  public init(sectionNames: [String], chunk: ChunkRef?, itemCount: Int) {
+    self.sectionNames = sectionNames
+    self.chunk = chunk
+    self.itemCount = itemCount
+  }
+}
+
+// MARK: - AlphabeticBucketPacker
+
+/// Plans how the CarPlay Albums and Artists tabs divide a library across the car's row
+/// budget. Pure on counts; no CarPlay import, so it is unit-tested in AmperfyKit.
+public enum AlphabeticBucketPacker {
+  /// `[]` means FLAT: every row fits one list (`N <= itemBudget` and the section count fits
+  /// `sectionBudget`). Otherwise a balanced list of contiguous ranges, each at most
+  /// `itemBudget` rows and `sectionBudget` keys, with any section larger than the budget
+  /// split into even positional chunks.
+  public static func pack(
+    sections: [AlphabeticSectionCount],
+    itemBudget: Int,
+    sectionBudget: Int
+  )
+    -> [AlphabeticBucket] {
+    let budget = max(1, itemBudget)
+    let sectionLimit = max(1, sectionBudget)
+    let total = sections.reduce(0) { $0 + $1.count }
+    if total <= budget, sections.count <= sectionLimit { return [] }
+
+    let atBudget = nextFit(
+      sections: sections,
+      threshold: budget,
+      itemBudget: budget,
+      sectionBudget: sectionLimit
+    )
+    let bucketCount = atBudget.count
+    guard bucketCount > 0 else { return atBudget }
+    // Balance: the smallest threshold that still yields the same number of ranges is the
+    // most even split. Every bucket holds at most `budget` rows, so ceil(total / count)
+    // never exceeds `budget` and the loop always terminates at `budget` at the latest.
+    let lowest = max(1, (total + bucketCount - 1) / bucketCount)
+    guard lowest < budget else { return atBudget }
+    for threshold in lowest ..< budget {
+      let candidate = nextFit(
+        sections: sections,
+        threshold: threshold,
+        itemBudget: budget,
+        sectionBudget: sectionLimit
+      )
+      if candidate.count == bucketCount { return candidate }
+    }
+    return atBudget
+  }
+
+  /// Next-fit over the sections in order: close the open bucket when the next section would
+  /// push it past `threshold` rows or `sectionBudget` keys; a section larger than
+  /// `itemBudget` stands alone as even chunks.
+  static func nextFit(
+    sections: [AlphabeticSectionCount],
+    threshold: Int,
+    itemBudget: Int,
+    sectionBudget: Int
+  )
+    -> [AlphabeticBucket] {
+    let budget = max(1, itemBudget)
+    let sectionLimit = max(1, sectionBudget)
+    let limit = max(1, threshold)
+    var buckets = [AlphabeticBucket]()
+    var openNames = [String]()
+    var openCount = 0
+
+    func close() {
+      guard !openNames.isEmpty else { return }
+      buckets.append(AlphabeticBucket(sectionNames: openNames, chunk: nil, itemCount: openCount))
+      openNames = []
+      openCount = 0
+    }
+
+    for section in sections {
+      if section.count > budget {
+        close()
+        let chunks = (section.count + budget - 1) / budget
+        let base = section.count / chunks
+        let extra = section.count % chunks
+        for index in 0 ..< chunks {
+          buckets.append(AlphabeticBucket(
+            sectionNames: [section.name],
+            chunk: AlphabeticBucket.ChunkRef(index: index, count: chunks),
+            itemCount: base + (index < extra ? 1 : 0)
+          ))
+        }
+        continue
+      }
+      if !openNames.isEmpty,
+         openCount + section.count > limit || openNames.count >= sectionLimit {
+        close()
+      }
+      openNames.append(section.name)
+      openCount += section.count
+    }
+    close()
+    return buckets
+  }
+
+  /// The `index`-th slice of a section that now holds `count` rows, split as evenly as
+  /// possible into the `chunks` planned for it. nil when the index is past the plan or the
+  /// section is empty. A slice can be empty or larger than the budget after the library
+  /// moved; the caller pages the latter.
+  public static func chunkRange(count: Int, chunks: Int, index: Int) -> Range<Int>? {
+    guard chunks > 0, count > 0, index >= 0, index < chunks else { return nil }
+    let base = count / chunks
+    let extra = count % chunks
+    let start = index * base + min(index, extra)
+    let size = base + (index < extra ? 1 : 0)
+    return start ..< (start + size)
+  }
+
+  /// In-place paging for a list that still cannot fit: `budget - 1` content rows per page
+  /// plus one navigation row. `page` is clamped, so a stale page number is never out of
+  /// range.
+  public static func pageBounds(
+    rowCount: Int,
+    budget: Int,
+    page: Int
+  )
+    -> (range: Range<Int>, page: Int, pageCount: Int) {
+    let rows = max(0, rowCount)
+    let limit = max(2, budget)
+    if rows <= limit { return (0 ..< rows, 0, 1) }
+    let pageSize = limit - 1
+    let pageCount = (rows + pageSize - 1) / pageSize
+    let clamped = min(max(0, page), pageCount - 1)
+    let start = clamped * pageSize
+    let end = min(start + pageSize, rows)
+    return (start ..< end, clamped, pageCount)
+  }
+
+  /// The label character for a section key: the three special keys (`?` symbol-led, `&`
+  /// non-Latin, `#` digits) all read as `#` in a range label. They stay separate sections
+  /// with their own one-character index titles inside every list.
+  public static func displayKey(_ sectionName: String) -> String {
+    let key = String(sectionName.prefix(1))
+    switch key {
+    case "?", "&", "#": return "#"
+    default: return key
+    }
+  }
+
+  /// The index row text: `"# - F"`, `"M"`, or `"S (2 of 3)"` for a chunk.
+  public static func label(for bucket: AlphabeticBucket) -> String {
+    guard let first = bucket.sectionNames.first else { return "" }
+    let firstKey = displayKey(first)
+    if let chunk = bucket.chunk {
+      return "\(firstKey) (\(chunk.index + 1) of \(chunk.count))"
+    }
+    let lastKey = displayKey(bucket.sectionNames.last ?? first)
+    return firstKey == lastKey ? firstKey : "\(firstKey) - \(lastKey)"
+  }
+}
+
 extension Dictionary where Value: Equatable {
   public func findKey(forValue val: Value) -> Key? {
     first(where: { $1 == val })?.key
