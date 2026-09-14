@@ -56,6 +56,8 @@ extension Notification.Name {
   public static let cassetteAccountAvatarChanged = Notification.Name("CassetteAccountAvatarChanged")
 }
 
+// MARK: - CassetteSyncStatus
+
 /// cassette: the one place the app asks "is a library sync wave moving right now?"
 ///
 /// A wave = the phone still has owned tracks to pull. The intent executor is the
@@ -329,6 +331,19 @@ public struct CassetteDeviceInventoryResponse: Sendable, Decodable {
 /// email the user signs in with. The account menu prefers `name`, falls back
 /// to `email`, so the status row shows the user's ACCOUNT — not the paired
 /// Player's LAN hostname.
+// MARK: - CassetteBetaAccess
+
+/// Cassette Mixtape beta: the account's self-serve beta opt-in (users.is_beta_tester),
+/// mirrored from GET /api/sync/account. Read-only on the phone; the web account page
+/// owns the toggle. Every Mixtape entry point (the Home Mood shelf, "Start Mixtape")
+/// checks this before rendering, because the Mixtape API answers 404 for an account
+/// that is not in the beta, and a visible button that can only fail is worse than none.
+public enum CassetteBetaAccess {
+  public static let defaultsKey = "cassette.isBetaTester"
+  public static let changedNotification = Notification.Name("CassetteBetaAccessChanged")
+  public static var isBetaTester: Bool { UserDefaults.standard.bool(forKey: defaultsKey) }
+}
+
 public struct CassetteAccount: Sendable, Decodable {
   public let email: String
   public let name: String?
@@ -361,9 +376,13 @@ public struct CassetteAccount: Sendable, Decodable {
   /// always-on out of the box. Manual `user_feedback` is unaffected by this.
   public let diagnosticsConsent: Bool
 
+  /// Cassette Mixtape beta: the self-serve beta opt-in (users.is_beta_tester). Optional
+  /// decode -> false for older deploys, so a server that does not emit it hides Mixtape.
+  public let isBetaTester: Bool
+
   enum CodingKeys: String, CodingKey {
     case email, name, image, avatarPreset, serverMode, sidecarPort, downloadQuality,
-      diagnosticsConsent
+         diagnosticsConsent, isBetaTester
   }
 
   public init(from decoder: Decoder) throws {
@@ -377,6 +396,7 @@ public struct CassetteAccount: Sendable, Decodable {
     self.downloadQuality = try c.decodeIfPresent(String.self, forKey: .downloadQuality) ?? "high"
     self.diagnosticsConsent = try c
       .decodeIfPresent(Bool.self, forKey: .diagnosticsConsent) ?? true
+    self.isBetaTester = try c.decodeIfPresent(Bool.self, forKey: .isBetaTester) ?? false
   }
 }
 
@@ -503,6 +523,19 @@ public final class CassetteSyncAPI: @unchecked Sendable {
           name: CassetteLibraryFilterProvider.filterChangedNotification,
           object: nil
         )
+      }
+    }
+
+    // Cassette Mixtape beta (BUG-348): mirror the account's self-serve beta opt-in
+    // so the Mood shelf and "Start Mixtape" render only for opted-in accounts.
+    // Web-authoritative (the account page toggle); the phone never writes it. Post
+    // on change so Home re-applies without a relaunch, as Server Mode does above.
+    let betaKey = CassetteBetaAccess.defaultsKey
+    let previousBeta = defaults.bool(forKey: betaKey)
+    defaults.set(account.isBetaTester, forKey: betaKey)
+    if previousBeta != account.isBetaTester {
+      DispatchQueue.main.async {
+        NotificationCenter.default.post(name: CassetteBetaAccess.changedNotification, object: nil)
       }
     }
 
@@ -800,7 +833,8 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     id: String,
     name: String,
     description: String? = nil
-  ) async throws -> CassetteCloudPlaylist {
+  ) async throws
+    -> CassetteCloudPlaylist {
     var body: [String: Any] = ["id": id, "name": name]
     if let description { body["description"] = description }
     let data = try await send(method: "POST", path: "/api/sync/playlists", json: body)
@@ -811,7 +845,8 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     id: String,
     name: String? = nil,
     description: String? = nil
-  ) async throws -> CassetteCloudPlaylist {
+  ) async throws
+    -> CassetteCloudPlaylist {
     var body: [String: Any] = [:]
     if let name { body["name"] = name }
     if let description { body["description"] = description }
@@ -826,7 +861,8 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   public func applyPlaylistOps(
     playlistId: String,
     ops: [CassettePlaylistOp]
-  ) async throws -> CassetteCloudPlaylist {
+  ) async throws
+    -> CassetteCloudPlaylist {
     let bodyData = try JSONEncoder().encode(CassettePlaylistOpsBody(ops: ops))
     let data = try await send(
       method: "POST",
@@ -947,7 +983,8 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   /// the same comparator.
   public func rankPopular(
     items: [(cassetteLocalId: String, title: String)]
-  ) async throws -> [PopularRankItem] {
+  ) async throws
+    -> [PopularRankItem] {
     guard !items.isEmpty else { return [] }
     let rows: [[String: Any]] = items.map { item in
       [
@@ -1105,7 +1142,8 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     cassetteLocalId: String?,
     mbid: String?,
     subsonicTrackId: String?
-  ) async throws -> CassetteMixtapeResponse {
+  ) async throws
+    -> CassetteMixtapeResponse {
     let body: [String: Any] = [
       "cassette_local_id": cassetteLocalId as Any? ?? NSNull(),
       "mbid": mbid as Any? ?? NSNull(),
@@ -1121,7 +1159,8 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   public func generateDoorMixtape(
     doorKey: String,
     rebuild: Bool = false
-  ) async throws -> CassetteMixtapeResponse {
+  ) async throws
+    -> CassetteMixtapeResponse {
     let body: [String: Any] = ["door_key": doorKey, "rebuild": rebuild]
     let data = try await send(method: "POST", path: "/api/mixtape/door", json: body)
     return try JSONDecoder().decode(CassetteMixtapeResponse.self, from: data)
@@ -1134,7 +1173,8 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     name: String,
     description: String,
     tracks: [CassetteMixtapeTrack]
-  ) async throws -> String {
+  ) async throws
+    -> String {
     let bodyData = try JSONEncoder().encode(CassetteSaveMixtapeBody(
       name: name,
       description: description,
@@ -1214,11 +1254,13 @@ public enum CassettePlaylistOp: Encodable, Sendable {
   }
 }
 
+// MARK: - CassettePlaylistOpsBody
+
 private struct CassettePlaylistOpsBody: Encodable {
   let ops: [CassettePlaylistOp]
 }
 
-// MARK: - CassetteCloudPlaylist
+// MARK: - CassetteCloudPlaylistItem
 
 public struct CassetteCloudPlaylistItem: Sendable, Decodable {
   public let id: String
@@ -1235,6 +1277,8 @@ public struct CassetteCloudPlaylistItem: Sendable, Decodable {
     case removedAt = "removed_at"
   }
 }
+
+// MARK: - CassetteCloudPlaylist
 
 public struct CassetteCloudPlaylist: Sendable, Decodable {
   public let id: String
@@ -1258,13 +1302,19 @@ public struct CassetteCloudPlaylist: Sendable, Decodable {
   }
 }
 
+// MARK: - ListPlaylistsResponse
+
 private struct ListPlaylistsResponse: Decodable {
   let playlists: [CassetteCloudPlaylist]
 }
 
+// MARK: - PlaylistEnvelope
+
 private struct PlaylistEnvelope: Decodable {
   let playlist: CassetteCloudPlaylist
 }
+
+// MARK: - PlaylistOpsEnvelope
 
 private struct PlaylistOpsEnvelope: Decodable {
   let playlist: CassetteCloudPlaylist
@@ -1290,11 +1340,13 @@ public struct CassetteCloudFavorite: Sendable, Decodable {
   }
 }
 
+// MARK: - ListFavoritesResponse
+
 private struct ListFavoritesResponse: Decodable {
   let favorites: [CassetteCloudFavorite]
 }
 
-// MARK: - Mixtape DTOs
+// MARK: - CassetteMixtapeTrack
 
 /// One track as returned by generate/radio/door and posted back to save —
 /// same shape both directions, matching the web app's SavedMixtapeTrack.
@@ -1308,12 +1360,16 @@ public struct CassetteMixtapeTrack: Sendable, Codable {
   public let subsonicTrackId: String?
 }
 
+// MARK: - CassetteMixtapeArt
+
 /// Procedural art motif for a mood-door mixtape (shape + hex color) — nil for
 /// the whole-library/radio generators, which render a plain gradient instead.
 public struct CassetteMixtapeArt: Sendable, Codable {
   public let shape: String
   public let color: String
 }
+
+// MARK: - CassetteMixtapeResponse
 
 /// The response shape ALL THREE generators (generate/radio/door) return.
 /// Ephemeral — nothing is saved server-side until `saveMixtape` posts this
@@ -1328,11 +1384,15 @@ public struct CassetteMixtapeResponse: Sendable, Decodable {
   public let doorKey: String?
 }
 
+// MARK: - CassetteSaveMixtapeBody
+
 private struct CassetteSaveMixtapeBody: Encodable {
   let name: String
   let description: String
   let tracks: [CassetteMixtapeTrack]
 }
+
+// MARK: - CassetteSaveMixtapeResponse
 
 private struct CassetteSaveMixtapeResponse: Decodable {
   let playlistId: String

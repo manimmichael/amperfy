@@ -56,6 +56,15 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   // payloads keep decoding.
   case forgottenAlbums
 
+  // cassette: the six Mood tiles (Get Pumped, Focus, ...) — a HEADER-ONLY
+  // section (zero HomeItems; see HomeVC's supplementary-view handling for
+  // .moodDoors). A mood door isn't a PlayableContainable — it's a static
+  // preset that generates a mixtape on tap, not a real library entity — so
+  // it deliberately does NOT flow through the HomeItem/diffable-snapshot
+  // pipeline the way every other shelf does. Appended (ordinal 16) per this
+  // enum's own append-only Codable-compat rule.
+  case moodDoors
+
   // cassette redesign (Surface 4): Resume leads the Home IA again — a
   // single full-width card sourced from the lastPlayedDate FRCs. The four
   // shelves follow (Recent = recently played; typed shelves = browse).
@@ -63,6 +72,8 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     .resume,
     .recent,
     .yourPlaylists,
+    // cassette: Mood sits right below Playlists, per founder direction.
+    .moodDoors,
     // cassette: "Albums" is now the from-your-collection shelf (`.forgottenAlbums`,
     // retitled). The old played->newest "Albums" row (`.recentlyAdded`) is retired
     // from Home — `Recent` covers recently-played albums.
@@ -102,6 +113,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .recentlyPlayedArtists: return "Artists"
     case .recent: return "Recent"
     case .forgottenAlbums: return "Albums" // the from-your-collection / anti-recency shelf, surfaced as "Albums"
+    case .moodDoors: return "Mood" // accessibility fallback only — MoodDoorsHeaderView owns the visible header
     }
   }
 
@@ -127,6 +139,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .recentlyPlayedArtists: return false
     case .recent: return false
     case .forgottenAlbums: return false
+    case .moodDoors: return false
     }
   }
 }

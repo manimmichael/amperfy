@@ -70,6 +70,10 @@ class EntityPreviewActionBuilder {
   private var isShowPodcastDetails = false
   private var isShowSongDetails = false
   private var isInstantMix = false
+  /// cassette: "Start Mixtape from this track" — POST /api/mixtape/radio,
+  /// then open the mixtape preview sheet (never auto-plays). Same online-only
+  /// gating as the retired Instant Mix, which this replaces in spirit.
+  private var isStartMixtape = false
 
   init(
     container: PlayableContainable,
@@ -104,6 +108,9 @@ class EntityPreviewActionBuilder {
       playActions.append(createPlayShuffledAction())
     }
     // cassette Polish 2 (G4): Instant Mix removed from every context menu.
+    if isStartMixtape {
+      playActions.append(createMixtapeAction())
+    }
     if !playActions.isEmpty {
       menuActions.append(UIMenu(options: .displayInline, children: playActions))
     }
@@ -255,6 +262,10 @@ class EntityPreviewActionBuilder {
     isShowPodcastDetails = false
     isShowSongDetails = true
     isInstantMix = appDelegate.storage.settings.user.isOnlineMode
+    // cassette (BUG-348): "Start Mixtape" only for accounts in the Mixtape beta;
+    // the radio API answers 404 otherwise.
+    isStartMixtape = appDelegate.storage.settings.user.isOnlineMode &&
+      CassetteBetaAccess.isBetaTester
   }
 
   private func configureFor(podcastEpisode: PodcastEpisode) {
@@ -495,6 +506,36 @@ class EntityPreviewActionBuilder {
 
     } catch {
       appDelegate.eventLogger.report(topic: "Instant Mix", error: error)
+    }
+  }
+
+  // cassette: "Start Mixtape from this track" — the live replacement for
+  // Instant Mix above, same async-fetch shape, but backed by the cloud
+  // mixtape engine (POST /api/mixtape/radio) instead of Subsonic similar-
+  // songs, and opens the preview sheet rather than playing immediately —
+  // generating a mixtape must never yank audio out from under whatever's
+  // already playing.
+  private func createMixtapeAction() -> UIAction {
+    UIAction(title: "Start Mixtape", image: UIImage(systemName: "sparkles")) { [weak self] _ in
+      guard let self,
+            let song = (entityContainer as? AbstractPlayable)?.asSong
+      else { return }
+      Task { @MainActor in
+        await self.createAndPresentMixtape(from: song)
+      }
+    }
+  }
+
+  private func createAndPresentMixtape(from song: Song) async {
+    do {
+      let mixtape = try await CassetteSyncAPI.shared.startMixtapeRadio(
+        cassetteLocalId: CassetteCloudPlaylistBridge.cassetteLocalId(for: song),
+        mbid: song.musicBrainzId,
+        subsonicTrackId: song.id
+      )
+      rootView.presentMixtapePreview(mixtape)
+    } catch {
+      appDelegate.eventLogger.report(topic: "Mixtape", error: error)
     }
   }
 

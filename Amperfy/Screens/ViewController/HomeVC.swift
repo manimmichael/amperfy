@@ -128,9 +128,18 @@ final class HomeVC: UICollectionViewController {
     syncBanner.isHidden = true
     collectionView.addSubview(syncBanner)
     NSLayoutConstraint.activate([
-      syncBanner.topAnchor.constraint(equalTo: collectionView.safeAreaLayoutGuide.topAnchor, constant: 8),
-      syncBanner.leadingAnchor.constraint(equalTo: collectionView.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-      syncBanner.trailingAnchor.constraint(equalTo: collectionView.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+      syncBanner.topAnchor.constraint(
+        equalTo: collectionView.safeAreaLayoutGuide.topAnchor,
+        constant: 8
+      ),
+      syncBanner.leadingAnchor.constraint(
+        equalTo: collectionView.safeAreaLayoutGuide.leadingAnchor,
+        constant: 16
+      ),
+      syncBanner.trailingAnchor.constraint(
+        equalTo: collectionView.safeAreaLayoutGuide.trailingAnchor,
+        constant: -16
+      ),
     ])
     // Observe via NotificationCenter.default — that is where CassetteSyncStatus posts.
     NotificationCenter.default.addObserver(
@@ -160,6 +169,15 @@ final class HomeVC: UICollectionViewController {
       name: CassetteLibraryFilterProvider.filterChangedNotification,
       object: nil
     )
+
+    // cassette (BUG-348): re-apply Home when the Mixtape beta opt-in changes on an
+    // account sync, so the Mood shelf appears or disappears without a relaunch.
+    appDelegate.notificationHandler.register(
+      self,
+      selector: #selector(cassetteBetaAccessChanged),
+      name: CassetteBetaAccess.changedNotification,
+      object: nil
+    )
   }
 
   // cassette (manual eager tab-bar reveal): drive minimize/expand from scroll
@@ -181,7 +199,10 @@ final class HomeVC: UICollectionViewController {
     pullPastThreshold = false
   }
 
-  override func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+  override func scrollViewDidEndDragging(
+    _ scrollView: UIScrollView,
+    willDecelerate decelerate: Bool
+  ) {
     guard pullPastThreshold, !isCheckingForUpdates else { return }
     pullPastThreshold = false
     triggerCassetteRefresh()
@@ -215,6 +236,11 @@ final class HomeVC: UICollectionViewController {
   @objc
   private func cassetteLibraryFilterChanged() {
     sharedHome.createFetchController()
+    applySnapshot(animated: false)
+  }
+
+  @objc
+  private func cassetteBetaAccessChanged() {
     applySnapshot(animated: false)
   }
 
@@ -326,6 +352,43 @@ final class HomeVC: UICollectionViewController {
     // so the header's own 16pt leading lines up with the first card column.
     let contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 24, trailing: 16)
 
+    // cassette: .moodDoors is header-only (zero HomeItems — see
+    // HomeSection.swift) — a near-zero item group, all real height comes
+    // from the boundary header that hosts MoodDoorRow's SwiftUI content.
+    if section == .moodDoors {
+      let itemSize = NSCollectionLayoutSize(
+        widthDimension: .fractionalWidth(1.0),
+        heightDimension: .absolute(1)
+      )
+      let item = NSCollectionLayoutItem(layoutSize: itemSize)
+      let groupSize = NSCollectionLayoutSize(
+        widthDimension: .fractionalWidth(1.0),
+        heightDimension: .absolute(1)
+      )
+      let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
+      let sectionLayout = NSCollectionLayoutSection(group: group)
+      sectionLayout.contentInsets = NSDirectionalEdgeInsets(
+        top: 0,
+        leading: 0,
+        bottom: 0,
+        trailing: 0
+      )
+      sectionLayout.supplementariesFollowContentInsets = false
+      let headerSize = NSCollectionLayoutSize(
+        widthDimension: .fractionalWidth(1.0),
+        heightDimension: .estimated(180)
+      )
+      let header = NSCollectionLayoutBoundarySupplementaryItem(
+        layoutSize: headerSize,
+        elementKind: UICollectionView.elementKindSectionHeader,
+        alignment: .top
+      )
+      header.pinToVisibleBounds = false
+      header.zIndex = 1
+      sectionLayout.boundarySupplementaryItems = [header]
+      return sectionLayout
+    }
+
     // Patch 110 (3b): album/artist shelves use the shared carousel layout —
     // the same component the artist detail embeds (one carousel, two callers).
     guard section == .resume else {
@@ -392,6 +455,14 @@ final class HomeVC: UICollectionViewController {
       SectionHeaderView.self,
       forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
       withReuseIdentifier: SectionHeaderView.reuseID
+    )
+    // cassette: the Mood shelf's header IS its content (zero HomeItems) —
+    // a distinct reuse identifier from SectionHeaderView, not a style
+    // variant of it, since it hosts SwiftUI rather than a title label.
+    collectionView.register(
+      MoodDoorsHeaderView.self,
+      forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
+      withReuseIdentifier: MoodDoorsHeaderView.reuseID
     )
   }
 
@@ -462,13 +533,27 @@ final class HomeVC: UICollectionViewController {
 
     dataSource.supplementaryViewProvider = { [weak self] collectionView, kind, indexPath in
       guard kind == UICollectionView.elementKindSectionHeader,
-            let header = collectionView.dequeueReusableSupplementaryView(
-              ofKind: kind,
-              withReuseIdentifier: SectionHeaderView.reuseID,
-              for: indexPath
-            ) as? SectionHeaderView,
             let snapshotSection = self?.dataSource.snapshot().sectionIdentifiers
             .element(at: indexPath.section)
+      else {
+        return nil
+      }
+
+      if snapshotSection == .moodDoors {
+        guard let moodHeader = collectionView.dequeueReusableSupplementaryView(
+          ofKind: kind,
+          withReuseIdentifier: MoodDoorsHeaderView.reuseID,
+          for: indexPath
+        ) as? MoodDoorsHeaderView, let self else { return nil }
+        moodHeader.configure(parentViewController: self)
+        return moodHeader
+      }
+
+      guard let header = collectionView.dequeueReusableSupplementaryView(
+        ofKind: kind,
+        withReuseIdentifier: SectionHeaderView.reuseID,
+        for: indexPath
+      ) as? SectionHeaderView
       else {
         return nil
       }
@@ -548,6 +633,19 @@ final class HomeVC: UICollectionViewController {
       // returns automatically when the wave finishes (updateSyncBannerPresentation
       // re-applies the snapshot).
       if section == .resume, CassetteSyncStatus.isActive { continue }
+      // cassette: .moodDoors is a static, always-present header-only
+      // section (zero HomeItems by design — see HomeSection.swift) — append
+      // it (beta accounts only, BUG-348) instead of via sharedHome.data, which it never
+      // populates, and skip the empty-shelf guard below that every other
+      // section relies on to hide itself when it has nothing to show.
+      if section == .moodDoors {
+        // cassette (BUG-348): the Mood shelf renders only for accounts in the
+        // Mixtape beta. The door API answers 404 otherwise, so an opted-out
+        // account must never see tiles that can only fail.
+        guard CassetteBetaAccess.isBetaTester else { continue }
+        snapshot.appendSections([section])
+        continue
+      }
       var seenItemIDs = Set<String>()
       let items = (sharedHome.data[section] ?? []).filter {
         seenItemIDs.insert($0.stableID).inserted
