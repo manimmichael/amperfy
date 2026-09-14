@@ -69,6 +69,8 @@ enum CoreDataMigrationVersion: String, CaseIterable {
     "Amperfy v53" // Cassette Forgotten Albums: add HomeShelfEvent entity + Album surfacing/feedback fields (additive — lightweight inferred mapping)
   case v54 =
     "Amperfy v54" // Cassette play spine: add ScrobbleEntry.cloudSyncedAt (additive optional — lightweight inferred mapping)
+  case v55 =
+    "Amperfy v55" // Cassette content freshness (BUG-289): add DeviceOwnership.contentFingerprint (additive optional, lightweight inferred mapping). Registered here 2026-09-14 (BUG-347): the model and pointer moved to v55 on 2026-08-27 without this case, so every existing store crashed at launch.
 
   // MARK: - Current
 
@@ -191,6 +193,8 @@ enum CoreDataMigrationVersion: String, CaseIterable {
     case .v53:
       return .v54
     case .v54:
+      return .v55
+    case .v55:
       return nil
     }
   }
