@@ -21,6 +21,7 @@
 
 import AmperfyKit
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 
 // MARK: - TabBarVC
 
@@ -146,6 +147,9 @@ class TabBarVC: UITabBarController {
 
     let accessory = UITabAccessory(contentView: miniPlayer!.glassContainer)
     bottomAccessory = accessory
+    view.addGestureRecognizer(RailTouchDownObserver { [weak self] point in
+      self?.railTouchDown(at: point)
+    })
 
     heightConstraint = miniPlayer!.glassContainer.heightAnchor.constraint(equalToConstant: 48.0)
     heightConstraint?.isActive = true
@@ -196,34 +200,112 @@ class TabBarVC: UITabBarController {
   private var railLastDirectionDown = true
   private var railRevealedThisRun = false
   private var railRearmWorkItem: DispatchWorkItem?
-  private static let railRevealDistance: CGFloat = 24
+  private static let railRevealDistance: CGFloat = 12
   private static let railRearmDelay: TimeInterval = 0.4
-  private static let railSettleDelay: TimeInterval = 0.6
+  private static let railSettleDelay: TimeInterval = 0.35
+
+  /// cassette (rail): at the very end of a list UIKit toggles the bar by
+  /// itself on the first downward points of a drag (measured on 26.4: a 16pt
+  /// first tick flips it either way, minimized or expanded). A finger landing
+  /// to scroll back up can give exactly that, which collapsed an expanded bar
+  /// for a beat before the reveal brought it back. So while a list rests
+  /// against its end with the bar out, the behaviour is `.never`. It goes back
+  /// to `.onScrollDown` on the first touch that lands anywhere else (UIKit
+  /// reads the behaviour per drag, so that has to happen before a drag can
+  /// start), or once the content has moved up by `railRevealDistance`.
+  private var railBottomHold = false
+  private weak var railBottomHoldScrollView: UIScrollView?
+
+  #if DEBUG
+  /// Launch with `-railTrace` and read the `[rail]` lines in the console.
+  static let railTraceEnabled = ProcessInfo.processInfo.arguments.contains("-railTrace")
+  static func railTrace(_ line: @autoclosure () -> String) {
+    guard railTraceEnabled else { return }
+    print(String(format: "[rail] %.3f ", ProcessInfo.processInfo.systemUptime) + line())
+  }
+  private var railDebugWasTracking = false
+  #endif
+
+  private static func railMaxY(_ scrollView: UIScrollView) -> CGFloat {
+    scrollView.contentSize.height + scrollView.adjustedContentInset.bottom
+      - scrollView.bounds.height + scrollView.adjustedContentInset.top
+  }
+
+  private func railHoldAtBottom(_ scrollView: UIScrollView) {
+    guard !railBottomHold else { return }
+    railBottomHold = true
+    railBottomHoldScrollView = scrollView
+    railRearmWorkItem?.cancel()
+    tabBarMinimizeBehavior = .never
+    #if DEBUG
+    Self.railTrace("HOLD at the end of the list")
+    #endif
+  }
+
+  private func railReleaseBottomHold(_ why: String) {
+    guard railBottomHold else { return }
+    railBottomHold = false
+    railBottomHoldScrollView = nil
+    tabBarMinimizeBehavior = .onScrollDown
+    #if DEBUG
+    Self.railTrace("RELEASE hold: \(why)")
+    #endif
+  }
+
+  /// Every touch-down on the screen, before any drag can start.
+  fileprivate func railTouchDown(at point: CGPoint) {
+    guard railBottomHold else { return }
+    guard let held = railBottomHoldScrollView,
+          let hit = view.hitTest(point, with: nil), hit.isDescendant(of: held),
+          held.contentOffset.y + held.adjustedContentInset.top >= Self.railMaxY(held) - 1
+    else {
+      railReleaseBottomHold("touch elsewhere")
+      return
+    }
+  }
 
   func cassetteUpdateMinimizeForScroll(_ scrollView: UIScrollView) {
     let topInset = scrollView.adjustedContentInset.top
     let y = scrollView.contentOffset.y + topInset
+    let maxY = Self.railMaxY(scrollView)
     // Only the user's own movement counts: programmatic offsets (reloads, the
     // keyboard, a content-inset change) must not flip the bar.
     guard scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating else {
+      if railBottomHold, scrollView === railBottomHoldScrollView,
+         y < maxY - Self.railRevealDistance {
+        railReleaseBottomHold("moved off the end")
+      }
       railLastY = y
       railRunStartY = y
       railRevealedThisRun = false
       return
     }
-    let maxY = scrollView.contentSize.height + scrollView.adjustedContentInset.bottom
-      - scrollView.bounds.height + topInset
+    if railBottomHold, scrollView !== railBottomHoldScrollView {
+      railReleaseBottomHold("another list")
+    }
     let dy = y - railLastY
     railLastY = y
+    #if DEBUG
+    if scrollView.isTracking != railDebugWasTracking {
+      railDebugWasTracking = scrollView.isTracking
+      Self.railTrace("\(scrollView.isTracking ? "FINGER-DOWN" : "FINGER-UP") y=\(Int(y)) maxY=\(Int(maxY)) dy=\(String(format: "%.1f", dy)) layout=\(String(describing: appliedRailLayout)) behavior=\(tabBarMinimizeBehavior.rawValue) hold=\(railBottomHold)")
+    }
+    #endif
     // Outside the content, in either direction, nothing counts: at the top
     // UIKit expands on its own, and at the bottom the rubber band snapping back
     // is not the person scrolling up. That snap-back used to fire the reveal
     // while UIKit was still minimizing, and the bar got stuck half way
     // (expanded pill, inline mini player).
     if y <= 0 || y >= maxY {
+      if y >= maxY, appliedRailLayout != .inline {
+        railHoldAtBottom(scrollView)
+      }
       railRunStartY = y
       railRevealedThisRun = false
       return
+    }
+    if railBottomHold, y < maxY - Self.railRevealDistance {
+      railReleaseBottomHold("scrolled up from the end")
     }
     guard dy != 0 else { return }
     let movingDown = dy > 0
@@ -244,10 +326,14 @@ class TabBarVC: UITabBarController {
     // flash on the next scroll up from the bottom.
     guard appliedRailLayout == .inline else { return }
     railRevealedThisRun = true
+    #if DEBUG
+    Self.railTrace("REVEAL y=\(Int(y)) maxY=\(Int(maxY)) runStart=\(Int(railRunStartY))")
+    #endif
     railRearmWorkItem?.cancel()
     tabBarMinimizeBehavior = .never
     let rearm = DispatchWorkItem { [weak self] in
-      self?.tabBarMinimizeBehavior = .onScrollDown
+      guard let self, !self.railBottomHold else { return }
+      self.tabBarMinimizeBehavior = .onScrollDown
     }
     railRearmWorkItem = rearm
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.railRearmDelay, execute: rearm)
@@ -299,6 +385,9 @@ class TabBarVC: UITabBarController {
       // A minimize just started; the reveal rule waits for it to settle.
       railWentInlineAt = ProcessInfo.processInfo.systemUptime
     }
+    #if DEBUG
+    Self.railTrace("LAYOUT \(String(describing: appliedRailLayout)) -> \(wanted) behavior=\(tabBarMinimizeBehavior.rawValue)")
+    #endif
     appliedRailLayout = wanted
 
     switch wanted {
@@ -509,5 +598,29 @@ extension TabBarVC: MainSceneHostingViewController {
 
   func getSafeAreaExtension() -> CGFloat {
     0.0
+  }
+}
+
+// MARK: - Rail touch-down observer
+
+/// cassette (rail): sees every touch-down on the tab bar controller's view
+/// without taking part in it. `TabBarVC.railTouchDown(at:)` uses it to hand
+/// the minimize behaviour back before a drag can start somewhere else.
+private final class RailTouchDownObserver: UIGestureRecognizer {
+  private let onTouchDown: (CGPoint) -> Void
+
+  init(onTouchDown: @escaping (CGPoint) -> Void) {
+    self.onTouchDown = onTouchDown
+    super.init(target: nil, action: nil)
+    cancelsTouchesInView = false
+    delaysTouchesBegan = false
+    delaysTouchesEnded = false
+  }
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    if let touch = touches.first, let view {
+      onTouchDown(touch.location(in: view))
+    }
+    state = .failed
   }
 }
