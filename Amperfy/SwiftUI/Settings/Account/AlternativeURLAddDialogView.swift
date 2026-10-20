@@ -122,10 +122,10 @@ struct AlternativeURLAddDialogView: View {
               )
 
               if !successMsg.isEmpty {
-                InfoBannerView(message: successMsg, color: .success)
+                CassetteBannerView(message: successMsg, kind: .success)
               }
               if !errorMsg.isEmpty {
-                InfoBannerView(message: errorMsg, color: .error)
+                CassetteBannerView(message: errorMsg, kind: .error)
               }
               if isValidating {
                 ProgressView("Please wait...")

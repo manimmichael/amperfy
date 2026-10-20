@@ -33,7 +33,7 @@ import UIKit
 /// red/green/blue alerts.
 class AmperfyBannerColors: BannerColorsProtocol {
   internal func color(for style: BannerStyle) -> UIColor {
-    UIColor.cassette(.surfaceRaised)
+    UIColor.cassette(CassetteBannerStyle.background)
   }
 }
 

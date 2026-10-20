@@ -47,9 +47,6 @@ enum AppStoryboard: String {
   }
 
   func segueToUpdate() -> UIViewController { UpdateVC.instantiateFromAppStoryboard() }
-  func segueToLibrarySyncPopup() -> LibrarySyncPopupVC { LibrarySyncPopupVC
-    .instantiateFromAppStoryboard()
-  }
 
   // MARK: create regualar instances
 

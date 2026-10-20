@@ -167,21 +167,21 @@ extension AppDelegate: AlertDisplayable {
     let banner = FloatingNotificationBanner(
       title: title,
       subtitle: subtitle,
-      titleFont: UIFont.cassette(.miniTitle),
-      titleColor: UIColor.cassette(.textPrimary),
-      subtitleFont: UIFont.cassette(.body),
-      subtitleColor: UIColor.cassette(.textPrimary),
+      titleFont: UIFont.cassette(CassetteBannerStyle.titleFont),
+      titleColor: UIColor.cassette(CassetteBannerStyle.textColor),
+      subtitleFont: UIFont.cassette(CassetteBannerStyle.messageFont),
+      subtitleColor: UIColor.cassette(CassetteBannerStyle.textColor),
       style: BannerStyle.from(logType: style),
       colors: AmperfyBannerColors()
     )
 
-    // cassette Patch 040: paint a 1pt ink4 hairline on the banner's
-    // root layer. NotificationBannerSwift's contentView is internal,
-    // but its backgroundColor is forwarded from the banner so the
-    // banner.layer border draws on top of the painted surface and
-    // reads as a true frame around the banner.
-    banner.layer.borderColor = UIColor.cassette(.hairline).cgColor
-    banner.layer.borderWidth = 1.0
+    // cassette Patch 040: a 1pt frame painted on the banner's root layer
+    // (NotificationBannerSwift's contentView is internal; the banner's
+    // backgroundColor is forwarded to it). Wave 3 (BRW-4): the frame carries the
+    // severity, which the shared raised surface had lost: an error is framed in
+    // the danger accent, anything else in the hairline.
+    banner.layer.borderColor = UIColor.cassette(CassetteBannerKind(logType: style).accent).cgColor
+    banner.layer.borderWidth = CassetteBannerStyle.borderWidth
     // 4-second auto-dismiss; tap or swipe-up still dismiss instantly.
     banner.duration = 4
 
@@ -211,7 +211,7 @@ extension AppDelegate: AlertDisplayable {
       bannerPosition: BannerPosition.top,
       on: topView,
       edgeInsets: topViewInset,
-      cornerRadius: 10,
+      cornerRadius: CassetteBannerStyle.cornerRadius,
       shadowOpacity: 0.5,
       shadowBlurRadius: 5
     )

@@ -84,10 +84,10 @@ struct UpdatePasswordView: View {
               Text("Update Password").font(.title2).fontWeight(.bold).padding(.all, 10)
 
               if !successMsg.isEmpty {
-                InfoBannerView(message: successMsg, color: .success)
+                CassetteBannerView(message: successMsg, kind: .success)
               }
               if !errorMsg.isEmpty {
-                InfoBannerView(message: errorMsg, color: .error)
+                CassetteBannerView(message: errorMsg, kind: .error)
               }
               if isValidating {
                 ProgressView("Please wait...")
