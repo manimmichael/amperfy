@@ -457,7 +457,6 @@
 		50C9D7102850759B007F18D0 /* OptionsButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5009863B2208CB650057A1A6 /* OptionsButton.swift */; };
 		50C9D7112850759B007F18D0 /* BasicTableCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50675E6C25F61163005737FD /* BasicTableCell.swift */; };
 		50C9D7142850759B007F18D0 /* Corners.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500EB36725F8B3EB00B4B998 /* Corners.swift */; };
-		50C9D7152850759B007F18D0 /* AnimatedGradientLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500EB36B25F8B42800B4B998 /* AnimatedGradientLayer.swift */; };
 		50C9D717285075E3007F18D0 /* UtilitiesExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C9D716285075E3007F18D0 /* UtilitiesExtensions.swift */; };
 		50C9D71828508005007F18D0 /* CommonString.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5029E0382235A8EC0027F96F /* CommonString.swift */; };
 		50C9D71928508803007F18D0 /* LibraryEntityImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50048FFE2671EFBD00064433 /* LibraryEntityImage.swift */; };
@@ -676,7 +675,6 @@
 		500DA64A2F087221005578C7 /* CarPlayHomeTabExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayHomeTabExtension.swift; sourceTree = "<group>"; };
 		500DA6502F08750A005578C7 /* CarPlayCommonListExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayCommonListExtension.swift; sourceTree = "<group>"; };
 		500EB36725F8B3EB00B4B998 /* Corners.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Corners.swift; sourceTree = "<group>"; };
-		500EB36B25F8B42800B4B998 /* AnimatedGradientLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedGradientLayer.swift; sourceTree = "<group>"; };
 		501171292743F25300B7C08D /* PlayerUtil.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerUtil.swift; sourceTree = "<group>"; };
 		5011712B2744FDD700B7C08D /* PlayQueueHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayQueueHandler.swift; sourceTree = "<group>"; };
 		5011712D27453D1300B7C08D /* PlayQueueHandlerTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayQueueHandlerTest.swift; sourceTree = "<group>"; };
@@ -1307,7 +1305,6 @@
 				5005939028E42F66008C8DF6 /* BasicCollectionCell.swift */,
 				500B7D4821EDD6250083ED6F /* ViewCreator.swift */,
 				500EB36725F8B3EB00B4B998 /* Corners.swift */,
-				500EB36B25F8B42800B4B998 /* AnimatedGradientLayer.swift */,
 				501999DB26806B8600F72D37 /* NotificationBannerCustomization.swift */,
 				50DE29EE2B90642E00ABA78E /* SelectionAccessory.swift */,
 			);
@@ -2709,7 +2706,6 @@
 				CA55E0E2000000010000CAFE /* CassetteTokenReauth.swift in Sources */,
 				507BA5CB2F01CFA800B4EA8B /* OnlineOfflineModeAppEnum.swift in Sources */,
 				50B137022EFC85D700738475 /* AccountAppEntity.swift in Sources */,
-				50C9D7152850759B007F18D0 /* AnimatedGradientLayer.swift in Sources */,
 				5023D9B22BDAA48200310144 /* UpdateVC.swift in Sources */,
 				50AE79C22C20709C0085CBB3 /* LyricsView.swift in Sources */,
 				50CFB59228D483AD00A47D44 /* AddSwipeActionView.swift in Sources */,
