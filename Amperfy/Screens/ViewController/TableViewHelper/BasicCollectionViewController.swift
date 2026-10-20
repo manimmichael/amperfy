@@ -25,7 +25,9 @@ import UIKit
 
 // MARK: - BasicCollectionViewController
 
-class BasicCollectionViewController: UICollectionViewController {
+class BasicCollectionViewController: UICollectionViewController, ListScreenChrome {
+  let appearanceRefresh = ListAppearanceRefresh()
+
   let searchController = UISearchController(searchResultsController: nil)
 
   var containableAtIndexPathCallback: ContainableAtIndexPathCallback?
@@ -43,11 +45,20 @@ class BasicCollectionViewController: UICollectionViewController {
 
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
-    if searchController.searchBar.scopeButtonTitles?.count ?? 0 > 1,
-       appDelegate.storage.settings.user.isOfflineMode {
-      searchController.searchBar.selectedScopeButtonIndex = 1
-    } else {
-      searchController.searchBar.selectedScopeButtonIndex = 0
+    // cassette (BUG-428): refresh on first appearance, after an offline-mode change or a
+    // library-filter change, never on a plain pop back (see ListAppearanceRefresh).
+    let isOfflineMode = appDelegate.storage.settings.user.isOfflineMode
+    switch appearanceRefresh.decide(isOfflineMode: isOfflineMode) {
+    case .none:
+      return
+    case .resetScopeAndRefresh:
+      if searchController.searchBar.scopeButtonTitles?.count ?? 0 > 1, isOfflineMode {
+        searchController.searchBar.selectedScopeButtonIndex = 1
+      } else {
+        searchController.searchBar.selectedScopeButtonIndex = 0
+      }
+    case .refresh:
+      break
     }
     updateSearchResults(for: searchController)
   }

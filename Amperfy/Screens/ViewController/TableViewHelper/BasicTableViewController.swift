@@ -114,7 +114,9 @@ struct SwipeDisplaySettings {
 
 // MARK: - BasicTableViewController
 
-class BasicTableViewController: KeyCommandTableViewController {
+class BasicTableViewController: KeyCommandTableViewController, ListScreenChrome {
+  let appearanceRefresh = ListAppearanceRefresh()
+
   // cassette (BUG-429): swipe buttons are brand surfaces, alternating so neighbours read as
   // separate buttons. They were iOS blue, orange, purple and grey by position. The icons are
   // white bitmaps (SwipeActionSettings), legible on both.
@@ -263,12 +265,20 @@ class BasicTableViewController: KeyCommandTableViewController {
 
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
-
-    if searchController.searchBar.scopeButtonTitles?.count ?? 0 > 1,
-       appDelegate.storage.settings.user.isOfflineMode {
-      searchController.searchBar.selectedScopeButtonIndex = 1
-    } else {
-      searchController.searchBar.selectedScopeButtonIndex = 0
+    // cassette (BUG-428): refresh on first appearance, after an offline-mode change or a
+    // library-filter change, never on a plain pop back (see ListAppearanceRefresh).
+    let isOfflineMode = appDelegate.storage.settings.user.isOfflineMode
+    switch appearanceRefresh.decide(isOfflineMode: isOfflineMode) {
+    case .none:
+      return
+    case .resetScopeAndRefresh:
+      if searchController.searchBar.scopeButtonTitles?.count ?? 0 > 1, isOfflineMode {
+        searchController.searchBar.selectedScopeButtonIndex = 1
+      } else {
+        searchController.searchBar.selectedScopeButtonIndex = 0
+      }
+    case .refresh:
+      break
     }
     updateSearchResults(for: searchController)
   }

@@ -129,24 +129,14 @@ class GenresVC: SingleFetchedResultsTableViewController<GenreMO> {
   }
 
   func updateContentUnavailable() {
-    if fetchedResultsController.fetchedObjects?.count ?? 0 == 0 {
-      if fetchedResultsController.isSearchActive {
-        contentUnavailableConfiguration = UIContentUnavailableConfiguration.search()
-      } else {
-        contentUnavailableConfiguration = emptyContentConfig
-      }
-    } else {
-      contentUnavailableConfiguration = nil
-    }
+    applyEmptyState(emptyContentState, isEmpty: fetchedResultsController.fetchedObjects?.count ?? 0 == 0)
   }
 
-  lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = .genre
-    config.text = "No Genres"
-    config.secondaryText = "Your genres will appear here."
-    return config
-  }()
+  lazy var emptyContentState = ListEmptyState(empty: .cassetteEmpty(
+    image: .genre,
+    title: "No Genres",
+    body: "Your genres will appear here."
+  ))
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)

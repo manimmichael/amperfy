@@ -343,18 +343,11 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       : nil
   }
 
-  private static let emptyPlaylistConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = UIImage(systemName: "music.note.list")
-    config.text = "Empty playlist"
-    config.secondaryText = "Add songs from any artist or album."
-    config.textProperties.font = UIFont.cassette(.sectionTitle)
-    config.textProperties.color = UIColor.cassette(.textPrimary)
-    config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
-    config.secondaryTextProperties.color = UIColor.cassette(.textSecondary)
-    config.imageProperties.tintColor = UIColor.cassette(.textTertiary)
-    return config
-  }()
+  private static let emptyPlaylistConfig: UIContentUnavailableConfiguration = .cassetteEmpty(
+    image: UIImage(systemName: "music.note.list"),
+    title: "Empty playlist",
+    body: "Add songs from any artist or album."
+  )
 
   func refreshBarButtons() {
     var edititingBarButton: UIBarButtonItem? = nil

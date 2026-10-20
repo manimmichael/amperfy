@@ -121,43 +121,29 @@ class PodcastsVC: MultiSourceTableViewController {
   func updateContentUnavailable() {
     switch showType {
     case .podcasts:
-      if podcastsFetchedResultsController.fetchedObjects?.count ?? 0 == 0 {
-        if podcastsFetchedResultsController.isSearchActive {
-          contentUnavailableConfiguration = UIContentUnavailableConfiguration.search()
-        } else {
-          contentUnavailableConfiguration = emptyPodcastConfig
-        }
-      } else {
-        contentUnavailableConfiguration = nil
-      }
+      applyEmptyState(
+        emptyPodcastState,
+        isEmpty: podcastsFetchedResultsController.fetchedObjects?.count ?? 0 == 0
+      )
     case .episodesSortedByReleaseDate:
-      if episodesFetchedResultsController.fetchedObjects?.count ?? 0 == 0 {
-        if episodesFetchedResultsController.isSearchActive {
-          contentUnavailableConfiguration = UIContentUnavailableConfiguration.search()
-        } else {
-          contentUnavailableConfiguration = emptyEpisodeConfig
-        }
-      } else {
-        contentUnavailableConfiguration = nil
-      }
+      applyEmptyState(
+        emptyEpisodeState,
+        isEmpty: episodesFetchedResultsController.fetchedObjects?.count ?? 0 == 0
+      )
     }
   }
 
-  lazy var emptyPodcastConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = .podcast
-    config.text = "No Podcasts"
-    config.secondaryText = "Your podcasts will appear here."
-    return config
-  }()
+  lazy var emptyPodcastState = ListEmptyState(empty: .cassetteEmpty(
+    image: .podcast,
+    title: "No Podcasts",
+    body: "Your podcasts will appear here."
+  ))
 
-  lazy var emptyEpisodeConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = .podcastEpisode
-    config.text = "No Podcast Episodes"
-    config.secondaryText = "Your podcast episodes will appear here."
-    return config
-  }()
+  lazy var emptyEpisodeState = ListEmptyState(empty: .cassetteEmpty(
+    image: .podcastEpisode,
+    title: "No Podcast Episodes",
+    body: "Your podcast episodes will appear here."
+  ))
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)

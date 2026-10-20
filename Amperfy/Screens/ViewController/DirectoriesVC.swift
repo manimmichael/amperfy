@@ -177,27 +177,17 @@ class DirectoriesVC: MultiSourceTableViewController {
   }
 
   func updateContentUnavailable() {
-    if subdirectoriesFetchedResultsController.fetchedObjects?.count ?? 0 == 0,
-       songsFetchedResultsController.fetchedObjects?.count ?? 0 == 0 {
-      if subdirectoriesFetchedResultsController.isSearchActive {
-        contentUnavailableConfiguration = UIContentUnavailableConfiguration.search()
-      } else {
-        contentUnavailableConfiguration = emptyContentConfig
-      }
-      headerView?.isHidden = true
-    } else {
-      contentUnavailableConfiguration = nil
-      headerView?.isHidden = false
-    }
+    let isEmpty = subdirectoriesFetchedResultsController.fetchedObjects?.count ?? 0 == 0 &&
+      songsFetchedResultsController.fetchedObjects?.count ?? 0 == 0
+    applyEmptyState(emptyContentState, isEmpty: isEmpty)
+    headerView?.isHidden = isEmpty
   }
 
-  lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = .folder
-    config.text = "No Directories or Songs"
-    config.secondaryText = "Your directories and songs will appear here."
-    return config
-  }()
+  lazy var emptyContentState = ListEmptyState(empty: .cassetteEmpty(
+    image: .folder,
+    title: "No Directories or Songs",
+    body: "Your directories and songs will appear here."
+  ))
 
   func refreshHeaderView() {
     headerView?.refresh()

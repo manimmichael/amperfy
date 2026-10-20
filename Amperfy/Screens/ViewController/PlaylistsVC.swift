@@ -171,24 +171,14 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
   }
 
   func updateContentUnavailable() {
-    if fetchedResultsController.fetchedObjects?.count ?? 0 == 0 {
-      if fetchedResultsController.isSearchActive {
-        contentUnavailableConfiguration = UIContentUnavailableConfiguration.search()
-      } else {
-        contentUnavailableConfiguration = emptyContentConfig
-      }
-    } else {
-      contentUnavailableConfiguration = nil
-    }
+    applyEmptyState(emptyContentState, isEmpty: fetchedResultsController.fetchedObjects?.count ?? 0 == 0)
   }
 
-  lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = .playlist
-    config.text = "No Playlists"
-    config.secondaryText = "Your playlists will appear here."
-    return config
-  }()
+  lazy var emptyContentState = ListEmptyState(empty: .cassetteEmpty(
+    image: .playlist,
+    title: "No Playlists",
+    body: "Your playlists will appear here."
+  ))
 
   func change(sortType: PlaylistSortType) {
     self.sortType = sortType

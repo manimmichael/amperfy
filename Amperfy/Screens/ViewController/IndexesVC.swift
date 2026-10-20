@@ -65,24 +65,14 @@ class IndexesVC: SingleFetchedResultsTableViewController<DirectoryMO> {
   }
 
   func updateContentUnavailable() {
-    if fetchedResultsController.fetchedObjects?.count ?? 0 == 0 {
-      if fetchedResultsController.isSearchActive {
-        contentUnavailableConfiguration = UIContentUnavailableConfiguration.search()
-      } else {
-        contentUnavailableConfiguration = emptyContentConfig
-      }
-    } else {
-      contentUnavailableConfiguration = nil
-    }
+    applyEmptyState(emptyContentState, isEmpty: fetchedResultsController.fetchedObjects?.count ?? 0 == 0)
   }
 
-  lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = .folder
-    config.text = "No Directories"
-    config.secondaryText = "Your directories will appear here."
-    return config
-  }()
+  lazy var emptyContentState = ListEmptyState(empty: .cassetteEmpty(
+    image: .folder,
+    title: "No Directories",
+    body: "Your directories will appear here."
+  ))
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)

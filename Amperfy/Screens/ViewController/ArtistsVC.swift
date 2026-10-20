@@ -246,42 +246,22 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
     ).fetchOwnedArtistIds()
   }
 
-  /// cassette (BUG-419): the fetch controller reports an active search even for
-  /// an empty query (viewIsAppearing runs updateSearchResults with ""), so an
-  /// idle empty library used to show the "no results" state. Only a typed query
-  /// counts as searching.
-  private var isUserSearching: Bool {
-    !(searchController.searchBar.text ?? "").isEmpty
-  }
-
   func updateContentUnavailable() {
-    if fetchedResultsController.fetchedObjects?.count ?? 0 == 0 {
-      if isUserSearching {
-        contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared.isOnDeviceOnly ?
-          cassetteOnDeviceSearchEmptyConfig : UIContentUnavailableConfiguration.cassetteNoResults()
-      } else {
-        contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared.isOnDeviceOnly ?
-          cassetteOnDeviceEmptyConfig : emptyContentConfig
-      }
-    } else {
-      contentUnavailableConfiguration = nil
-    }
+    applyEmptyState(emptyContentState, isEmpty: fetchedResultsController.fetchedObjects?.count ?? 0 == 0)
   }
 
-  lazy var emptyContentConfig: UIContentUnavailableConfiguration = .cassetteEmpty(
-    image: .artist,
-    title: "No " + filterTitle,
-    body: "Your " + filterTitle.lowercased() + " will appear here."
+  lazy var emptyContentState = ListEmptyState(
+    empty: .cassetteEmpty(
+      image: .artist,
+      title: "No " + filterTitle,
+      body: "Your " + filterTitle.lowercased() + " will appear here."
+    ),
+    followsOnDeviceFilter: true
   )
 
   // cassette Layer 3 Phase 3.2: on-device-only empty states.
   // cassette (BUG-419): copy and type come from the shared factory
   // (UtilitiesExtensions). There is no Server Mode toggle on the phone.
-  lazy var cassetteOnDeviceEmptyConfig: UIContentUnavailableConfiguration = .cassetteOnDeviceEmpty
-
-  lazy var cassetteOnDeviceSearchEmptyConfig: UIContentUnavailableConfiguration =
-    .cassetteOnDeviceNoResults
-
   func applyFilter() {
     switch displayFilter {
     case .all:

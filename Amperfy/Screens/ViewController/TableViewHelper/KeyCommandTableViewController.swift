@@ -27,6 +27,8 @@ class KeyCommandTableViewController: UITableViewController {
   lazy var tableViewKeyCommandsController = TableViewKeyCommandsController(tableView: tableView)
 
   override func viewDidLoad() {
+    // cassette (audit VC-3): ~35 table screens inherit this; it skipped super.
+    super.viewDidLoad()
     guard let sceneTitle else { return }
     setNavBarTitle(title: sceneTitle)
   }

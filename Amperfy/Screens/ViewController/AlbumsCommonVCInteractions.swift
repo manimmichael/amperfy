@@ -176,32 +176,23 @@ class AlbumsCommonVCInteractions {
   private var lastSearchText = ""
 
   func updateContentUnavailable() {
-    if isContentUnavailable {
-      if !lastSearchText.isEmpty {
-        rootVC?.contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared
-          .isOnDeviceOnly ? cassetteOnDeviceSearchEmptyConfig : UIContentUnavailableConfiguration
-          .cassetteNoResults()
-      } else {
-        rootVC?.contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared
-          .isOnDeviceOnly ? cassetteOnDeviceEmptyConfig : emptyContentConfig
-      }
-    } else {
-      rootVC?.contentUnavailableConfiguration = nil
-    }
+    rootVC?.applyEmptyState(
+      emptyContentState,
+      isEmpty: isContentUnavailable,
+      isSearching: !lastSearchText.isEmpty
+    )
   }
 
   // cassette Layer 3 Phase 3.2: on-device-only empty states.
   // cassette (BUG-419): copy and type come from the shared factory
   // (UtilitiesExtensions). There is no Server Mode toggle on the phone.
-  lazy var cassetteOnDeviceEmptyConfig: UIContentUnavailableConfiguration = .cassetteOnDeviceEmpty
-
-  lazy var cassetteOnDeviceSearchEmptyConfig: UIContentUnavailableConfiguration =
-    .cassetteOnDeviceNoResults
-
-  lazy var emptyContentConfig: UIContentUnavailableConfiguration = .cassetteEmpty(
-    image: .album,
-    title: "No " + filterTitle,
-    body: "Your " + filterTitle.lowercased() + " will appear here."
+  lazy var emptyContentState = ListEmptyState(
+    empty: .cassetteEmpty(
+      image: .album,
+      title: "No " + filterTitle,
+      body: "Your " + filterTitle.lowercased() + " will appear here."
+    ),
+    followsOnDeviceFilter: true
   )
 
   func applyFilter() {
