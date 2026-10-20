@@ -191,8 +191,10 @@ class TabBarVC: UITabBarController {
   /// in the rail are the pill (MiniPlayerView, one capsule in both slots) and
   /// the container constraints below.
   ///
-  /// Kept as a no-op so the seven scroll call sites, three of them in files
-  /// with uncommitted founder work, need no edit; remove it with them.
+  /// Kept as a no-op only for the two scroll call sites left in files with
+  /// uncommitted founder work (ArtistDetailVC, HomeVC); the other five were
+  /// removed in Wave 0 of the 2026-10-20 design-system audit. Remove this with
+  /// those two once that work lands.
   func cassetteUpdateMinimizeForScroll(_ scrollView: UIScrollView) {}
 
   private func mainContent() -> UIView {
