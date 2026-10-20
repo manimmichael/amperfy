@@ -17,7 +17,6 @@
             <subviews>
                 <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Label" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="j9L-PC-uFW" customClass="MarqueeLabel" customModule="MarqueeLabel">
                     <rect key="frame" x="16" y="24" width="268" height="20.5"/>
-                    <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="17"/>
                     <nil key="highlightedColor"/>
                 </label>
                 <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="it5-EQ-Gry">
@@ -25,7 +24,6 @@
                     <constraints>
                         <constraint firstAttribute="width" constant="75" id="IsE-8X-Z9x"/>
                     </constraints>
-                    <color key="tintColor" systemColor="labelColor"/>
                     <state key="normal" title="Button"/>
                     <buttonConfiguration key="configuration" style="gray" title="Clear" cornerStyle="medium" buttonSize="small"/>
                     <connections>

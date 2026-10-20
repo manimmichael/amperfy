@@ -30,12 +30,8 @@
                         <constraints>
                             <constraint firstAttribute="height" constant="22" id="K5Y-Cl-6p5"/>
                         </constraints>
-                        <fontDescription key="fontDescription" type="system" pointSize="17"/>
                         <nil key="textColor"/>
                         <nil key="highlightedColor"/>
-                        <variation key="userInterfaceIdiom=mac-widthClass=regular">
-                            <fontDescription key="fontDescription" type="system" pointSize="14"/>
-                        </variation>
                     </label>
                 </subviews>
                 <constraints>

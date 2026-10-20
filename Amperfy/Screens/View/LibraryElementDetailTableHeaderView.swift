@@ -303,6 +303,9 @@ class LibraryElementDetailTableHeaderView: UIView {
       systemImage: CassetteIcon.shuffle.symbolName,
       isHidden: configuration.isShuffleHidden
     )
+    // Wave 4 (BUG-427): the info line took its font and grey from the XIB; code only set
+    // the text.
+    CassetteIBStyle.label(infoLabel, .metadata, .textSecondary)
     setupProminentLayoutIfNeeded()
     activate()
     registerPlayerStateNotificationsIfNeeded()
@@ -347,6 +350,8 @@ class LibraryElementDetailTableHeaderView: UIView {
       weight: .semibold
     )
     button.configuration = config
+    // Wave 4: the XIB carried a secondarySystemFill background under the configuration.
+    button.backgroundColor = .clear
     button.isHidden = isHidden
   }
 

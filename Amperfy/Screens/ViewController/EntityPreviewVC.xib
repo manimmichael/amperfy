@@ -47,7 +47,6 @@
                                             <constraints>
                                                 <constraint firstAttribute="height" constant="24" id="iEo-4j-Wza"/>
                                             </constraints>
-                                            <fontDescription key="fontDescription" type="system" pointSize="19"/>
                                             <nil key="textColor"/>
                                             <nil key="highlightedColor"/>
                                         </label>
@@ -56,8 +55,6 @@
                                             <constraints>
                                                 <constraint firstAttribute="height" constant="20" id="el7-Wu-jhv"/>
                                             </constraints>
-                                            <fontDescription key="fontDescription" type="system" pointSize="17"/>
-                                            <color key="textColor" systemColor="tintColor"/>
                                             <nil key="highlightedColor"/>
                                         </label>
                                         <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Info" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="LoZ-YK-k9e" userLabel="Info" customClass="MarqueeLabel" customModule="MarqueeLabel">
@@ -65,8 +62,6 @@
                                             <constraints>
                                                 <constraint firstAttribute="height" constant="20" id="JoK-0R-sub"/>
                                             </constraints>
-                                            <fontDescription key="fontDescription" type="system" pointSize="16"/>
-                                            <color key="textColor" systemColor="secondaryLabelColor"/>
                                             <nil key="highlightedColor"/>
                                         </label>
                                     </subviews>
@@ -82,7 +77,6 @@
                         </view>
                         <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="right" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="its-Kk-hqs">
                             <rect key="frame" x="744" y="32.5" width="16" height="16.5"/>
-                            <color key="tintColor" systemColor="secondaryLabelColor"/>
                             <constraints>
                                 <constraint firstAttribute="width" constant="16" id="9Rs-PT-wAV"/>
                             </constraints>

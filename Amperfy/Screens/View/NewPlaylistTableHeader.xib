@@ -19,7 +19,6 @@
                     <constraints>
                         <constraint firstAttribute="height" constant="30" id="Tah-W6-ZOT"/>
                     </constraints>
-                    <fontDescription key="fontDescription" type="system" pointSize="14"/>
                     <textInputTraits key="textInputTraits"/>
                 </textField>
                 <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="aNt-bX-pEf">

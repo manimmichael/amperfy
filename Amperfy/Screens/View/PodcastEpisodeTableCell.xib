@@ -31,13 +31,11 @@
                         <constraints>
                             <constraint firstAttribute="height" constant="42" id="K5Y-Cl-6p5"/>
                         </constraints>
-                        <fontDescription key="fontDescription" type="system" pointSize="17"/>
                         <nil key="textColor"/>
                         <nil key="highlightedColor"/>
                     </label>
                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="5. May - Cached " textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="g7h-Ca-aH3" userLabel="Info Label">
                         <rect key="frame" x="84" y="13" width="97" height="15"/>
-                        <fontDescription key="fontDescription" type="system" pointSize="12"/>
                         <nil key="textColor"/>
                         <nil key="highlightedColor"/>
                     </label>
@@ -60,10 +58,7 @@
                             <constraint firstAttribute="height" constant="25" id="6Sd-nA-zgD"/>
                             <constraint firstAttribute="width" secondItem="ulS-LU-PlW" secondAttribute="height" multiplier="1:1" id="ccQ-ba-Jr0"/>
                         </constraints>
-                        <fontDescription key="fontDescription" type="system" pointSize="18"/>
-                        <color key="tintColor" systemColor="labelColor"/>
                         <state key="normal">
-                            <color key="titleColor" systemColor="secondaryLabelColor"/>
                             <imageReference key="image" image="ellipsis" catalog="system" symbolScale="medium"/>
                         </state>
                     </button>
@@ -79,7 +74,6 @@
                             <constraint firstAttribute="height" constant="50" id="NW6-He-BbA"/>
                         </constraints>
                         <string key="text">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</string>
-                        <fontDescription key="fontDescription" type="system" pointSize="13"/>
                         <nil key="textColor"/>
                         <nil key="highlightedColor"/>
                     </label>
@@ -88,13 +82,10 @@
                         <constraints>
                             <constraint firstAttribute="height" constant="16" id="bAn-R3-YQV"/>
                         </constraints>
-                        <fontDescription key="fontDescription" type="system" pointSize="12"/>
-                        <color key="textColor" systemColor="secondaryLabelColor"/>
                         <nil key="highlightedColor"/>
                     </label>
                     <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="arrow.down.circle" catalog="system" translatesAutoresizingMaskIntoConstraints="NO" id="iVr-ga-N6L" userLabel="Cache Icon">
                         <rect key="frame" x="275" y="134" width="20" height="19"/>
-                        <color key="tintColor" systemColor="labelColor"/>
                         <constraints>
                             <constraint firstAttribute="width" secondItem="iVr-ga-N6L" secondAttribute="height" multiplier="1:1" id="KsA-iR-iOB"/>
                             <constraint firstAttribute="width" secondItem="iVr-ga-N6L" secondAttribute="height" multiplier="1:1" id="Nw7-GZ-mvu"/>
@@ -107,7 +98,6 @@
                             <constraint firstAttribute="width" secondItem="yxO-LC-wiR" secondAttribute="height" multiplier="1:1" id="5Eu-fJ-yAO"/>
                             <constraint firstAttribute="width" secondItem="yxO-LC-wiR" secondAttribute="height" multiplier="1:1" id="QfP-kA-mw1"/>
                         </constraints>
-                        <color key="tintColor" systemColor="labelColor"/>
                         <state key="normal">
                             <imageReference key="image" image="info.circle" catalog="system" symbolScale="medium"/>
                         </state>

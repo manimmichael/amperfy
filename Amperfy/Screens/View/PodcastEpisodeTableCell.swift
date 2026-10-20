@@ -69,6 +69,10 @@ class PodcastEpisodeTableCell: BasicTableCell {
       descriptionLabel.textColor = UIColor.cassette(.textSecondary)
       playProgressLabel.font = UIFont.cassette(.caption)
       playProgressLabel.textColor = UIColor.cassette(.textSecondary)
+      // Wave 4: these took system tints and an 18pt system title from the XIB.
+      CassetteIBStyle.plainButton(optionsButton, .textSecondary)
+      CassetteIBStyle.plainButton(showDescriptionButton, .textSecondary)
+      cacheIconImage.tintColor = UIColor.cassette(.textSecondary)
       contentView.backgroundColor = UIColor.cassette(.surfaceBase)
       backgroundColor = UIColor.cassette(.surfaceBase)
     }

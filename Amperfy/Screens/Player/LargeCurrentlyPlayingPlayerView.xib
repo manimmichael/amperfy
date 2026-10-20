@@ -58,7 +58,6 @@
                                         <constraint firstAttribute="width" constant="30" id="Tlp-KE-s4R"/>
                                         <constraint firstAttribute="width" secondItem="5ux-aQ-e6U" secondAttribute="height" multiplier="1:1" id="jIm-CJ-VPw"/>
                                     </constraints>
-                                    <color key="tintColor" systemColor="systemRedColor"/>
                                     <state key="normal" title="Button"/>
                                     <buttonConfiguration key="configuration" style="gray" buttonSize="small">
                                         <imageReference key="image" image="heart" catalog="system" symbolScale="medium"/>
@@ -72,7 +71,6 @@
                                         <constraint firstAttribute="width" secondItem="cYG-VG-BvQ" secondAttribute="height" multiplier="1:1" id="ZSC-6q-zSd"/>
                                         <constraint firstAttribute="width" secondItem="cYG-VG-BvQ" secondAttribute="height" multiplier="1:1" id="p7j-6y-hXb"/>
                                     </constraints>
-                                    <color key="tintColor" systemColor="labelColor"/>
                                     <state key="normal" title="Button"/>
                                     <buttonConfiguration key="configuration" style="gray" buttonSize="small">
                                         <imageReference key="image" image="ellipsis" catalog="system" symbolScale="medium"/>
@@ -90,12 +88,8 @@
                                                     <constraints>
                                                         <constraint firstAttribute="height" constant="34" id="aa9-9V-1Ow"/>
                                                     </constraints>
-                                                    <fontDescription key="fontDescription" type="boldSystem" pointSize="17"/>
                                                     <nil key="textColor"/>
                                                     <nil key="highlightedColor"/>
-                                                    <variation key="widthClass=regular">
-                                                        <fontDescription key="fontDescription" type="boldSystem" pointSize="19"/>
-                                                    </variation>
                                                 </label>
                                                 <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="eao-om-lSP" userLabel="Title Button">
                                                     <rect key="frame" x="0.0" y="0.0" width="265" height="20"/>
@@ -123,12 +117,8 @@
                                                     <constraints>
                                                         <constraint firstAttribute="height" constant="25.5" id="bvg-8g-TC9"/>
                                                     </constraints>
-                                                    <fontDescription key="fontDescription" type="system" pointSize="16"/>
                                                     <nil key="textColor"/>
                                                     <nil key="highlightedColor"/>
-                                                    <variation key="widthClass=regular">
-                                                        <fontDescription key="fontDescription" type="system" pointSize="17"/>
-                                                    </variation>
                                                 </label>
                                                 <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="left" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="kjh-GT-d1I" userLabel="Album Button">
                                                     <rect key="frame" x="0.0" y="0.0" width="265" height="25.5"/>
@@ -156,7 +146,6 @@
                                                     <constraints>
                                                         <constraint firstAttribute="height" constant="20" id="jBM-9F-b3k"/>
                                                     </constraints>
-                                                    <fontDescription key="fontDescription" type="system" pointSize="17"/>
                                                     <nil key="highlightedColor"/>
                                                 </label>
                                                 <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="7d2-4h-d9h" userLabel="Artist Button">

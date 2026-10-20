@@ -41,10 +41,26 @@ class UpdateVC: UIViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    applyCassetteStyle()
     progressBar.setProgress(0.0, animated: true)
     progressInfo.text = ""
     progressLabel.text = String(format: "%.1f", 0.0) + "%"
     appDelegate.isKeepScreenAlive = true
+  }
+
+  /// Wave 4: the storyboard holds layout only. This screen was stock iOS: system type in
+  /// white, a pure black root and a system-blue button.
+  private func applyCassetteStyle() {
+    CassetteIBStyle.screen(view)
+    CassetteIBStyle.label(progressLabel, .metadata, .textSecondary)
+    CassetteIBStyle.label(progressInfo, .body, .textSecondary)
+    CassetteIBStyle.progress(progressBar)
+    CassetteIBStyle.spinner(activitySpinner)
+    // The heading ("Syncing" / "Updating") has no outlet.
+    for label in view.cassetteStandaloneLabels
+      where label !== progressLabel && label !== progressInfo {
+      CassetteIBStyle.label(label, .heroTitle, .textPrimary)
+    }
   }
 
   override func viewDidAppear(_ animated: Bool) {

@@ -41,7 +41,7 @@ class PlainDetailsVC: UIViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    view.setBackgroundBlur(style: .prominent)
+    applyCassetteStyle()
     detailsTextView.textAlignment = .center
 
     if let presentationController = presentationController as? UISheetPresentationController {
@@ -51,6 +51,17 @@ class PlainDetailsVC: UIViewController {
       if traitCollection.horizontalSizeClass == .compact {
         presentationController.detents.append(.medium())
       }
+    }
+  }
+
+  /// Wave 4: the XIB holds layout only. The sheet was a stock system blur with system type.
+  private func applyCassetteStyle() {
+    CassetteIBStyle.sheet(view)
+    CassetteIBStyle.label(headerLabel, .sectionTitle, .textPrimary)
+    CassetteIBStyle.textView(detailsTextView, .body, .textPrimary)
+    // The close button has no outlet.
+    for button in view.cassetteAllSubviews.compactMap({ $0 as? UIButton }) {
+      CassetteIBStyle.plainButton(button, .textSecondary)
     }
   }
 

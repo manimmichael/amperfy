@@ -140,6 +140,8 @@ class PlayerControlView: UIView {
     timeSlider.minimumTrackTintColor = UIColor.cassette(.accentProgress)
     timeSlider.maximumTrackTintColor = UIColor.cassette(.hairline)
     timeSlider.thumbTintColor = UIColor.cassette(.accentProgress)
+    // Wave 4: the radio LIVE marker took boldSystem 14 from the XIB.
+    CassetteIBStyle.label(liveLabel, .sectionLabel, .textSecondary)
     // cassette polish Part 1: drop the "MP3 2658 kbps" bitrate strip beneath the
     // scrubber. Removed from the hierarchy so the time row reads clean; the
     // refresh path keeps these as optionals and no longer un-hides them.

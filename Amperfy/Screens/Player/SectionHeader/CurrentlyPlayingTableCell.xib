@@ -47,12 +47,8 @@
                                 <variation key="widthClass=regular" constant="22"/>
                             </constraint>
                         </constraints>
-                        <fontDescription key="fontDescription" type="boldSystem" pointSize="17"/>
                         <nil key="textColor"/>
                         <nil key="highlightedColor"/>
-                        <variation key="widthClass=regular">
-                            <fontDescription key="fontDescription" type="boldSystem" pointSize="19"/>
-                        </variation>
                     </label>
                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="xdv-qI-JIo" userLabel="Artist Name Button">
                         <rect key="frame" x="96" y="47" width="187" height="20"/>
@@ -67,11 +63,7 @@
                                 <variation key="widthClass=regular" constant="22"/>
                             </constraint>
                         </constraints>
-                        <fontDescription key="fontDescription" type="system" pointSize="16"/>
                         <nil key="highlightedColor"/>
-                        <variation key="widthClass=regular">
-                            <fontDescription key="fontDescription" type="system" pointSize="17"/>
-                        </variation>
                     </label>
                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" preferredBehavioralStyle="pad" translatesAutoresizingMaskIntoConstraints="NO" id="FXO-Ca-aCo" userLabel="Favorite">
                         <rect key="frame" x="291" y="32" width="30" height="30"/>
@@ -79,7 +71,6 @@
                             <constraint firstAttribute="width" secondItem="FXO-Ca-aCo" secondAttribute="height" multiplier="1:1" id="idH-Fa-pXm"/>
                             <constraint firstAttribute="width" constant="30" id="oSn-dK-3Qt"/>
                         </constraints>
-                        <color key="tintColor" systemColor="systemRedColor"/>
                         <state key="normal" title="Button"/>
                         <buttonConfiguration key="configuration" style="gray" buttonSize="small">
                             <imageReference key="image" image="heart" catalog="system" symbolScale="medium"/>
@@ -93,7 +84,6 @@
                             <constraint firstAttribute="width" secondItem="awQ-BG-bfX" secondAttribute="height" multiplier="1:1" id="lKy-Ga-jMH"/>
                             <constraint firstAttribute="width" constant="30" id="ydC-a9-gOI"/>
                         </constraints>
-                        <color key="tintColor" systemColor="labelColor"/>
                         <state key="normal" title="Button"/>
                         <buttonConfiguration key="configuration" style="gray" buttonSize="small">
                             <imageReference key="image" image="ellipsis" catalog="system" symbolScale="medium"/>
