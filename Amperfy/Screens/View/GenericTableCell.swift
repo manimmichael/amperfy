@@ -113,4 +113,14 @@ class GenericTableCell: BasicTableCell {
     infoLabel.alpha = ownershipAlpha
     entityImage.alpha = ownershipAlpha
   }
+
+  /// cassette (BUG-417): the XIB carries 28 size-class variations, most of them
+  /// system fonts; UIKit re-applies them on a trait change and the row drops
+  /// back into SF Pro until the next bind. Re-stamp the type scale every time.
+  override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    titleLabel.font = UIFont.cassette(.rowTitle)
+    subtitleLabel.font = UIFont.cassette(.metadata)
+    infoLabel.font = UIFont.cassette(.caption)
+  }
 }

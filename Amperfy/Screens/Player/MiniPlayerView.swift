@@ -689,12 +689,24 @@ class MiniPlayerView: UIView {
 
     addSubview(miniPlayerGotTouchedView)
     addSubview(artworkImage)
-    addSubview(titleLabel)
-    addSubview(subtitleLabel)
+    // cassette (BUG-420): title + artist in a stack with their own intrinsic
+    // heights. The old layout split the pill on the play button's centre line
+    // (8pt..centre for an 18pt face, centre..bottom-11 for a 14pt one), which
+    // cut every descender: "My" read as "Mv", "playing" as "plavina".
+    let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+    textStack.axis = .vertical
+    textStack.alignment = .fill
+    textStack.spacing = 0
+    textStack.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(textStack)
     addSubview(timeSlider)
     addSubview(liveLabel)
     addSubview(playButton)
     addSubview(nextButton)
+    // cassette (BUG-420): the pill's scrubber is a 3pt track; a thumb at 0:00
+    // hung off the capsule's bottom-left corner. No thumb on the phone pill
+    // (the Mac mini player keeps its own layout).
+    timeSlider.setThumbImage(UIImage(), for: .normal)
 
     NSLayoutConstraint.activate([
       miniPlayerGotTouchedView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 0),
@@ -705,30 +717,31 @@ class MiniPlayerView: UIView {
         constant: -8
       ),
 
-      timeSlider.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+      // cassette (BUG-420): inset by the capsule radius so the track runs
+      // along the pill's straight edge instead of under its curve.
+      timeSlider.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 24),
       timeSlider.heightAnchor.constraint(equalToConstant: 3),
       timeSlider.bottomAnchor.constraint(equalTo: bottomAnchor),
-      timeSlider.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+      timeSlider.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -24),
 
       liveLabel.centerXAnchor.constraint(equalTo: timeSlider.centerXAnchor, constant: 0),
       liveLabel.centerYAnchor.constraint(equalTo: timeSlider.centerYAnchor, constant: 0),
       liveLabel.widthAnchor.constraint(equalToConstant: 0),
       liveLabel.heightAnchor.constraint(equalTo: liveLabel.widthAnchor),
 
+      // cassette (BUG-420): the cover is a square inset 8pt top and bottom and
+      // 14pt from the leading edge, clear of the 24pt capsule curve that used
+      // to shave its corners at 10pt.
       artworkImage.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-      artworkImage.bottomAnchor.constraint(equalTo: timeSlider.topAnchor, constant: -8),
+      artworkImage.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
       artworkImage.widthAnchor.constraint(equalTo: artworkImage.heightAnchor),
-      artworkImage.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+      artworkImage.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
 
-      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-      titleLabel.bottomAnchor.constraint(equalTo: playButton.centerYAnchor),
-      titleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 8),
-      titleLabel.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
-
-      subtitleLabel.topAnchor.constraint(equalTo: playButton.centerYAnchor, constant: 0),
-      subtitleLabel.bottomAnchor.constraint(equalTo: timeSlider.topAnchor, constant: -8),
-      subtitleLabel.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 8),
-      subtitleLabel.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
+      textStack.leadingAnchor.constraint(equalTo: artworkImage.trailingAnchor, constant: 10),
+      textStack.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
+      textStack.centerYAnchor.constraint(equalTo: artworkImage.centerYAnchor),
+      textStack.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 3),
+      textStack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -3),
 
       playButton.centerYAnchor.constraint(equalTo: artworkImage.centerYAnchor, constant: 0),
       playButton.widthAnchor.constraint(equalToConstant: 30),

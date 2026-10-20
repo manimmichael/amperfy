@@ -200,11 +200,13 @@ extension CarPlaySceneDelegate {
           ? image.croppedToCircle().carPlayImage(carTraitCollection: traits)
           : image.carPlayImage(carTraitCollection: traits)
       } else {
+        // cassette (BUG-421): pass the name so a tile without art gets the same
+        // ghost initial the library rows show, not a nameless glyph.
         let generated = UIImage.getGeneratedArtwork(
           theme: getPreference(activeAccountInfo).theme,
           artworkType: item.playableContainable
             .getArtworkCollection(theme: getPreference(activeAccountInfo).theme).defaultArtworkType,
-          name: nil
+          name: item.playableContainable.name
         )
         displayImage = isArtistTile ? generated.croppedToCircle() : generated
       }
@@ -264,7 +266,7 @@ extension CarPlaySceneDelegate {
     let image = UIImage.getGeneratedArtwork(
       theme: theme,
       artworkType: containable.getArtworkCollection(theme: theme).defaultArtworkType,
-      name: nil
+      name: containable.name
     )
     let row = CPListItem(
       text: containable.name,

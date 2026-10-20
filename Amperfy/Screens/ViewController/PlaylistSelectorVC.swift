@@ -49,11 +49,8 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
 
   private var fetchedResultsController: PlaylistSelectorFetchedResultsController!
   private var sortType: PlaylistSortType = .name
-  private var selectMode = AddToPlaylistSelectMode.single
   private var optionsButton: UIBarButtonItem!
   private var closeButton: UIBarButtonItem!
-  private var selectBarButton: UIBarButtonItem!
-  private var addBarButton: UIBarButtonItem!
 
   init(account: Account, itemsToAdd: [Song]) {
     self.itemsToAdd = itemsToAdd
@@ -122,26 +119,11 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
       newPlaylistTableHeaderView.account = account
     }
 
-    navigationController?.setToolbarHidden(false, animated: false)
-    let flexible = UIBarButtonItem(
-      barButtonSystemItem: UIBarButtonItem.SystemItem.flexibleSpace,
-      target: self,
-      action: nil
-    )
-    selectBarButton = UIBarButtonItem(
-      title: "Select",
-      style: .plain,
-      target: self,
-      action: #selector(selectBarButtonPressed)
-    )
-    addBarButton = UIBarButtonItem(
-      image: .plus,
-      style: .plain,
-      target: self,
-      action: #selector(addBarButtonPressed)
-    )
-    toolbarItems = [selectBarButton, flexible, addBarButton]
-    refreshAddButton()
+    // cassette (BUG-422): no toolbar. Upstream floated a "Select" multi-pick
+    // toggle and a "+" commit button at the bottom (iOS 26 renders them as two
+    // glass pills over the list). One tap on a playlist adds and closes; a new
+    // playlist is created from the field at the top. Nothing else to pick.
+    navigationController?.setToolbarHidden(true, animated: false)
   }
 
   func change(sortType: PlaylistSortType) {
@@ -183,13 +165,6 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
     navigationItem.rightBarButtonItems = [closeButton, optionsButton]
   }
 
-  @IBAction
-  func addBarButtonPressed(_ sender: UIBarButtonItem) {
-    addSongsToSelectedPlaylists()
-    refreshAddButton()
-    dismiss()
-  }
-
   func addSongsToSelectedPlaylists() {
     defer { selectedPlaylits.removeAll() }
     guard !selectedPlaylits.isEmpty else { return }
@@ -206,19 +181,6 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
     } catch {
       self.appDelegate.eventLogger.report(topic: "Playlist Add Songs", error: error)
     }}
-  }
-
-  @IBAction
-  func selectBarButtonPressed(_ sender: Any) {
-    selectMode = ((selectMode == .single) ? .multi : .single)
-    selectBarButton.isSelected = (selectMode == .multi)
-    refreshAddButton()
-    selectedPlaylits.removeAll()
-    tableView.reloadData()
-  }
-
-  func refreshAddButton() {
-    addBarButton.isEnabled = !selectedPlaylits.isEmpty
   }
 
   @IBAction
@@ -300,19 +262,7 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
     -> UITableViewCell {
     let cell: PlaylistTableCell = dequeueCell(for: tableView, at: indexPath)
     cell.display(playlist: playlist, rootView: nil)
-
-    if selectMode == .multi {
-      // cassette Patch 051 (Phase F): selection checkmark pins to ink
-      // (marked) / ink3 (unmarked). Matches PlayableTableCell selection
-      // treatment; removes per-account ThemePreference indirection.
-      let isMarked = (selectedPlaylits[playlist] != nil)
-      let img = UIImageView(image: isMarked ? .checkmark : .circle)
-      img.tintColor = isMarked ? CassetteTheme.UIColors.ink : CassetteTheme.UIColors.ink3
-      cell.accessoryView = img
-    } else {
-      cell.accessoryView = nil
-    }
-
+    cell.accessoryView = nil
     return cell
   }
 
@@ -345,12 +295,8 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
       snap.reconfigureItems([playlist.managedObject.objectID])
       diffableDataSource.apply(snap)
 
-      if selectMode == .single {
-        addSongsToSelectedPlaylists()
-        dismiss()
-      } else {
-        refreshAddButton()
-      }
+      addSongsToSelectedPlaylists()
+      dismiss()
     }
 
     if selectedPlaylits[playlist] != nil {

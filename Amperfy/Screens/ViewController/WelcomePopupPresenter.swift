@@ -23,45 +23,20 @@ import Foundation
 
 @MainActor
 class WelcomePopupPresenter: NSObject {
+  /// cassette (BUG-416): the two upstream first-launch popups are gone.
+  ///
+  /// The "Synchronization" explainer told people to use search to sync, which
+  /// the phone has not needed since the cloud sync landed, and the
+  /// "Notifications" pre-prompt named Amperfy and podcast episodes. Local
+  /// notifications only ever carried podcast episodes (see
+  /// `LocalNotificationManager`), and podcasts are not a Cassette surface, so
+  /// the notification authorization is not requested at all: no pre-prompt, no
+  /// system prompt. The "sync info read" flag is still stamped so a phone that
+  /// upgrades from a build that showed the popup looks the same as a fresh
+  /// install to everything downstream.
   func displayInfoPopupsIfNeeded() {
     if !appDelegate.storage.settings.app.isLibrarySyncInfoReadByUser {
-      displaySyncInfo()
-    } else {
-      displayNotificationAuthorization()
-    }
-  }
-
-  private func displaySyncInfo() {
-    let popupVC = AppStoryboard.Main.segueToLibrarySyncPopup()
-    popupVC.setContent(
-      topic: "Synchronization",
-      detailMessage: "Your music collection is constantly updating. Already synced library items are offline available. If library items (artists/albums/songs) are not shown in your collection please use the various search functionalities to synchronize with the server.",
-      customIcon: .refresh,
-      customAnimation: .rotate,
-      onClosePressed: { _ in
-        self.appDelegate.storage.settings.app.isLibrarySyncInfoReadByUser = true
-        self.displayNotificationAuthorization()
-      }
-    )
-    appDelegate.display(popup: popupVC)
-  }
-
-  private func displayNotificationAuthorization() {
-    Task { @MainActor in
-      let hasAuthorizationNotBeenAskedYet = await self.appDelegate.localNotificationManager
-        .hasAuthorizationNotBeenAskedYet()
-      guard hasAuthorizationNotBeenAskedYet else { return }
-      let popupVC = AppStoryboard.Main.segueToLibrarySyncPopup()
-      popupVC.setContent(
-        topic: "Notifications",
-        detailMessage: "Amperfy can inform you about the latest podcast episodes. If you want to, please authorize Amperfy to send you notifications.",
-        customIcon: .bell,
-        customAnimation: .swing,
-        onClosePressed: { _ in
-          self.appDelegate.localNotificationManager.requestAuthorization()
-        }
-      )
-      self.appDelegate.display(popup: popupVC)
+      appDelegate.storage.settings.app.isLibrarySyncInfoReadByUser = true
     }
   }
 }

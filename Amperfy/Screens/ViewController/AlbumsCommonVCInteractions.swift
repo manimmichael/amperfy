@@ -170,12 +170,17 @@ class AlbumsCommonVCInteractions {
     fetchedResultsController.fetchedObjects?.count ?? 0 == 0
   }
 
+  /// cassette (BUG-419): the fetch controller reports an active search even for
+  /// an empty query, so an idle empty library used to show the "no results"
+  /// state. Only a typed query (remembered from updateSearchResults) counts.
+  private var lastSearchText = ""
+
   func updateContentUnavailable() {
     if isContentUnavailable {
-      if fetchedResultsController.isSearchActive {
+      if !lastSearchText.isEmpty {
         rootVC?.contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared
           .isOnDeviceOnly ? cassetteOnDeviceSearchEmptyConfig : UIContentUnavailableConfiguration
-          .search()
+          .cassetteNoResults()
       } else {
         rootVC?.contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared
           .isOnDeviceOnly ? cassetteOnDeviceEmptyConfig : emptyContentConfig
@@ -186,29 +191,18 @@ class AlbumsCommonVCInteractions {
   }
 
   // cassette Layer 3 Phase 3.2: on-device-only empty states.
-  lazy var cassetteOnDeviceEmptyConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = .album
-    config.text = "No music on this phone yet"
-    config.secondaryText = "Send albums from cassette.digital, or turn on Server Mode in Settings."
-    return config
-  }()
+  // cassette (BUG-419): copy and type come from the shared factory
+  // (UtilitiesExtensions). There is no Server Mode toggle on the phone.
+  lazy var cassetteOnDeviceEmptyConfig: UIContentUnavailableConfiguration = .cassetteOnDeviceEmpty
 
-  lazy var cassetteOnDeviceSearchEmptyConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.search()
-    config
-      .secondaryText =
-      "No results on this phone. Enable Server Mode in Settings to search your full catalog."
-    return config
-  }()
+  lazy var cassetteOnDeviceSearchEmptyConfig: UIContentUnavailableConfiguration =
+    .cassetteOnDeviceNoResults
 
-  lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = .album
-    config.text = "No " + filterTitle
-    config.secondaryText = "Your " + filterTitle.lowercased() + " will appear here."
-    return config
-  }()
+  lazy var emptyContentConfig: UIContentUnavailableConfiguration = .cassetteEmpty(
+    image: .album,
+    title: "No " + filterTitle,
+    body: "Your " + filterTitle.lowercased() + " will appear here."
+  )
 
   func applyFilter() {
     switch displayFilter {
@@ -686,6 +680,7 @@ class AlbumsCommonVCInteractions {
 
   func updateSearchResults(for searchController: UISearchController) {
     let searchText = searchController.searchBar.text ?? ""
+    lastSearchText = searchText
     if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 0,
        CassetteLibraryFilterProvider.shared.currentFilter == .everything {
       // Cassette fork — Layer 3 Phase 3.2 (library filtering). Remote Subsonic

@@ -51,7 +51,23 @@ class CurrentlyPlayingTableCell: BasicTableCell {
     favoriteButton.isHidden = true
     titleLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
+    applyCassetteType()
     refresh()
+  }
+
+  /// cassette (BUG-418): the compact now-playing header at the top of the queue
+  /// rendered in the XIB's bold-system 17/19 and system 16/17. Title on the
+  /// display face, artist in mono, both re-stamped on trait change.
+  private func applyCassetteType() {
+    titleLabel.font = UIFont.cassetteDisplay(size: 20, weight: .semibold)
+    titleLabel.textColor = CassetteTheme.UIColors.ink
+    artistLabel.font = UIFont.cassette(.cardSubtitle)
+    artistLabel.textColor = CassetteTheme.UIColors.ink2
+  }
+
+  override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    applyCassetteType()
   }
 
   func refresh() {

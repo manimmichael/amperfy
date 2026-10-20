@@ -124,11 +124,19 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
     ).fetchAllSubsonicTrackIds()
   }
 
+  /// cassette (BUG-419): the fetch controller reports an active search even for
+  /// an empty query (viewIsAppearing runs updateSearchResults with ""), so an
+  /// idle empty library used to show the "no results" state. Only a typed query
+  /// counts as searching.
+  private var isUserSearching: Bool {
+    !(searchController.searchBar.text ?? "").isEmpty
+  }
+
   func updateContentUnavailable() {
     if fetchedResultsController.fetchedObjects?.count ?? 0 == 0 {
-      if fetchedResultsController.isSearchActive {
+      if isUserSearching {
         contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared.isOnDeviceOnly ?
-          cassetteOnDeviceSearchEmptyConfig : UIContentUnavailableConfiguration.search()
+          cassetteOnDeviceSearchEmptyConfig : UIContentUnavailableConfiguration.cassetteNoResults()
       } else {
         contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared.isOnDeviceOnly ?
           cassetteOnDeviceEmptyConfig : emptyContentConfig
@@ -140,31 +148,20 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
     }
   }
 
-  lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = .musicalNotes
-    config.text = "No Songs"
-    config.secondaryText = "Your songs will appear here."
-    return config
-  }()
+  lazy var emptyContentConfig: UIContentUnavailableConfiguration = .cassetteEmpty(
+    image: .musicalNotes,
+    title: "No Songs",
+    body: "Your songs will appear here."
+  )
 
   // cassette Layer 3 Phase 3.2: on-device-only empty states. Steer the user to
   // sending music from cassette.digital or enabling Server Mode.
-  lazy var cassetteOnDeviceEmptyConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = .musicalNotes
-    config.text = "No music on this phone yet"
-    config.secondaryText = "Send albums from cassette.digital, or turn on Server Mode in Settings."
-    return config
-  }()
+  // cassette (BUG-419): copy and type come from the shared factory
+  // (UtilitiesExtensions). There is no Server Mode toggle on the phone.
+  lazy var cassetteOnDeviceEmptyConfig: UIContentUnavailableConfiguration = .cassetteOnDeviceEmpty
 
-  lazy var cassetteOnDeviceSearchEmptyConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.search()
-    config
-      .secondaryText =
-      "No results on this phone. Enable Server Mode in Settings to search your full catalog."
-    return config
-  }()
+  lazy var cassetteOnDeviceSearchEmptyConfig: UIContentUnavailableConfiguration =
+    .cassetteOnDeviceNoResults
 
   func applyFilter() {
     switch displayFilter {

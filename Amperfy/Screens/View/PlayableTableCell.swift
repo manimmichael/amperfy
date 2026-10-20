@@ -257,13 +257,14 @@ class PlayableTableCell: BasicTableCell {
       // cassette Patch 032: route through the canonical scale.
       // Title is rowTitle (16pt semibold display); artist/duration/track
       // number all collapse onto metadata (12pt medium mono).
-      titleLabel.font = UIFont.cassette(.rowTitle)
+      // cassette (BUG-417): the fonts live in applyCassetteType() so they can
+      // be re-stamped whenever UIKit re-applies the XIB's size-class
+      // variations (a context-menu preview does); colours stay here because
+      // applyCassetteOwnershipDimming() owns them after bind.
+      applyCassetteType()
       titleLabel.textColor = CassetteTheme.UIColors.ink
-      artistLabel.font = UIFont.cassette(.metadata)
       artistLabel.textColor = CassetteTheme.UIColors.ink2
-      durationLabel.font = UIFont.cassette(.metadata)
       durationLabel.textColor = CassetteTheme.UIColors.ink2
-      trackNumberLabel.font = UIFont.cassette(.metadata)
       trackNumberLabel.textColor = CassetteTheme.UIColors.ink3
       contentView.backgroundColor = CassetteTheme.UIColors.bg
       backgroundColor = CassetteTheme.UIColors.bg
@@ -776,11 +777,24 @@ class PlayableTableCell: BasicTableCell {
     }
   }
 
+  /// cassette (BUG-417): the XIB declares every label as a system font with
+  /// size-class variations. UIKit re-applies those variations on a trait
+  /// change (the context-menu preview is one), which put a row back into SF Pro
+  /// until it was reused. Fonts are stamped here and re-stamped on every trait
+  /// change, the way AlbumCollectionCell already does.
+  private func applyCassetteType() {
+    titleLabel.font = UIFont.cassette(.rowTitle)
+    artistLabel.font = UIFont.cassette(.metadata)
+    durationLabel.font = UIFont.cassette(.metadata)
+    trackNumberLabel.font = UIFont.cassette(.metadata)
+    titleLabel.adjustsFontForContentSizeCategory = false
+    artistLabel.adjustsFontForContentSizeCategory = false
+  }
+
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-    // cassette Patch 054 (Phase I): PlayIndicator deleted; nothing to restyle
-    // on trait collection changes (waveform symbol's tint is locked to
-    // orange and the symbol configuration is static).
     super.traitCollectionDidChange(previousTraitCollection)
+    // cassette (BUG-417): re-stamp the type after the nib's variations run.
+    applyCassetteType()
   }
 
   #if targetEnvironment(macCatalyst) // ok

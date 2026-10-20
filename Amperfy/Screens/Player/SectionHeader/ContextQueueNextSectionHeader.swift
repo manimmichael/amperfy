@@ -59,7 +59,25 @@ class ContextQueueNextSectionHeader: UIView {
   func prepare(toWorkOnRootView: PopupPlayerVC?) {
     rootView = toWorkOnRootView
     contextNameLabel.applyAmperfyStyle()
+    applyCassetteType()
     refresh()
+  }
+
+  /// cassette (BUG-418): the XIB carries system fonts (semibold 17 / 14). The
+  /// queue name is a section label like every other list header on the phone
+  /// (13pt display, uppercase, ink2); the context name is a row title in ink.
+  /// Re-stamped on trait change because the nib's variations put SF back.
+  private func applyCassetteType() {
+    queueNameLabel.font = UIFont.cassette(.sectionLabel)
+    queueNameLabel.textColor = CassetteTheme.UIColors.ink2
+    queueNameLabel.text = "NEXT FROM"
+    contextNameLabel.font = UIFont.cassette(.rowTitle)
+    contextNameLabel.textColor = CassetteTheme.UIColors.ink
+  }
+
+  override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    applyCassetteType()
   }
 
   func refresh() {

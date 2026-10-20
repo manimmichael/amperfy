@@ -54,6 +54,27 @@ final class HomeEditorVC: UITableViewController {
     tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
     title = "Home Preferences"
     isEditing = true
+    // cassette: the editor was an untouched system inset-grouped list (cool
+    // grey cells, SF Pro, system headers) under a Barlow title. Same deck as
+    // every other list: bg behind, bg2 cells, ink rows, section labels.
+    tableView.backgroundColor = CassetteTheme.UIColors.bg
+    tableView.separatorColor = CassetteTheme.UIColors.ink4
+    tableView.sectionHeaderTopPadding = CassetteTheme.Spacing.sm
+  }
+
+  override func tableView(
+    _ tableView: UITableView,
+    willDisplayHeaderView view: UIView,
+    forSection section: Int
+  ) {
+    guard let header = view as? UITableViewHeaderFooterView else { return }
+    var config = header.defaultContentConfiguration()
+    config.text = header.textLabel?.text ?? config.text
+    config.textProperties.font = UIFont.cassette(.sectionLabel)
+    config.textProperties.color = CassetteTheme.UIColors.ink2
+    config.textProperties.transform = .uppercase
+    header.contentConfiguration = config
+    header.contentView.backgroundColor = .clear
   }
 
   @objc
@@ -99,7 +120,13 @@ final class HomeEditorVC: UITableViewController {
     -> UITableViewCell {
     let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
     let s = sectionFor(indexPath: indexPath)
-    cell.textLabel?.text = s.title
+    var content = cell.defaultContentConfiguration()
+    content.text = s.title
+    content.textProperties.font = UIFont.cassette(.rowTitle)
+    content.textProperties.color = CassetteTheme.UIColors.ink
+    cell.contentConfiguration = content
+    cell.backgroundColor = CassetteTheme.UIColors.bg2
+    cell.tintColor = CassetteTheme.UIColors.ink2
     cell.accessoryType = .none
     return cell
   }

@@ -491,3 +491,69 @@ extension UIViewController {
     )
   }
 }
+
+// MARK: - UIContentUnavailableConfiguration
+
+/// cassette (BUG-419): one factory for every empty state on the phone. The
+/// native container stays (it handles layout, scrolling and accessibility); the
+/// type and the ink tiers come from here, so a Barlow title is never paired with
+/// a system-footnote body again and the copy lives in one place.
+extension UIContentUnavailableConfiguration {
+  /// Stamps the Cassette type scale and ink tiers onto any configuration.
+  mutating func applyCassetteType() {
+    textProperties.font = UIFont.cassette(.sectionTitle)
+    textProperties.color = CassetteTheme.UIColors.ink
+    secondaryTextProperties.font = UIFont.cassette(.body)
+    secondaryTextProperties.color = CassetteTheme.UIColors.ink2
+    imageProperties.tintColor = CassetteTheme.UIColors.ink3
+  }
+
+  /// An "empty" state: nothing to list yet.
+  static func cassetteEmpty(
+    image: UIImage?,
+    title: String,
+    body: String?
+  )
+    -> UIContentUnavailableConfiguration {
+    var config = UIContentUnavailableConfiguration.empty()
+    config.image = image
+    config.text = title
+    config.secondaryText = body
+    config.applyCassetteType()
+    return config
+  }
+
+  /// A "no results" state for a search.
+  static func cassetteNoResults(
+    title: String = "No results",
+    body: String? = "Try a different artist, album, or song."
+  )
+    -> UIContentUnavailableConfiguration {
+    var config = UIContentUnavailableConfiguration.search()
+    config.text = title
+    config.secondaryText = body
+    config.applyCassetteType()
+    return config
+  }
+
+  /// The on-device library is empty: nothing has been sent to this phone yet.
+  /// There is no Server Mode toggle on the phone, so the copy never points at
+  /// one; music arrives from the web.
+  @MainActor
+  static var cassetteOnDeviceEmpty: UIContentUnavailableConfiguration {
+    cassetteEmpty(
+      image: .musicalNotes,
+      title: "No music on this phone yet",
+      body: "Add music to your phone from Cassette on the web and it arrives here."
+    )
+  }
+
+  /// A search of the on-device library found nothing.
+  @MainActor
+  static var cassetteOnDeviceNoResults: UIContentUnavailableConfiguration {
+    cassetteNoResults(
+      title: "No results on this phone",
+      body: "Only music on this phone is searched. Add more from Cassette on the web."
+    )
+  }
+}

@@ -726,32 +726,35 @@ extension UIImage {
     return image
   }
 
+  /// cassette (BUG-421): CarPlay album rows get their track number as the row
+  /// IMAGE (CPListItem has no number slot), so it is drawn on the same square a
+  /// cover fills, in the display face, in white. White because CarPlay darkens
+  /// every row background so its white row text stays legible; the upstream
+  /// light-grey Helvetica read as a faded smudge next to the car's own text.
   public static func numberToImage(number: Int) -> UIImage {
-    let fontSize = 40.0
-    let textFont = UIFont(name: "Helvetica Bold", size: fontSize)!
-
-    let image = createEmptyImage(with: CGSize(width: 100.0, height: 100.0)) ?? UIImage()
-    let scale = UITraitCollection.current.displayScale
-    UIGraphicsBeginImageContextWithOptions(image.size, false, scale)
-
+    let side: CGFloat = 120
+    let size = CGSize(width: side, height: side)
     let paragraphStyle = NSMutableParagraphStyle()
     paragraphStyle.alignment = .center
-
-    let textFontAttributes = [
-      NSAttributedString.Key.font: textFont,
-      NSAttributedString.Key.paragraphStyle: paragraphStyle,
-      NSAttributedString.Key.foregroundColor: UIColor.lightGray,
-    ] as [NSAttributedString.Key: Any]
-    image.draw(in: CGRect(origin: CGPoint.zero, size: image.size))
-
-    let textPoint = CGPoint(x: 0.0, y: 50.0 - (fontSize / 2))
-    let rect = CGRect(origin: textPoint, size: image.size)
-    number.description.draw(in: rect, withAttributes: textFontAttributes)
-
-    let newImage = UIGraphicsGetImageFromCurrentImageContext()
-    UIGraphicsEndImageContext()
-
-    return newImage!
+    let attributes: [NSAttributedString.Key: Any] = [
+      .font: UIFont.cassetteDisplay(size: 64, weight: .bold),
+      .paragraphStyle: paragraphStyle,
+      .foregroundColor: UIColor.white,
+    ]
+    let text = number.description as NSString
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = UITraitCollection.current.displayScale
+    format.opaque = false
+    return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+      let textHeight = text.boundingRect(
+        with: size,
+        options: [.usesLineFragmentOrigin, .usesFontLeading],
+        attributes: attributes,
+        context: nil
+      ).height
+      let rect = CGRect(x: 0, y: (side - textHeight) / 2, width: side, height: textHeight)
+      text.draw(in: rect, withAttributes: attributes)
+    }
   }
 
   public func styleForNavigationBar(pointSize: CGFloat, tintColor: UIColor) -> UIImage {

@@ -41,13 +41,24 @@ class PlaylistTableCell: BasicTableCell {
     // 17pt -> 16pt rowTitle to match track / generic / album-grid rows;
     // info line stays 12pt mono but now flows through .metadata.
     MainActor.assumeIsolated {
-      nameLabel.font = UIFont.cassette(.rowTitle)
+      applyCassetteType()
       nameLabel.textColor = CassetteTheme.UIColors.ink
-      infoLabel.font = UIFont.cassette(.metadata)
       infoLabel.textColor = CassetteTheme.UIColors.ink2
       contentView.backgroundColor = CassetteTheme.UIColors.bg
       backgroundColor = CassetteTheme.UIColors.bg
     }
+  }
+
+  /// cassette (BUG-417): fonts are re-stamped on every trait change because the
+  /// XIB's size-class variations put system fonts back.
+  private func applyCassetteType() {
+    nameLabel.font = UIFont.cassette(.rowTitle)
+    infoLabel.font = UIFont.cassette(.metadata)
+  }
+
+  override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    applyCassetteType()
   }
 
   func display(playlist: Playlist, rootView: UITableViewController?) {

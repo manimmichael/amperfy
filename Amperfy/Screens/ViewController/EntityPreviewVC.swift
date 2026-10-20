@@ -923,11 +923,16 @@ class EntityPreviewVC: UIViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    view.setBackgroundBlur(style: .prominent)
+    // cassette: the context-menu preview card was the XIB's system 19/17/16 on
+    // a system material. Same deck as a row: bg2 card, display-face title,
+    // mono artist, quiet caption, ink2 chevron.
+    view.backgroundColor = CassetteTheme.UIColors.bg2
     titleLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
     infoLabel.applyAmperfyStyle()
+    applyCassetteType()
     gotoDetailsSymbol.isHidden = isNavigationDisallowed
+    gotoDetailsSymbol.tintColor = CassetteTheme.UIColors.ink2
 
     // The preview will size to the preferredContentSize, which can be useful
     // for displaying a preview with the dimension of an image, for example.
@@ -955,6 +960,20 @@ class EntityPreviewVC: UIViewController {
     refresh()
   }
 
+  private func applyCassetteType() {
+    titleLabel.font = UIFont.cassette(.rowTitle)
+    titleLabel.textColor = CassetteTheme.UIColors.ink
+    artistLabel.font = UIFont.cassette(.cardSubtitle)
+    artistLabel.textColor = CassetteTheme.UIColors.ink2
+    infoLabel.font = UIFont.cassette(.caption)
+    infoLabel.textColor = CassetteTheme.UIColors.ink3
+  }
+
+  override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    applyCassetteType()
+  }
+
   func display(container: PlayableContainable, on rootView: UIViewController) {
     self.rootView = rootView
     entityContainer = container
@@ -970,9 +989,18 @@ class EntityPreviewVC: UIViewController {
     titleLabel.text = entityContainer.name
     artistLabel.text = entityContainer.subtitle
     artistLabel.isHidden = entityContainer.subtitle == nil
-    infoLabel.text = entityContainer.info(
-      for: entityContainer.account?.apiType.asServerApiType,
-      details: DetailInfoType(type: .long, settings: appDelegate.storage.settings)
-    )
+    if let playable = entityContainer as? AbstractPlayable {
+      // cassette: a song's preview line is year and length. The upstream `.long`
+      // detail appended "Bitrate 320000", which is plumbing, not information.
+      var parts = [String]()
+      if playable.year > 0 { parts.append(String(playable.year)) }
+      if playable.duration > 0 { parts.append(playable.duration.asDurationString) }
+      infoLabel.text = parts.joined(separator: " · ")
+    } else {
+      infoLabel.text = entityContainer.info(
+        for: entityContainer.account?.apiType.asServerApiType,
+        details: DetailInfoType(type: .long, settings: appDelegate.storage.settings)
+      )
+    }
   }
 }

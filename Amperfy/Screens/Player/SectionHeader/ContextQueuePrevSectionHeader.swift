@@ -19,6 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+import AmperfyKit
 import MarqueeLabel
 import UIKit
 
@@ -44,8 +45,20 @@ class ContextQueuePrevSectionHeader: UIView {
   }
 
   func display(name: String) {
-    nameLabel.text = name
+    nameLabel.text = name.uppercased()
     nameLabel.isHidden = name.isEmpty
     nameLabel.applyAmperfyStyle()
+    applyCassetteType()
+  }
+
+  /// cassette (BUG-418): section-label type, re-stamped on trait change.
+  private func applyCassetteType() {
+    nameLabel.font = UIFont.cassette(.sectionLabel)
+    nameLabel.textColor = CassetteTheme.UIColors.ink2
+  }
+
+  override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    applyCassetteType()
   }
 }

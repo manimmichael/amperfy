@@ -784,18 +784,10 @@ class SearchVC: BasicTableViewController {
   }
 
   // cassette Layer 3 Phase 3.2: on-device-only search empty state.
-  lazy var cassetteOnDeviceNoResultsConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.search()
-    config.text = "No results on this phone"
-    config
-      .secondaryText = "Enable Server Mode in Settings to search your full Cassette Player catalog."
-    config.textProperties.font = UIFont.cassette(.sectionTitle)
-    config.textProperties.color = CassetteTheme.UIColors.ink
-    config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
-    config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
-    config.imageProperties.tintColor = CassetteTheme.UIColors.ink3
-    return config
-  }()
+  // cassette (BUG-419): copy and type come from the shared factory
+  // (UtilitiesExtensions). There is no Server Mode toggle on the phone.
+  lazy var cassetteOnDeviceNoResultsConfig: UIContentUnavailableConfiguration =
+    .cassetteOnDeviceNoResults
 
   /// cassette Patch 020: Cassette-flavored empty states. The renderer
   /// for `UIContentUnavailableConfiguration` honors the
@@ -803,27 +795,16 @@ class SearchVC: BasicTableViewController {
   /// can keep the native iOS 17+ container while swapping in
   /// `cassetteDisplay` typography and theme colors.
   lazy var noSearchResultsConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.search()
-    config.text = "No results"
-    config.secondaryText = "Try a different artist, album, or song."
-    config.textProperties.font = UIFont.cassette(.sectionTitle)
-    config.textProperties.color = CassetteTheme.UIColors.ink
-    config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
-    config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
-    config.imageProperties.tintColor = CassetteTheme.UIColors.ink3
-    return config
+    // cassette (BUG-419): type via the shared factory.
+    UIContentUnavailableConfiguration.cassetteNoResults()
   }()
 
   lazy var noSearchHistoryConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = .clock
-    config.text = "No Search History"
-    config.secondaryText = "Your search history will appear here."
-    config.textProperties.font = UIFont.cassette(.sectionTitle)
-    config.textProperties.color = CassetteTheme.UIColors.ink
-    config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
-    config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
-    config.imageProperties.tintColor = CassetteTheme.UIColors.ink3
-    return config
+    // cassette (BUG-419): type via the shared factory.
+    UIContentUnavailableConfiguration.cassetteEmpty(
+      image: .clock,
+      title: "No search history",
+      body: "Your search history will appear here."
+    )
   }()
 }
