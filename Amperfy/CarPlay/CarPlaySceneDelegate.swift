@@ -29,7 +29,6 @@ import UIKit
 // MARK: - CarPlayShortPreference
 
 struct CarPlayShortPreference {
-  let theme: ThemePreference
   let artworkDisplayPreference: ArtworkDisplayPreference
 }
 
@@ -52,7 +51,6 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
 
   func getPreference(_ accountInfo: AccountInfo?) -> CarPlayShortPreference {
     CarPlayShortPreference(
-      theme: appDelegate.storage.settings.accounts.getSetting(accountInfo).read.themePreference,
       artworkDisplayPreference: appDelegate.storage.settings.accounts.getSetting(accountInfo).read
         .artworkDisplayPreference
     )
@@ -75,6 +73,9 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   var traits: UITraitCollection {
     interfaceController?.carTraitCollection ?? UITraitCollection.maxDisplayScale
   }
+
+  /// Every CarPlay image goes through this (BUG-424); see `CarPlayStyle`.
+  var style: CarPlayStyle { CarPlayStyle(traits: traits) }
 
   /// CarPlay raises an uncaught exception when the navigation hierarchy grows
   /// past its hard limit (~5 templates including the root). Route every
@@ -449,14 +450,13 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     // now, so it is refreshed by the "refresh List items" walk below like every other list;
     // only the single-line Home shelf still tracks image-row elements here.
     if let container = homeArtworkUpdate[downloadNotification.id] {
-      let image = LibraryEntityImage.getImageToDisplayImmediately(
-        libraryEntity: container.entity,
-        themePreference: getPreference(activeAccountInfo).theme,
+      let image = style.artwork(
+        for: container.entity,
         artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference,
-        useCache: false
+        slot: .shelf
       )
       for rowImage in container.homeRow {
-        rowImage.image = carPlayEntityImage(image, for: container.entity)
+        rowImage.image = image
       }
     }
 
@@ -554,20 +554,16 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
 
           if isThisRelatedToTheDownload {
             if let playable = playable {
-              item.setImage(getImage(for: playable, isTrackDisplayed: isTrackDisplayed))
+              item.setImage(style.artwork(
+                for: playable,
+                isTrackDisplayed: isTrackDisplayed,
+                artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference
+              ))
             } else if let entity = entity {
-              item.setImage(
-                carPlayEntityImage(
-                  LibraryEntityImage.getImageToDisplayImmediately(
-                    libraryEntity: entity,
-                    themePreference: getPreference(activeAccountInfo).theme,
-                    artworkDisplayPreference: getPreference(activeAccountInfo)
-                      .artworkDisplayPreference,
-                    useCache: false
-                  ),
-                  for: entity
-                )
-              )
+              item.setImage(style.artwork(
+                for: entity,
+                artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference
+              ))
             }
           }
         }

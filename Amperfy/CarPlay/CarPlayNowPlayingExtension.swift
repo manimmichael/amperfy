@@ -181,16 +181,14 @@ extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
     // the badge is noise; in streaming mode it marks cached rows.
     let accessoryType: CPListItemAccessoryType = CassetteLibraryFilterProvider.shared
       .isOnDeviceOnly ? .none : (playable.isCached ? .cloud : .none)
-    let image = LibraryEntityImage.getImageToDisplayImmediately(
-      libraryEntity: playable,
-      themePreference: getPreference(playable.account?.info).theme,
-      artworkDisplayPreference: getPreference(playable.account?.info).artworkDisplayPreference,
-      useCache: false
+    let image = style.artwork(
+      for: playable,
+      artworkDisplayPreference: getPreference(playable.account?.info).artworkDisplayPreference
     )
     let listItem = CPListItem(
       text: playable.title,
       detailText: playable.subtitle,
-      image: image.carPlayImage(carTraitCollection: traits),
+      image: image,
       accessoryImage: nil,
       accessoryType: accessoryType
     )

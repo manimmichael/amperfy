@@ -482,16 +482,23 @@ extension UIImage {
     theme: ThemePreference,
     artworkType: ArtworkType,
     name: String? = nil,
-    size: CGSize = CGSize(width: 300, height: 300)
+    size: CGSize = CGSize(width: 300, height: 300),
+    markColor: UIColor? = nil,
+    scale: CGFloat? = nil
   )
     -> UIImage {
     let initial = ghostInitial(for: name, artworkType: artworkType)
     let format = UIGraphicsImageRendererFormat.default()
-    // cassette (BUG-425): the key carries the artwork type and the render scale. Keyed on the
-    // initial and size alone, every nameless genre, podcast, radio and song placeholder shared
-    // `•|300x300` and showed whichever symbol was drawn first.
+    if let scale { format.scale = scale }
+    // The phone's ghost is deliberately quiet; CarPlay passes a legible `markColor` (BUG-425).
+    let initialColor = markColor ?? CassetteTheme.UIColors.ink4.withAlphaComponent(0.08)
+    let symbolColor = markColor ?? CassetteTheme.UIColors.ink4.withAlphaComponent(0.1)
+    // cassette (BUG-425): the key carries the artwork type, the mark and the render scale. Keyed
+    // on the initial and size alone, every nameless genre, podcast, radio and song placeholder
+    // shared `•|300x300` and showed whichever symbol was drawn first.
+    let markKey = markColor.map { String(describing: $0) } ?? "ghost"
     let cacheKey = NSString(
-      string: "\(artworkType)|\(initial ?? "•")|\(Int(size.width))x\(Int(size.height))@\(format.scale)"
+      string: "\(artworkType)|\(initial ?? "•")|\(Int(size.width))x\(Int(size.height))@\(format.scale)|\(markKey)"
     )
     if let cached = ghostArtworkCache.object(forKey: cacheKey) {
       return cached
@@ -511,7 +518,7 @@ extension UIImage {
         paragraph.alignment = .center
         let attrs: [NSAttributedString.Key: Any] = [
           .font: font,
-          .foregroundColor: CassetteTheme.UIColors.ink4.withAlphaComponent(0.08),
+          .foregroundColor: initialColor,
           .paragraphStyle: paragraph,
         ]
         let textRect = (initial as NSString).boundingRect(
@@ -532,10 +539,7 @@ extension UIImage {
         let pointSize = size.width * 0.28
         let symbolConfig = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
         if let symbol = UIImage(systemName: symbolName, withConfiguration: symbolConfig) {
-          let tinted = symbol.withTintColor(
-            CassetteTheme.UIColors.ink4.withAlphaComponent(0.1),
-            renderingMode: .alwaysOriginal
-          )
+          let tinted = symbol.withTintColor(symbolColor, renderingMode: .alwaysOriginal)
           let symbolRect = CGRect(
             x: (size.width - tinted.size.width) / 2,
             y: (size.height - tinted.size.height) / 2,
@@ -668,54 +672,45 @@ extension UIImage {
     return buildView.screenshot ?? UIImage()
   }
 
-  /// CarPlay list/nav glyph — the de-tiled counterpart of `createArtwork`. Renders
-  /// the symbol TRANSPARENT and white (no opaque background tile), so it sits on
-  /// CarPlay's own iOS-26 glass surface instead of the foreign white/gray box a
-  /// snapshotted `EntityImageView` produced. Same signature as
-  /// `createArtwork` so CarPlay call sites swap in with a one-word rename; the
-  /// tile-only args (`lightDarkMode`, `switchColors`) are accepted-and-ignored.
+  /// CarPlay list glyph in ONE color: a transparent bitmap (no tile) that sits on CarPlay's own
+  /// list surface. Drawn as real pixels, never a tinted template: CarPlay shows a list image with
+  /// its own colors only when it is a genuine bitmap, and re-tints a template per background (the
+  /// BUG-054 "black shuffle button"). Which color, per car appearance, is `CarPlayStyle`'s call;
+  /// it registers one of these per appearance in a `UIImageAsset` (BUG-424).
   public static func carPlayGlyph(
     with image: UIImage,
     iconSizeType: ArtworkIconSizeType,
-    theme: ThemePreference,
-    lightDarkMode _: LightDarkModeType,
-    switchColors _: Bool = true
+    color: UIColor,
+    scale: CGFloat
   )
     -> UIImage {
     // A crisp intrinsic size; CarPlay scales into its row slot. Bigger for the
     // account row's `.big` avatar, standard for the small nav/category glyphs.
     let pointSize: CGFloat = iconSizeType == .big ? 54 : 38
-    // Bake the glyph as WHITE *pixels* in a plain bitmap — NOT a tinted template.
-    // CarPlay shows a list image with its own colors only when it's a genuine
-    // bitmap (like album art). A `.withTintColor(…, .alwaysOriginal)` result keeps
-    // its baked color when we return it, but every call site then applies
-    // `carPlayImage(carTraitCollection:)`, whose `UIImageAsset` round-trip resets it
-    // to a re-tintable template — so CarPlay tinted it per background: light on the
-    // dark library glass, but DARK on an album-detail background derived from light
-    // album art (the "black shuffle button"). Drawing white into the RGB makes it a
-    // real bitmap that stays white on every surface, matching the white row text
-    // (which rides CarPlay's own background-darkening legibility guarantee).
-    // (`theme` no longer drives the glyph color — every glyph is white.)
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = scale
+    format.opaque = false
     if image.isSymbolImage {
       // SF Symbol: a point-size configuration scales it crisply. Rasterize the
-      // white-tinted symbol at its natural size (no forced square, so wide/narrow
+      // tinted symbol at its natural size (no forced square, so wide/narrow
       // symbols keep their aspect).
       let symbol = image.applyingSymbolConfiguration(
         UIImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
       ) ?? image
-      let white = symbol.withTintColor(.white, renderingMode: .alwaysOriginal)
-      let renderer = UIGraphicsImageRenderer(size: white.size)
-      return renderer.image { _ in white.draw(at: .zero) }
+      let tinted = symbol.withTintColor(color, renderingMode: .alwaysOriginal)
+      return UIGraphicsImageRenderer(size: tinted.size, format: format).image { _ in
+        tinted.draw(at: .zero)
+      }
     } else {
       // Vector asset (e.g. a Lucide outline glyph): symbol configuration is a
-      // no-op, so draw the white-tinted vector into a square of the target size,
+      // no-op, so draw the tinted vector into a square of the target size,
       // inset slightly so the 2pt stroke has breathing room.
       let side = pointSize
       let inset = side * 0.12
-      let white = image.withTintColor(.white, renderingMode: .alwaysOriginal)
-      let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
-      return renderer.image { _ in
-        white.draw(in: CGRect(
+      let tinted = image.withTintColor(color, renderingMode: .alwaysOriginal)
+      let size = CGSize(width: side, height: side)
+      return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+        tinted.draw(in: CGRect(
           x: inset,
           y: inset,
           width: side - inset * 2,
@@ -734,10 +729,14 @@ extension UIImage {
 
   /// cassette (BUG-421): CarPlay album rows get their track number as the row
   /// IMAGE (CPListItem has no number slot), so it is drawn on the same square a
-  /// cover fills, in the display face, in white. White because CarPlay darkens
-  /// every row background so its white row text stays legible; the upstream
-  /// light-grey Helvetica read as a faded smudge next to the car's own text.
-  public static func numberToImage(number: Int) -> UIImage {
+  /// cover fills, in the display face. The color and scale are the caller's:
+  /// `CarPlayStyle` draws one per car appearance at the car's scale (BUG-424).
+  public static func numberToImage(
+    number: Int,
+    color: UIColor = .white,
+    scale: CGFloat = UITraitCollection.current.displayScale
+  )
+    -> UIImage {
     let side: CGFloat = 120
     let size = CGSize(width: side, height: side)
     let paragraphStyle = NSMutableParagraphStyle()
@@ -745,11 +744,11 @@ extension UIImage {
     let attributes: [NSAttributedString.Key: Any] = [
       .font: UIFont.cassetteDisplay(size: 64, weight: .bold),
       .paragraphStyle: paragraphStyle,
-      .foregroundColor: UIColor.white,
+      .foregroundColor: color,
     ]
     let text = number.description as NSString
     let format = UIGraphicsImageRendererFormat()
-    format.scale = UITraitCollection.current.displayScale
+    format.scale = scale
     format.opaque = false
     return UIGraphicsImageRenderer(size: size, format: format).image { _ in
       let textHeight = text.boundingRect(

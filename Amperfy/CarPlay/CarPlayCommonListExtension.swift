@@ -162,15 +162,7 @@ extension CarPlaySceneDelegate {
     let item = CPListItem(
       text: label,
       detailText: "\(bucket.itemCount) \(kind.noun(bucket.itemCount))",
-      image: UIImage
-        .carPlayGlyph(
-          with: glyph,
-          iconSizeType: .small,
-          theme: getPreference(activeAccountInfo).theme,
-          lightDarkMode: traits.userInterfaceStyle.asModeType,
-          switchColors: true
-        )
-        .carPlayImage(carTraitCollection: traits),
+      image: style.glyph(glyph),
       accessoryImage: nil,
       accessoryType: .disclosureIndicator
     )
@@ -484,27 +476,13 @@ extension CarPlaySceneDelegate {
     return items
   }
 
-  /// cassette: produce a CarPlay bitmap for a library entity, cropping artists
-  /// to a circle so they match the round artist artwork iOS renders (CarPlay
-  /// list items / image-row elements can't apply a shape themselves). Albums,
-  /// podcasts, playlists, etc. stay square.
-  func carPlayEntityImage(_ image: UIImage, for entity: AbstractLibraryEntity?) -> UIImage {
-    let shaped = (entity is Artist) ? image.croppedToCircle() : image
-    return shaped.carPlayImage(carTraitCollection: traits)
-  }
-
   func createDetailTemplate(for artist: Artist, onlyCached: Bool) -> CPListItem {
     let section = CPListItem(
       text: artist.name,
       detailText: artist.subtitle,
-      image: carPlayEntityImage(
-        LibraryEntityImage.getImageToDisplayImmediately(
-          libraryEntity: artist,
-          themePreference: getPreference(activeAccountInfo).theme,
-          artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference,
-          useCache: false
-        ),
-        for: artist
+      image: style.artwork(
+        for: artist,
+        artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference
       ),
       accessoryImage: nil,
       accessoryType: .disclosureIndicator
@@ -555,13 +533,7 @@ extension CarPlaySceneDelegate {
     let section = CPListItem(
       text: "All Songs",
       detailText: nil,
-      image: UIImage.carPlayGlyph(
-        with: UIImage.lucideSongs,
-        iconSizeType: .small,
-        theme: getPreference(activeAccountInfo).theme,
-        lightDarkMode: traits.userInterfaceStyle.asModeType,
-        switchColors: true
-      ).carPlayImage(carTraitCollection: traits),
+      image: style.glyph(UIImage.lucideSongs),
       accessoryImage: nil,
       accessoryType: .disclosureIndicator
     )
@@ -604,12 +576,10 @@ extension CarPlaySceneDelegate {
     let section = CPListItem(
       text: album.name,
       detailText: album.subtitle,
-      image: LibraryEntityImage.getImageToDisplayImmediately(
-        libraryEntity: album,
-        themePreference: getPreference(activeAccountInfo).theme,
-        artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference,
-        useCache: false
-      ).carPlayImage(carTraitCollection: traits),
+      image: style.artwork(
+        for: album,
+        artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference
+      ),
       accessoryImage: nil,
       accessoryType: .disclosureIndicator
     )
@@ -707,16 +677,14 @@ extension CarPlaySceneDelegate {
     // cassette (Wave 2b): playlists used to render blank in CarPlay (image: nil).
     // Resolve the LOCAL cover (a bundled preset, or a materialized pick), else a
     // generated playlist placeholder, so every playlist shows art in the car.
-    let cover = CassetteCloudPlaylistBridge.localCoverImage(for: playlist.id)
-      ?? UIImage.getGeneratedArtwork(
-        theme: getPreference(activeAccountInfo).theme,
-        artworkType: .playlist,
-        name: playlist.name
-      )
     let item = CPListItem(
       text: playlist.name,
       detailText: playlist.subtitle,
-      image: carPlayEntityImage(cover, for: nil),
+      image: style.artwork(
+        CassetteCloudPlaylistBridge.localCoverImage(for: playlist.id),
+        kind: .playlist,
+        name: playlist.name
+      ),
       accessoryImage: nil,
       accessoryType: .disclosureIndicator
     )
@@ -744,13 +712,7 @@ extension CarPlaySceneDelegate {
     text: String = "Shuffle"
   )
     -> CPListItem {
-    let img = UIImage.carPlayGlyph(
-      with: UIImage.lucideShuffle,
-      iconSizeType: .small,
-      theme: getPreference(activeAccountInfo).theme,
-      lightDarkMode: traits.userInterfaceStyle.asModeType,
-      switchColors: true
-    ).carPlayImage(carTraitCollection: traits)
+    let img = style.glyph(UIImage.lucideShuffle)
     let listItem = CPListItem(text: text, detailText: nil, image: img)
     listItem.handler = { [weak self] item, completion in
       guard let self = self else { completion(); return }
@@ -782,14 +744,18 @@ extension CarPlaySceneDelegate {
     // — keep rows clean. In streaming mode it marks which rows are cached.
     let accessoryType: CPListItemAccessoryType = CassetteLibraryFilterProvider.shared
       .isOnDeviceOnly ? .none : (playable.isCached ? .cloud : .none)
-    let image = getImage(for: playable, isTrackDisplayed: isTrackDisplayed)
+    let image = style.artwork(
+      for: playable,
+      isTrackDisplayed: isTrackDisplayed,
+      artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference
+    )
     if let artwork = playable.artwork, let accountInfo = artwork.account?.info {
       appDelegate.getMeta(accountInfo).artworkDownloadManager.download(object: artwork)
     }
     let listItem = CPListItem(
       text: playable.title,
       detailText: playable.subtitle,
-      image: image.carPlayImage(carTraitCollection: traits),
+      image: image,
       accessoryImage: nil,
       accessoryType: accessoryType
     )
@@ -809,15 +775,5 @@ extension CarPlaySceneDelegate {
       }
     }
     return listItem
-  }
-
-  func getImage(for playable: AbstractPlayable, isTrackDisplayed: Bool) -> UIImage {
-    isTrackDisplayed ? UIImage.numberToImage(number: playable.track) :
-      LibraryEntityImage.getImageToDisplayImmediately(
-        libraryEntity: playable,
-        themePreference: getPreference(activeAccountInfo).theme,
-        artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference,
-        useCache: false
-      )
   }
 }

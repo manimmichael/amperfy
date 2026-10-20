@@ -32,32 +32,51 @@ extension LibraryEntityImage {
     useCache: Bool
   )
     -> UIImage {
-    // cassette §art-collapse: resolve the album-level cover (the `setting` is
-    // inert), prefer the small thumb tier, and decode it DOWNSAMPLED via ImageIO
-    // — never the synchronous full-resolution decode this used to do on the main
-    // thread (it fires on every track change via NowPlayingInfoCenterHandler).
-    // Cache-first, so repeat calls are free.
-    if let fullPath = libraryEntity.imagePath(setting: artworkDisplayPreference) {
-      let sourcePath = CoverImageStore.preferredSourcePath(
-        forFullPath: fullPath,
-        smallSurface: true
-      )
-      if useCache, let cachedImg = Self.cache.object(forKey: sourcePath as NSString) {
-        return cachedImg
-      }
-      let maxPixel = CoverImageStore.isThumbPath(sourcePath)
-        ? CoverImageStore.thumbMaxPixel
-        : CoverImageStore.heroMaxPixel
-      if let img = CoverImageStore.downsampledImage(atPath: sourcePath, maxPixel: maxPixel) {
-        Self.cache.setObject(img, forKey: sourcePath as NSString)
-        return img
-      }
+    if let img = coverImage(
+      libraryEntity: libraryEntity,
+      artworkDisplayPreference: artworkDisplayPreference,
+      useCache: useCache
+    ) {
+      return img
     }
     return UIImage.getGeneratedArtwork(
       theme: themePreference,
       artworkType: libraryEntity.getDefaultArtworkType(),
       name: (libraryEntity as? PlayableContainable)?.name
     )
+  }
+
+  /// The entity's real cover, or nil when it has none on disk. Callers that draw their own
+  /// placeholder (CarPlay, which needs a legible one at the car's scale) use this instead of
+  /// `getImageToDisplayImmediately`, which falls back to the phone's quiet ghost tile.
+  static public func coverImage(
+    libraryEntity: AbstractLibraryEntity,
+    artworkDisplayPreference: ArtworkDisplayPreference,
+    useCache: Bool
+  )
+    -> UIImage? {
+    // cassette §art-collapse: resolve the album-level cover (the `setting` is
+    // inert), prefer the small thumb tier, and decode it DOWNSAMPLED via ImageIO
+    // — never the synchronous full-resolution decode this used to do on the main
+    // thread (it fires on every track change via NowPlayingInfoCenterHandler).
+    // Cache-first, so repeat calls are free.
+    guard let fullPath = libraryEntity.imagePath(setting: artworkDisplayPreference) else {
+      return nil
+    }
+    let sourcePath = CoverImageStore.preferredSourcePath(
+      forFullPath: fullPath,
+      smallSurface: true
+    )
+    if useCache, let cachedImg = Self.cache.object(forKey: sourcePath as NSString) {
+      return cachedImg
+    }
+    let maxPixel = CoverImageStore.isThumbPath(sourcePath)
+      ? CoverImageStore.thumbMaxPixel
+      : CoverImageStore.heroMaxPixel
+    guard let img = CoverImageStore.downsampledImage(atPath: sourcePath, maxPixel: maxPixel)
+    else { return nil }
+    Self.cache.setObject(img, forKey: sourcePath as NSString)
+    return img
   }
 }
 

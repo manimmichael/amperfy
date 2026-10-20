@@ -170,9 +170,8 @@ extension CarPlaySceneDelegate {
       var artwork: Artwork?
       var entity: AbstractLibraryEntity?
       if let libEntity = item.playableContainable as? AbstractLibraryEntity {
-        image = LibraryEntityImage.getImageToDisplayImmediately(
+        image = LibraryEntityImage.coverImage(
           libraryEntity: libEntity,
-          themePreference: getPreference(activeAccountInfo).theme,
           artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference,
           useCache: false
         )
@@ -190,26 +189,16 @@ extension CarPlaySceneDelegate {
         // LOCAL cover (bundled preset or materialized pick) so playlists show art.
         image = CassetteCloudPlaylistBridge.localCoverImage(for: playlist.id)
       }
-      // cassette: artist tiles render as circles on CarPlay to match iOS
-      // (albums, playlists, etc. stay square). Applies to both the real
-      // artwork and the generated-monogram fallback.
-      let isArtistTile = item.playableContainable is Artist
-      let displayImage: UIImage
-      if let image {
-        displayImage = isArtistTile
-          ? image.croppedToCircle().carPlayImage(carTraitCollection: traits)
-          : image.carPlayImage(carTraitCollection: traits)
-      } else {
-        // cassette (BUG-421): pass the name so a tile without art gets the same
-        // ghost initial the library rows show, not a nameless glyph.
-        let generated = UIImage.getGeneratedArtwork(
-          theme: getPreference(activeAccountInfo).theme,
-          artworkType: item.playableContainable
-            .getArtworkCollection(theme: getPreference(activeAccountInfo).theme).defaultArtworkType,
-          name: item.playableContainable.name
-        )
-        displayImage = isArtistTile ? generated.croppedToCircle() : generated
-      }
+      // cassette: artist tiles render as circles on CarPlay to match iOS (albums, playlists,
+      // etc. stay square), real art and placeholder alike. A tile without art gets the
+      // placeholder with the item's initial (BUG-421), like the library rows.
+      let displayImage = style.artwork(
+        image,
+        kind: style.artworkKind(of: item.playableContainable),
+        name: item.playableContainable.name,
+        circle: item.playableContainable is Artist,
+        slot: .shelf
+      )
 
       let element = CPListImageRowItemRowElement(
         image: displayImage,
@@ -262,16 +251,10 @@ extension CarPlaySceneDelegate {
   /// cassette (BUG-338): the fallback row for a shelf item without a detail view: the old
   /// tile behaviour, play the item then show Now Playing. Generated artwork only.
   private func makePlayContainableRow(_ containable: PlayableContainable) -> CPListItem {
-    let theme = getPreference(activeAccountInfo).theme
-    let image = UIImage.getGeneratedArtwork(
-      theme: theme,
-      artworkType: containable.getArtworkCollection(theme: theme).defaultArtworkType,
-      name: containable.name
-    )
     let row = CPListItem(
       text: containable.name,
       detailText: containable.subtitle,
-      image: image.carPlayImage(carTraitCollection: traits),
+      image: style.artwork(nil, kind: style.artworkKind(of: containable), name: containable.name),
       accessoryImage: nil,
       accessoryType: .none
     )
