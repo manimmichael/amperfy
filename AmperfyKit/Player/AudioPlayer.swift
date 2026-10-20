@@ -311,8 +311,16 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
 
   var audioAnalyzer: AudioAnalyzer { backendAudioPlayer.audioAnalyzer }
 
+  // cassette (BUG-426): an object already registered is skipped, so a caller that registers
+  // on every connect (CarPlay) is notified once per event, not once per connect.
   func addNotifier(notifier: MusicPlayable) {
+    notifierList = notifierList.filter { $0.value != nil }
+    guard !notifierList.contains(where: { $0.value === notifier }) else { return }
     notifierList.append(WeakMusicPlayable(notifier))
+  }
+
+  func removeNotifier(notifier: MusicPlayable) {
+    notifierList = notifierList.filter { $0.value != nil && $0.value !== notifier }
   }
 
   func removeAllNotifier() {

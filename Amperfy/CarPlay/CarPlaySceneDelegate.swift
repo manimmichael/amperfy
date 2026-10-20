@@ -323,6 +323,9 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         )
       }
 
+      // cassette (BUG-426): symmetric with addNotifier in didConnect, so an unplugged car
+      // stops rebuilding the queue on every track change.
+      appDelegate.player.removeNotifier(notifier: self)
       CPNowPlayingTemplate.shared.remove(self)
       // Force the next connect to re-push the button row onto the fresh template.
       lastConfiguredNowPlayingMode = nil
