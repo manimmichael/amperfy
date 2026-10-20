@@ -438,10 +438,10 @@ class TabBarVC: UITabBarController {
 
   func configureTraitChangesForMiniPlayer() {
     guard let miniPlayer else { return }
-    // cassette (rail): ONE read of the accessory trait decides both the
-    // container constraints here and the pill's own layout, and both are
-    // idempotent, so UIKit's minimize/expand animation is never fought by a
-    // constraint pass that disagrees with it halfway through.
+    // cassette (rail): one read of the accessory trait decides the container
+    // constraints, idempotently, so UIKit's minimize/expand animation is never
+    // fought by a constraint pass that disagrees with it halfway through. The
+    // pill's own content is the same in both slots (MiniPlayerView).
     let isInline = miniPlayer.glassContainer.traitCollection.tabAccessoryEnvironment == .inline
     let wanted: RailLayout
     if isInline {
@@ -457,7 +457,6 @@ class TabBarVC: UITabBarController {
     } else {
       wanted = .compact
     }
-    miniPlayer.applyTabAccessoryLayout(isInline: isInline)
     guard wanted != appliedRailLayout else { return }
     #if DEBUG
     Self.railTrace("LAYOUT \(String(describing: appliedRailLayout)) -> \(wanted) behavior=\(tabBarMinimizeBehavior.rawValue)")

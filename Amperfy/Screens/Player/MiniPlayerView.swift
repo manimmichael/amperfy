@@ -604,53 +604,14 @@ class MiniPlayerView: UIView {
       self: Self,
       previousTraitCollection: UITraitCollection
     ) in
-      // cassette (rail): the host (TabBarVC) applies both its constraints and
-      // this view's layout from ONE read of the trait, so the two can never
-      // disagree mid-transition. Without a host, lay out from the trait here.
-      if let hostCB = self.tabAccessoryTraitChangeCB {
-        hostCB()
-      } else {
-        self.applyTabAccessoryLayout(
-          isInline: self.traitCollection.tabAccessoryEnvironment == .inline
-        )
-      }
+      // cassette (rail): the pill itself is the same in both slots (see the
+      // play button's trailing constraint in configureForiOS); only the host
+      // (TabBarVC) has anything to do here, for its container constraints.
+      self.tabAccessoryTraitChangeCB?()
     }
   }
 
   public var tabAccessoryTraitChangeCB: VoidFunctionCallback?
-
-  private var appliedInlineLayout: Bool?
-
-  /// cassette (rail): lay the pill out for the slot it is in. Idempotent: a
-  /// repeated call with the same value does nothing, so the host can call it
-  /// from every layout pass without churning constraints during UIKit's
-  /// minimize/expand animation.
-  public func applyTabAccessoryLayout(isInline: Bool) {
-    guard appliedInlineLayout != isInline else { return }
-    appliedInlineLayout = isInline
-    playButtonTrailingConstraint?.isActive = false
-    // cassette (rail): inline is the slot inside the minimized tab bar. Cover,
-    // one title line and play only; no artist line, no scrubber, and no glass
-    // of our own because the bar is the glass there (ours rendered as a pale
-    // square behind the cover).
-    subtitleLabel.isHidden = isInline
-    timeSlider.isHidden = isInline
-    glassContainer.effect = isInline ? nil : miniPlayerGlassEffect
-    if isInline {
-      nextButton.isHidden = true
-      playButtonTrailingConstraint = playButton.trailingAnchor.constraint(
-        equalTo: trailingAnchor,
-        constant: -6
-      )
-    } else {
-      nextButton.isHidden = false
-      playButtonTrailingConstraint = playButton.trailingAnchor.constraint(
-        equalTo: nextButton.leadingAnchor,
-        constant: -5
-      )
-    }
-    playButtonTrailingConstraint?.isActive = true
-  }
 
   public func configureForMac() {
     playerHandler = PlayerUIHandler(player: player, style: .miniPlayerMac)
@@ -719,6 +680,21 @@ class MiniPlayerView: UIView {
     textStack.axis = .vertical
     textStack.alignment = .fill
     textStack.spacing = 0
+    // cassette (rail): the text sits against the cover, not centred in the
+    // space left. The pill changes width when it moves between its two slots,
+    // and centred text re-centres across that change, which UIKit's crossfade
+    // shows as doubled words; leading text stays put beside the cover.
+    titleLabel.textAlignment = .left
+    subtitleLabel.textAlignment = .left
+    // cassette (rail): no marquee in the pill. UIKit's morph crossfades a
+    // snapshot of the pill into the live one, and a scrolling title is at one
+    // offset in the snapshot and restarts from the start in the live label,
+    // so the words doubled for the first frames of every move. A long title
+    // truncates here, as in Music's pill; the full title is on the player.
+    (titleLabel as? MarqueeLabel)?.labelize = true
+    (subtitleLabel as? MarqueeLabel)?.labelize = true
+    titleLabel.lineBreakMode = .byTruncatingTail
+    subtitleLabel.lineBreakMode = .byTruncatingTail
     textStack.translatesAutoresizingMaskIntoConstraints = false
     addSubview(textStack)
     addSubview(timeSlider)
@@ -768,7 +744,18 @@ class MiniPlayerView: UIView {
       playButton.centerYAnchor.constraint(equalTo: artworkImage.centerYAnchor, constant: 0),
       playButton.widthAnchor.constraint(equalToConstant: 30),
       playButton.heightAnchor.constraint(equalTo: playButton.widthAnchor),
-      // playButton trailing constraint is depending on tab bar bottom accessory
+      // cassette (rail): the pill is ONE capsule in both of its slots, the
+      // floating one above the bar and the inline one inside the minimized
+      // bar. Measured on 26.4 at 60fps: the minimized bar gives the accessory
+      // no glass of its own (the slot between the tab circle and the search
+      // circle is transparent), so an inline layout that dropped our glass,
+      // the artist line, the scrubber and the next button sent the cover,
+      // title and play button naked onto the scrolling covers on every swipe
+      // down, and UIKit's morph then crossfaded that bare one-line snapshot
+      // into the full pill on every reveal. That was the "collapses and
+      // breaks for a beat". Same elements, same glass, same constraints in
+      // both states: the morph is a capsule changing width and nothing else.
+      playButton.trailingAnchor.constraint(equalTo: nextButton.leadingAnchor, constant: -5),
 
       nextButton.centerYAnchor.constraint(equalTo: artworkImage.centerYAnchor, constant: 0),
       nextButton.widthAnchor.constraint(equalToConstant: 30),
@@ -777,7 +764,6 @@ class MiniPlayerView: UIView {
     ])
     refreshPlayer()
     refreshForTraitChange(horizontalSizeClass: traitCollection.horizontalSizeClass)
-    applyTabAccessoryLayout(isInline: traitCollection.tabAccessoryEnvironment == .inline)
   }
 
   public func refreshForTraitChange(horizontalSizeClass: UIUserInterfaceSizeClass) {
@@ -786,8 +772,6 @@ class MiniPlayerView: UIView {
     titleLabel.font = UIFont.cassetteDisplay(size: 18, weight: .semibold)
     subtitleLabel.font = UIFont.cassetteMono(size: 14, weight: .regular)
   }
-
-  private var playButtonTrailingConstraint: NSLayoutConstraint?
 
   @objc
   private func miniPlayerGotTouched(_ recognizer: UITapGestureRecognizer) {
