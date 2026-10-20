@@ -50,7 +50,8 @@ class LibrarySyncPopupVC: UIViewController {
   var topic = ""
   var message = ""
   var logType = LogEntryType.info
-  private var popupColor = UIColor.systemBlue
+  // cassette (Wave 2): a raised brand surface, was system blue.
+  private var popupColor = UIColor.cassette(.surfaceRaised)
   private var icon = UIImage.refresh
   private var iconAnimation = PopupIconAnimation.zoomInZoomOut
   private var closeButtonOnPressed: ((Bool) -> ())?
@@ -71,14 +72,14 @@ class LibrarySyncPopupVC: UIViewController {
     iconImage.layer.masksToBounds = true
     iconBackgroundLabel.layer.cornerRadius = iconImage.frame.width / 2
     iconBackgroundLabel.layer.masksToBounds = true
-    contentView.layer.cornerRadius = 15
+    contentView.layer.cornerRadius = CassetteRadius.large
 
     contentView.backgroundColor = popupColor
     iconImage.backgroundColor = .clear
     iconBackgroundLabel.backgroundColor = popupColor
 
     iconImage.image = icon
-    iconImage.tintColor = .white
+    iconImage.tintColor = .cassette(.textPrimary)
   }
 
   override func viewIsAppearing(_ animated: Bool) {
@@ -141,7 +142,7 @@ class LibrarySyncPopupVC: UIViewController {
     closeButtonOnPressed = onClosePressed
 
     iconAnimation = customAnimation != nil ? customAnimation! : .zoomInZoomOut
-    popupColor = .defaultBlue
+    popupColor = .cassette(.surfaceRaised)
     icon = customIcon != nil ? customIcon! : .info
   }
 

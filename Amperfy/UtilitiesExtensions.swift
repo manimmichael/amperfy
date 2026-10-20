@@ -52,8 +52,9 @@ extension UIColor {
 }
 
 extension Color {
-  static let error = Color.red
-  static let success = Color.green
+  // cassette (Wave 2): state colors are tokens (were system red and green).
+  static let error = Color.cassette(.danger)
+  static let success = Color.cassette(.success)
 
   // MARK: - Text Colors
 

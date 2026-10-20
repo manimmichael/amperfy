@@ -30,12 +30,13 @@ public enum CornerRadius {
 
   public var asCGFloat: CGFloat {
     switch self {
+    // Amperfy's names, resolved from `CassetteRadius` (Wave 2).
     case .verySmall:
-      return 3.0
+      return CassetteRadius.artworkTile
     case .small:
-      return 5.0
+      return CassetteRadius.artworkRow
     case .big:
-      return 15.0
+      return CassetteRadius.large
     }
   }
 }

@@ -60,7 +60,7 @@ class LyricTableCellModel {
       attributes:
       [
         .font: UIFont.systemFont(ofSize: 20),
-        .foregroundColor: UIColor.gray,
+        .foregroundColor: UIColor.cassette(.textTertiary),
       ]
     )
     self.highlightedAttributedString = NSAttributedString(

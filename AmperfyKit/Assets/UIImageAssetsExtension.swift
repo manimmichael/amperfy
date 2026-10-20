@@ -435,7 +435,7 @@ extension UIImage {
 
   /// Asset symbol generation is enabled by default for both new and old projects but can be disabled by setting the build setting "Generate Asset Symbols" (ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS) to NO.
   #if false
-    public static let podcast = UIImage.create("podcast").withTintColor(.defaultBlue)
+    public static let podcast = UIImage.create("podcast").withTintColor(.cassette(.textSecondary))
     public static let albumNewest = UIImage.create("album_newest")
     public static let albumRecent = UIImage.create("album_recent")
     public static let userQueueInsert = UIImage

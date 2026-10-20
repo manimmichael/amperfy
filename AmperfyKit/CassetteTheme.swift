@@ -39,10 +39,11 @@ public enum CassetteTheme {
   // MARK: Radius
 
   public enum Radius {
-    public static let sm: CGFloat = 4
-    public static let md: CGFloat = 8
-    public static let lg: CGFloat = 12
-    public static let pill: CGFloat = 100
+    // Resolved from `CassetteRadius`, the one radius vocabulary (Wave 2).
+    public static let sm: CGFloat = CassetteRadius.small
+    public static let md: CGFloat = CassetteRadius.control
+    public static let lg: CGFloat = CassetteRadius.panel
+    public static let pill: CGFloat = CassetteRadius.pill
   }
 
   // MARK: UIKit colours
@@ -91,21 +92,21 @@ public enum CassetteTheme {
   public static func applyGlobalAppearance() {
     let nav = UINavigationBarAppearance()
     nav.configureWithOpaqueBackground()
-    nav.backgroundColor = UIColors.bg
-    nav.shadowColor = UIColors.ink4
+    nav.backgroundColor = .cassette(.surfaceBase)
+    nav.shadowColor = .cassette(.hairline)
     nav.titleTextAttributes = [
-      .font: UIFont.cassetteDisplay(size: 18, weight: .semibold),
-      .foregroundColor: UIColors.ink,
+      .font: UIFont.cassette(.navTitle),
+      .foregroundColor: UIColor.cassette(.textPrimary),
     ]
     nav.largeTitleTextAttributes = [
-      .font: UIFont.cassetteDisplay(size: 34, weight: .bold),
-      .foregroundColor: UIColors.ink,
+      .font: UIFont.cassette(.largeTitle),
+      .foregroundColor: UIColor.cassette(.textPrimary),
     ]
     // cassette Patch 046 (Phase A): back button title drops to ink2 (was orange).
     // The chevron itself follows the global nav tintColor, also moved to ink.
     let backItem = UIBarButtonItemAppearance()
     backItem.normal.titleTextAttributes = [
-      .foregroundColor: UIColors.ink2,
+      .foregroundColor: UIColor.cassette(.textSecondary),
       .font: UIFont.cassette(.rowTitle),
     ]
     nav.buttonAppearance = backItem
@@ -114,7 +115,7 @@ public enum CassetteTheme {
     UINavigationBar.appearance().standardAppearance = nav
     UINavigationBar.appearance().scrollEdgeAppearance = nav
     UINavigationBar.appearance().compactAppearance = nav
-    UINavigationBar.appearance().tintColor = UIColors.ink
+    UINavigationBar.appearance().tintColor = .cassette(.textPrimary)
 
     // cassette Patch 046 (Phase A): tab bar selected icon + label drop to ink
     // (was orange). Differentiation between selected/unselected is now ink
@@ -123,67 +124,67 @@ public enum CassetteTheme {
     // icon swapping on top for the final structural cue.
     let tab = UITabBarAppearance()
     tab.configureWithOpaqueBackground()
-    tab.backgroundColor = UIColors.bg2
-    tab.shadowColor = UIColors.ink4
+    tab.backgroundColor = .cassette(.surfaceRaised)
+    tab.shadowColor = .cassette(.hairline)
     let tabItem = UITabBarItemAppearance()
-    tabItem.normal.iconColor = UIColors.ink3
+    tabItem.normal.iconColor = .cassette(.textTertiary)
     tabItem.normal.titleTextAttributes = [
-      .foregroundColor: UIColors.ink3,
-      .font: UIFont.cassetteDisplay(size: 10, weight: .semibold),
+      .foregroundColor: UIColor.cassette(.textTertiary),
+      .font: UIFont.cassette(.tabLabel),
     ]
-    tabItem.selected.iconColor = UIColors.ink
+    tabItem.selected.iconColor = .cassette(.textPrimary)
     tabItem.selected.titleTextAttributes = [
-      .foregroundColor: UIColors.ink,
-      .font: UIFont.cassetteDisplay(size: 10, weight: .bold),
+      .foregroundColor: UIColor.cassette(.textPrimary),
+      .font: UIFont.cassette(.tabLabelSelected),
     ]
     tab.stackedLayoutAppearance = tabItem
     tab.inlineLayoutAppearance = tabItem
     tab.compactInlineLayoutAppearance = tabItem
     UITabBar.appearance().standardAppearance = tab
     UITabBar.appearance().scrollEdgeAppearance = tab
-    UITabBar.appearance().tintColor = UIColors.ink
-    UITabBar.appearance().unselectedItemTintColor = UIColors.ink3
+    UITabBar.appearance().tintColor = .cassette(.textPrimary)
+    UITabBar.appearance().unselectedItemTintColor = .cassette(.textTertiary)
 
-    UITableView.appearance().backgroundColor = UIColors.bg
-    UITableView.appearance().separatorColor = UIColors.ink4
-    UITableView.appearance().sectionIndexColor = UIColors.ink2
+    UITableView.appearance().backgroundColor = .cassette(.surfaceBase)
+    UITableView.appearance().separatorColor = .cassette(.hairline)
+    UITableView.appearance().sectionIndexColor = .cassette(.textSecondary)
 
-    UICollectionView.appearance().backgroundColor = UIColors.bg
+    UICollectionView.appearance().backgroundColor = .cassette(.surfaceBase)
 
     // cassette Patch 050 (Phase E): switches + segmented controls move from
     // orange to ink. UISwitch ON state reads as the warm off-white pill;
     // segmented control selected segment is ink-filled with bg-tinted text
     // (the existing typography attrs already use bg for selected labels,
     // which now reads correctly on the ink fill).
-    UISwitch.appearance().onTintColor = UIColors.ink
+    UISwitch.appearance().onTintColor = .cassette(.fillSelected)
 
     let segmentNormal: [NSAttributedString.Key: Any] = [
-      .foregroundColor: UIColors.ink2,
+      .foregroundColor: UIColor.cassette(.textSecondary),
       .font: UIFont.cassette(.metadata),
     ]
     let segmentSelected: [NSAttributedString.Key: Any] = [
-      .foregroundColor: UIColors.bg,
+      .foregroundColor: UIColor.cassette(.textOnFill),
       .font: UIFont.cassette(.metadata),
     ]
     UISegmentedControl.appearance().setTitleTextAttributes(segmentNormal, for: .normal)
     UISegmentedControl.appearance().setTitleTextAttributes(segmentSelected, for: .selected)
-    UISegmentedControl.appearance().selectedSegmentTintColor = UIColors.ink
-    UISegmentedControl.appearance().backgroundColor = UIColors.bg2
+    UISegmentedControl.appearance().selectedSegmentTintColor = .cassette(.fillSelected)
+    UISegmentedControl.appearance().backgroundColor = .cassette(.surfaceRaised)
 
     // cassette Patch 046 (Phase A): toolbar + search bar tint drop to ink/ink2.
     // The orange cursor + ring on search bars was loud and competed with the
     // mini-player scrubber visible at the bottom of the same screen.
-    UIToolbar.appearance().barTintColor = UIColors.bg2
-    UIToolbar.appearance().tintColor = UIColors.ink
+    UIToolbar.appearance().barTintColor = .cassette(.surfaceRaised)
+    UIToolbar.appearance().tintColor = .cassette(.textPrimary)
 
-    UISearchBar.appearance().tintColor = UIColors.ink2
-    UISearchBar.appearance().barTintColor = UIColors.bg2
+    UISearchBar.appearance().tintColor = .cassette(.textSecondary)
+    UISearchBar.appearance().barTintColor = .cassette(.surfaceRaised)
 
     // cassette Patch 048 (Phase C): pull-to-refresh spinner inherits the
     // global tintColor in iOS 26, which is now ink. Pin to ink2 explicitly
     // so it reads as a quiet secondary affordance rather than competing
     // with primary content.
-    UIRefreshControl.appearance().tintColor = UIColors.ink2
+    UIRefreshControl.appearance().tintColor = .cassette(.textSecondary)
   }
 }
 

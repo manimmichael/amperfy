@@ -109,8 +109,8 @@ struct SettingsButtonRow: View {
     var foregroundColor: Color? {
       switch self {
       case .normal: nil
-      case .destructive: Color.red
-      case .done: Color.blue
+      case .destructive: Color.cassette(.danger)
+      case .done: Color.cassette(.textPrimary)
       }
     }
   }

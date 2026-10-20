@@ -115,11 +115,12 @@ struct SwipeDisplaySettings {
 // MARK: - BasicTableViewController
 
 class BasicTableViewController: KeyCommandTableViewController {
+  // cassette (BUG-429): swipe buttons are brand surfaces, alternating so neighbours read as
+  // separate buttons. They were iOS blue, orange, purple and grey by position. The icons are
+  // white bitmaps (SwipeActionSettings), legible on both.
   private static let swipeButtonColors: [UIColor] = [
-    .defaultBlue,
-    .systemOrange,
-    .systemPurple,
-    .systemGray,
+    .cassette(.surfaceElevated),
+    .cassette(.hairline),
   ]
 
   let searchController = UISearchController(searchResultsController: nil)

@@ -564,12 +564,6 @@ extension UIColor {
     return UIColor(hue: hue, saturation: saturation, lightness: of, alpha: alpha)
   }
 
-  // 007AFF
-  // r:0 g:122 b:255
-  public static var defaultBlue: UIColor {
-    UIColor(displayP3Red: 0 / 255, green: 122 / 255, blue: 1.0, alpha: 1.0)
-  }
-
   public static var gold: UIColor {
     UIColor(displayP3Red: 241 / 255, green: 194 / 255, blue: 66 / 255, alpha: 1.0)
   }

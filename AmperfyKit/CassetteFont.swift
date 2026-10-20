@@ -156,7 +156,7 @@ extension Font {
 /// `.greeting` is new: the Home greeting used to fall back to tiny 12pt
 /// mono (the prototype's Newsreader face isn't bundled) - it now gets a
 /// real Barlow treatment at a legible size.
-public enum CassetteTextStyle {
+public enum CassetteTextStyle: CaseIterable, Sendable {
   case heroTitle // Barlow Condensed Bold, 30pt
   case sectionTitle // Barlow Condensed Bold, 22pt
   case greeting // Barlow Condensed SemiBold, 20pt (Home greeting line)
@@ -167,58 +167,64 @@ public enum CassetteTextStyle {
   case metadata // DM Mono Medium, 13pt
   case caption // DM Mono Regular, 13pt
   case body // SF Pro Text Regular, 15pt (system font, not Cassette Display)
+  // Bar chrome, set once by `CassetteTheme.applyGlobalAppearance()` (Wave 2: these were
+  // literal sizes there).
+  case navTitle // Barlow Condensed SemiBold, 18pt (inline nav bar title)
+  case largeTitle // Barlow Condensed Bold, 34pt (large nav bar title)
+  /// Barlow Condensed SemiBold, 10pt. Under the 13pt floor above: the tab bar's own
+  /// label size, kept as shipped; raising it is a design call (audit TOK-7).
+  case tabLabel
+  case tabLabelSelected // Barlow Condensed Bold, 10pt
+
+  /// The single definition of the scale. `UIFont.cassette` and `Font.cassette` both read it,
+  /// so the two can no longer drift (they were two copy-pasted switches).
+  fileprivate var spec: (face: CassetteFace, size: CGFloat) {
+    switch self {
+    case .heroTitle: return (.display(.bold), 30)
+    case .sectionTitle: return (.display(.bold), 22)
+    case .greeting: return (.display(.semibold), 20)
+    case .rowTitle: return (.display(.semibold), 18)
+    case .miniTitle: return (.display(.semibold), 15)
+    case .sectionLabel: return (.display(.bold), 13)
+    case .cardSubtitle: return (.mono(.regular), 13)
+    case .metadata: return (.mono(.medium), 13)
+    case .caption: return (.mono(.regular), 13)
+    case .body: return (.system, 15)
+    case .navTitle: return (.display(.semibold), 18)
+    case .largeTitle: return (.display(.bold), 34)
+    case .tabLabel: return (.display(.semibold), 10)
+    case .tabLabelSelected: return (.display(.bold), 10)
+    }
+  }
+}
+
+// MARK: - CassetteFace
+
+fileprivate enum CassetteFace {
+  case display(CassetteDisplayWeight)
+  case mono(CassetteMonoWeight)
+  /// SF Pro Text Regular.
+  case system
 }
 
 extension UIFont {
   public static func cassette(_ style: CassetteTextStyle) -> UIFont {
-    switch style {
-    case .heroTitle:
-      return .cassetteDisplay(size: 30, weight: .bold)
-    case .sectionTitle:
-      return .cassetteDisplay(size: 22, weight: .bold)
-    case .greeting:
-      return .cassetteDisplay(size: 20, weight: .semibold)
-    case .rowTitle:
-      return .cassetteDisplay(size: 18, weight: .semibold)
-    case .miniTitle:
-      return .cassetteDisplay(size: 15, weight: .semibold)
-    case .sectionLabel:
-      return .cassetteDisplay(size: 13, weight: .bold)
-    case .cardSubtitle:
-      return .cassetteMono(size: 13, weight: .regular)
-    case .metadata:
-      return .cassetteMono(size: 13, weight: .medium)
-    case .caption:
-      return .cassetteMono(size: 13, weight: .regular)
-    case .body:
-      return .systemFont(ofSize: 15, weight: .regular)
+    let spec = style.spec
+    switch spec.face {
+    case let .display(weight): return .cassetteDisplay(size: spec.size, weight: weight)
+    case let .mono(weight): return .cassetteMono(size: spec.size, weight: weight)
+    case .system: return .systemFont(ofSize: spec.size, weight: .regular)
     }
   }
 }
 
 extension Font {
   public static func cassette(_ style: CassetteTextStyle) -> Font {
-    switch style {
-    case .heroTitle:
-      return .cassetteDisplay(size: 30, weight: .bold)
-    case .sectionTitle:
-      return .cassetteDisplay(size: 22, weight: .bold)
-    case .greeting:
-      return .cassetteDisplay(size: 20, weight: .semibold)
-    case .rowTitle:
-      return .cassetteDisplay(size: 18, weight: .semibold)
-    case .miniTitle:
-      return .cassetteDisplay(size: 15, weight: .semibold)
-    case .sectionLabel:
-      return .cassetteDisplay(size: 13, weight: .bold)
-    case .cardSubtitle:
-      return .cassetteMono(size: 13, weight: .regular)
-    case .metadata:
-      return .cassetteMono(size: 13, weight: .medium)
-    case .caption:
-      return .cassetteMono(size: 13, weight: .regular)
-    case .body:
-      return .system(size: 15, weight: .regular)
+    let spec = style.spec
+    switch spec.face {
+    case let .display(weight): return .cassetteDisplay(size: spec.size, weight: weight)
+    case let .mono(weight): return .cassetteMono(size: spec.size, weight: weight)
+    case .system: return .system(size: spec.size, weight: .regular)
     }
   }
 }
