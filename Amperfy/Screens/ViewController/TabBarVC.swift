@@ -21,7 +21,6 @@
 
 import AmperfyKit
 import UIKit
-import UIKit.UIGestureRecognizerSubclass
 
 // MARK: - TabBarVC
 
@@ -43,15 +42,22 @@ class TabBarVC: UITabBarController {
   private var welcomePopupPresenter = WelcomePopupPresenter()
   var miniPlayer: MiniPlayerView?
 
+  /// cassette (rail, BUG-423): on the phone the bottom bar is ours
+  /// (`CassetteRailView`, slid with the finger, see "Rail" below); on the iPad
+  /// UIKit keeps its bar and the mini player rides as its accessory, as before.
+  private var rail: CassetteRailView?
+
   override func viewDidLoad() {
     super.viewDidLoad()
     var fixTabs = [UITab]()
 
     searchTab = UISearchTab { _ in
-      UINavigationController(
+      let nav = UINavigationController(
         rootViewController: TabNavigatorItem.search
           .getController(account: self.account)
       )
+      nav.delegate = self
+      return nav
     }
     searchTab!.automaticallyActivatesSearch = true
     fixTabs.append(searchTab!)
@@ -67,10 +73,12 @@ class TabBarVC: UITabBarController {
       image: TabNavigatorItem.home.outlineIcon,
       identifier: "Tabs.\(TabNavigatorItem.home.title)"
     ) { _ in
-      UINavigationController(
+      let nav = UINavigationController(
         rootViewController: TabNavigatorItem.home
           .getController(account: self.account)
       )
+      nav.delegate = self
+      return nav
     }
     fixTabs.append(homeTab!)
 
@@ -121,6 +129,7 @@ class TabBarVC: UITabBarController {
       AppStoryboard.Main.segueToLibraryContainer(account: self.account)
     }
     libraryGroup!.managingNavigationController = UINavigationController()
+    libraryGroup!.managingNavigationController?.delegate = self
     libraryGroup!.allowsReordering = true
     fixTabs.append(libraryGroup!)
 
@@ -134,37 +143,15 @@ class TabBarVC: UITabBarController {
       object: nil
     )
 
-    // cassette: `.onScrollDown` minimizes the tab bar as the user scrolls DOWN and
-    // brings it back the moment they scroll UP (the Reddit feel). `.automatic`
-    // resolved to no-minimize for our tab-bar-with-mini-player config, so we set
-    // the explicit behavior. Options: `.onScrollDown` (this), `.never` (pinned),
-    // `.automatic` (system default → no-shrink here), `.onScrollUp`.
-    tabBarMinimizeBehavior = .onScrollDown
-
     miniPlayer = MiniPlayerView(player: appDelegate.player)
     miniPlayer!.configureForiOS()
     miniPlayer!.glassContainer.translatesAutoresizingMaskIntoConstraints = false
 
-    let accessory = UITabAccessory(contentView: miniPlayer!.glassContainer)
-    bottomAccessory = accessory
-    view.addGestureRecognizer(RailTouchDownObserver { [weak self] point in
-      self?.railTouchDown(at: point)
-    })
-
-    heightConstraint = miniPlayer!.glassContainer.heightAnchor.constraint(equalToConstant: 48.0)
-    // cassette (rail): UIKit owns the accessory slot. Everything we say about
-    // the pill's size is a preference below required, so it can never fight a
-    // slot that UIKit sizes differently on some device and break its layout.
-    heightConstraint?.priority = UILayoutPriority(999)
-    heightConstraint?.isActive = true
-    if let host = miniPlayer!.glassContainer.superview {
-      compactWidthConstraint = miniPlayer!.glassContainer.widthAnchor
-        .constraint(equalTo: host.widthAnchor)
-      compactWidthConstraint?.priority = UILayoutPriority(999)
+    if traitCollection.userInterfaceIdiom == .phone {
+      installCassetteRail()
+    } else {
+      installTabAccessory()
     }
-
-    miniPlayer!.tabAccessoryTraitChangeCB = configureTraitChangesForMiniPlayer
-    configureTraitChangesForMiniPlayer()
 
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
@@ -180,253 +167,298 @@ class TabBarVC: UITabBarController {
     }
   }
 
-  // MARK: - Rail
+  // MARK: - Rail (phone)
 
-  /// cassette (rail): what the platform does, measured on the iOS 26.4
-  /// simulator with a completely stock UITabBarController:
+  /// cassette (rail, BUG-423): what the platform does, measured on the iOS
+  /// 26.4 simulator with a completely stock UITabBarController: with
+  /// `.onScrollDown` the bar minimizes on a downward drag and comes back only
+  /// when the content reaches the top; it reads the behaviour once per drag;
+  /// at the end of a list it toggles the bar by itself; its morph is a 0.47s
+  /// crossfade of a snapshot that any behaviour change mid-flight reverses
+  /// half-way; and the minimized bar gives the accessory no glass. Six commits
+  /// of reveal rules, settle watchers and holds on top of that never felt like
+  /// Reddit's bar, which follows the finger, because Reddit's bar is custom.
   ///
-  /// - with `.onScrollDown` the bar minimizes on a downward drag and comes back
-  ///   only when the content reaches the top (a flick up and 300pt / 600pt
-  ///   drags up mid-list leave it minimized);
-  /// - it reads `tabBarMinimizeBehavior` once per drag, at the start, so a
-  ///   change made mid-drag does nothing until the next drag;
-  /// - at the very end of a list it toggles the bar by itself on the first
-  ///   downward points of a drag, either way;
-  /// - the morph between the two states is a crossfade of a snapshot, and a
-  ///   change of behaviour that lands while it is in flight reverses it with a
-  ///   snapshot of the half-way state (pill laid out for one state, sitting in
-  ///   the other's slot), which is the "collapsed and broken for a beat" on a
-  ///   fast swipe down then up.
+  /// So on the phone UIKit's bar is hidden (`isTabBarHidden`, behaviour
+  /// `.never`, no accessory) and `CassetteRailView` draws the pill, the tab
+  /// capsule and the search circle where the stock bar drew them. UIKit still
+  /// owns the tabs and their view controllers; we own the pixels and the
+  /// motion:
   ///
-  /// Reddit's bar comes back on the first upward movement, which is the feel
-  /// the founder wants, so the reveal is ours and the minimize stays UIKit's.
-  /// Two rules make that safe:
+  /// - while the finger is down the rail translates with the content, point
+  ///   for point, after `railHysteresis` of movement in a new direction (so a
+  ///   jitter does not twitch it);
+  /// - on lift it springs to rest in the direction the finger was going;
+  /// - at the top of a list it is always out; the rubber band at the end, a
+  ///   flick's deceleration and programmatic offsets (reloads, the keyboard)
+  ///   move nothing, because the lift already decided;
+  /// - a tab change or a push shows it.
   ///
-  /// 1. `tabBarMinimizeBehavior` is never written directly. `railWant(_:_:)`
-  ///    records what we want; `railApplyIfSettled()` writes it only while the
-  ///    bar is not moving, which a display link watches (`railMorphStarted`,
-  ///    `railDisplayTick`, `railMorphSettled`) instead of a timer guessing at
-  ///    the duration.
-  /// 2. While a list rests against its end with the bar out, we want `.never`
-  ///    (`railBottomHold`), handed back on the first touch that lands anywhere
-  ///    else (before the drag UIKit will read it for), on a user scroll of
-  ///    another list, or once the content has moved up by `railRevealDistance`.
-  ///
-  /// The reveal itself: an upward run of `railRevealDistance` points while the
-  /// bar is inline wants `.never`; UIKit expands; when that settles we want
-  /// `.onScrollDown` again and UIKit minimizes on the next downward drag.
-  /// `railRevealEnabled = false` gives the stock behaviour (bar back at the top
-  /// of a list only) with everything else unchanged.
-  private static let railRevealEnabled = true
-  private static let railRevealDistance: CGFloat = 12
+  /// Every list already reports its scrolling to `cassetteUpdateMinimizeForScroll`
+  /// (BasicTableViewController, BasicCollectionViewController, Home, the
+  /// detail screens); the lift comes from the list's own pan recognizer.
+  /// Launch with `-railTrace` (DEBUG) for `[rail]` lines in the console.
+  private static let railHysteresis: CGFloat = 12
+  private static let railSettleDuration: TimeInterval = 0.45
+  private static let railSettleDamping: CGFloat = 0.86
 
-  private var railRunStartY: CGFloat = 0
+  private weak var railScrollView: UIScrollView?
   private var railLastY: CGFloat = 0
-  private var railLastDirectionDown = true
-  private var railRevealedThisRun = false
-  private var railBottomHold = false
-  private weak var railBottomHoldScrollView: UIScrollView?
+  private var railSlack: CGFloat = 0
+  private var railMovingDown = true
+  private var railAnimator: UIViewPropertyAnimator?
+  private var railSettleTarget: CGFloat?
+  private let railObservedPans = NSHashTable<UIPanGestureRecognizer>.weakObjects()
 
-  private var railWanted: UITabBarController.MinimizeBehavior = .onScrollDown
-  private var railMorphing = false
-  private var railDisplayLink: CADisplayLink?
-  private var railLastGeometry: [CGRect] = []
-  private var railStillSince: TimeInterval = 0
-  private var railMorphStartedAt: TimeInterval = 0
-  private static let railStillWindow: TimeInterval = 0.08
-  /// UIKit's morph settles at 0.47s on the 26.4 simulator; no write before
-  /// that even if the geometry watcher sees nothing move (a phone may animate
-  /// the slot in a way the presentation frames do not show).
-  private static let railMinMorph: TimeInterval = 0.5
-  private static let railMorphTimeout: TimeInterval = 1.5
+  /// Translating the rail by its own height puts all of it below the screen.
+  private var railHiddenOffset: CGFloat { rail?.bounds.height ?? 0 }
+  private var railOffset: CGFloat { rail?.transform.ty ?? 0 }
 
   #if DEBUG
-  /// Launch with `-railTrace` and read the `[rail]` lines in the console.
-  static let railTraceEnabled = ProcessInfo.processInfo.arguments.contains("-railTrace")
-  static func railTrace(_ line: @autoclosure () -> String) {
-    guard railTraceEnabled else { return }
-    print(String(format: "[rail] %.3f ", ProcessInfo.processInfo.systemUptime) + line())
-  }
-  private var railDebugWasTracking = false
+    /// Launch with `-railTrace` and read the `[rail]` lines in the console.
+    static let railTraceEnabled = ProcessInfo.processInfo.arguments.contains("-railTrace")
+    static func railTrace(_ line: @autoclosure () -> String) {
+      guard railTraceEnabled else { return }
+      print(String(format: "[rail] %.3f ", ProcessInfo.processInfo.systemUptime) + line())
+    }
   #endif
 
-  // MARK: Behaviour, written only while the bar is still
+  private func installCassetteRail() {
+    guard let miniPlayer, let homeTab, let libraryGroup else { return }
+    // UIKit keeps the tabs; the pixels are ours.
+    tabBarMinimizeBehavior = .never
+    isTabBarHidden = true
 
-  private func railWant(_ behavior: UITabBarController.MinimizeBehavior, _ why: String) {
-    railWanted = behavior
-    #if DEBUG
-    Self.railTrace("WANT \(behavior.rawValue) (\(why)) \(railMorphing ? "deferred, bar still moving" : "now")")
-    #endif
-    railApplyIfSettled()
+    let rail = CassetteRailView(items: [
+      CassetteRailView.Item(title: homeTab.title, image: TabNavigatorItem.home.outlineIcon),
+      CassetteRailView.Item(title: libraryGroup.title, image: .musicLibraryOutline),
+    ])
+    rail.install(pill: miniPlayer.glassContainer)
+    rail.onSelectItem = { [weak self] index in self?.railDidSelectItem(index) }
+    rail.onSearch = { [weak self] in self?.railDidTapSearch() }
+    view.addSubview(rail)
+    NSLayoutConstraint.activate([
+      rail.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      rail.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      rail.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+    ])
+    self.rail = rail
+    // The last row of every list clears the pill. UIKit insets the content for
+    // its own bar and accessory; with those gone the inset is ours.
+    additionalSafeAreaInsets.bottom = CassetteRailView.contentInset
+    railSyncSelection(animated: false)
   }
 
-  private func railApplyIfSettled() {
-    guard !railMorphing, tabBarMinimizeBehavior != railWanted else { return }
-    tabBarMinimizeBehavior = railWanted
+  override func viewSafeAreaInsetsDidChange() {
+    super.viewSafeAreaInsetsDidChange()
+    // The window's own bottom inset (the home indicator), without our addition.
+    rail?.homeIndicatorInset = view.safeAreaInsets.bottom - additionalSafeAreaInsets.bottom
   }
 
-  /// Called when the accessory moves between the inline slot and the floating
-  /// position (see `configureTraitChangesForMiniPlayer`).
-  private func railMorphStarted() {
-    railMorphing = true
-    railMorphStartedAt = ProcessInfo.processInfo.systemUptime
-    railStillSince = 0
-    railLastGeometry = []
-    if railDisplayLink == nil {
-      let link = CADisplayLink(target: self, selector: #selector(railDisplayTick(_:)))
-      link.add(to: .main, forMode: .common)
-      railDisplayLink = link
-    }
-  }
+  // MARK: Scroll
 
-  @objc
-  private func railDisplayTick(_ link: CADisplayLink) {
-    let now = ProcessInfo.processInfo.systemUptime
-    let geometry = railGeometry()
-    let moved = geometry.count != railLastGeometry.count
-      || zip(geometry, railLastGeometry).contains { a, b in
-        abs(a.minX - b.minX) > 0.5 || abs(a.minY - b.minY) > 0.5
-          || abs(a.width - b.width) > 0.5 || abs(a.height - b.height) > 0.5
-      }
-    railLastGeometry = geometry
-    if moved || railStillSince == 0 {
-      railStillSince = now
-    }
-    let sinceStart = now - railMorphStartedAt
-    if (!moved && now - railStillSince >= Self.railStillWindow && sinceStart >= Self.railMinMorph)
-      || sinceStart > Self.railMorphTimeout {
-      railMorphSettled()
-    }
-  }
-
-  /// On-screen (presentation) frames of the bar, the accessory slot and the
-  /// pill, in window space.
-  private func railGeometry() -> [CGRect] {
-    var views: [UIView] = [tabBar]
-    if let glass = miniPlayer?.glassContainer {
-      views.append(glass)
-      if let host = glass.superview { views.append(host) }
-    }
-    return views.map { view in
-      let layer = view.layer.presentation() ?? view.layer
-      return layer.convert(layer.bounds, to: nil)
-    }
-  }
-
-  private func railMorphSettled() {
-    railMorphing = false
-    railDisplayLink?.invalidate()
-    railDisplayLink = nil
-    #if DEBUG
-    Self.railTrace("SETTLED after \(String(format: "%.2f", ProcessInfo.processInfo.systemUptime - railMorphStartedAt))s layout=\(String(describing: appliedRailLayout)) wanted=\(railWanted.rawValue)")
-    #endif
-    // A bar that has come out for a reveal goes back to UIKit's rule, unless
-    // it is resting against the end of a list.
-    if appliedRailLayout != .inline, !railBottomHold, railWanted == .never {
-      railWanted = .onScrollDown
-    }
-    railApplyIfSettled()
-  }
-
-  // MARK: Hold at the end of a list
-
-  private static func railMaxY(_ scrollView: UIScrollView) -> CGFloat {
-    scrollView.contentSize.height + scrollView.adjustedContentInset.bottom
-      - scrollView.bounds.height + scrollView.adjustedContentInset.top
-  }
-
-  private func railHoldAtBottom(_ scrollView: UIScrollView) {
-    guard !railBottomHold else { return }
-    railBottomHold = true
-    railBottomHoldScrollView = scrollView
-    railWant(.never, "resting at the end of the list")
-  }
-
-  private func railReleaseBottomHold(_ why: String) {
-    guard railBottomHold else { return }
-    railBottomHold = false
-    railBottomHoldScrollView = nil
-    railWant(.onScrollDown, why)
-  }
-
-  /// Every touch-down on the screen, before any drag can start.
-  fileprivate func railTouchDown(at point: CGPoint) {
-    guard railBottomHold else { return }
-    guard let held = railBottomHoldScrollView,
-          let hit = view.hitTest(point, with: nil), hit.isDescendant(of: held),
-          held.contentOffset.y + held.adjustedContentInset.top >= Self.railMaxY(held) - 1
-    else {
-      railReleaseBottomHold("touch elsewhere")
-      return
-    }
-  }
-
-  // MARK: Scroll rule
-
+  /// Called by every scrolling screen from its `scrollViewDidScroll`.
   func cassetteUpdateMinimizeForScroll(_ scrollView: UIScrollView) {
-    let topInset = scrollView.adjustedContentInset.top
-    let y = scrollView.contentOffset.y + topInset
-    let maxY = Self.railMaxY(scrollView)
-    // Only the user's own movement counts: programmatic offsets (reloads, the
-    // keyboard, a content-inset change) must not flip the bar.
-    guard scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating else {
-      if railBottomHold, scrollView === railBottomHoldScrollView,
-         y < maxY - Self.railRevealDistance {
-        railReleaseBottomHold("moved off the end")
-      }
-      railLastY = y
-      railRunStartY = y
-      railRevealedThisRun = false
+    guard let rail else { return } // the iPad's bar is UIKit's
+    railObservePan(of: scrollView)
+    let top = scrollView.adjustedContentInset.top
+    let y = scrollView.contentOffset.y + top
+    let maxY = max(
+      0,
+      scrollView.contentSize.height + scrollView.adjustedContentInset.bottom
+        - scrollView.bounds.height + top
+    )
+    if scrollView !== railScrollView {
+      // Another list: a fresh run, and out if it is at its top.
+      railScrollView = scrollView
+      railLastY = min(max(y, 0), maxY)
+      railSlack = 0
+      #if DEBUG
+        Self.railTrace("LIST \(type(of: scrollView)) y=\(Int(y)) maxY=\(Int(maxY))")
+      #endif
+      if y <= 0 { railSettle(hidden: false) }
       return
     }
-    if railBottomHold, scrollView !== railBottomHoldScrollView {
-      railReleaseBottomHold("another list")
-    }
-    let dy = y - railLastY
-    railLastY = y
-    #if DEBUG
-    if scrollView.isTracking != railDebugWasTracking {
-      railDebugWasTracking = scrollView.isTracking
-      Self.railTrace("\(scrollView.isTracking ? "FINGER-DOWN" : "FINGER-UP") y=\(Int(y)) maxY=\(Int(maxY)) dy=\(String(format: "%.1f", dy)) layout=\(String(describing: appliedRailLayout)) behavior=\(tabBarMinimizeBehavior.rawValue) wanted=\(railWanted.rawValue) morphing=\(railMorphing) hold=\(railBottomHold)")
-    }
-    #endif
-    // Outside the content, in either direction, nothing counts: at the top
-    // UIKit expands on its own, and at the bottom the rubber band snapping back
-    // is not the person scrolling up.
-    if y <= 0 || y >= maxY {
-      if y >= maxY, appliedRailLayout != .inline {
-        railHoldAtBottom(scrollView)
-      }
-      railRunStartY = y
-      railRevealedThisRun = false
+    let lastY = railLastY
+    // Movement inside the rubber bands is not the person scrolling.
+    railLastY = min(max(y, 0), maxY)
+    // At the top the rail is always out: the end of a flick up, a reload,
+    // scrollsToTop, a pull to refresh.
+    if y <= 0 {
+      railSlack = 0
+      railSettle(hidden: false)
       return
     }
-    if railBottomHold, y < maxY - Self.railRevealDistance {
-      railReleaseBottomHold("scrolled up from the end")
-    }
+    // The finger is what the rail follows. A flick's deceleration and the
+    // rubber band at the end decide nothing; the lift already did.
+    guard scrollView.isTracking || scrollView.isDragging, y < maxY else { return }
+    let dy = y - lastY
     guard dy != 0 else { return }
-    let movingDown = dy > 0
-    if movingDown != railLastDirectionDown {
-      railLastDirectionDown = movingDown
-      railRunStartY = y
-      railRevealedThisRun = false
-      // A reveal still waiting for the bar to settle is stale once the person
-      // scrolls down again.
-      if movingDown, railWanted == .never, !railBottomHold, appliedRailLayout == .inline {
-        railWant(.onScrollDown, "scrolled down before the reveal landed")
+    let down = dy > 0
+    if down != railMovingDown {
+      railMovingDown = down
+      railSlack = Self.railHysteresis
+    }
+    var distance = abs(dy)
+    if railSlack > 0 {
+      let used = min(railSlack, distance)
+      railSlack -= used
+      distance -= used
+    }
+    guard distance > 0 else { return }
+    railStopAnimation()
+    let next = min(max(railOffset + (down ? distance : -distance), 0), railHiddenOffset)
+    if next != railOffset {
+      rail.transform = CGAffineTransform(translationX: 0, y: next)
+    }
+  }
+
+  private func railObservePan(of scrollView: UIScrollView) {
+    let pan = scrollView.panGestureRecognizer
+    guard !railObservedPans.contains(pan) else { return }
+    railObservedPans.add(pan)
+    pan.addTarget(self, action: #selector(railPanStateChanged(_:)))
+  }
+
+  /// The lift: a rail caught between its two rests springs to the one the
+  /// finger was heading for, carrying the finger's speed.
+  @objc
+  private func railPanStateChanged(_ pan: UIPanGestureRecognizer) {
+    guard pan.state == .ended || pan.state == .cancelled || pan.state == .failed else { return }
+    guard rail != nil, let scrollView = pan.view as? UIScrollView,
+          scrollView === railScrollView else { return }
+    let offset = railOffset
+    guard offset > 0, offset < railHiddenOffset else { return }
+    let y = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+    let hidden = y > 0 && railMovingDown
+    // The content moves against the finger, and so does the rail.
+    let velocity = -pan.velocity(in: scrollView).y
+    #if DEBUG
+      Self.railTrace("LIFT offset=\(Int(offset)) -> \(hidden ? "hidden" : "shown") v=\(Int(velocity))")
+    #endif
+    railSettle(hidden: hidden, velocity: velocity)
+  }
+
+  private func railSettle(hidden: Bool, velocity: CGFloat = 0) {
+    guard let rail else { return }
+    let target = hidden ? railHiddenOffset : 0
+    if railAnimator != nil, railSettleTarget == target { return }
+    railStopAnimation()
+    let current = railOffset
+    guard abs(current - target) > 0.5 else {
+      if current != target {
+        rail.transform = CGAffineTransform(translationX: 0, y: target)
+      }
+      return
+    }
+    let distance = abs(target - current)
+    // The spring takes its starting speed as a fraction of the distance per
+    // second, positive towards the target.
+    let towards = (target > current ? velocity : -velocity) / distance
+    let spring = UISpringTimingParameters(
+      dampingRatio: Self.railSettleDamping,
+      initialVelocity: CGVector(dx: 0, dy: min(max(towards, -20), 20))
+    )
+    let animator = UIViewPropertyAnimator(
+      duration: Self.railSettleDuration,
+      timingParameters: spring
+    )
+    animator.addAnimations {
+      rail.transform = CGAffineTransform(translationX: 0, y: target)
+    }
+    animator.addCompletion { [weak self] _ in
+      guard let self, self.railAnimator === animator else { return }
+      self.railAnimator = nil
+      self.railSettleTarget = nil
+    }
+    railSettleTarget = target
+    railAnimator = animator
+    animator.startAnimation()
+  }
+
+  /// A finger landing mid-spring takes over from wherever the rail is.
+  private func railStopAnimation() {
+    guard let animator = railAnimator else { return }
+    railAnimator = nil
+    railSettleTarget = nil
+    if animator.state == .active {
+      animator.stopAnimation(false)
+      animator.finishAnimation(at: .current)
+    }
+  }
+
+  // MARK: Tabs
+
+  override var selectedTab: UITab? {
+    didSet { railSyncSelection(animated: true) }
+  }
+
+  private func railSyncSelection(animated: Bool) {
+    guard let rail else { return }
+    var index: Int?
+    if let selected = selectedTab {
+      if selected === homeTab {
+        index = 0
+      } else if selected === libraryGroup || selected.parent === libraryGroup {
+        index = 1
       }
     }
-    guard Self.railRevealEnabled, !movingDown, !railRevealedThisRun,
-          y - railRunStartY <= -Self.railRevealDistance
-    else { return }
-    // Nothing to reveal when the bar is already out, or already asked for.
-    guard appliedRailLayout == .inline, railWanted != .never else { return }
-    railRevealedThisRun = true
-    #if DEBUG
-    Self.railTrace("REVEAL y=\(Int(y)) maxY=\(Int(maxY)) runStart=\(Int(railRunStartY))")
-    #endif
-    railWant(.never, "reveal")
+    rail.setSelectedItem(index, animated: animated && view.window != nil)
   }
+
+  private func railDidSelectItem(_ index: Int) {
+    guard let homeTab, let libraryGroup else { return }
+    let tab: UITab = index == 0 ? homeTab : libraryGroup
+    let nav = index == 0
+      ? homeTab.viewController as? UINavigationController
+      : libraryGroup.managingNavigationController
+    #if DEBUG
+      Self.railTrace("TAP \(tab.title)")
+    #endif
+    if selectedTab === tab || selectedTab?.parent === tab {
+      // A second tap on the selected tab goes back to its root, as the stock
+      // bar does.
+      nav?.popToRootViewController(animated: true)
+    } else {
+      selectedTab = tab
+    }
+    railSettle(hidden: false)
+  }
+
+  private func railDidTapSearch() {
+    guard let searchTab else { return }
+    #if DEBUG
+      Self.railTrace("TAP Search")
+    #endif
+    if selectedTab === searchTab {
+      (searchTab.viewController as? UINavigationController)?
+        .popToRootViewController(animated: true)
+    } else {
+      selectedTab = searchTab
+    }
+    railSettle(hidden: false)
+    railActivateSearch()
+  }
+
+  /// The system's bar activated the search field when it selected the search
+  /// tab; with that bar hidden the activation is ours, once the screen is up.
+  private func railActivateSearch() {
+    guard let searchTab else { return }
+    Task { @MainActor in
+      for _ in 0 ..< 12 {
+        let nav = searchTab.viewController as? UINavigationController
+          ?? searchTab.viewController?.navigationController
+        if let searchVC = nav?.topViewController as? SearchVC,
+           searchVC.isViewLoaded, searchVC.view.window != nil {
+          searchVC.activateSearchBar()
+          if searchVC.searchController.searchBar.isFirstResponder { return }
+        }
+        try? await Task.sleep(nanoseconds: 60_000_000)
+      }
+    }
+  }
+
+  // MARK: - Tab accessory (iPad)
 
   private func mainContent() -> UIView {
     // Attempt to find the main content view controller's view if the sidebar is visible.
@@ -443,17 +475,38 @@ class TabBarVC: UITabBarController {
   var compactWidthConstraint: NSLayoutConstraint?
   var inlineHeightConstraint: NSLayoutConstraint?
 
-  private enum RailLayout: Equatable { case inline, regularWide(CGFloat), compact }
-  private var appliedRailLayout: RailLayout?
+  private enum AccessoryLayout: Equatable { case inline, regularWide(CGFloat), compact }
+  private var appliedAccessoryLayout: AccessoryLayout?
+
+  /// The iPad keeps UIKit's bar, `.onScrollDown`, and the mini player as its
+  /// bottom accessory, as before the phone's rail.
+  private func installTabAccessory() {
+    guard let miniPlayer else { return }
+    tabBarMinimizeBehavior = .onScrollDown
+    bottomAccessory = UITabAccessory(contentView: miniPlayer.glassContainer)
+
+    heightConstraint = miniPlayer.glassContainer.heightAnchor.constraint(equalToConstant: 48.0)
+    // UIKit owns the accessory slot: everything we say about the pill's size
+    // is a preference below required, so it can never fight the slot.
+    heightConstraint?.priority = UILayoutPriority(999)
+    heightConstraint?.isActive = true
+    if let host = miniPlayer.glassContainer.superview {
+      compactWidthConstraint = miniPlayer.glassContainer.widthAnchor
+        .constraint(equalTo: host.widthAnchor)
+      compactWidthConstraint?.priority = UILayoutPriority(999)
+    }
+
+    miniPlayer.tabAccessoryTraitChangeCB = configureTraitChangesForMiniPlayer
+    configureTraitChangesForMiniPlayer()
+  }
 
   func configureTraitChangesForMiniPlayer() {
-    guard let miniPlayer else { return }
-    // cassette (rail): one read of the accessory trait decides the container
-    // constraints, idempotently, so UIKit's minimize/expand animation is never
-    // fought by a constraint pass that disagrees with it halfway through. The
-    // pill's own content is the same in both slots (MiniPlayerView).
+    guard rail == nil, let miniPlayer else { return }
+    // One read of the accessory trait decides the container constraints,
+    // idempotently, so UIKit's own animation is never fought by a constraint
+    // pass that disagrees with it halfway through.
     let isInline = miniPlayer.glassContainer.traitCollection.tabAccessoryEnvironment == .inline
-    let wanted: RailLayout
+    let wanted: AccessoryLayout
     if isInline {
       wanted = .inline
     } else if traitCollection.horizontalSizeClass == .regular {
@@ -467,19 +520,12 @@ class TabBarVC: UITabBarController {
     } else {
       wanted = .compact
     }
-    guard wanted != appliedRailLayout else { return }
-    #if DEBUG
-    Self.railTrace("LAYOUT \(String(describing: appliedRailLayout)) -> \(wanted) behavior=\(tabBarMinimizeBehavior.rawValue)")
-    #endif
-    appliedRailLayout = wanted
-    // The bar is about to move; nothing touches the behaviour until it stops.
-    railMorphStarted()
+    guard wanted != appliedAccessoryLayout else { return }
+    appliedAccessoryLayout = wanted
 
     switch wanted {
     case .inline:
-      // Inline means inside the minimized tab bar, where the system sizes the
-      // accessory slot. Fill the slot it gives: width AND height from the
-      // host, no fixed 48.
+      // Inside the minimized bar the system sizes the slot; fill it both ways.
       heightConstraint?.isActive = false
       centerConstraint?.isActive = false
       regularWidthConstraint?.isActive = false
@@ -523,6 +569,9 @@ class TabBarVC: UITabBarController {
   override func viewWillLayoutSubviews() {
     super.viewWillLayoutSubviews()
     configureTraitChangesForMiniPlayer()
+    if let rail {
+      view.bringSubviewToFront(rail)
+    }
   }
 
   override func viewIsAppearing(_ animated: Bool) {
@@ -612,6 +661,8 @@ extension TabBarVC: UITabBarControllerDelegate {
     previousTab: UITab?
   ) {
     applySelectedTabIcon(selected: selectedTab)
+    railSyncSelection(animated: true)
+    railSettle(hidden: false)
   }
 
   func tabBarControllerDidEndEditing(_ tabBarController: UITabBarController) {
@@ -628,6 +679,22 @@ extension TabBarVC: UITabBarControllerDelegate {
         accountSettings.libraryDisplaySettings = LibraryDisplaySettings(inUse: visibleItems)
       }
     NotificationCenter.default.post(name: .LibraryItemsChanged, object: nil, userInfo: nil)
+  }
+}
+
+// MARK: UINavigationControllerDelegate
+
+extension TabBarVC: UINavigationControllerDelegate {
+  /// cassette (rail): a screen change brings the rail out, and the next list
+  /// starts a fresh run.
+  func navigationController(
+    _ navigationController: UINavigationController,
+    willShow viewController: UIViewController,
+    animated: Bool
+  ) {
+    guard rail != nil else { return }
+    railScrollView = nil
+    railSettle(hidden: false)
   }
 }
 
@@ -674,6 +741,7 @@ extension TabBarVC: MainSceneHostingViewController {
     visualizePopupPlayer(direction: .close, animated: true) {
       self.selectedTab = searchTab
       searchTab.viewController?.navigationController?.popToRootViewController(animated: false)
+      self.railActivateSearch()
       Task {
         try await Task.sleep(nanoseconds: 500_000_000)
         if let searchTabVC = searchTab.viewController?.navigationController?
@@ -686,29 +754,5 @@ extension TabBarVC: MainSceneHostingViewController {
 
   func getSafeAreaExtension() -> CGFloat {
     0.0
-  }
-}
-
-// MARK: - Rail touch-down observer
-
-/// cassette (rail): sees every touch-down on the tab bar controller's view
-/// without taking part in it. `TabBarVC.railTouchDown(at:)` uses it to hand
-/// the minimize behaviour back before a drag can start somewhere else.
-private final class RailTouchDownObserver: UIGestureRecognizer {
-  private let onTouchDown: (CGPoint) -> Void
-
-  init(onTouchDown: @escaping (CGPoint) -> Void) {
-    self.onTouchDown = onTouchDown
-    super.init(target: nil, action: nil)
-    cancelsTouchesInView = false
-    delaysTouchesBegan = false
-    delaysTouchesEnded = false
-  }
-
-  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-    if let touch = touches.first, let view {
-      onTouchDown(touch.location(in: view))
-    }
-    state = .failed
   }
 }

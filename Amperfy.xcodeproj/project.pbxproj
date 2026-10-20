@@ -563,6 +563,7 @@
 		CA55E0E1000000200000CAFE /* DiagnosticInstallIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000100000CAFE /* DiagnosticInstallIdentity.swift */; };
 		CA55E0E1000000330000CAFE /* CassetteCloudPlaylistBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000230000CAFE /* CassetteCloudPlaylistBridge.swift */; };
 		CA55E0E2000000010000CAFE /* CassetteTokenReauth.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E2000000020000CAFE /* CassetteTokenReauth.swift */; };
+		CA55E0E3000000110000CAFE /* CassetteRailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E3000000010000CAFE /* CassetteRailView.swift */; };
 		CA55E0EA0000001A0000CAFE /* AlbumRegrouper.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0EA0000000A0000CAFE /* AlbumRegrouper.swift */; };
 		CA55E0EB0000001A0000CAFE /* AlbumRegrouperTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0EB0000000A0000CAFE /* AlbumRegrouperTest.swift */; };
 		CA55F011000000110000CAFE /* BarlowCondensed-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CA55F011000000010000CAFE /* BarlowCondensed-Regular.ttf */; };
@@ -1231,6 +1232,7 @@
 		CA55E0E1000000100000CAFE /* DiagnosticInstallIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticInstallIdentity.swift; sourceTree = "<group>"; };
 		CA55E0E1000000230000CAFE /* CassetteCloudPlaylistBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteCloudPlaylistBridge.swift; sourceTree = "<group>"; };
 		CA55E0E2000000020000CAFE /* CassetteTokenReauth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteTokenReauth.swift; sourceTree = "<group>"; };
+		CA55E0E3000000010000CAFE /* CassetteRailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteRailView.swift; sourceTree = "<group>"; };
 		CA55E0EA0000000A0000CAFE /* AlbumRegrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumRegrouper.swift; sourceTree = "<group>"; };
 		CA55E0EB0000000A0000CAFE /* AlbumRegrouperTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cases/Cassette/AlbumRegrouperTest.swift; sourceTree = "<group>"; };
 		CA55F011000000010000CAFE /* BarlowCondensed-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "BarlowCondensed-Regular.ttf"; sourceTree = "<group>"; };
@@ -1435,6 +1437,7 @@
 			children = (
 				5047B7072E3CB8D400D5090C /* PlayerUIHandler.swift */,
 				509357512E3BF47800CD4075 /* MiniPlayerView.swift */,
+				CA55E0E3000000010000CAFE /* CassetteRailView.swift */,
 				504627E92B73B44C00F481F8 /* PopupPlayerVC.xib */,
 				5058708F21DEBBCA0043896F /* PopupPlayerVC.swift */,
 				50A30E5B2B7556FB00722894 /* PopupPlayer+TableViewExtension.swift */,
@@ -2682,6 +2685,7 @@
 				50E1D39C2B8BED4C0001A572 /* SideBarVC.swift in Sources */,
 				505CA20E2B88EB9A00AA81CD /* BasicFetchedResultsTableViewController.swift in Sources */,
 				508FDE5021F64ED6005A0724 /* TabBarVC.swift in Sources */,
+				CA55E0E3000000110000CAFE /* CassetteRailView.swift in Sources */,
 				50C16C2821E8680A00F086F0 /* CommonScreenOperations.swift in Sources */,
 				5020D51A2E3B6FF6000A6F85 /* WelcomePopupPresenter.swift in Sources */,
 				50AC4E5328D909730091FF33 /* EventLogSettingsView.swift in Sources */,
