@@ -37,11 +37,11 @@ struct SettingsList<Content: View>: View {
     // row treatment unchanged from Patch 015g.
     List {
       content()
-        .listRowBackground(CassetteTheme.Colors.bg2)
+        .listRowBackground(Color.cassette(.surfaceRaised))
     }
     .scrollContentBackground(.hidden)
-    .background(CassetteTheme.Colors.bg)
-    .tint(CassetteTheme.Colors.ink)
-    .foregroundColor(CassetteTheme.Colors.ink)
+    .background(Color.cassette(.surfaceBase))
+    .tint(Color.cassette(.fillSelected))
+    .foregroundColor(Color.cassette(.textPrimary))
   }
 }

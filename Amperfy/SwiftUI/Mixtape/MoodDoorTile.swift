@@ -18,13 +18,13 @@ struct MoodDoorTile: View {
   let onTap: () -> ()
 
   private var color: Color {
-    Color(hexString: door.hexColor) ?? CassetteTheme.Colors.orange
+    Color(hexString: door.hexColor) ?? Color.cassette(.accentProgress)
   }
 
   var body: some View {
     Button(action: onTap) {
       ZStack(alignment: .bottomLeading) {
-        CassetteTheme.Colors.bg2
+        Color.cassette(.surfaceRaised)
 
         LinearGradient(
           colors: [color.opacity(0.4), .clear],
@@ -36,14 +36,14 @@ struct MoodDoorTile: View {
 
         Text(door.label)
           .font(Font.cassette(.rowTitle))
-          .foregroundStyle(CassetteTheme.Colors.ink)
+          .foregroundStyle(Color.cassette(.textPrimary))
           .lineLimit(1)
           .padding(10)
 
         if isBusy {
           Color.black.opacity(0.35)
           ProgressView()
-            .tint(CassetteTheme.Colors.ink)
+            .tint(Color.cassette(.textPrimary))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }

@@ -68,7 +68,7 @@ class LyricTableCellModel {
       attributes:
       [
         .font: UIFont.boldSystemFont(ofSize: 20),
-        .foregroundColor: CassetteTheme.UIColors.ink,
+        .foregroundColor: UIColor.cassette(.textPrimary),
       ]
     )
   }

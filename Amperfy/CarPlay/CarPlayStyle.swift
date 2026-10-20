@@ -59,9 +59,9 @@ struct CarPlayStyle {
   /// Glyph color on a dark car surface.
   static let inkOnDark = UIColor.white
   /// Glyph color on a light car surface: the brand's darkest ink, next to the car's black text.
-  static let inkOnLight = CassetteTheme.UIColors.bg
+  static let inkOnLight = UIColor.cassette(.textOnFill)
   /// The placeholder initial: legible on the brand tile at car size.
-  static let placeholderMark = CassetteTheme.UIColors.ink2.withAlphaComponent(0.65)
+  static let placeholderMark = UIColor.cassette(.textSecondary).withAlphaComponent(0.65)
 
   private var scale: CGFloat {
     traits.displayScale > 0 ? traits.displayScale : UITraitCollection.current.displayScale

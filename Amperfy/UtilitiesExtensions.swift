@@ -70,16 +70,16 @@ extension Color {
 
   // MARK: - Label Colors
 
-  static let label = CassetteTheme.Colors.ink
-  static let secondaryLabel = CassetteTheme.Colors.ink2
-  static let tertiaryLabel = CassetteTheme.Colors.ink3
-  static let quaternaryLabel = CassetteTheme.Colors.ink4
+  static let label = Color.cassette(.textPrimary)
+  static let secondaryLabel = Color.cassette(.textSecondary)
+  static let tertiaryLabel = Color.cassette(.textTertiary)
+  static let quaternaryLabel = Color.cassette(.hairline)
 
   // MARK: - Background Colors
 
-  static let systemBackground = CassetteTheme.Colors.bg
-  static let secondarySystemBackground = CassetteTheme.Colors.bg2
-  static let tertiarySystemBackground = CassetteTheme.Colors.bg3
+  static let systemBackground = Color.cassette(.surfaceBase)
+  static let secondarySystemBackground = Color.cassette(.surfaceRaised)
+  static let tertiarySystemBackground = Color.cassette(.surfaceElevated)
 
   // MARK: - Fill Colors
 
@@ -90,9 +90,9 @@ extension Color {
 
   // MARK: - Grouped Background Colors
 
-  static let systemGroupedBackground = CassetteTheme.Colors.bg
-  static let secondarySystemGroupedBackground = CassetteTheme.Colors.bg2
-  static let tertiarySystemGroupedBackground = CassetteTheme.Colors.bg3
+  static let systemGroupedBackground = Color.cassette(.surfaceBase)
+  static let secondarySystemGroupedBackground = Color.cassette(.surfaceRaised)
+  static let tertiarySystemGroupedBackground = Color.cassette(.surfaceElevated)
 
   // MARK: - Gray Colors
 
@@ -137,9 +137,9 @@ extension View {
 extension UIColor {
   // cassette Patch 016: warm overlay tokens for popup-player slide-overs
   // and hover states, replacing the iOS system surface colours.
-  static let slideOverBackgroundColor: UIColor = CassetteTheme.UIColors.bg
+  static let slideOverBackgroundColor: UIColor = UIColor.cassette(.surfaceBase)
     .withAlphaComponent(0.5)
-  static let hoveredBackgroundColor: UIColor = CassetteTheme.UIColors.bg2
+  static let hoveredBackgroundColor: UIColor = UIColor.cassette(.surfaceRaised)
     .withAlphaComponent(0.4)
 }
 
@@ -161,14 +161,13 @@ extension UIButton.Configuration {
   static func player(isSelected: Bool) -> UIButton.Configuration {
     var config = UIButton.Configuration.tinted()
     if isSelected {
-      config.background.strokeColor = CassetteTheme.UIColors.ink
+      config.background.strokeColor = UIColor.cassette(.fillSelected)
       config.background.strokeWidth = 1.0
       config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)
     }
     config.buttonSize = .small
-    config.baseForegroundColor = !isSelected ? CassetteTheme.UIColors.ink : CassetteTheme.UIColors
-      .bg
-    config.baseBackgroundColor = !isSelected ? .clear : CassetteTheme.UIColors.ink
+    config.baseForegroundColor = !isSelected ? UIColor.cassette(.textPrimary) : UIColor.cassette(.textOnFill)
+    config.baseBackgroundColor = !isSelected ? .clear : UIColor.cassette(.fillSelected)
     config.cornerStyle = .medium
     return config
   }
@@ -472,10 +471,10 @@ extension UIContentUnavailableConfiguration {
   /// Stamps the Cassette type scale and ink tiers onto any configuration.
   mutating func applyCassetteType() {
     textProperties.font = UIFont.cassette(.sectionTitle)
-    textProperties.color = CassetteTheme.UIColors.ink
+    textProperties.color = UIColor.cassette(.textPrimary)
     secondaryTextProperties.font = UIFont.cassette(.body)
-    secondaryTextProperties.color = CassetteTheme.UIColors.ink2
-    imageProperties.tintColor = CassetteTheme.UIColors.ink3
+    secondaryTextProperties.color = UIColor.cassette(.textSecondary)
+    imageProperties.tintColor = UIColor.cassette(.textTertiary)
   }
 
   /// An "empty" state: nothing to list yet.

@@ -71,7 +71,7 @@ extension PopupPlayerVC {
     // 19pt ellipsis in ink; 44pt hit target preserved via symmetric insets.
     var config = UIButton.Configuration.cassetteBare()
     config.image = .ellipsis
-    config.baseForegroundColor = CassetteTheme.UIColors.ink
+    config.baseForegroundColor = UIColor.cassette(.textPrimary)
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
       pointSize: 19,
       weight: .regular
@@ -117,7 +117,7 @@ extension PopupPlayerVC {
       self?.dismiss(animated: true)
     }
     let host = UIHostingController(rootView: panel)
-    host.view.backgroundColor = CassetteTheme.UIColors.bg4
+    host.view.backgroundColor = UIColor.cassette(.surfaceSunken)
     host.overrideUserInterfaceStyle = .dark
     if let sheet = host.sheetPresentationController {
       sheet.detents = [.large()]
@@ -201,7 +201,7 @@ extension PopupPlayerVC {
   /// this method only needs to clear any stale gradient sublayers that
   /// might have been installed before the migration.
   func applyGradientBackground() {
-    view.backgroundColor = CassetteTheme.UIColors.bg4
+    view.backgroundColor = UIColor.cassette(.surfaceSunken)
     view.layer.sublayers?
       .filter { $0 is CAGradientLayer }
       .forEach { $0.removeFromSuperlayer() }

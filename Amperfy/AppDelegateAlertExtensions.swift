@@ -82,7 +82,7 @@ extension AppDelegate {
     if let newActiveAccountInfo = storage.settings.accounts.active {
       let newActiveAccount = storage.main.library.getAccount(info: newActiveAccountInfo)
       closeAllButActiveMainTabs()
-      setAppTheme(color: CassetteTheme.UIColors.ink)
+      setAppTheme(color: UIColor.cassette(.textPrimary))
       applyAppThemeToAlreadyLoadedViews()
       guard let mainScene = AppDelegate.mainSceneDelegate else { return }
       mainScene.replaceMainRootViewController(
@@ -168,9 +168,9 @@ extension AppDelegate: AlertDisplayable {
       title: title,
       subtitle: subtitle,
       titleFont: UIFont.cassette(.miniTitle),
-      titleColor: CassetteTheme.UIColors.ink,
+      titleColor: UIColor.cassette(.textPrimary),
       subtitleFont: UIFont.cassette(.body),
-      subtitleColor: CassetteTheme.UIColors.ink,
+      subtitleColor: UIColor.cassette(.textPrimary),
       style: BannerStyle.from(logType: style),
       colors: AmperfyBannerColors()
     )
@@ -180,7 +180,7 @@ extension AppDelegate: AlertDisplayable {
     // but its backgroundColor is forwarded from the banner so the
     // banner.layer border draws on top of the painted surface and
     // reads as a true frame around the banner.
-    banner.layer.borderColor = CassetteTheme.UIColors.ink4.cgColor
+    banner.layer.borderColor = UIColor.cassette(.hairline).cgColor
     banner.layer.borderWidth = 1.0
     // 4-second auto-dismiss; tap or swipe-up still dismiss instantly.
     banner.duration = 4

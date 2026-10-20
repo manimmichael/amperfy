@@ -69,15 +69,15 @@ class UserQueueSectionHeader: UIView {
   /// gray system "Clear" button becomes a bare ink2 label in the same face.
   private func applyCassetteType() {
     nameLabel.font = UIFont.cassette(.sectionLabel)
-    nameLabel.textColor = CassetteTheme.UIColors.ink2
+    nameLabel.textColor = UIColor.cassette(.textSecondary)
     var clear = UIButton.Configuration.cassetteBare()
     var attributes = AttributeContainer()
     attributes.font = UIFont.cassette(.sectionLabel)
-    attributes.foregroundColor = CassetteTheme.UIColors.ink2
+    attributes.foregroundColor = UIColor.cassette(.textSecondary)
     clear.attributedTitle = AttributedString("CLEAR", attributes: attributes)
     clear.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 0)
     rightButton.configuration = clear
-    rightButton.tintColor = CassetteTheme.UIColors.ink2
+    rightButton.tintColor = UIColor.cassette(.textSecondary)
   }
 
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {

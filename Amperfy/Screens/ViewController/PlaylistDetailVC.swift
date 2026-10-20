@@ -349,10 +349,10 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     config.text = "Empty playlist"
     config.secondaryText = "Add songs from any artist or album."
     config.textProperties.font = UIFont.cassette(.sectionTitle)
-    config.textProperties.color = CassetteTheme.UIColors.ink
+    config.textProperties.color = UIColor.cassette(.textPrimary)
     config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
-    config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
-    config.imageProperties.tintColor = CassetteTheme.UIColors.ink3
+    config.secondaryTextProperties.color = UIColor.cassette(.textSecondary)
+    config.imageProperties.tintColor = UIColor.cassette(.textTertiary)
     return config
   }()
 

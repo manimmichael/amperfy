@@ -133,8 +133,8 @@ enum DetailStickyHeaderSupport {
     if abs(currentBarAlpha - progress) > 0.01 {
       let barAppearance = UINavigationBarAppearance()
       barAppearance.configureWithTransparentBackground()
-      barAppearance.backgroundColor = CassetteTheme.UIColors.bg.withAlphaComponent(progress)
-      barAppearance.shadowColor = CassetteTheme.UIColors.ink4.withAlphaComponent(progress)
+      barAppearance.backgroundColor = UIColor.cassette(.surfaceBase).withAlphaComponent(progress)
+      barAppearance.shadowColor = UIColor.cassette(.hairline).withAlphaComponent(progress)
       item.standardAppearance = barAppearance
       item.scrollEdgeAppearance = barAppearance
       item.compactAppearance = barAppearance

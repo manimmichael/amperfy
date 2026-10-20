@@ -57,20 +57,20 @@ class NewPlaylistTableHeader: UIView {
     // and a bare ink "Create" in the row-title face.
     MainActor.assumeIsolated {
       nameTextField.borderStyle = .none
-      nameTextField.backgroundColor = CassetteTheme.UIColors.bg2
-      nameTextField.textColor = CassetteTheme.UIColors.ink
-      nameTextField.tintColor = CassetteTheme.UIColors.ink
+      nameTextField.backgroundColor = UIColor.cassette(.surfaceRaised)
+      nameTextField.textColor = UIColor.cassette(.textPrimary)
+      nameTextField.tintColor = UIColor.cassette(.textPrimary)
       nameTextField.font = UIFont.cassette(.body)
       nameTextField.attributedPlaceholder = NSAttributedString(
         string: "New playlist name",
         attributes: [
-          .foregroundColor: CassetteTheme.UIColors.ink3,
+          .foregroundColor: UIColor.cassette(.textTertiary),
           .font: UIFont.cassette(.body),
         ]
       )
       nameTextField.layer.cornerRadius = CassetteTheme.Radius.md
       nameTextField.layer.borderWidth = 1.0 / max(traitCollection.displayScale, 1.0)
-      nameTextField.layer.borderColor = CassetteTheme.UIColors.ink4.cgColor
+      nameTextField.layer.borderColor = UIColor.cassette(.hairline).cgColor
       let inset = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 1))
       nameTextField.leftView = inset
       nameTextField.leftViewMode = .always
@@ -83,19 +83,19 @@ class NewPlaylistTableHeader: UIView {
         var config = UIButton.Configuration.cassetteBare()
         var attributes = AttributeContainer()
         attributes.font = UIFont.cassette(.rowTitle)
-        attributes.foregroundColor = CassetteTheme.UIColors.ink
+        attributes.foregroundColor = UIColor.cassette(.textPrimary)
         config.attributedTitle = AttributedString("Create", attributes: attributes)
         config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
           var outgoing = incoming
           outgoing.font = UIFont.cassette(.rowTitle)
-          outgoing.foregroundColor = CassetteTheme.UIColors.ink
+          outgoing.foregroundColor = UIColor.cassette(.textPrimary)
           return outgoing
         }
         config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 0)
         createButton.configuration = config
-        createButton.tintColor = CassetteTheme.UIColors.ink
+        createButton.tintColor = UIColor.cassette(.textPrimary)
         createButton.titleLabel?.font = UIFont.cassette(.rowTitle)
-        createButton.setTitleColor(CassetteTheme.UIColors.ink, for: .normal)
+        createButton.setTitleColor(UIColor.cassette(.textPrimary), for: .normal)
       }
     }
   }

@@ -926,13 +926,13 @@ class EntityPreviewVC: UIViewController {
     // cassette: the context-menu preview card was the XIB's system 19/17/16 on
     // a system material. Same deck as a row: bg2 card, display-face title,
     // mono artist, quiet caption, ink2 chevron.
-    view.backgroundColor = CassetteTheme.UIColors.bg2
+    view.backgroundColor = UIColor.cassette(.surfaceRaised)
     titleLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
     infoLabel.applyAmperfyStyle()
     applyCassetteType()
     gotoDetailsSymbol.isHidden = isNavigationDisallowed
-    gotoDetailsSymbol.tintColor = CassetteTheme.UIColors.ink2
+    gotoDetailsSymbol.tintColor = UIColor.cassette(.textSecondary)
 
     // The preview will size to the preferredContentSize, which can be useful
     // for displaying a preview with the dimension of an image, for example.
@@ -962,11 +962,11 @@ class EntityPreviewVC: UIViewController {
 
   private func applyCassetteType() {
     titleLabel.font = UIFont.cassette(.rowTitle)
-    titleLabel.textColor = CassetteTheme.UIColors.ink
+    titleLabel.textColor = UIColor.cassette(.textPrimary)
     artistLabel.font = UIFont.cassette(.cardSubtitle)
-    artistLabel.textColor = CassetteTheme.UIColors.ink2
+    artistLabel.textColor = UIColor.cassette(.textSecondary)
     infoLabel.font = UIFont.cassette(.caption)
-    infoLabel.textColor = CassetteTheme.UIColors.ink3
+    infoLabel.textColor = UIColor.cassette(.textTertiary)
   }
 
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {

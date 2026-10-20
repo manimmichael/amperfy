@@ -76,7 +76,7 @@ struct MixtapePreviewSheet: View {
   }
 
   private var artColor: Color {
-    mixtape.art.flatMap { Color(hexString: $0.color) } ?? CassetteTheme.Colors.orange
+    mixtape.art.flatMap { Color(hexString: $0.color) } ?? Color.cassette(.accentProgress)
   }
 
   var body: some View {
@@ -96,12 +96,12 @@ struct MixtapePreviewSheet: View {
           VStack(spacing: 4) {
             Text(mixtape.name)
               .font(Font.cassette(.heroTitle))
-              .foregroundStyle(CassetteTheme.Colors.ink)
+              .foregroundStyle(Color.cassette(.textPrimary))
               .multilineTextAlignment(.center)
               .lineLimit(2)
             Text(metaLine)
               .font(Font.cassette(.caption))
-              .foregroundStyle(CassetteTheme.Colors.ink2)
+              .foregroundStyle(Color.cassette(.textSecondary))
             if let errorMessage {
               Text(errorMessage)
                 .font(Font.cassette(.caption))
@@ -119,11 +119,11 @@ struct MixtapePreviewSheet: View {
               VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
                   .font(Font.cassette(.rowTitle))
-                  .foregroundStyle(CassetteTheme.Colors.ink)
+                  .foregroundStyle(Color.cassette(.textPrimary))
                   .lineLimit(1)
                 Text(track.artist)
                   .font(Font.cassette(.cardSubtitle))
-                  .foregroundStyle(CassetteTheme.Colors.ink2)
+                  .foregroundStyle(Color.cassette(.textSecondary))
                   .lineLimit(1)
               }
               .frame(maxWidth: .infinity, alignment: .leading)
@@ -135,7 +135,7 @@ struct MixtapePreviewSheet: View {
         }
       }
     }
-    .background(CassetteTheme.Colors.bg)
+    .background(Color.cassette(.surfaceBase))
   }
 
   private var actionRow: some View {
@@ -153,9 +153,9 @@ struct MixtapePreviewSheet: View {
       } label: {
         Image(systemName: "play.fill")
           .font(.title2)
-          .foregroundStyle(CassetteTheme.Colors.bg)
+          .foregroundStyle(Color.cassette(.textOnFill))
           .frame(width: 52, height: 52)
-          .background(Circle().fill(CassetteTheme.Colors.ink))
+          .background(Circle().fill(Color.cassette(.fillSelected)))
       }
 
       if let doorKey = mixtape.doorKey {
@@ -170,7 +170,7 @@ struct MixtapePreviewSheet: View {
         Color.clear.frame(width: 22, height: 22)
       }
     }
-    .foregroundStyle(CassetteTheme.Colors.ink2)
+    .foregroundStyle(Color.cassette(.textSecondary))
   }
 
   @MainActor
@@ -234,7 +234,7 @@ extension UIViewController {
       self?.dismiss(animated: true)
     }
     let host = UIHostingController(rootView: sheet)
-    host.view.backgroundColor = UIColor(CassetteTheme.Colors.bg)
+    host.view.backgroundColor = UIColor(Color.cassette(.surfaceBase))
     host.overrideUserInterfaceStyle = .dark
     if let sheetController = host.sheetPresentationController {
       sheetController.detents = [.large()]

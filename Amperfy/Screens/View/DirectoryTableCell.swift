@@ -65,9 +65,9 @@ class DirectoryTableCell: BasicTableCell {
     // rowTitle (16pt semibold display) on warm bg.
     MainActor.assumeIsolated {
       infoLabel.font = UIFont.cassette(.rowTitle)
-      infoLabel.textColor = CassetteTheme.UIColors.ink
-      contentView.backgroundColor = CassetteTheme.UIColors.bg
-      backgroundColor = CassetteTheme.UIColors.bg
+      infoLabel.textColor = UIColor.cassette(.textPrimary)
+      contentView.backgroundColor = UIColor.cassette(.surfaceBase)
+      backgroundColor = UIColor.cassette(.surfaceBase)
     }
   }
 
@@ -112,6 +112,6 @@ class DirectoryTableCell: BasicTableCell {
       iconImage.isHidden = false
     }
     accessoryType = .disclosureIndicator
-    backgroundColor = CassetteTheme.UIColors.bg
+    backgroundColor = UIColor.cassette(.surfaceBase)
   }
 }

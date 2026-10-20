@@ -35,7 +35,7 @@ class SpinnerViewController: UIViewController {
     // warm Cassette palette). Use bg2 so the spinner overlay sits on the
     // same neutral grey family as the rest of the chrome.
     if #available(iOS 13.0, *) {
-      view.backgroundColor = CassetteTheme.UIColors.bg2
+      view.backgroundColor = UIColor.cassette(.surfaceRaised)
       spinner.color = UIColor.placeholderText
     } else {
       view.backgroundColor = UIColor(white: 0.9, alpha: 1.0)

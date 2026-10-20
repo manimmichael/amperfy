@@ -119,27 +119,27 @@ class PlayerControlView: UIView {
     // 40 -> 32 (prev/next/skip drop to 20 in the XIB) and the config
     // routes through cassetteBare() (Root 1) so no glass capsule leaks.
     var playConfig = UIButton.Configuration.cassetteBare()
-    playConfig.baseForegroundColor = CassetteTheme.UIColors.ink
+    playConfig.baseForegroundColor = UIColor.cassette(.textPrimary)
     playConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
       pointSize: 32, weight: .bold
     )
     playButton.configuration = playConfig
-    playButton.tintColor = CassetteTheme.UIColors.ink
-    previousButton.tintColor = CassetteTheme.UIColors.ink
-    nextButton.tintColor = CassetteTheme.UIColors.ink
-    skipBackwardButton.tintColor = CassetteTheme.UIColors.ink
-    skipForwardButton.tintColor = CassetteTheme.UIColors.ink
+    playButton.tintColor = UIColor.cassette(.textPrimary)
+    previousButton.tintColor = UIColor.cassette(.textPrimary)
+    nextButton.tintColor = UIColor.cassette(.textPrimary)
+    skipBackwardButton.tintColor = UIColor.cassette(.textPrimary)
+    skipForwardButton.tintColor = UIColor.cassette(.textPrimary)
     // cassette Polish 2 (G2): AirPlay + player-mode buttons were ink2 while
     // every other bottom-row glyph is ink — uniform ink reads as one row.
-    airplayButton.tintColor = CassetteTheme.UIColors.ink
-    playerModeButton.tintColor = CassetteTheme.UIColors.ink
+    airplayButton.tintColor = UIColor.cassette(.textPrimary)
+    playerModeButton.tintColor = UIColor.cassette(.textPrimary)
     elapsedTimeLabel.font = UIFont.cassette(.metadata)
-    elapsedTimeLabel.textColor = CassetteTheme.UIColors.ink2
+    elapsedTimeLabel.textColor = UIColor.cassette(.textSecondary)
     remainingTimeLabel.font = UIFont.cassette(.metadata)
-    remainingTimeLabel.textColor = CassetteTheme.UIColors.ink2
-    timeSlider.minimumTrackTintColor = CassetteTheme.UIColors.orange
-    timeSlider.maximumTrackTintColor = CassetteTheme.UIColors.ink4
-    timeSlider.thumbTintColor = CassetteTheme.UIColors.orange
+    remainingTimeLabel.textColor = UIColor.cassette(.textSecondary)
+    timeSlider.minimumTrackTintColor = UIColor.cassette(.accentProgress)
+    timeSlider.maximumTrackTintColor = UIColor.cassette(.hairline)
+    timeSlider.thumbTintColor = UIColor.cassette(.accentProgress)
     // cassette polish Part 1: drop the "MP3 2658 kbps" bitrate strip beneath the
     // scrubber. Removed from the hierarchy so the time row reads clean; the
     // refresh path keeps these as optionals and no longer un-hides them.

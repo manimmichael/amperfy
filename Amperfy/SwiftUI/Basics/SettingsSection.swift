@@ -45,13 +45,13 @@ struct SettingsSection<Content: View>: View {
     Text(value.uppercased())
       .font(.cassette(.sectionLabel))
       .tracking(0.6)
-      .foregroundColor(CassetteTheme.Colors.ink2)
+      .foregroundColor(Color.cassette(.textSecondary))
   }
 
   private func footerText(_ value: String) -> some View {
     Text(value)
       .font(.cassette(.caption))
-      .foregroundColor(CassetteTheme.Colors.ink3)
+      .foregroundColor(Color.cassette(.textTertiary))
   }
 
   var body: some View {

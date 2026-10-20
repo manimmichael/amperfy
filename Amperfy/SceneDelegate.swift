@@ -126,7 +126,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     window = UIWindow(windowScene: windowScene)
     // cassette Patch 015: pin every scene to dark mode + warm Cassette bg.
     window?.overrideUserInterfaceStyle = .dark
-    window?.backgroundColor = CassetteTheme.UIColors.bg
+    window?.backgroundColor = UIColor.cassette(.surfaceBase)
     appDelegate.window = window
     var initialViewController: UIViewController?
 

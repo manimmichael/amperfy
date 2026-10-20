@@ -57,8 +57,8 @@ final class HomeEditorVC: UITableViewController {
     // cassette: the editor was an untouched system inset-grouped list (cool
     // grey cells, SF Pro, system headers) under a Barlow title. Same deck as
     // every other list: bg behind, bg2 cells, ink rows, section labels.
-    tableView.backgroundColor = CassetteTheme.UIColors.bg
-    tableView.separatorColor = CassetteTheme.UIColors.ink4
+    tableView.backgroundColor = UIColor.cassette(.surfaceBase)
+    tableView.separatorColor = UIColor.cassette(.hairline)
     tableView.sectionHeaderTopPadding = CassetteTheme.Spacing.sm
   }
 
@@ -71,7 +71,7 @@ final class HomeEditorVC: UITableViewController {
     var config = header.defaultContentConfiguration()
     config.text = header.textLabel?.text ?? config.text
     config.textProperties.font = UIFont.cassette(.sectionLabel)
-    config.textProperties.color = CassetteTheme.UIColors.ink2
+    config.textProperties.color = UIColor.cassette(.textSecondary)
     config.textProperties.transform = .uppercase
     header.contentConfiguration = config
     header.contentView.backgroundColor = .clear
@@ -123,10 +123,10 @@ final class HomeEditorVC: UITableViewController {
     var content = cell.defaultContentConfiguration()
     content.text = s.title
     content.textProperties.font = UIFont.cassette(.rowTitle)
-    content.textProperties.color = CassetteTheme.UIColors.ink
+    content.textProperties.color = UIColor.cassette(.textPrimary)
     cell.contentConfiguration = content
-    cell.backgroundColor = CassetteTheme.UIColors.bg2
-    cell.tintColor = CassetteTheme.UIColors.ink2
+    cell.backgroundColor = UIColor.cassette(.surfaceRaised)
+    cell.tintColor = UIColor.cassette(.textSecondary)
     cell.accessoryType = .none
     return cell
   }

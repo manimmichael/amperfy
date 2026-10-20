@@ -48,7 +48,7 @@ final class WaveformAnimatedView: UIView {
     for _ in 0 ..< 3 {
       let bar = UIView()
       bar.translatesAutoresizingMaskIntoConstraints = false
-      bar.backgroundColor = CassetteTheme.UIColors.orange
+      bar.backgroundColor = UIColor.cassette(.accentProgress)
       bar.layer.cornerRadius = 1
       let height = bar.heightAnchor.constraint(equalToConstant: Self.midBarHeight)
       NSLayoutConstraint.activate([

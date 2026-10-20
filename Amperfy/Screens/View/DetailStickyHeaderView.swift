@@ -21,7 +21,7 @@ final class DetailStickyHeaderView: UIView {
     alpha = 0
 
     titleLabel.font = UIFont.cassetteDisplay(size: 18, weight: .semibold)
-    titleLabel.textColor = CassetteTheme.UIColors.ink
+    titleLabel.textColor = UIColor.cassette(.textPrimary)
     titleLabel.numberOfLines = 1
     titleLabel.textAlignment = .center
     titleLabel.lineBreakMode = .byTruncatingTail

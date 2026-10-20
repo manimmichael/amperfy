@@ -35,7 +35,7 @@ struct SecondaryText: View {
     // cassette Patch 032: trailing metadata reads in 12pt medium mono.
     Text(text)
       .font(.cassette(.metadata))
-      .foregroundStyle(CassetteTheme.Colors.ink2)
+      .foregroundStyle(Color.cassette(.textSecondary))
       .help(text)
   }
 }

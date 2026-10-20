@@ -42,7 +42,7 @@ struct AccountSettingsView: View {
     // all cases resolve to ink (SettingEnumerations.asColor); doing this
     // explicitly removes the indirection.
     settings.themePreference = preference
-    appDelegate.setAppTheme(color: CassetteTheme.UIColors.ink)
+    appDelegate.setAppTheme(color: UIColor.cassette(.textPrimary))
     appDelegate.applyAppThemeToAlreadyLoadedViews()
   }
 

@@ -38,7 +38,7 @@ class CommonCollectionSectionHeader: UICollectionReusableView {
     titleLabel.text = title?.uppercased()
     titleLabel.isHidden = (title == nil)
     titleLabel.font = UIFont.cassette(.sectionLabel)
-    titleLabel.textColor = CassetteTheme.UIColors.ink2
+    titleLabel.textColor = UIColor.cassette(.textSecondary)
   }
 
   func displayPlayHeader(configuration: PlayShuffleInfoConfiguration) {

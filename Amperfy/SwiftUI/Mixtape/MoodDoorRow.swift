@@ -27,7 +27,7 @@ struct MoodDoorRow: View {
       // "Playlists" above and below it, not as a smaller mono label.
       Text("Mood")
         .font(Font.cassette(.sectionTitle))
-        .foregroundStyle(CassetteTheme.Colors.ink)
+        .foregroundStyle(Color.cassette(.textPrimary))
         .padding(.horizontal, 16)
         .padding(.top, 16)
 

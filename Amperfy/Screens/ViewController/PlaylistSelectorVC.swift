@@ -100,7 +100,7 @@ class PlaylistSelectorVC: SingleSnapshotFetchedResultsTableViewController<Playli
     tableView.estimatedSectionFooterHeight = 0.0
     tableView.sectionHeaderHeight = 0.0
     tableView.estimatedSectionHeaderHeight = 0.0
-    tableView.backgroundColor = CassetteTheme.UIColors.bg
+    tableView.backgroundColor = UIColor.cassette(.surfaceBase)
 
     tableView.tableHeaderView = UIView(frame: CGRect(
       x: 0,

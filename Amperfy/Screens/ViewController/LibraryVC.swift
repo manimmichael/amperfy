@@ -45,7 +45,7 @@ class LibraryVC: KeyCommandCollectionViewController {
 
   lazy var layoutConfig = {
     var config = UICollectionLayoutListConfiguration(appearance: .sidebarPlain)
-    config.backgroundColor = CassetteTheme.UIColors.bg
+    config.backgroundColor = UIColor.cassette(.surfaceBase)
     return config
   }()
 

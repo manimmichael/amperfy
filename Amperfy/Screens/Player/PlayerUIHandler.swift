@@ -195,8 +195,8 @@ class PlayerUIHandler: NSObject {
       // orange wash so the mini chrome reads neutral.
       repeatButton.configuration?.image = image?
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
-      repeatButton.tintColor = isSelected ? CassetteTheme.UIColors.bg : CassetteTheme.UIColors.ink
-      repeatButton.backgroundColor = isSelected ? CassetteTheme.UIColors.ink : .clear
+      repeatButton.tintColor = isSelected ? UIColor.cassette(.textOnFill) : UIColor.cassette(.textPrimary)
+      repeatButton.backgroundColor = isSelected ? UIColor.cassette(.fillSelected) : .clear
     case .popupPlayer:
       var config = UIButton.Configuration.player(isSelected: isSelected)
       config.image = image
@@ -211,9 +211,8 @@ class PlayerUIHandler: NSObject {
       // cassette Patch 047 (Phase B): see refreshRepeatButton rationale.
       shuffleButton.configuration?.image = .shuffle
         .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
-      shuffleButton.tintColor = player.isShuffle ? CassetteTheme.UIColors.bg : CassetteTheme
-        .UIColors.ink
-      shuffleButton.backgroundColor = player.isShuffle ? CassetteTheme.UIColors.ink : .clear
+      shuffleButton.tintColor = player.isShuffle ? UIColor.cassette(.textOnFill) : UIColor.cassette(.textPrimary)
+      shuffleButton.backgroundColor = player.isShuffle ? UIColor.cassette(.fillSelected) : .clear
     case .popupPlayer:
       var config = UIButton.Configuration.player(isSelected: player.isShuffle)
       config.image = .shuffle
@@ -230,9 +229,8 @@ class PlayerUIHandler: NSObject {
     case .miniPlayeriOS, .miniPlayerMac:
       // cassette Patch 047 (Phase B): selected = ink fill + bg glyph; unselected
       // = ink glyph on clear. Matches refreshRepeatButton / refreshShuffleButton.
-      displayPlaylistButton.tintColor = isSelected ? CassetteTheme.UIColors.bg : CassetteTheme
-        .UIColors.ink
-      displayPlaylistButton.backgroundColor = isSelected ? CassetteTheme.UIColors.ink : .clear
+      displayPlaylistButton.tintColor = isSelected ? UIColor.cassette(.textOnFill) : UIColor.cassette(.textPrimary)
+      displayPlaylistButton.backgroundColor = isSelected ? UIColor.cassette(.fillSelected) : .clear
     case .popupPlayer:
       var config = UIButton.Configuration.player(isSelected: isSelected)
       config.image = .playlistDisplayStyle
@@ -247,9 +245,8 @@ class PlayerUIHandler: NSObject {
     switch style {
     case .miniPlayeriOS, .miniPlayerMac:
       // cassette Patch 047 (Phase B): see refreshDisplayPlaylistButton.
-      displayLyricsButton.tintColor = isSelected ? CassetteTheme.UIColors.bg : CassetteTheme
-        .UIColors.ink
-      displayLyricsButton.backgroundColor = isSelected ? CassetteTheme.UIColors.ink : .clear
+      displayLyricsButton.tintColor = isSelected ? UIColor.cassette(.textOnFill) : UIColor.cassette(.textPrimary)
+      displayLyricsButton.backgroundColor = isSelected ? UIColor.cassette(.fillSelected) : .clear
     case .popupPlayer:
       break
     }
@@ -549,6 +546,6 @@ class PlayerUIHandler: NSObject {
     audioInfoLabel
       .text = (displayBitrateInKbps > 0) ? "\(formatText) \(displayBitrateInKbps) kbps" :
       "\(formatText)"
-    playTypeIcon.tintColor = CassetteTheme.UIColors.ink2
+    playTypeIcon.tintColor = UIColor.cassette(.textSecondary)
   }
 }

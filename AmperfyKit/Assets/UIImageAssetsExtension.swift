@@ -491,8 +491,8 @@ extension UIImage {
     let format = UIGraphicsImageRendererFormat.default()
     if let scale { format.scale = scale }
     // The phone's ghost is deliberately quiet; CarPlay passes a legible `markColor` (BUG-425).
-    let initialColor = markColor ?? CassetteTheme.UIColors.ink4.withAlphaComponent(0.08)
-    let symbolColor = markColor ?? CassetteTheme.UIColors.ink4.withAlphaComponent(0.1)
+    let initialColor = markColor ?? UIColor.cassette(.hairline).withAlphaComponent(0.08)
+    let symbolColor = markColor ?? UIColor.cassette(.hairline).withAlphaComponent(0.1)
     // cassette (BUG-425): the key carries the artwork type, the mark and the render scale. Keyed
     // on the initial and size alone, every nameless genre, podcast, radio and song placeholder
     // shared `•|300x300` and showed whichever symbol was drawn first.
@@ -508,7 +508,7 @@ extension UIImage {
     let image = renderer.image { ctx in
       let cg = ctx.cgContext
       let rect = CGRect(origin: .zero, size: size)
-      cg.setFillColor(CassetteTheme.UIColors.bg3.cgColor)
+      cg.setFillColor(UIColor.cassette(.surfaceElevated).cgColor)
       cg.fill(rect)
 
       if let initial {

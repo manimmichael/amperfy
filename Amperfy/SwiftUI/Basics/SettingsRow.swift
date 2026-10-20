@@ -53,7 +53,7 @@ struct SettingsRow<Content: View>: View {
   private func titleText(_ value: String) -> some View {
     Text(value)
       .font(.cassette(.body))
-      .foregroundColor(CassetteTheme.Colors.ink)
+      .foregroundColor(Color.cassette(.textPrimary))
   }
 
   var body: some View {

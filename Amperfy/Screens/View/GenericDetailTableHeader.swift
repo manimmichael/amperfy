@@ -75,7 +75,7 @@ class GenericDetailTableHeader: UIView {
   private let titleLabel: UILabel = {
     let label = UILabel()
     label.font = UIFont.cassette(.heroTitle)
-    label.textColor = CassetteTheme.UIColors.ink
+    label.textColor = UIColor.cassette(.textPrimary)
     label.numberOfLines = 2
     label.lineBreakMode = .byTruncatingTail
     label.setContentCompressionResistancePriority(.required, for: .vertical)
@@ -85,7 +85,7 @@ class GenericDetailTableHeader: UIView {
   private let nameTextField: UITextField = {
     let field = UITextField()
     field.font = UIFont.cassette(.heroTitle)
-    field.textColor = CassetteTheme.UIColors.ink
+    field.textColor = UIColor.cassette(.textPrimary)
     field.isHidden = true
     field.setContentCompressionResistancePriority(.required, for: .vertical)
     return field
@@ -104,7 +104,7 @@ class GenericDetailTableHeader: UIView {
     let label = UILabel()
     // Quiet mono caption (year / album·song counts) — not Barlow.
     label.font = UIFont.cassette(.caption)
-    label.textColor = CassetteTheme.UIColors.ink2
+    label.textColor = UIColor.cassette(.textSecondary)
     label.numberOfLines = 2
     label.setContentCompressionResistancePriority(.required, for: .vertical)
     return label
@@ -113,7 +113,7 @@ class GenericDetailTableHeader: UIView {
   private let descriptionLabel: UILabel = {
     let label = UILabel()
     label.font = UIFont.cassette(.body)
-    label.textColor = CassetteTheme.UIColors.ink2
+    label.textColor = UIColor.cassette(.textSecondary)
     label.numberOfLines = 0
     label.isHidden = true
     return label
@@ -459,8 +459,8 @@ class GenericDetailTableHeader: UIView {
     let subtitleIsLink = entityContainer is Album
     subtitleAttributes.font = UIFont.cassette(subtitleIsLink ? .rowTitle : .cardSubtitle)
     subtitleAttributes.foregroundColor = subtitleIsLink
-      ? CassetteTheme.UIColors.orange
-      : CassetteTheme.UIColors.ink2
+      ? UIColor.cassette(.accentProgress)
+      : UIColor.cassette(.textSecondary)
     if let subtitle = entityContainer.subtitle {
       subtitleButton.configuration?.attributedTitle = AttributedString(
         subtitle,

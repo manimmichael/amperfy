@@ -34,19 +34,19 @@ extension UITextField {
     clipsToBounds = true
     layer.cornerRadius = 5
     layer.borderWidth = CGFloat(0.5)
-    layer.borderColor = CassetteTheme.UIColors.ink4.cgColor
+    layer.borderColor = UIColor.cassette(.hairline).cgColor
 
     borderStyle = .roundedRect
     // cassette Patch 032: login form input reads in SF Pro Text 15pt
     // (.body) — system font is more legible at form-field sizes than
     // the condensed display face. URL field overrides at the call site.
     font = UIFont.cassette(.body)
-    textColor = CassetteTheme.UIColors.ink
+    textColor = UIColor.cassette(.textPrimary)
 
     let imageView = UIImageView(frame: CGRect(x: 5, y: 0, width: 25, height: 25))
     imageView.contentMode = .scaleAspectFit
     imageView.image = image.withRenderingMode(.alwaysTemplate)
-    imageView.tintColor = CassetteTheme.UIColors.ink2
+    imageView.tintColor = UIColor.cassette(.textSecondary)
 
     let leftContainerView = UIView(frame: CGRect(x: 0, y: 0, width: 35, height: 25))
     leftContainerView.addSubview(imageView)
@@ -85,7 +85,7 @@ class LoginVC: UIViewController {
     // defense-in-depth; removing the indirection makes the brand restraint
     // intent clear at the call site (the wordmark + typography carry the
     // identity, not the button tint).
-    button.tintColor = CassetteTheme.UIColors.ink
+    button.tintColor = UIColor.cassette(.fillSelected)
     button.addTarget(self, action: #selector(Self.cassetteSignInPressed), for: .touchUpInside)
     button.preferredBehavioralStyle = .pad
     return button
@@ -96,7 +96,7 @@ class LoginVC: UIViewController {
     let label = UILabel()
     label.text = "Just keep your phone and computer on the same Wi-Fi."
     label.font = UIFont.cassette(.body)
-    label.textColor = CassetteTheme.UIColors.ink2
+    label.textColor = UIColor.cassette(.textSecondary)
     label.numberOfLines = 0
     label.textAlignment = .center
     return label
@@ -112,7 +112,7 @@ class LoginVC: UIViewController {
   // "Use manual setup" link — reveals existing form (Patch 013)
   fileprivate lazy var manualSetupButton: UIButton = {
     var config = UIButton.Configuration.plain()
-    config.baseForegroundColor = CassetteTheme.UIColors.ink3
+    config.baseForegroundColor = UIColor.cassette(.textTertiary)
     config.contentInsets = .zero
     config.attributedTitle = AttributedString(
       "Having trouble? Use manual setup →",
@@ -330,7 +330,7 @@ class LoginVC: UIViewController {
     // 50pt Barlow Condensed Bold typography carries the Cassette identity;
     // color is intentionally neutral so the typography reads as the brand
     // signal, not the color.
-    label.textColor = CassetteTheme.UIColors.ink
+    label.textColor = UIColor.cassette(.textPrimary)
     return label
   }()
 
@@ -338,7 +338,7 @@ class LoginVC: UIViewController {
     let label = UILabel()
     label.text = "API:"
     label.font = UIFont.cassetteDisplay(size: Self.fontSize, weight: .semibold)
-    label.textColor = CassetteTheme.UIColors.ink
+    label.textColor = UIColor.cassette(.textPrimary)
     return label
   }()
 
@@ -420,7 +420,7 @@ class LoginVC: UIViewController {
     let button = UIButton(configuration: config)
     button.preferredBehavioralStyle = .pad
     // cassette Patch 052 (Phase G): see cassetteSignInButton for rationale.
-    button.tintColor = CassetteTheme.UIColors.ink
+    button.tintColor = UIColor.cassette(.fillSelected)
     return button
   }()
 
@@ -435,7 +435,7 @@ class LoginVC: UIViewController {
     button.addTarget(self, action: #selector(Self.loginPressed), for: .touchUpInside)
     button.preferredBehavioralStyle = .pad
     // cassette Patch 052 (Phase G): see cassetteSignInButton for rationale.
-    button.tintColor = CassetteTheme.UIColors.ink
+    button.tintColor = UIColor.cassette(.fillSelected)
     return button
   }()
 
@@ -457,7 +457,7 @@ class LoginVC: UIViewController {
     let label = UILabel()
     label.text = "Sign in to connect your library."
     label.font = UIFont.cassette(.body)
-    label.textColor = CassetteTheme.UIColors.ink2
+    label.textColor = UIColor.cassette(.textSecondary)
     label.numberOfLines = 0
     label.textAlignment = .center
     return label
@@ -467,7 +467,7 @@ class LoginVC: UIViewController {
   // own Subsonic-compatible server who skip the hosted Cassette flow entirely.
   fileprivate lazy var navidromeHelpButton: UIButton = {
     var config = UIButton.Configuration.plain()
-    config.baseForegroundColor = CassetteTheme.UIColors.ink2
+    config.baseForegroundColor = UIColor.cassette(.textSecondary)
     config.contentInsets = .zero
     config.attributedTitle = AttributedString(
       "Need help setting up a server? →",
@@ -642,7 +642,7 @@ class LoginVC: UIViewController {
     // cassette Patch 052 (Phase G): form glass wash drops to ink4 at 8%.
     // Was orange at 10%; the warm ink4 tone preserves the elevated-surface
     // feel without the brand-accent overtone.
-    glassEffect.tintColor = CassetteTheme.UIColors.ink4
+    glassEffect.tintColor = UIColor.cassette(.hairline)
       .withAlphaComponent(0.08)
     container.effect = glassEffect
     container.cornerConfiguration = .corners(radius: 20)
@@ -768,7 +768,7 @@ class LoginVC: UIViewController {
       }),
     ])
 
-    view.backgroundColor = CassetteTheme.UIColors.bg
+    view.backgroundColor = UIColor.cassette(.surfaceBase)
 
     amperfyLabel.translatesAutoresizingMaskIntoConstraints = false
     serverDescriptionLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -937,7 +937,7 @@ class LoginVC: UIViewController {
     let glassEffect = UIGlassEffect(style: .regular)
     glassEffect.isInteractive = false
     // cassette Patch 052 (Phase G): see formGlassContainer rationale.
-    glassEffect.tintColor = CassetteTheme.UIColors.ink4
+    glassEffect.tintColor = UIColor.cassette(.hairline)
       .withAlphaComponent(0.08)
     formGlassContainer.effect = glassEffect
 

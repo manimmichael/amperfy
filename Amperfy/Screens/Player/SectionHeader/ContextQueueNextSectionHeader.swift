@@ -69,10 +69,10 @@ class ContextQueueNextSectionHeader: UIView {
   /// Re-stamped on trait change because the nib's variations put SF back.
   private func applyCassetteType() {
     queueNameLabel.font = UIFont.cassette(.sectionLabel)
-    queueNameLabel.textColor = CassetteTheme.UIColors.ink2
+    queueNameLabel.textColor = UIColor.cassette(.textSecondary)
     queueNameLabel.text = "NEXT FROM"
     contextNameLabel.font = UIFont.cassette(.rowTitle)
-    contextNameLabel.textColor = CassetteTheme.UIColors.ink
+    contextNameLabel.textColor = UIColor.cassette(.textPrimary)
   }
 
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {

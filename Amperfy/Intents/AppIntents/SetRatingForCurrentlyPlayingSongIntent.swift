@@ -59,13 +59,13 @@ struct SetRatingForCurrentlyPlayingSongResultView: View {
         // hot path.
         AmperfyImage.starSlash.asImage
           .font(intentResultViewHeaderImageFont)
-          .foregroundStyle(CassetteTheme.Colors.ink)
+          .foregroundStyle(Color.cassette(.textPrimary))
       } else {
         HStack {
           ForEach(0 ..< rating, id: \.self) { _ in
             AmperfyImage.starFill.asImage
               .font(intentResultViewHeaderImageFont)
-              .foregroundStyle(CassetteTheme.Colors.ink)
+              .foregroundStyle(Color.cassette(.textPrimary))
           }
         }
       }

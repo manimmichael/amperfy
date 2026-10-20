@@ -41,13 +41,13 @@ struct SettingsTabView: View {
           // fill + bg text). Consistent with the rest of the settings
           // palette and reads as quiet structural selection rather than a
           // brand accent.
-          .foregroundStyle(CassetteTheme.Colors.ink)
+          .foregroundStyle(Color.cassette(.textPrimary))
           .padding(8)
           .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(
           selectedMenu == menuElement
-            ? CassetteTheme.Colors.bg3
+            ? Color.cassette(.surfaceElevated)
             : Color.clear
         )
         .cornerRadius(8)

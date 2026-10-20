@@ -289,7 +289,7 @@ class BasicTableViewController: KeyCommandTableViewController {
       // (13pt bold display, uppercased here). 13pt matches iOS section-
       // header conventions (Settings.app, Music.app sidebar).
       config.textProperties.font = UIFont.cassette(.sectionLabel)
-      config.textProperties.color = CassetteTheme.UIColors.ink2
+      config.textProperties.color = UIColor.cassette(.textSecondary)
       config.textProperties.transform = .uppercase
       header.contentConfiguration = config
       header.contentView.backgroundColor = .clear

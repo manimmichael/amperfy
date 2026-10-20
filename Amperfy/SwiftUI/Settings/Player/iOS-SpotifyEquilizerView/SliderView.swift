@@ -45,7 +45,7 @@ struct SliderView: View {
         Circle()
           .fill(sliderTintColor)
           .frame(width: 13, height: 13)
-          .overlay(Circle().stroke(CassetteTheme.Colors.bg.opacity(0.5), lineWidth: 1))
+          .overlay(Circle().stroke(Color.cassette(.surfaceBase).opacity(0.5), lineWidth: 1))
           .shadow(color: sliderTintColor.opacity(0.7), radius: 4)
           .position(x: geo.size.width / 2, y: y(for: sliderValue))
       }

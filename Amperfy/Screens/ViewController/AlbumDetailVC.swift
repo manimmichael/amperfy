@@ -478,7 +478,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     let label = UILabel()
     label.text = "Disc \(disc)"
     label.font = UIFont.cassette(.caption)
-    label.textColor = CassetteTheme.UIColors.ink2
+    label.textColor = UIColor.cassette(.textSecondary)
     label.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(label)
     NSLayoutConstraint.activate([

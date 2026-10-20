@@ -45,10 +45,10 @@ class AlbumCollectionCell: BasicCollectionCell {
   /// trait change - never by the XIB.
   private func applyCassetteType() {
     titleLabel?.font = UIFont.cassette(.rowTitle)
-    titleLabel?.textColor = CassetteTheme.UIColors.ink
+    titleLabel?.textColor = UIColor.cassette(.textPrimary)
     titleLabel?.adjustsFontForContentSizeCategory = false
     subtitleLabel?.font = UIFont.cassette(.cardSubtitle)
-    subtitleLabel?.textColor = CassetteTheme.UIColors.ink2
+    subtitleLabel?.textColor = UIColor.cassette(.textSecondary)
     subtitleLabel?.adjustsFontForContentSizeCategory = false
   }
 
@@ -133,7 +133,7 @@ class AlbumCollectionCell: BasicCollectionCell {
     subtitleLabel.text = container.subtitle
     // Barlow title + mono artist (legible at the 13pt floor).
     applyCassetteType()
-    contentView.backgroundColor = CassetteTheme.UIColors.bg
+    contentView.backgroundColor = UIColor.cassette(.surfaceBase)
     // cassette: album covers get a minimal 3pt corner (.verySmall), matching the
     // album detail hero, so bordered / edge-to-edge cover art keeps crisp corners
     // instead of having its edge shaved by the rounding. (Was .big = 15pt.)
@@ -147,7 +147,7 @@ class AlbumCollectionCell: BasicCollectionCell {
     // hairline ink ring that lifts dark covers off the dark background.
     // Content styling the OS doesn't provide; not a material.
     entityImage.layer.borderWidth = 1.0 / max(traitCollection.displayScale, 1.0)
-    entityImage.layer.borderColor = CassetteTheme.UIColors.ink
+    entityImage.layer.borderColor = UIColor.cassette(.textPrimary)
       .withAlphaComponent(0.08).cgColor
     setupPlayOverlayIfNeeded()
     playOverlay?.isHidden = !showsPlayOverlay
@@ -203,7 +203,7 @@ class AlbumCollectionCell: BasicCollectionCell {
   /// artist circle). Matches the footer's system-glass material.
   static func makeGlassPlayOverlayConfiguration() -> UIButton.Configuration {
     var config = UIButton.Configuration.glass()
-    config.baseForegroundColor = CassetteTheme.UIColors.ink
+    config.baseForegroundColor = UIColor.cassette(.textPrimary)
     config.cornerStyle = .capsule
     config.image = UIImage(systemName: "play.fill")?
       .withConfiguration(UIImage.SymbolConfiguration(pointSize: 16, weight: .bold))

@@ -42,10 +42,10 @@ class PlaylistTableCell: BasicTableCell {
     // info line stays 12pt mono but now flows through .metadata.
     MainActor.assumeIsolated {
       applyCassetteType()
-      nameLabel.textColor = CassetteTheme.UIColors.ink
-      infoLabel.textColor = CassetteTheme.UIColors.ink2
-      contentView.backgroundColor = CassetteTheme.UIColors.bg
-      backgroundColor = CassetteTheme.UIColors.bg
+      nameLabel.textColor = UIColor.cassette(.textPrimary)
+      infoLabel.textColor = UIColor.cassette(.textSecondary)
+      contentView.backgroundColor = UIColor.cassette(.surfaceBase)
+      backgroundColor = UIColor.cassette(.surfaceBase)
     }
   }
 
@@ -76,6 +76,6 @@ class PlaylistTableCell: BasicTableCell {
     )
     infoLabel.textAlignment = (traitCollection.horizontalSizeClass == .regular) ? .right : .left
     accessoryType = .disclosureIndicator
-    backgroundColor = CassetteTheme.UIColors.bg
+    backgroundColor = UIColor.cassette(.surfaceBase)
   }
 }

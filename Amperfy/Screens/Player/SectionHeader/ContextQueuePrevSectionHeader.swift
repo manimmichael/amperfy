@@ -54,7 +54,7 @@ class ContextQueuePrevSectionHeader: UIView {
   /// cassette (BUG-418): section-label type, re-stamped on trait change.
   private func applyCassetteType() {
     nameLabel.font = UIFont.cassette(.sectionLabel)
-    nameLabel.textColor = CassetteTheme.UIColors.ink2
+    nameLabel.textColor = UIColor.cassette(.textSecondary)
   }
 
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {

@@ -60,9 +60,9 @@ class CurrentlyPlayingTableCell: BasicTableCell {
   /// display face, artist in mono, both re-stamped on trait change.
   private func applyCassetteType() {
     titleLabel.font = UIFont.cassetteDisplay(size: 20, weight: .semibold)
-    titleLabel.textColor = CassetteTheme.UIColors.ink
+    titleLabel.textColor = UIColor.cassette(.textPrimary)
     artistLabel.font = UIFont.cassette(.cardSubtitle)
-    artistLabel.textColor = CassetteTheme.UIColors.ink2
+    artistLabel.textColor = UIColor.cassette(.textSecondary)
   }
 
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {

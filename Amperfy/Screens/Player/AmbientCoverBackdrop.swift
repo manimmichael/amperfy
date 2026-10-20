@@ -139,7 +139,7 @@ struct AmbientCoverBackdrop: View {
 
   /// Warm-dark base — the popup player's own background token, so the scrim
   /// and the dim areas blend seamlessly into the room.
-  private let base = Color(uiColor: CassetteTheme.UIColors.bg4)
+  private let base = Color(uiColor: UIColor.cassette(.surfaceSunken))
 
   var body: some View {
     ZStack {

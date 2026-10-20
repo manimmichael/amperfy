@@ -189,11 +189,11 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     // Barlow Semibold, ink). (Album style retained for completeness though the
     // album row is hidden above.)
     titleLabel.font = UIFont.cassette(.heroTitle)
-    titleLabel.textColor = CassetteTheme.UIColors.ink
+    titleLabel.textColor = UIColor.cassette(.textPrimary)
     albumLabel.font = UIFont.cassette(.metadata)
-    albumLabel.textColor = CassetteTheme.UIColors.ink2
+    albumLabel.textColor = UIColor.cassette(.textSecondary)
     artistLabel.font = UIFont.cassette(.miniTitle)
-    artistLabel.textColor = CassetteTheme.UIColors.ink
+    artistLabel.textColor = UIColor.cassette(.textPrimary)
 
     lyricsView = LyricsView()
     lyricsView!.frame = upperContainerView.bounds

@@ -313,9 +313,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // currently-playing waveform); every other control that honors tintColor
     // — nav back chevrons, edit buttons, refresh spinners, switches, etc. —
     // inherits ink via the window + UIView.appearance() cascade.
-    window?.tintColor = CassetteTheme.UIColors.ink
+    window?.tintColor = UIColor.cassette(.textPrimary)
     window?.overrideUserInterfaceStyle = .dark
-    window?.backgroundColor = CassetteTheme.UIColors.bg
+    window?.backgroundColor = UIColor.cassette(.surfaceBase)
 
     guard let activeAccountInfo = appDelegate.storage.settings.accounts.active else {
       return true
@@ -324,7 +324,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // cassette Patch 052 (Phase G): pin to ink explicitly. See switchAccount
     // for rationale; ThemePreference.asColor already resolves to ink post-
     // Patch 046 but the indirection added noise to the launch path.
-    setAppTheme(color: CassetteTheme.UIColors.ink)
+    setAppTheme(color: UIColor.cassette(.textPrimary))
 
     guard AmperKit.shared.storage.settings.app.isLibrarySynced else {
       return true
@@ -398,7 +398,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // cassette Patch 052 (Phase G): pin to ink explicitly on account switch.
     // ThemePreference.asColor resolves to ink post-Patch 046; pinning here
     // removes the per-account lookup on a one-shot transition path.
-    setAppTheme(color: CassetteTheme.UIColors.ink)
+    setAppTheme(color: UIColor.cassette(.textPrimary))
     applyAppThemeToAlreadyLoadedViews()
     AmperfyAppShortcuts.updateAppShortcutParameters()
     guard let mainScene = AppDelegate.mainSceneDelegate else { return }

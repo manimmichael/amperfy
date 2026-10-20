@@ -48,7 +48,7 @@ class MiniPlayerSceneDelegate: UIResponder, UIWindowSceneDelegate {
     appDelegate.miniPlayerSceneSession = session
 
     window = UIWindow(windowScene: windowScene)
-    window?.backgroundColor = CassetteTheme.UIColors.bg2
+    window?.backgroundColor = UIColor.cassette(.surfaceRaised)
     window?.overrideUserInterfaceStyle = .dark
 
     #if targetEnvironment(macCatalyst)

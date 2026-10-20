@@ -55,7 +55,7 @@ final class ResumeCardCell: BasicCollectionCell {
     let label = UILabel()
     label.translatesAutoresizingMaskIntoConstraints = false
     label.font = UIFont.cassette(.caption)
-    label.textColor = CassetteTheme.UIColors.ink2
+    label.textColor = UIColor.cassette(.textSecondary)
     label.text = "RESUME"
     return label
   }()
@@ -64,7 +64,7 @@ final class ResumeCardCell: BasicCollectionCell {
     let label = UILabel()
     label.translatesAutoresizingMaskIntoConstraints = false
     label.font = UIFont.cassette(.rowTitle)
-    label.textColor = CassetteTheme.UIColors.ink
+    label.textColor = UIColor.cassette(.textPrimary)
     label.numberOfLines = 1
     label.lineBreakMode = .byTruncatingTail
     return label
@@ -75,7 +75,7 @@ final class ResumeCardCell: BasicCollectionCell {
     label.translatesAutoresizingMaskIntoConstraints = false
     // Quiet artist line under the resume title - mono, same as album cards.
     label.font = UIFont.cassette(.cardSubtitle)
-    label.textColor = CassetteTheme.UIColors.ink2
+    label.textColor = UIColor.cassette(.textSecondary)
     label.numberOfLines = 1
     label.lineBreakMode = .byTruncatingTail
     return label
@@ -96,7 +96,7 @@ final class ResumeCardCell: BasicCollectionCell {
   // height. See HomeVC.setCheckingForUpdates.
   private let checkingSpinner: UIActivityIndicatorView = {
     let view = UIActivityIndicatorView(style: .medium)
-    view.color = CassetteTheme.UIColors.ink2
+    view.color = UIColor.cassette(.textSecondary)
     view.hidesWhenStopped = false
     return view
   }()
@@ -104,7 +104,7 @@ final class ResumeCardCell: BasicCollectionCell {
   private let checkingLabel: UILabel = {
     let label = UILabel()
     label.font = UIFont.cassette(.metadata)
-    label.textColor = CassetteTheme.UIColors.ink2
+    label.textColor = UIColor.cassette(.textSecondary)
     label.text = "Checking for updates"
     return label
   }()
@@ -220,7 +220,7 @@ final class ResumeCardCell: BasicCollectionCell {
     )
     // Same content-level hairline highlight as the album cards.
     artworkView.layer.borderWidth = 1.0 / max(traitCollection.displayScale, 1.0)
-    artworkView.layer.borderColor = CassetteTheme.UIColors.ink
+    artworkView.layer.borderColor = UIColor.cassette(.textPrimary)
       .withAlphaComponent(0.08).cgColor
     accessibilityLabel = "Resume \(container.name)"
   }

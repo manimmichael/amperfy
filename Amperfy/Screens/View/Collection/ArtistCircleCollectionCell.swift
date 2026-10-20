@@ -45,7 +45,7 @@ final class ArtistCircleCollectionCell: BasicCollectionCell {
     let label = UILabel()
     label.translatesAutoresizingMaskIntoConstraints = false
     label.font = UIFont.cassette(.rowTitle)
-    label.textColor = CassetteTheme.UIColors.ink
+    label.textColor = UIColor.cassette(.textPrimary)
     label.numberOfLines = 2
     label.lineBreakMode = .byTruncatingTail
     return label
@@ -77,7 +77,7 @@ final class ArtistCircleCollectionCell: BasicCollectionCell {
     // is constrained to a fixed square (Self.circleDiameter), so the mask is set
     // once from the constant instead of racing layout passes in layoutSubviews.
     entityImage.layer.cornerRadius = Self.circleDiameter / 2.0
-    contentView.backgroundColor = CassetteTheme.UIColors.bg
+    contentView.backgroundColor = UIColor.cassette(.surfaceBase)
     contentView.addSubview(artworkContainer)
     artworkContainer.addSubview(entityImage)
     contentView.addSubview(nameLabel)

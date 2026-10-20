@@ -100,7 +100,7 @@ class SyncVC: UIViewController {
     // cassette Patch 052 (Phase G): post-sync theme re-apply pins to ink
     // explicitly. ThemePreference.asColor resolves to ink after Patch 046
     // but pinning removes the per-account lookup on a one-shot launch path.
-    appDelegate.setAppTheme(color: CassetteTheme.UIColors.ink)
+    appDelegate.setAppTheme(color: UIColor.cassette(.textPrimary))
     appDelegate.applyAppThemeToAlreadyLoadedViews()
     guard let mainScene = AppDelegate.mainSceneDelegate else { return }
     mainScene

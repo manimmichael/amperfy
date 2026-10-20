@@ -30,11 +30,11 @@ struct DefaultButtonStyle: ButtonStyle {
   // ink2 instead of an orange opacity wedge.
   func makeBody(configuration: Self.Configuration) -> some View {
     configuration.label
-      .foregroundColor(CassetteTheme.Colors.bg)
+      .foregroundColor(Color.cassette(.textOnFill))
       .padding([.top, .bottom], 8)
       .background(
         configuration.isPressed
-          ? CassetteTheme.Colors.ink2 : CassetteTheme.Colors.ink
+          ? Color.cassette(.textSecondary) : Color.cassette(.fillSelected)
       )
       .cornerRadius(15.0)
       .contentShape(Rectangle())
@@ -46,7 +46,7 @@ struct DefaultButtonStyle: ButtonStyle {
 struct ErrorButtonStyle: ButtonStyle {
   func makeBody(configuration: Self.Configuration) -> some View {
     configuration.label
-      .foregroundColor(CassetteTheme.Colors.bg)
+      .foregroundColor(Color.cassette(.surfaceBase))
       .padding([.top, .bottom], 8)
       .background(configuration.isPressed ? Color.error.opacity(0.75) : Color.error)
       .cornerRadius(15.0)

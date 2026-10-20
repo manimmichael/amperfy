@@ -62,15 +62,15 @@ class PodcastEpisodeTableCell: BasicTableCell {
     // bumped from 11pt for the 12pt mono floor).
     MainActor.assumeIsolated {
       podcastEpisodeLabel.font = UIFont.cassette(.rowTitle)
-      podcastEpisodeLabel.textColor = CassetteTheme.UIColors.ink
+      podcastEpisodeLabel.textColor = UIColor.cassette(.textPrimary)
       infoLabel.font = UIFont.cassette(.metadata)
-      infoLabel.textColor = CassetteTheme.UIColors.ink2
+      infoLabel.textColor = UIColor.cassette(.textSecondary)
       descriptionLabel.font = UIFont.cassette(.metadata)
-      descriptionLabel.textColor = CassetteTheme.UIColors.ink2
+      descriptionLabel.textColor = UIColor.cassette(.textSecondary)
       playProgressLabel.font = UIFont.cassette(.caption)
-      playProgressLabel.textColor = CassetteTheme.UIColors.ink2
-      contentView.backgroundColor = CassetteTheme.UIColors.bg
-      backgroundColor = CassetteTheme.UIColors.bg
+      playProgressLabel.textColor = UIColor.cassette(.textSecondary)
+      contentView.backgroundColor = UIColor.cassette(.surfaceBase)
+      backgroundColor = UIColor.cassette(.surfaceBase)
     }
   }
 
@@ -124,8 +124,8 @@ class PodcastEpisodeTableCell: BasicTableCell {
     // only surfaces in streaming mode, where it distinguishes cached episodes.
     let showCacheIcon = episode.isCached && !CassetteLibraryFilterProvider.shared.isOnDeviceOnly
     cacheIconImage.isHidden = !showCacheIcon
-    playProgressLabel.textColor = CassetteTheme.UIColors.ink2
-    backgroundColor = CassetteTheme.UIColors.bg
+    playProgressLabel.textColor = UIColor.cassette(.textSecondary)
+    backgroundColor = UIColor.cassette(.surfaceBase)
   }
 
   override func prepareForReuse() {

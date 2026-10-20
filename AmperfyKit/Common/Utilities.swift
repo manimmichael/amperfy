@@ -572,7 +572,7 @@ extension UIColor {
   // tokens defined in CassetteTheme. These helpers are referenced in dozens
   // of places, so this single redirection sweeps the rest of the surface.
   public static var labelColor: UIColor {
-    CassetteTheme.UIColors.ink
+    UIColor.cassette(.textPrimary)
   }
 
   public static var redHeart: UIColor {
@@ -580,15 +580,15 @@ extension UIColor {
   }
 
   public static var fillColor: UIColor {
-    CassetteTheme.UIColors.bg2
+    UIColor.cassette(.surfaceRaised)
   }
 
   public static var secondaryLabelColor: UIColor {
-    CassetteTheme.UIColors.ink2
+    UIColor.cassette(.textSecondary)
   }
 
   public static var backgroundColor: UIColor {
-    CassetteTheme.UIColors.bg
+    UIColor.cassette(.surfaceBase)
   }
 }
 

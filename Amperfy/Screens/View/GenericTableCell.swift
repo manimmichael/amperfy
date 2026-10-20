@@ -88,14 +88,14 @@ class GenericTableCell: BasicTableCell {
     // 17pt -> 16pt rowTitle to match track and other library rows.
     // Subtitle is metadata (12pt medium mono); the trailing info column
     // is caption (12pt regular mono) — same size, lighter weight.
-    backgroundColor = CassetteTheme.UIColors.bg
-    contentView.backgroundColor = CassetteTheme.UIColors.bg
+    backgroundColor = UIColor.cassette(.surfaceBase)
+    contentView.backgroundColor = UIColor.cassette(.surfaceBase)
     titleLabel.font = UIFont.cassette(.rowTitle)
-    titleLabel.textColor = CassetteTheme.UIColors.ink
+    titleLabel.textColor = UIColor.cassette(.textPrimary)
     subtitleLabel.font = UIFont.cassette(.metadata)
-    subtitleLabel.textColor = CassetteTheme.UIColors.ink2
+    subtitleLabel.textColor = UIColor.cassette(.textSecondary)
     infoLabel.font = UIFont.cassette(.caption)
-    infoLabel.textColor = CassetteTheme.UIColors.ink3
+    infoLabel.textColor = UIColor.cassette(.textTertiary)
 
     // cassette Layer 3 Phase 3.2 (library filtering). In Server Mode the list
     // shows the full catalog; non-owned rows are dimmed (ink alphas only) so

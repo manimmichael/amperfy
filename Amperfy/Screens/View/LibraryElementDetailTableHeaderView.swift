@@ -171,15 +171,15 @@ class LibraryElementDetailTableHeaderView: UIView {
     switch mode {
     case .off:
       repeatConfig.image = .repeatMenu
-      repeatConfig.baseForegroundColor = CassetteTheme.UIColors.ink2
+      repeatConfig.baseForegroundColor = UIColor.cassette(.textSecondary)
       repeatBtn.accessibilityLabel = "Repeat off"
     case .all:
       repeatConfig.image = .repeatAll
-      repeatConfig.baseForegroundColor = CassetteTheme.UIColors.orange
+      repeatConfig.baseForegroundColor = UIColor.cassette(.accentProgress)
       repeatBtn.accessibilityLabel = "Repeat all"
     case .single:
       repeatConfig.image = .repeatOne
-      repeatConfig.baseForegroundColor = CassetteTheme.UIColors.orange
+      repeatConfig.baseForegroundColor = UIColor.cassette(.accentProgress)
       repeatBtn.accessibilityLabel = "Repeat one"
     }
     repeatBtn.configuration = repeatConfig
@@ -334,7 +334,7 @@ class LibraryElementDetailTableHeaderView: UIView {
     config.imagePadding = 6
     config.imagePlacement = .leading
     config.cornerStyle = .medium
-    config.baseForegroundColor = CassetteTheme.UIColors.ink
+    config.baseForegroundColor = UIColor.cassette(.textPrimary)
     config.contentInsets = NSDirectionalEdgeInsets(
       top: 8,
       leading: 16,
@@ -446,11 +446,11 @@ class LibraryElementDetailTableHeaderView: UIView {
     switch detailPlayCTAStyle {
     case .creamFill:
       config = .filled()
-      config.baseBackgroundColor = CassetteTheme.UIColors.ink
-      config.baseForegroundColor = CassetteTheme.UIColors.bg
+      config.baseBackgroundColor = UIColor.cassette(.fillSelected)
+      config.baseForegroundColor = UIColor.cassette(.textOnFill)
     case .prominentGlass:
       config = .prominentGlass()
-      config.baseForegroundColor = CassetteTheme.UIColors.ink
+      config.baseForegroundColor = UIColor.cassette(.textPrimary)
     }
     config.cornerStyle = .capsule
     config.image = UIImage(systemName: "play.fill")
@@ -472,14 +472,14 @@ class LibraryElementDetailTableHeaderView: UIView {
   private static func makePlainActionButton(systemImage: String) -> UIButton {
     var config = UIButton.Configuration.cassetteBare()
     config.image = UIImage(systemName: systemImage)
-    config.baseForegroundColor = CassetteTheme.UIColors.ink2
+    config.baseForegroundColor = UIColor.cassette(.textSecondary)
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
       pointSize: 22,
       weight: .regular
     )
     config.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11)
     let button = UIButton(configuration: config)
-    button.tintColor = CassetteTheme.UIColors.ink2
+    button.tintColor = UIColor.cassette(.textSecondary)
     button.translatesAutoresizingMaskIntoConstraints = false
     return button
   }

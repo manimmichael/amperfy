@@ -300,16 +300,16 @@ public enum ThemePreference: Int, CaseIterable, Sendable, Codable {
   // equalizer, etc.) gets ink as a side effect and reads as neutral.
   // The enum cases remain in Core Data to preserve migrations.
   public var asSwiftUIColor: Color {
-    CassetteTheme.Colors.ink
+    Color.cassette(.textPrimary)
   }
 
   public var asColor: UIColor {
-    CassetteTheme.UIColors.ink
+    UIColor.cassette(.textPrimary)
   }
 
   public var contrastColor: UIColor {
     // Ink is a warm off-white (#EDE4D0). bg (#1C1914) reads cleanly behind it.
-    CassetteTheme.UIColors.bg
+    UIColor.cassette(.textOnFill)
   }
 }
 

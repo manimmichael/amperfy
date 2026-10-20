@@ -44,7 +44,7 @@ extension UICellAccessory.CustomViewConfiguration {
     .CustomViewConfiguration {
     let label = UILabel()
     label.text = "Edit"
-    label.textColor = CassetteTheme.UIColors.ink2
+    label.textColor = UIColor.cassette(.textSecondary)
     label.isUserInteractionEnabled = true
     let gestureRecognizer = UITapGestureRecognizer(target: target, action: action)
     label.addGestureRecognizer(gestureRecognizer)
@@ -58,7 +58,7 @@ extension UICellAccessory.CustomViewConfiguration {
     .CustomViewConfiguration {
     let label = UILabel()
     label.text = "Done"
-    label.textColor = CassetteTheme.UIColors.ink2
+    label.textColor = UIColor.cassette(.textSecondary)
     label.isUserInteractionEnabled = true
     let gestureRecognizer = UITapGestureRecognizer(target: target, action: action)
     label.addGestureRecognizer(gestureRecognizer)

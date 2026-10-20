@@ -72,10 +72,10 @@ class SettingsHostVC: UIViewController {
     // a .clear host view, UIKit navigation push/pop transitions reveal the black
     // window underneath — the "flash to black" on open and the transient
     // obscured rectangle when entering a sub-menu. An opaque bg removes it.
-    view.backgroundColor = CassetteTheme.UIColors.bg
+    view.backgroundColor = UIColor.cassette(.surfaceBase)
     hostingVC.view.frame = view.bounds
     hostingVC.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    hostingVC.view.backgroundColor = CassetteTheme.UIColors.bg
+    hostingVC.view.backgroundColor = UIColor.cassette(.surfaceBase)
 
     hostingVC.willMove(toParent: self)
     addChild(hostingVC)

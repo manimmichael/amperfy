@@ -74,18 +74,18 @@ struct AppIconSettingsView: View {
           if let image = option.previewImage {
             Image(uiImage: image).resizable().scaledToFill()
           } else {
-            RoundedRectangle(cornerRadius: 14).fill(CassetteTheme.Colors.bg3)
+            RoundedRectangle(cornerRadius: 14).fill(Color.cassette(.surfaceElevated))
           }
         }
         .frame(width: 64, height: 64)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
           RoundedRectangle(cornerRadius: 14)
-            .stroke(isSelected ? CassetteTheme.Colors.ink : Color.clear, lineWidth: 2)
+            .stroke(isSelected ? Color.cassette(.fillSelected) : Color.clear, lineWidth: 2)
         )
         Text(option.label)
           .font(.caption)
-          .foregroundStyle(isSelected ? CassetteTheme.Colors.ink : CassetteTheme.Colors.ink3)
+          .foregroundStyle(isSelected ? Color.cassette(.textPrimary) : Color.cassette(.textTertiary))
           .lineLimit(1)
       }
       .contentShape(Rectangle())

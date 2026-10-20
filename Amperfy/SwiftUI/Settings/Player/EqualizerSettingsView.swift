@@ -117,8 +117,8 @@ struct EqualizerSettingsView: View {
             EqualizerView(
               sliderLabels: $sliderLabel,
               sliderValues: $eqSettingGains,
-              sliderTintColor: CassetteTheme.Colors.ink2,
-              gradientColors: [CassetteTheme.Colors.ink3, .clear]
+              sliderTintColor: Color.cassette(.textSecondary),
+              gradientColors: [Color.cassette(.textTertiary), .clear]
             )
 
             SettingsButtonRow(title: "Save") {
@@ -220,11 +220,11 @@ struct EqualizerPanelView: View {
         HStack {
           Text("Equalizer")
             .font(.headline)
-            .foregroundStyle(CassetteTheme.Colors.ink)
+            .foregroundStyle(Color.cassette(.textPrimary))
           Spacer()
           Button("Done", action: onDone)
             .font(.body.weight(.semibold))
-            .foregroundStyle(CassetteTheme.Colors.ink)
+            .foregroundStyle(Color.cassette(.textPrimary))
         }
         .padding(.horizontal, 20)
         .padding(.top, 20)
@@ -241,8 +241,8 @@ struct EqualizerPanelView: View {
         EqualizerView(
           sliderLabels: .constant(labels),
           sliderValues: $gains,
-          sliderTintColor: CassetteTheme.Colors.ink2,
-          gradientColors: [CassetteTheme.Colors.ink3, .clear]
+          sliderTintColor: Color.cassette(.textSecondary),
+          gradientColors: [Color.cassette(.textTertiary), .clear]
         )
         .padding(.horizontal, 16)
         .opacity(bypassed ? 0.3 : 1)
@@ -279,8 +279,8 @@ struct EqualizerPanelView: View {
       .font(.subheadline.weight(.medium))
       .padding(.horizontal, 18)
       .padding(.vertical, 10)
-      .background(bypassed ? CassetteTheme.Colors.orange : CassetteTheme.Colors.bg3)
-      .foregroundStyle(bypassed ? CassetteTheme.Colors.bg : CassetteTheme.Colors.ink)
+      .background(bypassed ? Color.cassette(.accentProgress) : Color.cassette(.surfaceElevated))
+      .foregroundStyle(bypassed ? Color.cassette(.textOnFill) : Color.cassette(.textPrimary))
       .clipShape(Capsule())
     }
     .buttonStyle(.plain)
@@ -294,8 +294,8 @@ struct EqualizerPanelView: View {
         .font(.subheadline.weight(.medium))
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(isActive ? CassetteTheme.Colors.ink : CassetteTheme.Colors.bg3)
-        .foregroundStyle(isActive ? CassetteTheme.Colors.bg : CassetteTheme.Colors.ink)
+        .background(isActive ? Color.cassette(.fillSelected) : Color.cassette(.surfaceElevated))
+        .foregroundStyle(isActive ? Color.cassette(.textOnFill) : Color.cassette(.textPrimary))
         .clipShape(Capsule())
     }
     .buttonStyle(.plain)

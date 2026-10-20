@@ -27,7 +27,7 @@ final class MoodDoorsHeaderView: UICollectionReusableView {
 
   override init(frame: CGRect) {
     super.init(frame: frame)
-    backgroundColor = CassetteTheme.UIColors.bg
+    backgroundColor = UIColor.cassette(.surfaceBase)
   }
 
   @available(*, unavailable)
