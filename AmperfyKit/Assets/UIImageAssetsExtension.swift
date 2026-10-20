@@ -486,12 +486,18 @@ extension UIImage {
   )
     -> UIImage {
     let initial = ghostInitial(for: name, artworkType: artworkType)
-    let cacheKey = NSString(string: "\(initial ?? "•")|\(Int(size.width))x\(Int(size.height))")
+    let format = UIGraphicsImageRendererFormat.default()
+    // cassette (BUG-425): the key carries the artwork type and the render scale. Keyed on the
+    // initial and size alone, every nameless genre, podcast, radio and song placeholder shared
+    // `•|300x300` and showed whichever symbol was drawn first.
+    let cacheKey = NSString(
+      string: "\(artworkType)|\(initial ?? "•")|\(Int(size.width))x\(Int(size.height))@\(format.scale)"
+    )
     if let cached = ghostArtworkCache.object(forKey: cacheKey) {
       return cached
     }
 
-    let renderer = UIGraphicsImageRenderer(size: size)
+    let renderer = UIGraphicsImageRenderer(size: size, format: format)
     let image = renderer.image { ctx in
       let cg = ctx.cgContext
       let rect = CGRect(origin: .zero, size: size)
