@@ -152,10 +152,15 @@ class TabBarVC: UITabBarController {
     })
 
     heightConstraint = miniPlayer!.glassContainer.heightAnchor.constraint(equalToConstant: 48.0)
+    // cassette (rail): UIKit owns the accessory slot. Everything we say about
+    // the pill's size is a preference below required, so it can never fight a
+    // slot that UIKit sizes differently on some device and break its layout.
+    heightConstraint?.priority = UILayoutPriority(999)
     heightConstraint?.isActive = true
     if let host = miniPlayer!.glassContainer.superview {
       compactWidthConstraint = miniPlayer!.glassContainer.widthAnchor
         .constraint(equalTo: host.widthAnchor)
+      compactWidthConstraint?.priority = UILayoutPriority(999)
     }
 
     miniPlayer!.tabAccessoryTraitChangeCB = configureTraitChangesForMiniPlayer
@@ -229,6 +234,10 @@ class TabBarVC: UITabBarController {
   private var railStillSince: TimeInterval = 0
   private var railMorphStartedAt: TimeInterval = 0
   private static let railStillWindow: TimeInterval = 0.08
+  /// UIKit's morph settles at 0.47s on the 26.4 simulator; no write before
+  /// that even if the geometry watcher sees nothing move (a phone may animate
+  /// the slot in a way the presentation frames do not show).
+  private static let railMinMorph: TimeInterval = 0.5
   private static let railMorphTimeout: TimeInterval = 1.5
 
   #if DEBUG
@@ -283,8 +292,9 @@ class TabBarVC: UITabBarController {
     if moved || railStillSince == 0 {
       railStillSince = now
     }
-    if (!moved && now - railStillSince >= Self.railStillWindow)
-      || now - railMorphStartedAt > Self.railMorphTimeout {
+    let sinceStart = now - railMorphStartedAt
+    if (!moved && now - railStillSince >= Self.railStillWindow && sinceStart >= Self.railMinMorph)
+      || sinceStart > Self.railMorphTimeout {
       railMorphSettled()
     }
   }
@@ -477,6 +487,7 @@ class TabBarVC: UITabBarController {
       if inlineHeightConstraint == nil, let host = miniPlayer.glassContainer.superview {
         inlineHeightConstraint = miniPlayer.glassContainer.heightAnchor
           .constraint(equalTo: host.heightAnchor)
+        inlineHeightConstraint?.priority = UILayoutPriority(999)
       }
       inlineHeightConstraint?.isActive = true
     case let .regularWide(playerWidth):
@@ -490,6 +501,8 @@ class TabBarVC: UITabBarController {
       regularWidthConstraint?.isActive = false
       regularWidthConstraint = miniPlayer.glassContainer.widthAnchor
         .constraint(equalToConstant: playerWidth)
+      regularWidthConstraint?.priority = UILayoutPriority(999)
+      centerConstraint?.priority = UILayoutPriority(999)
       regularWidthConstraint?.isActive = true
       centerConstraint?.isActive = true
       heightConstraint?.constant = 60.0
