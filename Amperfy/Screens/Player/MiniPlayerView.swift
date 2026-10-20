@@ -604,15 +604,30 @@ class MiniPlayerView: UIView {
       self: Self,
       previousTraitCollection: UITraitCollection
     ) in
-      self.refreshForTabAccessoryTraitChange()
-      self.tabAccessoryTraitChangeCB?()
+      // cassette (rail): the host (TabBarVC) applies both its constraints and
+      // this view's layout from ONE read of the trait, so the two can never
+      // disagree mid-transition. Without a host, lay out from the trait here.
+      if let hostCB = self.tabAccessoryTraitChangeCB {
+        hostCB()
+      } else {
+        self.applyTabAccessoryLayout(
+          isInline: self.traitCollection.tabAccessoryEnvironment == .inline
+        )
+      }
     }
   }
 
   public var tabAccessoryTraitChangeCB: VoidFunctionCallback?
 
-  private func refreshForTabAccessoryTraitChange() {
-    let isInline = traitCollection.tabAccessoryEnvironment == .inline
+  private var appliedInlineLayout: Bool?
+
+  /// cassette (rail): lay the pill out for the slot it is in. Idempotent: a
+  /// repeated call with the same value does nothing, so the host can call it
+  /// from every layout pass without churning constraints during UIKit's
+  /// minimize/expand animation.
+  public func applyTabAccessoryLayout(isInline: Bool) {
+    guard appliedInlineLayout != isInline else { return }
+    appliedInlineLayout = isInline
     playButtonTrailingConstraint?.isActive = false
     // cassette (rail): inline is the slot inside the minimized tab bar. Cover,
     // one title line and play only; no artist line, no scrubber, and no glass
@@ -762,7 +777,7 @@ class MiniPlayerView: UIView {
     ])
     refreshPlayer()
     refreshForTraitChange(horizontalSizeClass: traitCollection.horizontalSizeClass)
-    refreshForTabAccessoryTraitChange()
+    applyTabAccessoryLayout(isInline: traitCollection.tabAccessoryEnvironment == .inline)
   }
 
   public func refreshForTraitChange(horizontalSizeClass: UIUserInterfaceSizeClass) {

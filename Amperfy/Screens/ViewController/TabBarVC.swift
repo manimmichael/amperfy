@@ -198,6 +198,7 @@ class TabBarVC: UITabBarController {
   private var railRearmWorkItem: DispatchWorkItem?
   private static let railRevealDistance: CGFloat = 24
   private static let railRearmDelay: TimeInterval = 0.4
+  private static let railSettleDelay: TimeInterval = 0.6
 
   func cassetteUpdateMinimizeForScroll(_ scrollView: UIScrollView) {
     let topInset = scrollView.adjustedContentInset.top
@@ -214,14 +215,16 @@ class TabBarVC: UITabBarController {
       - scrollView.bounds.height + topInset
     let dy = y - railLastY
     railLastY = y
-    // At the top UIKit expands on its own; nothing to do.
-    if y <= 0 {
+    // Outside the content, in either direction, nothing counts: at the top
+    // UIKit expands on its own, and at the bottom the rubber band snapping back
+    // is not the person scrolling up. That snap-back used to fire the reveal
+    // while UIKit was still minimizing, and the bar got stuck half way
+    // (expanded pill, inline mini player).
+    if y <= 0 || y >= maxY {
       railRunStartY = y
       railRevealedThisRun = false
       return
     }
-    // Rubber-band at the bottom is not a direction change.
-    if y >= maxY, dy > 0 { return }
     guard dy != 0 else { return }
     let movingDown = dy > 0
     if movingDown != railLastDirectionDown {
@@ -230,6 +233,10 @@ class TabBarVC: UITabBarController {
       railRevealedThisRun = false
     }
     guard !movingDown, !railRevealedThisRun, y - railRunStartY <= -Self.railRevealDistance
+    else { return }
+    // Let a minimize that has just started finish before asking for the
+    // opposite; flipping mid-animation is what left the bar half way.
+    guard ProcessInfo.processInfo.systemUptime - railWentInlineAt > Self.railSettleDelay
     else { return }
     railRevealedThisRun = true
     railRearmWorkItem?.cancel()
@@ -256,16 +263,44 @@ class TabBarVC: UITabBarController {
   var compactWidthConstraint: NSLayoutConstraint?
   var inlineHeightConstraint: NSLayoutConstraint?
 
+  private enum RailLayout: Equatable { case inline, regularWide(CGFloat), compact }
+  private var appliedRailLayout: RailLayout?
+  private var railWentInlineAt: TimeInterval = 0
+
   func configureTraitChangesForMiniPlayer() {
     guard let miniPlayer else { return }
+    // cassette (rail): ONE read of the accessory trait decides both the
+    // container constraints here and the pill's own layout, and both are
+    // idempotent, so UIKit's minimize/expand animation is never fought by a
+    // constraint pass that disagrees with it halfway through.
     let isInline = miniPlayer.glassContainer.traitCollection.tabAccessoryEnvironment == .inline
-
+    let wanted: RailLayout
     if isInline {
-      // cassette (rail): inline means inside the minimized tab bar, where the
-      // system sizes the accessory slot. The old full-width + 48pt required
-      // constraints fought that slot and the content spilled over the search
-      // button (artwork and scrubber drawn on top of it). Fill the slot the
-      // system gives: width AND height from the host, no fixed 48.
+      wanted = .inline
+    } else if traitCollection.horizontalSizeClass == .regular {
+      let mainContentView = mainContent()
+      let playerWidth = min(
+        mainContentView.frame.width - mainContentView.safeAreaInsets.left
+          - mainContentView.safeAreaInsets.right,
+        600
+      )
+      wanted = .regularWide(playerWidth)
+    } else {
+      wanted = .compact
+    }
+    miniPlayer.applyTabAccessoryLayout(isInline: isInline)
+    guard wanted != appliedRailLayout else { return }
+    if isInline, appliedRailLayout != nil {
+      // A minimize just started; the reveal rule waits for it to settle.
+      railWentInlineAt = ProcessInfo.processInfo.systemUptime
+    }
+    appliedRailLayout = wanted
+
+    switch wanted {
+    case .inline:
+      // Inline means inside the minimized tab bar, where the system sizes the
+      // accessory slot. Fill the slot it gives: width AND height from the
+      // host, no fixed 48.
       heightConstraint?.isActive = false
       centerConstraint?.isActive = false
       regularWidthConstraint?.isActive = false
@@ -275,16 +310,13 @@ class TabBarVC: UITabBarController {
           .constraint(equalTo: host.heightAnchor)
       }
       inlineHeightConstraint?.isActive = true
-    } else if traitCollection.horizontalSizeClass == .regular {
+    case let .regularWide(playerWidth):
       inlineHeightConstraint?.isActive = false
+      centerConstraint?.isActive = false
       centerConstraint = miniPlayer.glassContainer.safeAreaLayoutGuide.centerXAnchor.constraint(
         equalTo: mainContent().safeAreaLayoutGuide.centerXAnchor,
         constant: 0
       )
-      let mainContentView = mainContent()
-      var playerWidth = mainContentView.frame.width - mainContentView.safeAreaInsets
-        .left - mainContentView.safeAreaInsets.right
-      playerWidth = min(playerWidth, 600)
       compactWidthConstraint?.isActive = false
       regularWidthConstraint?.isActive = false
       regularWidthConstraint = miniPlayer.glassContainer.widthAnchor
@@ -293,7 +325,7 @@ class TabBarVC: UITabBarController {
       centerConstraint?.isActive = true
       heightConstraint?.constant = 60.0
       heightConstraint?.isActive = true
-    } else {
+    case .compact:
       inlineHeightConstraint?.isActive = false
       heightConstraint?.constant = 48.0
       heightConstraint?.isActive = true
