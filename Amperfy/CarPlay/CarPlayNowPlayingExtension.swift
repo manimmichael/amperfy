@@ -30,6 +30,8 @@ extension CarPlaySceneDelegate {
   )
 
   func updatePlayerQueueSection() {
+    // No car, no queue to draw: the player notifier can still fire during teardown.
+    guard interfaceController != nil else { return }
     playerQueueSection.updateSections(createPlayerQueueSections())
   }
 
@@ -124,9 +126,11 @@ extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
 
   func createPlayerQueueSections() -> [CPListSection] {
     var queueSection = [CPListSection]()
+    // One leaf limit for the whole queue (both sections share the car's item count).
+    let limit = carPlayLeafItemLimit(reserved: 0)
 
     let userQueueCount = appDelegate.player.userQueueCount
-    let userQueueMax = min(userQueueCount - 1, CPListTemplate.maximumItemCount - 1)
+    let userQueueMax = min(userQueueCount - 1, limit - 1)
     let userQueue = appDelegate.player.getUserQueueItems(from: 0, to: userQueueMax)
     if userQueueCount > 0 {
       var userQueueItems = [CPListItem]()
@@ -134,7 +138,7 @@ extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
         let playerIndex = PlayerIndex(queueType: .user, index: index)
         let listItem = createQueueItem(for: userQueueItem, playerIndex: playerIndex)
         userQueueItems.append(listItem)
-        if userQueueItems.count >= CPListTemplate.maximumItemCount {
+        if userQueueItems.count >= limit {
           break
         }
       }
@@ -146,9 +150,9 @@ extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
       queueSection.append(userQueueSection)
     }
 
-    if userQueueCount < CPListTemplate.maximumItemCount {
+    if userQueueCount < limit {
       let nextQueueCount = appDelegate.player.nextQueueCount
-      let nextQueueMax = min(nextQueueCount - 1, CPListTemplate.maximumItemCount - 1)
+      let nextQueueMax = min(nextQueueCount - 1, limit - 1)
       let nextQueue = appDelegate.player.getNextQueueItems(from: 0, to: nextQueueMax)
       if !nextQueue.isEmpty {
         var nextQueueItems = [CPListItem]()
@@ -156,7 +160,7 @@ extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
           let playerIndex = PlayerIndex(queueType: .next, index: index)
           let listItem = createQueueItem(for: nextQueueItem, playerIndex: playerIndex)
           nextQueueItems.append(listItem)
-          if (userQueue.count + nextQueueItems.count) >= CPListTemplate.maximumItemCount {
+          if (userQueue.count + nextQueueItems.count) >= limit {
             break
           }
         }
@@ -196,7 +200,9 @@ extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
       guard let self = self else { completion(); return }
       appDelegate.player.play(playerIndex: playerIndex)
       Task { @MainActor in
-        guard let _ = try? await interfaceController?.popTemplate(animated: true) else { return }
+        // Complete on every path: a pop that fails used to return early and leave the
+        // tapped row spinning (CPS-8).
+        _ = try? await interfaceController?.popTemplate(animated: true)
         completion()
       }
     }

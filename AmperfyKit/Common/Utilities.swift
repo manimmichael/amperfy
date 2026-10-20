@@ -433,6 +433,45 @@ public enum AlphabeticBucketPacker {
   }
 }
 
+// MARK: - CarPlayLimits
+
+/// Every row and section limit a CarPlay list is built against, in one place (design-system
+/// audit Wave 1). Overflow bugs recurred (BUG-060, BUG-061, BUG-337) because each builder
+/// carried its own clamp. Pure on what the head unit reports; no CarPlay import.
+public struct CarPlayLimits: Sendable, Equatable {
+  /// Browse lists (the Albums, Artists and Playlists tabs and every pushed range list) never
+  /// show more rows than this, whatever the car reports: the BUG-337 symptom is a car that
+  /// reports more and draws about 24. Lift rule in `CarPlaySceneDelegate.carPlayBrowseItemBudget`.
+  public static let browseCeiling = 24
+
+  /// `CPListTemplate.maximumItemCount` as the car reports it.
+  public let reportedItems: Int
+  /// `CPListTemplate.maximumSectionCount` as the car reports it.
+  public let reportedSections: Int
+
+  public init(reportedItems: Int, reportedSections: Int) {
+    self.reportedItems = reportedItems
+    self.reportedSections = reportedSections
+  }
+
+  /// A report under 4 is treated as unreported (some runtimes answer 0 before a head unit
+  /// has connected) and falls back to the browse ceiling.
+  private var trustedItems: Int { reportedItems >= 4 ? reportedItems : Self.browseCeiling }
+
+  /// Rows in a browse list, paging row included. Never under 2, so one content row always
+  /// sits beside the paging row.
+  public var browseItems: Int { max(2, min(trustedItems, Self.browseCeiling)) }
+
+  /// Sections in any list.
+  public var sections: Int { max(1, reportedSections) }
+
+  /// Content rows in a leaf list (album tracks, All Songs, playlist songs, the queue) after
+  /// `reserved` action rows such as Shuffle, within our own `carPlayMaxElements` ceiling.
+  public func leafItems(reserved: Int) -> Int {
+    max(0, min(LibraryStorage.carPlayMaxElements, trustedItems - reserved))
+  }
+}
+
 extension Dictionary where Value: Equatable {
   public func findKey(forValue val: Value) -> Key? {
     first(where: { $1 == val })?.key

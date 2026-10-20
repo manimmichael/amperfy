@@ -246,8 +246,8 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   /// app init after a crash-relaunch) and again on any genuine active-account
   /// change. Safe to call repeatedly; the same account simply rebinds.
   private func applyActiveAccount(_ accountInfo: AccountInfo?) {
-    resetFetchController()
-    resetBrowsePages()
+    // A different account must not inherit the last one's Home rows or artwork index.
+    endSession()
     activeAccountInfo = accountInfo
     guard let accountInfo else {
       os_log(
@@ -331,18 +331,40 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
       // Force the next connect to re-push the button row onto the fresh template.
       lastConfiguredNowPlayingMode = nil
 
-      resetFetchController()
-      resetBrowsePages()
+      endSession()
+      // Nothing account-scoped outlives the connection: without this the handler kept
+      // re-binding Home (a new HomeManager with its own fetch controllers) on account
+      // events while the car was unplugged (CPS-7). didConnect creates a fresh one.
+      accountNotificationHandler = nil
     }
+  }
+
+  /// Release everything one connection (or one account binding) built: Home and its fetch
+  /// controllers, which otherwise keep recomputing shelves, decoding covers and requesting
+  /// artwork while no car is attached (CPS-7); the Home rows and artwork index (CPS-4); the
+  /// playlist detail; every browse fetch controller and page.
+  private func endSession() {
+    sharedHome?.applySnapshotCB = nil
+    sharedHome = nil
+    session = SessionState()
+    // The rows on the Home tab belong to the session just ended; an empty Home in the next
+    // one would otherwise early-out and leave them on screen.
+    homeTab.updateSections([])
+    playlistDetailSection = nil
+    resetFetchController()
+    resetBrowsePages()
   }
 
   lazy var playerQueueSection = {
     let queueTemplate = CPListTemplate(title: Self.queueButtonText, sections: [CPListSection]())
+    queueTemplate.emptyViewTitleVariants = ["Nothing up next"]
     return queueTemplate
   }()
 
   lazy var disconnectedTemplate = {
     let disconnectedList = CPListTemplate(title: "Disconnected", sections: [])
+    // Shown only with no account on the phone; say what to do about it (CPS-11).
+    disconnectedList.emptyViewTitleVariants = ["Sign in on your phone to get started"]
     return disconnectedList
   }()
 
@@ -369,6 +391,9 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   lazy var playlistTab = {
     let playlistTab = CPListTemplate(title: "Playlists", sections: [CPListSection]())
     playlistTab.tabImage = UIImage.playlist
+    // A browse list since Wave 1 of the design-system audit: it pages past the budget.
+    playlistTab.userInfo = CarPlayBrowseDescriptor(kind: .playlists, bucket: nil)
+    playlistTab.emptyViewTitleVariants = ["No playlists on this phone yet"]
     return playlistTab
   }()
 
@@ -385,9 +410,18 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     var homeRow: [CPListImageRowItemRowElement]
   }
 
-  var homeImageRows: [HomeSection: CPListImageRowItem] = [:]
-  var homeRowData: [HomeSection: [HomeItem]] = [:]
-  var homeArtworkUpdate: [String: EntityImageRowContainer] = [:] // String is Artwork.uniqueID
+  /// What one CarPlay connection builds up and nothing outlives: the Home shelf rows, the
+  /// data they were built from, and the artwork index that repaints their tiles. Replaced
+  /// wholesale by `endSession()` on disconnect and on an account change, so a replug into a
+  /// different head unit never shows rows built at the old car's scale (design-system audit
+  /// Wave 1, CPS-4).
+  struct SessionState {
+    var homeImageRows: [HomeSection: CPListImageRowItem] = [:]
+    var homeRowData: [HomeSection: [HomeItem]] = [:]
+    var homeArtworkUpdate: [String: EntityImageRowContainer] = [:] // String is Artwork.uniqueID
+  }
+
+  var session = SessionState()
 
   lazy var artistsSection = {
     let template = CPListTemplate(title: "Artists", sections: [
@@ -434,9 +468,17 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   /// cassette (BUG-337): fresh browse descriptors (page 0, no log signature) on the two
   /// tabs. Called on account bind (setRootTemplate then discards any pushed range list) and
   /// on disconnect (the stack is released). Nothing else holds browse state.
+  /// Back to the first page of one browse tab (a new sort order starts from the top).
+  private func resetBrowsePage(_ template: CPListTemplate) {
+    guard var descriptor = template.userInfo as? CarPlayBrowseDescriptor else { return }
+    descriptor.page = 0
+    template.userInfo = descriptor
+  }
+
   private func resetBrowsePages() {
     albumsSection.userInfo = CarPlayBrowseDescriptor(kind: .albums, bucket: nil)
     artistsSection.userInfo = CarPlayBrowseDescriptor(kind: .artists, bucket: nil)
+    playlistTab.userInfo = CarPlayBrowseDescriptor(kind: .playlists, bucket: nil)
   }
 
   @objc
@@ -449,7 +491,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     // cassette (BUG-338): the pushed shelf detail is a plain CPListTemplate of library rows
     // now, so it is refreshed by the "refresh List items" walk below like every other list;
     // only the single-line Home shelf still tracks image-row elements here.
-    if let container = homeArtworkUpdate[downloadNotification.id] {
+    if let container = session.homeArtworkUpdate[downloadNotification.id] {
       let image = style.artwork(
         for: container.entity,
         artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference,
@@ -478,96 +520,64 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
                 let userInfo = item.userInfo as? [String: Any]
           else { continue }
 
-          var isThisRelatedToTheDownload = false
-          var isTrackDisplayed = false
-          var playable: AbstractPlayable?
-          var entity: AbstractLibraryEntity?
-
-          for info in userInfo {
-            if info.key == CarPlayListUserInfoKeys.playableDownloadID.rawValue ||
-              info.key == CarPlayListUserInfoKeys.artworkDownloadID.rawValue,
-              let uniqueID = info.value as? String,
-              uniqueID == downloadNotification.id {
-              isThisRelatedToTheDownload = true
-            } else if info.key == CarPlayListUserInfoKeys.artworkOwnerType.rawValue,
-                      let ownerType = info.value as? ArtworkType,
-                      let objectIdInfo = userInfo
-                      .first(where: {
-                        $0.key == CarPlayListUserInfoKeys.artworkOwnerObjectID.rawValue
-                      }),
-                      let managedObjectID = objectIdInfo.value as? NSManagedObjectID {
-              switch ownerType {
-              case .song:
-                let mo = (
-                  try? appDelegate.storage.main.context
-                    .existingObject(with: managedObjectID)
-                ) as? SongMO
-                if let mo = mo {
-                  playable = Song(managedObject: mo)
-                }
-              case .album:
-                let mo = (
-                  try? appDelegate.storage.main.context
-                    .existingObject(with: managedObjectID)
-                ) as? AlbumMO
-                if let mo = mo {
-                  entity = Album(managedObject: mo)
-                }
-              case .artist:
-                let mo = (
-                  try? appDelegate.storage.main.context
-                    .existingObject(with: managedObjectID)
-                ) as? ArtistMO
-                if let mo = mo {
-                  entity = Artist(managedObject: mo)
-                }
-              case .podcast:
-                let mo = (
-                  try? appDelegate.storage.main.context
-                    .existingObject(with: managedObjectID)
-                ) as? PodcastMO
-                if let mo = mo {
-                  entity = Podcast(managedObject: mo)
-                }
-              case .podcastEpisode:
-                let mo = (
-                  try? appDelegate.storage.main.context
-                    .existingObject(with: managedObjectID)
-                ) as? PodcastEpisodeMO
-                if let mo = mo {
-                  playable = PodcastEpisode(managedObject: mo)
-                }
-              case .radio:
-                let mo = (
-                  try? appDelegate.storage.main.context
-                    .existingObject(with: managedObjectID)
-                ) as? RadioMO
-                if let mo = mo {
-                  playable = Radio(managedObject: mo)
-                }
-              default: break
-              }
-            } else if info.key == CarPlayListUserInfoKeys.isTrackDisplayed.rawValue {
-              isTrackDisplayed = (info.value as? Bool) ?? false
-            }
-          }
-
-          if isThisRelatedToTheDownload {
-            if let playable = playable {
-              item.setImage(style.artwork(
-                for: playable,
-                isTrackDisplayed: isTrackDisplayed,
-                artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference
-              ))
-            } else if let entity = entity {
-              item.setImage(style.artwork(
-                for: entity,
-                artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference
-              ))
-            }
+          // Match on the IDs first; only a row that belongs to this download pays for a
+          // Core Data lookup. The walk used to resolve the owner of EVERY visible row before
+          // checking, once per finished download (CPS-3).
+          let rowIDs = [
+            CarPlayListUserInfoKeys.playableDownloadID,
+            CarPlayListUserInfoKeys.artworkDownloadID,
+          ].compactMap { userInfo[$0.rawValue] as? String }
+          guard rowIDs.contains(downloadNotification.id),
+                let ownerType = userInfo[CarPlayListUserInfoKeys.artworkOwnerType.rawValue]
+                as? ArtworkType,
+                let objectID = userInfo[CarPlayListUserInfoKeys.artworkOwnerObjectID.rawValue]
+                as? NSManagedObjectID
+          else { continue }
+          let isTrackDisplayed = (
+            userInfo[CarPlayListUserInfoKeys.isTrackDisplayed.rawValue] as? Bool
+          ) ?? false
+          let preference = getPreference(activeAccountInfo).artworkDisplayPreference
+          switch artworkOwner(type: ownerType, objectID: objectID) {
+          case let .playable(playable):
+            item.setImage(style.artwork(
+              for: playable,
+              isTrackDisplayed: isTrackDisplayed,
+              artworkDisplayPreference: preference
+            ))
+          case let .entity(entity):
+            item.setImage(style.artwork(for: entity, artworkDisplayPreference: preference))
+          case .none:
+            break
           }
         }
       }
+    }
+  }
+
+  private enum ArtworkOwner {
+    case playable(AbstractPlayable)
+    case entity(AbstractLibraryEntity)
+  }
+
+  /// The live library object behind a row's `userInfo`, or nil when it is gone (regrouped or
+  /// deleted since the row was built).
+  private func artworkOwner(type: ArtworkType, objectID: NSManagedObjectID) -> ArtworkOwner? {
+    let object = try? appDelegate.storage.main.context.existingObject(with: objectID)
+    switch type {
+    case .song:
+      return (object as? SongMO).map { .playable(Song(managedObject: $0)) }
+    case .podcastEpisode:
+      return (object as? PodcastEpisodeMO).map { .playable(PodcastEpisode(managedObject: $0)) }
+    case .radio:
+      return (object as? RadioMO).map { .playable(Radio(managedObject: $0)) }
+    case .album:
+      return (object as? AlbumMO).map { .entity(Album(managedObject: $0)) }
+    case .artist:
+      return (object as? ArtistMO).map { .entity(Artist(managedObject: $0)) }
+    case .podcast:
+      return (object as? PodcastMO).map { .entity(Podcast(managedObject: $0)) }
+    default:
+      return nil
     }
   }
 
@@ -596,7 +606,8 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
        playlistFetchController?.sortType != appDelegate.storage.settings.user.playlistsSortSetting {
       os_log("CarPlay: RefreshSort: PlaylistFetchController", log: self.log, type: .info)
       createPlaylistFetchController()
-      playlistTab.updateSections(createPlaylistsSections())
+      resetBrowsePage(playlistTab)
+      renderBrowseList(playlistTab)
     }
   }
 
@@ -635,7 +646,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
        root.selectedTemplate == playlistTab {
       os_log("CarPlay: OfflineModeChanged: playlistFetchController", log: self.log, type: .info)
       createPlaylistFetchController()
-      playlistTab.updateSections(createPlaylistsSections())
+      renderBrowseList(playlistTab)
     }
     if isSelectedRootTab(artistsSection) {
       os_log(
@@ -682,7 +693,7 @@ extension CarPlaySceneDelegate: @preconcurrency NSFetchedResultsControllerDelega
          let playlistFetchController = playlistFetchController,
          controller == playlistFetchController.fetchResultsController {
         os_log("CarPlay: FetchedResults: playlistFetchController", log: self.log, type: .info)
-        playlistTab.updateSections(createPlaylistsSections())
+        renderBrowseList(playlistTab)
       }
       if isSelectedRootTab(artistsSection),
          let artistsFetchController = artistsFetchController,
@@ -757,8 +768,7 @@ extension CarPlaySceneDelegate: CPInterfaceControllerDelegate {
             isBackground: true
           )
         }}
-        if playlistFetchController == nil { createPlaylistFetchController() }
-        playlistTab.updateSections(createPlaylistsSections())
+        renderBrowseList(playlistTab)
       } else if aTemplate == artistsSection {
         os_log(
           "CarPlay: templateWillAppear artistsSection",

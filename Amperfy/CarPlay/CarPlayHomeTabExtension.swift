@@ -39,11 +39,11 @@ extension CarPlaySceneDelegate {
   }
 
   func updateHomeSections() {
-    guard let sharedHome else { return }
+    guard interfaceController != nil, let sharedHome else { return }
     // cassette: compare only the sections CarPlay actually renders. Comparing
-    // the full `homeRowData` / `sharedHome.data` dicts would always differ on
+    // the full `session.homeRowData` / `sharedHome.data` dicts would always differ on
     // the unrendered `.resume` key and permanently defeat this early-out.
-    let renderedNow = carPlayHomeSections.map { homeRowData[$0] ?? [] }
+    let renderedNow = carPlayHomeSections.map { session.homeRowData[$0] ?? [] }
     let requestedNow = carPlayHomeSections.map { sharedHome.data[$0] ?? [] }
     guard renderedNow != requestedNow else {
       return
@@ -51,6 +51,22 @@ extension CarPlaySceneDelegate {
     let homeRows = createHomeImageRows()
     let homeSection = CPListSection(items: homeRows, header: nil, sectionIndexTitle: nil)
     homeTab.updateSections([homeSection])
+    pruneHomeArtworkIndex()
+  }
+
+  /// Drop tiles that are no longer on screen from the artwork index. A shelf rebuild replaces
+  /// its elements, and the index used to keep every element ever built, so it grew on every
+  /// track change for the life of the process (CPS-4).
+  private func pruneHomeArtworkIndex() {
+    let live = Set(
+      session.homeImageRows.values
+        .flatMap { ($0.elements as? [CPListImageRowItemRowElement]) ?? [] }
+        .map { ObjectIdentifier($0) }
+    )
+    for (artworkID, var container) in session.homeArtworkUpdate {
+      container.homeRow.removeAll { !live.contains(ObjectIdentifier($0)) }
+      session.homeArtworkUpdate[artworkID] = container.homeRow.isEmpty ? nil : container
+    }
   }
 
   func createHomeImageRows() -> [CPListImageRowItem] {
@@ -62,11 +78,11 @@ extension CarPlaySceneDelegate {
       // rendered snapshot so `updateHomeSections`' change-detection settles
       // rather than rebuilding on every callback while the shelf stays empty.
       guard let sectionItems = sharedHome.data[section], !sectionItems.isEmpty else {
-        homeRowData[section] = []
+        session.homeRowData[section] = []
         continue
       }
-      if let row = homeImageRows[section] {
-        let alreadyCreatedData = homeRowData[section]
+      if let row = session.homeImageRows[section] {
+        let alreadyCreatedData = session.homeRowData[section]
         let requestedData = sharedHome.data[section]
         if alreadyCreatedData !=
           requestedData {
@@ -75,7 +91,7 @@ extension CarPlaySceneDelegate {
         }
         imageRows.append(row)
       } else if let row = createHomeRow(section: section) {
-        homeImageRows[section] = row
+        session.homeImageRows[section] = row
         imageRows.append(row)
       }
     }
@@ -84,11 +100,11 @@ extension CarPlaySceneDelegate {
 
   func createHomeRow(section: HomeSection) -> CPListImageRowItem? {
     guard let sharedHome else { return nil }
-    let alreadyCreatedData = homeRowData[section]
+    let alreadyCreatedData = session.homeRowData[section]
     let requestedData = sharedHome.data[section]
     if alreadyCreatedData ==
       requestedData {
-      return homeImageRows[section]
+      return session.homeImageRows[section]
     }
 
     let imageRowElements = createHomeRowImageElements(section: section)
@@ -116,10 +132,10 @@ extension CarPlaySceneDelegate {
       // Resolve the tap against the snapshot that backs the *visible* elements,
       // not the live shelf data: recomputeAllShelves() rebuilds sharedHome.data
       // on every play/pause/stop and FRC change, so re-indexing it can hit nil
-      // or the wrong item (the dead tap). That snapshot is homeRowData[section]
+      // or the wrong item (the dead tap). That snapshot is session.homeRowData[section]
       // (kept in lockstep with row.elements). Match by stableID, preferring the
       // live item so playback uses a current managed object when one still exists.
-      let renderedItems = homeRowData[section] ?? []
+      let renderedItems = session.homeRowData[section] ?? []
       guard index >= 0, index < renderedItems.count else { completion(); return }
       let tappedID = renderedItems[index].stableID
       let liveItem = sharedHome.data[section]?.first { $0.stableID == tappedID }
@@ -155,13 +171,13 @@ extension CarPlaySceneDelegate {
   func createHomeRowImageElements(section: HomeSection) -> [CPListImageRowItemRowElement] {
     guard let sharedHome else { return [] }
 
-    let alreadyCreatedData = homeRowData[section]
+    let alreadyCreatedData = session.homeRowData[section]
     let requestedData = sharedHome.data[section]
     if alreadyCreatedData ==
       requestedData {
-      return homeImageRows[section]?.elements as? [CPListImageRowItemRowElement] ?? []
+      return session.homeImageRows[section]?.elements as? [CPListImageRowItemRowElement] ?? []
     }
-    homeRowData[section] = requestedData
+    session.homeRowData[section] = requestedData
 
     var imageRowElements = [CPListImageRowItemRowElement]()
     let items = requestedData ?? []
@@ -179,7 +195,7 @@ extension CarPlaySceneDelegate {
           artwork = entityArtwork
           entity = libEntity
           // trigger download only once
-          if homeArtworkUpdate[entityArtwork.uniqueID] == nil {
+          if session.homeArtworkUpdate[entityArtwork.uniqueID] == nil {
             appDelegate.getMeta(accountInfo).artworkDownloadManager.download(object: entityArtwork)
           }
         }
@@ -206,14 +222,14 @@ extension CarPlaySceneDelegate {
         subtitle: item.playableContainable.subtitle
       )
       if let artwork, let entity {
-        if homeArtworkUpdate[artwork.uniqueID] == nil {
-          homeArtworkUpdate[artwork.uniqueID] = EntityImageRowContainer(
+        if session.homeArtworkUpdate[artwork.uniqueID] == nil {
+          session.homeArtworkUpdate[artwork.uniqueID] = EntityImageRowContainer(
             entity: entity,
             item: item,
             homeRow: [element]
           )
         } else {
-          homeArtworkUpdate[artwork.uniqueID]?.homeRow.append(element)
+          session.homeArtworkUpdate[artwork.uniqueID]?.homeRow.append(element)
         }
       }
       imageRowElements.append(element)

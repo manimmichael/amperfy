@@ -296,4 +296,29 @@ class UtilitiesTest: XCTestCase {
     XCTAssertEqual(pack(Self.l30, 0, sectionBudget: 0).reduce(0) { $0 + $1.itemCount }, 30)
     XCTAssertEqual(pack(Self.l30, 24, sectionBudget: 0).reduce(0) { $0 + $1.itemCount }, 30)
   }
+
+  func testCarPlayLimits() {
+    // A car that reports 500 still gets 24 browse rows (BUG-337), and its leaf lists the
+    // 200-row ceiling less the reserved Shuffle row.
+    let big = CarPlayLimits(reportedItems: 500, reportedSections: 50)
+    XCTAssertEqual(big.browseItems, 24)
+    XCTAssertEqual(big.sections, 50)
+    XCTAssertEqual(big.leafItems(reserved: 0), LibraryStorage.carPlayMaxElements)
+    XCTAssertEqual(big.leafItems(reserved: 1), LibraryStorage.carPlayMaxElements)
+
+    // A car that reports 12 is honoured everywhere, reserved rows included.
+    let small = CarPlayLimits(reportedItems: 12, reportedSections: 3)
+    XCTAssertEqual(small.browseItems, 12)
+    XCTAssertEqual(small.leafItems(reserved: 2), 10)
+
+    // Unreported (0) falls back to the ceiling instead of building empty lists.
+    let unreported = CarPlayLimits(reportedItems: 0, reportedSections: 0)
+    XCTAssertEqual(unreported.browseItems, 24)
+    XCTAssertEqual(unreported.sections, 1)
+    XCTAssertEqual(unreported.leafItems(reserved: 1), 23)
+
+    // Never negative, and a browse list always has room for one row beside the paging row.
+    XCTAssertEqual(CarPlayLimits(reportedItems: 4, reportedSections: 1).leafItems(reserved: 9), 0)
+    XCTAssertEqual(CarPlayLimits(reportedItems: 4, reportedSections: 1).browseItems, 4)
+  }
 }

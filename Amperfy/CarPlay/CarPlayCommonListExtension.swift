@@ -27,15 +27,40 @@ import OSLog
 
 // MARK: - CarPlayBrowseKind
 
-/// cassette (BUG-337): which of the two browse tabs a list belongs to.
+/// cassette (BUG-337): which browse tab a list belongs to. Playlists joined in Wave 1 of the
+/// design-system audit, so the Playlists tab pages instead of silently stopping at the car's
+/// item count (it used the raw report and had no paging row).
 enum CarPlayBrowseKind: Sendable {
-  case albums, artists
+  case albums, artists, playlists
 
-  var tabTitle: String { self == .albums ? "Albums" : "Artists" }
+  var tabTitle: String {
+    switch self {
+    case .albums: return "Albums"
+    case .artists: return "Artists"
+    case .playlists: return "Playlists"
+    }
+  }
 
   func noun(_ n: Int) -> String {
-    self == .albums ? (n == 1 ? "album" : "albums") : (n == 1 ? "artist" : "artists")
+    switch self {
+    case .albums: return n == 1 ? "album" : "albums"
+    case .artists: return n == 1 ? "artist" : "artists"
+    case .playlists: return n == 1 ? "playlist" : "playlists"
+    }
   }
+
+  @MainActor
+  var glyph: UIImage {
+    switch self {
+    case .albums: return UIImage.lucideAlbums
+    case .artists: return UIImage.lucideArtists
+    case .playlists: return UIImage.lucidePlaylists
+    }
+  }
+
+  /// Albums and Artists split into alphabetic ranges when they outgrow the budget. Playlists
+  /// follow the person's own sort, which may not be alphabetic, so they page in order instead.
+  var packsAlphabetically: Bool { self != .playlists }
 }
 
 // MARK: - CarPlayBrowseDescriptor
@@ -54,37 +79,37 @@ struct CarPlayBrowseDescriptor: Sendable {
 }
 
 extension CarPlaySceneDelegate {
-  /// CarPlay raises an uncaught `NSInvalidArgumentException` when a pushed
-  /// `CPListTemplate` exceeds the connected vehicle's item limit. Leaf detail
-  /// lists prepend `reserved` action rows (Shuffle / All Songs), so clamp the
-  /// content to leave room for them — within both that limit and our own
-  /// `carPlayMaxElements` ceiling.
-  func carPlayLeafItemLimit(reserved: Int) -> Int {
-    max(0, min(LibraryStorage.carPlayMaxElements, CPListTemplate.maximumItemCount - reserved))
+  /// Every list limit comes from here (`CarPlayLimits`, unit-tested in AmperfyKit). Read at
+  /// every render, never cached at connect, so a value the car reports late is honoured.
+  var carPlayLimits: CarPlayLimits {
+    CarPlayLimits(
+      reportedItems: CPListTemplate.maximumItemCount,
+      reportedSections: CPListTemplate.maximumSectionCount
+    )
   }
 
-  /// cassette (BUG-337): the row budget for the Albums and Artists tabs and every pushed
-  /// range list. The car's reported `CPListTemplate.maximumItemCount` is NOT trusted above
-  /// this ceiling: the reported symptom ("#, A, part of B") can only happen when the phone
-  /// built the whole list and the head unit drew about 24 rows of it, so the first install
-  /// never emits more than 24 browse rows. The leaf lists (album tracks, All Songs, playlist
-  /// items) still use the raw report through `carPlayLeafItemLimit` and are the probe.
+  /// CarPlay raises an uncaught `NSInvalidArgumentException` when a pushed
+  /// `CPListTemplate` exceeds the connected vehicle's item limit. Leaf lists (album tracks,
+  /// All Songs, playlist songs, the queue) prepend `reserved` action rows (Shuffle / All
+  /// Songs), so the content leaves room for them.
+  func carPlayLeafItemLimit(reserved: Int) -> Int {
+    carPlayLimits.leafItems(reserved: reserved)
+  }
+
+  /// cassette (BUG-337): the browse ceiling, see `CarPlayLimits.browseCeiling`. The car's
+  /// reported `CPListTemplate.maximumItemCount` is NOT trusted above it: the reported symptom
+  /// ("#, A, part of B") can only happen when the phone built the whole list and the head
+  /// unit drew about 24 rows of it. The leaf lists still use the raw report and are the probe.
   /// Lift rule, from the "CarPlay budget" line of the first drive's diagnostics export:
   /// a 500 report and a long leaf list that scrolls to the end means the car honours what it
-  /// reports, so raise this to `LibraryStorage.carPlayMaxElements`; a 500 report and a leaf
-  /// list that stops near 24 means keep it; `Int.max` trusts the report fully.
-  static let carPlayBrowseBudgetCeiling = 24
+  /// reports, so raise the ceiling to `LibraryStorage.carPlayMaxElements`; a 500 report and a
+  /// leaf list that stops near 24 means keep it.
+  static let carPlayBrowseBudgetCeiling = CarPlayLimits.browseCeiling
 
-  /// `min(reported, ceiling)`, with a report under 4 treated as unreported. Read at every
-  /// render, never cached at connect, so a value that arrives late is honoured. The `max(2, ...)`
-  /// keeps one content row beside the paging row.
-  var carPlayBrowseItemBudget: Int {
-    let reported = CPListTemplate.maximumItemCount
-    let trusted = reported >= 4 ? reported : Self.carPlayBrowseBudgetCeiling
-    return max(2, min(trusted, Self.carPlayBrowseBudgetCeiling))
-  }
+  /// Rows in a browse list (the three tabs and every pushed range list), paging row included.
+  var carPlayBrowseItemBudget: Int { carPlayLimits.browseItems }
 
-  var carPlayBrowseSectionBudget: Int { max(1, CPListTemplate.maximumSectionCount) }
+  var carPlayBrowseSectionBudget: Int { carPlayLimits.sections }
 
   // MARK: - Browse tabs (cassette, BUG-337)
 
@@ -101,6 +126,9 @@ extension CarPlaySceneDelegate {
     case .artists:
       if artistsFetchController == nil { createArtistsFetchController() }
       return artistsFetchController?.sections ?? []
+    case .playlists:
+      if playlistFetchController == nil { createPlaylistFetchController() }
+      return playlistFetchController?.sections ?? []
     }
   }
 
@@ -120,6 +148,7 @@ extension CarPlaySceneDelegate {
       switch kind {
       case .albums: objects = section.objects as? [AlbumMO]
       case .artists: objects = section.objects as? [ArtistMO]
+      case .playlists: objects = section.objects as? [PlaylistMO]
       }
       guard let objects else { continue }
       let key = String(section.name.prefix(1))
@@ -145,6 +174,12 @@ extension CarPlaySceneDelegate {
     case .artists:
       guard let mo = object as? ArtistMO else { return nil }
       return createDetailTemplate(for: Artist(managedObject: mo), onlyCached: onlyCached)
+    case .playlists:
+      guard let mo = object as? PlaylistMO else { return nil }
+      return createPlaylistRow(Playlist(
+        library: appDelegate.storage.main.library,
+        managedObject: mo
+      ))
     }
   }
 
@@ -158,11 +193,10 @@ extension CarPlaySceneDelegate {
     label: String
   )
     -> CPListItem {
-    let glyph: UIImage = kind == .albums ? UIImage.lucideAlbums : UIImage.lucideArtists
     let item = CPListItem(
       text: label,
       detailText: "\(bucket.itemCount) \(kind.noun(bucket.itemCount))",
-      image: style.glyph(glyph),
+      image: style.glyph(kind.glyph),
       accessoryImage: nil,
       accessoryType: .disclosureIndicator
     )
@@ -289,6 +323,29 @@ extension CarPlaySceneDelegate {
     var pageRange = 0 ..< 0
     var pagedRowCount = 0
 
+    // Rows for `entities` at the current page, paging in place past the budget. A section
+    // without a name (a list not grouped alphabetically) gives rows no index key.
+    func renderPaged(_ entities: [(key: String, object: NSManagedObject)]) {
+      let bounds = AlphabeticBucketPacker.pageBounds(
+        rowCount: entities.count,
+        budget: budget,
+        page: descriptor.page
+      )
+      descriptor.page = bounds.page
+      pageCount = bounds.pageCount
+      pageRange = bounds.range
+      pagedRowCount = entities.count
+      for entity in entities[bounds.range] {
+        if let item = browseRow(
+          kind: descriptor.kind,
+          object: entity.object,
+          onlyCached: onlyCached
+        ) {
+          rows.append((key: entity.key.isEmpty ? nil : entity.key, item: item))
+        }
+      }
+    }
+
     if let bucket = descriptor.bucket {
       // A pushed range: render ITS keys against the live FRC. Never re-plan, never re-title.
       var entities = browseEntities(
@@ -307,25 +364,12 @@ extension CarPlaySceneDelegate {
         )
         entities = slice.map { Array(entities[$0.clamped(to: 0 ..< entities.count)]) } ?? []
       }
-      let bounds = AlphabeticBucketPacker.pageBounds(
-        rowCount: entities.count,
-        budget: budget,
-        page: descriptor.page
-      )
-      descriptor.page = bounds.page
-      pageCount = bounds.pageCount
-      pageRange = bounds.range
-      pagedRowCount = entities.count
-      for entity in entities[bounds.range] {
-        if let item = browseRow(
-          kind: descriptor.kind,
-          object: entity.object,
-          onlyCached: onlyCached
-        ) {
-          rows.append((key: entity.key, item: item))
-        }
-      }
+      renderPaged(entities)
       mode = pageCount > 1 ? "leafPaged" : "leaf"
+    } else if !descriptor.kind.packsAlphabetically {
+      // Playlists: the person's own order, paged in place.
+      renderPaged(browseEntities(kind: descriptor.kind, in: frcSections, sectionNames: nil))
+      mode = pageCount > 1 ? "flatPaged" : "flat"
     } else {
       let buckets = AlphabeticBucketPacker.pack(
         sections: counts,
@@ -334,15 +378,7 @@ extension CarPlaySceneDelegate {
       )
       if buckets.isEmpty {
         descriptor.page = 0
-        for entity in browseEntities(kind: descriptor.kind, in: frcSections, sectionNames: nil) {
-          if let item = browseRow(
-            kind: descriptor.kind,
-            object: entity.object,
-            onlyCached: onlyCached
-          ) {
-            rows.append((key: entity.key, item: item))
-          }
-        }
+        renderPaged(browseEntities(kind: descriptor.kind, in: frcSections, sectionNames: nil))
         mode = "flat"
       } else {
         let bounds = AlphabeticBucketPacker.pageBounds(
@@ -458,14 +494,19 @@ extension CarPlaySceneDelegate {
     guard let playables = fetchedController.getContextSongs(onlyCachedSongs: isOfflineMode)
     else { return items }
 
-    items.append(createPlayShuffledListItem(playContext: PlayContext(
-      containable: playlist,
-      playables: playlist.playables.filterCached(dependigOn: isOfflineMode)
-    )))
+    // Shuffle only when there is something to shuffle: an offline playlist with nothing on
+    // the phone used to offer a Shuffle that opened an empty Now Playing (CPS-11).
+    let shufflePlayables = playlist.playables.filterCached(dependigOn: isOfflineMode)
+    if !shufflePlayables.isEmpty {
+      items.append(createPlayShuffledListItem(playContext: PlayContext(
+        containable: playlist,
+        playables: shufflePlayables
+      )))
+    }
     // cassette (LIST-3): clamp by the ITEM limit, not maximumSectionCount (a section
-    // ceiling), so a long playlist isn't silently cut to a handful of rows. reserved:1
-    // leaves room for the Shuffle row prepended above.
-    let displayedSongs = playables.prefix(carPlayLeafItemLimit(reserved: 1))
+    // ceiling), so a long playlist isn't silently cut to a handful of rows. The reserved
+    // count leaves room for the Shuffle row prepended above.
+    let displayedSongs = playables.prefix(carPlayLeafItemLimit(reserved: items.count))
     for (index, song) in displayedSongs.enumerated() {
       let listItem = createDetailTemplate(
         for: song,
@@ -510,11 +551,14 @@ extension CarPlaySceneDelegate {
   func makeArtistDetailTemplate(for artist: Artist, onlyCached: Bool) -> CPListTemplate? {
     guard let activeAccount else { return nil }
     var albumItems = [CPListItem]()
-    albumItems.append(createPlayShuffledListItem(playContext: PlayContext(
-      containable: artist,
-      playables: artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-    )))
-    albumItems.append(createDetailAllSongsTemplate(for: artist, onlyCached: onlyCached))
+    let artistPlayables = artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
+    if !artistPlayables.isEmpty {
+      albumItems.append(createPlayShuffledListItem(playContext: PlayContext(
+        containable: artist,
+        playables: artistPlayables
+      )))
+      albumItems.append(createDetailAllSongsTemplate(for: artist, onlyCached: onlyCached))
+    }
     let artistAlbums = appDelegate.storage.main.library.getAlbums(
       for: activeAccount,
       whichContainsSongsWithArtist: artist,
@@ -524,9 +568,11 @@ extension CarPlaySceneDelegate {
       let listItem = createDetailTemplate(for: album, onlyCached: onlyCached)
       albumItems.append(listItem)
     }
-    return CPListTemplate(title: artist.name, sections: [
+    let template = CPListTemplate(title: artist.name, sections: [
       CPListSection(items: albumItems),
     ])
+    template.emptyViewTitleVariants = ["Nothing by this artist on this phone"]
+    return template
   }
 
   func createDetailAllSongsTemplate(for artist: Artist, onlyCached: Bool) -> CPListItem {
@@ -540,10 +586,13 @@ extension CarPlaySceneDelegate {
     section.handler = { [weak self] item, completion in
       guard let self = self else { completion(); return }
       var songItems = [CPListItem]()
-      songItems.append(createPlayShuffledListItem(playContext: PlayContext(
-        containable: artist,
-        playables: artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-      )))
+      let artistPlayables = artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
+      if !artistPlayables.isEmpty {
+        songItems.append(createPlayShuffledListItem(playContext: PlayContext(
+          containable: artist,
+          playables: artistPlayables
+        )))
+      }
       let artistSongs = artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
         .sortByTitle().prefix(carPlayLeafItemLimit(reserved: songItems.count))
       for (index, song) in artistSongs.enumerated() {
@@ -617,12 +666,14 @@ extension CarPlaySceneDelegate {
   // view instead of the Home tile auto-playing.
   func makeAlbumDetailTemplate(for album: Album, onlyCached: Bool) -> CPListTemplate {
     var songItems = [CPListItem]()
-    songItems.append(createPlayShuffledListItem(playContext: PlayContext(
-      containable: album,
-      playables: album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-    )))
-    let albumSongs = album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-      .prefix(carPlayLeafItemLimit(reserved: songItems.count))
+    let albumPlayables = album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
+    if !albumPlayables.isEmpty {
+      songItems.append(createPlayShuffledListItem(playContext: PlayContext(
+        containable: album,
+        playables: albumPlayables
+      )))
+    }
+    let albumSongs = albumPlayables.prefix(carPlayLeafItemLimit(reserved: songItems.count))
     for (index, song) in albumSongs.enumerated() {
       let listItem = createDetailTemplate(
         for: song,
@@ -631,44 +682,11 @@ extension CarPlaySceneDelegate {
       )
       songItems.append(listItem)
     }
-    return CPListTemplate(title: album.name, sections: [
+    let template = CPListTemplate(title: album.name, sections: [
       CPListSection(items: songItems),
     ])
-  }
-
-  func createPlaylistsSections() -> [CPListSection] {
-    var sections = [CPListSection]()
-    var itemCount = 0
-    guard let fetchedController = playlistFetchController,
-          let fetchSections = fetchedController.sections else { return sections }
-    for fetchSection in fetchSections {
-      guard let fetchObjects = fetchSection.objects as? [PlaylistMO] else { continue }
-      var items = [CPListTemplateItem]()
-
-      var indexTitle: String?
-      if fetchedController.sortType.asSectionIndexType == .alphabet {
-        indexTitle = fetchObjects.first?.name?.prefix(1).uppercased()
-        if let _ = Int(indexTitle ?? "-") {
-          indexTitle = "#"
-        }
-      }
-
-      for fetchObject in fetchObjects {
-        // cassette (BUG-337): cap BEFORE building the row; the old post-append `>` let the
-        // list overshoot the car's item count by one.
-        if itemCount >= CPListTemplate.maximumItemCount { break }
-        let playlist = Playlist(
-          library: appDelegate.storage.main.library,
-          managedObject: fetchObject
-        )
-        items.append(createPlaylistRow(playlist))
-        itemCount += 1
-      }
-      let section = CPListSection(items: items, header: nil, sectionIndexTitle: indexTitle)
-      sections.append(section)
-      if itemCount >= CPListTemplate.maximumItemCount { break }
-    }
-    return sections
+    template.emptyViewTitleVariants = ["No songs from this album on this phone"]
+    return template
   }
 
   /// One playlist row (local cover, name, subtitle, disclosure; tap pushes the playlist
@@ -690,21 +708,34 @@ extension CarPlaySceneDelegate {
     )
     item.handler = { [weak self] item, completion in
       guard let self = self else { completion(); return }
-      pushPlaylistDetail(playlist)
-      completion()
+      pushPlaylistDetail(playlist) { completion() }
     }
     return item
   }
 
   // cassette (CarPlay open-a-view): push a playlist's detail (empty template + async
   // FRC populate), shared by the library playlist row and the Home playlist tile.
-  func pushPlaylistDetail(_ playlist: Playlist) {
+  func pushPlaylistDetail(_ playlist: Playlist, completion: @escaping () -> () = {}) {
     let playlistDetailTemplate = CPListTemplate(title: playlist.name, sections: [
       CPListSection(items: [CPListTemplateItem]()),
     ])
     playlistDetailSection = playlistDetailTemplate
     createPlaylistDetailFetchController(playlist: playlist)
-    pushTemplateIfAllowed(playlistDetailTemplate, animated: true)
+    guard pushTemplateIfAllowed(playlistDetailTemplate, animated: true) else {
+      // A refused push (depth limit) used to leave a dead tap plus a live fetch controller and
+      // a stored template that never appeared (CPS-9). Play the playlist instead, as the
+      // album and artist rows do.
+      playlistDetailFetchController?.delegate = nil
+      playlistDetailFetchController = nil
+      playlistDetailSection = nil
+      appDelegate.player.play(context: PlayContext(
+        containable: playlist,
+        playables: playlist.playables.filterCached(dependigOn: isOfflineMode)
+      ))
+      displayNowPlaying { completion() }
+      return
+    }
+    completion()
   }
 
   func createPlayShuffledListItem(
