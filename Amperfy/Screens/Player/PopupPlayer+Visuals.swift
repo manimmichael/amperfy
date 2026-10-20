@@ -95,7 +95,7 @@ extension PopupPlayerVC {
         if rootView.appDelegate.storage.settings.user.isEqualizerEnabled {
           let eqAction = UIAction(
             title: "Equalizer",
-            image: UIImage(systemName: "slider.vertical.3")
+            image: CassetteIcon.adjust.uiImage
           ) { [weak rootView] _ in
             (rootView as? PopupPlayerVC)?.presentEqualizerPanel()
           }

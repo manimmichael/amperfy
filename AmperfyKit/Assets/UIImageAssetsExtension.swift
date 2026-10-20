@@ -143,38 +143,38 @@ public struct AmperfyImage: Sendable {
 
   public static let account = Self("person.circle.fill")
   public static let airplayaudio = Self("airplayaudio")
-  public static let album = Self("square.stack")
+  public static let album = Self(CassetteIcon.album.symbolName)
   public static let antenna = Self("antenna.radiowaves.left.and.right")
   public static let arrowRight = Self("arrow.right.circle.fill")
   public static let arrowTurnUp = Self("arrowshape.turn.up.backward.circle.fill")
-  public static let artist = Self("music.mic")
+  public static let artist = Self(CassetteIcon.artist.symbolName)
   public static let audioVisualizer = Self("circle.dashed")
   public static let ban = Self("circle.slash")
   public static let backwardMenu = Self("backward")
-  public static let backwardFill = Self("backward.fill")
+  public static let backwardFill = Self(CassetteIcon.previous.symbolName)
   public static let bars = Self("line.3.horizontal")
   public static let bell = Self("bell.fill")
-  public static let cancleDownloads = Self("xmark.icloud")
-  public static let check = Self("checkmark")
+  public static let cancleDownloads = Self(CassetteIcon.cancelDownload.symbolName)
+  public static let check = Self(CassetteIcon.check.symbolName)
   public static let circle = Self("circle")
   public static let clear = Self("clear")
   public static let clipboard = Self("doc.on.doc")
   public static let clock = Self("clock")
-  public static let cloudX = Self("xmark.icloud")
+  public static let cloudX = Self(CassetteIcon.cancelDownload.symbolName)
   public static let currentSongMenu = Self("music.note")
   public static let display = Self("display")
   public static let doc = Self("doc.fill")
   public static let documents = Self("document.on.document")
-  public static let download = Self("arrow.down.circle")
-  public static let ellipsis = Self("ellipsis")
-  public static let equalizer = Self("chart.bar.xaxis")
+  public static let download = Self(CassetteIcon.download.symbolName)
+  public static let ellipsis = Self(CassetteIcon.more.symbolName)
+  public static let equalizer = Self(CassetteIcon.adjust.symbolName)
   public static let exclamation = Self("exclamationmark")
-  public static let filter = Self("line.3.horizontal.decrease")
+  public static let filter = Self(CassetteIcon.filter.symbolName)
   public static let followLink = Self("arrowshape.turn.up.forward.fill")
-  public static let folder = Self("folder.fill")
-  public static let forwardFill = Self("forward.fill")
+  public static let folder = Self(CassetteIcon.folder.symbolName)
+  public static let forwardFill = Self(CassetteIcon.next.symbolName)
   public static let forwardMenu = Self("forward")
-  public static let genre = Self("guitars.fill")
+  public static let genre = Self(CassetteIcon.genre.symbolName)
   public static let goBackward15 = Self("gobackward.15")
   public static let goForward30 = Self("goforward.30")
   public static let grid = Self("square.grid.2x2")
@@ -182,54 +182,54 @@ public struct AmperfyImage: Sendable {
   public static let heartEmpty = Self("heart")
   public static let heartFill = Self("heart.fill")
   public static let heartSlash = Self("heart.slash")
-  public static let home = Self("house.fill")
+  public static let home = Self(CassetteIcon.home.symbolName)
   // cassette Patch 053 (Phase H): outline pair for the home tab. Filled
   // = currently selected, outline = inactive. Carries the selection cue
   // structurally instead of relying on color.
   public static let homeOutline = Self("house")
-  public static let info = Self("info.circle")
+  public static let info = Self(CassetteIcon.info.symbolName)
   public static let isSelected = Self("checkmark.circle.fill")
   public static let leftRightPlay = Self("play.rectangle.on.rectangle")
-  public static let listBullet = Self("list.bullet")
+  public static let listBullet = Self(CassetteIcon.list.symbolName)
   public static let login = Self("arrow.right.to.line")
-  public static let lyrics = Self("quote.bubble")
+  public static let lyrics = Self(CassetteIcon.lyrics.symbolName)
   public static let miniPlayer = Self("play.rectangle.on.rectangle")
-  public static let minus = Self("minus")
-  public static let musicLibrary = Self("music.note.square.stack.fill")
+  public static let minus = Self(CassetteIcon.minus.symbolName)
+  public static let musicLibrary = Self(CassetteIcon.library.symbolName)
   // cassette Patch 053 (Phase H): outline pair for the library tab group.
   public static let musicLibraryOutline = Self("music.note.square.stack")
-  public static let musicalNotes = Self("music.note")
+  public static let musicalNotes = Self(CassetteIcon.song.symbolName)
   public static let offlineMode = Self("network.slash")
   public static let onlineMode = Self("network")
   public static let openPlayerWindow = Self("macwindow")
-  public static let pause = Self("pause.fill")
+  public static let pause = Self(CassetteIcon.pause.symbolName)
   public static let pauseMenu = Self("pause")
   public static let password = Self("key.fill")
   public static let person = Self("person.circle")
   public static let photo = Self("photo.fill")
-  public static let play = Self("play.fill")
+  public static let play = Self(CassetteIcon.play.symbolName)
   public static let playCircle = Self("play.circle.fill")
   public static let playMenu = Self("play")
   public static let playbackRate = Self("gauge.open.with.lines.needle.33percent")
-  public static let playlist = Self("music.note.list")
+  public static let playlist = Self(CassetteIcon.playlist.symbolName)
   public static let playlistDisplayStyle = Self("list.bullet")
   public static let playlistPlus = Self("text.badge.plus")
   public static let playlistX = Self("text.badge.xmark")
-  public static let plus = Self("plus")
-  public static let plusCircle = Self("plus.circle")
-  public static let radio = Self("dot.radiowaves.left.and.right")
+  public static let plus = Self(CassetteIcon.plus.symbolName)
+  public static let plusCircle = Self(CassetteIcon.plusCircle.symbolName)
+  public static let radio = Self(CassetteIcon.radio.symbolName)
   public static let redo = Self("gobackward")
-  public static let refresh = Self("arrow.triangle.2.circlepath")
-  public static let repeatAll = Self("repeat")
+  public static let refresh = Self(CassetteIcon.refresh.symbolName)
+  public static let repeatAll = Self(CassetteIcon.repeatAll.symbolName)
   public static let repeatMenu = Self("repeat")
-  public static let repeatOff = Self("repeat.badge.xmark")
-  public static let repeatOne = Self("repeat.1")
+  public static let repeatOff = Self(CassetteIcon.repeatOff.symbolName)
+  public static let repeatOne = Self(CassetteIcon.repeatOne.symbolName)
   public static let resize = Self("arrow.down.left.and.arrow.up.right")
-  public static let search = Self("magnifyingglass")
+  public static let search = Self(CassetteIcon.search.symbolName)
   public static let server = Self("server.rack")
   public static let serverUrl = Self("globe")
-  public static let settings = Self("gear")
-  public static let shuffle = Self("shuffle")
+  public static let settings = Self(CassetteIcon.settings.symbolName)
+  public static let shuffle = Self(CassetteIcon.shuffle.symbolName)
   public static let shuffleMenu = Self("shuffle")
   public static let instantMix = Self("point.3.filled.connected.trianglepath.dotted")
   public static let skipBackward10 = Self("gobackward.10")
@@ -240,17 +240,17 @@ public struct AmperfyImage: Sendable {
   public static let skipForwardMenu = Self("goforward")
   public static let sleep = Self("moon.zzz")
   public static let sleepFill = Self("moon.zzz.fill")
-  public static let sort = Self("arrow.up.arrow.down")
-  public static let sparkles = Self("sparkles")
+  public static let sort = Self(CassetteIcon.sort.symbolName)
+  public static let sparkles = Self(CassetteIcon.sparkles.symbolName)
   public static let squareArrow = Self("arrow.forward.square")
   public static let starEmpty = Self("star")
   public static let starFill = Self("star.fill")
   public static let starSlash = Self("star.slash")
-  public static let startDownload = Self("arrow.down.circle")
-  public static let stop = Self("stop.fill")
+  public static let startDownload = Self(CassetteIcon.download.symbolName)
+  public static let stop = Self(CassetteIcon.stop.symbolName)
   public static let stopMenu = Self("stop")
   public static let switchPlayerWindow = Self("play.rectangle.on.rectangle")
-  public static let trash = Self("trash")
+  public static let trash = Self(CassetteIcon.trash.symbolName)
   public static let triangleDown = Self("arrowtriangle.down.fill")
   public static let unSelected = Self("circle")
   public static let userCircleCheckmark = Self("person.crop.circle.fill.badge.checkmark")
@@ -294,9 +294,9 @@ extension UIImage {
   // outline. Menus, settings and compound/niche icons stay on SF Symbols (many
   // have no Lucide equivalent), so a few mixed glyphs remain by design.
   public static let airplayaudio = UIImage.create(systemName: AmperfyImage.airplayaudio.systemName)
-  public static let album = UIImage.create("cassette-lucide-albums")
+  public static let album = CassetteIcon.album.uiImage
   public static let antenna = UIImage.create(systemName: AmperfyImage.antenna.systemName)
-  public static let artist = UIImage.create("cassette-lucide-artists")
+  public static let artist = CassetteIcon.artist.uiImage
   public static let appIcon = UIImage.create("Icon-1024")
   public static let appIconTemplate = UIImage.create("Icon-monocolor")
     .withRenderingMode(.alwaysTemplate)
@@ -304,35 +304,34 @@ extension UIImage {
   public static let arrowTurnUp = UIImage.create(systemName: AmperfyImage.arrowTurnUp.systemName)
   public static let audioVisualizer = UIImage
     .create(systemName: AmperfyImage.audioVisualizer.systemName)
-  public static let backwardFill = UIImage.create(systemName: AmperfyImage.backwardFill.systemName)
+  public static let backwardFill = CassetteIcon.previous.symbolImage
   public static let backwardMenu = UIImage.create(systemName: AmperfyImage.backwardMenu.systemName)
   public static let ban = UIImage.create(systemName: AmperfyImage.ban.systemName)
   public static let bars = UIImage.create(systemName: AmperfyImage.bars.systemName)
   public static let bell = UIImage.create(systemName: AmperfyImage.bell.systemName)
   public static let cache = download
-  public static let cancleDownloads = UIImage
-    .create(systemName: AmperfyImage.cancleDownloads.systemName)
-  public static let check = UIImage.create("cassette-lucide-check")
+  public static let cancleDownloads = CassetteIcon.cancelDownload.uiImage
+  public static let check = CassetteIcon.check.uiImage
   public static let circle = UIImage.create(systemName: AmperfyImage.circle.systemName)
   public static let clear = UIImage.create(systemName: AmperfyImage.clear.systemName)
   public static let clipboard = UIImage.create(systemName: AmperfyImage.clipboard.systemName)
   public static let clock = UIImage.create(systemName: AmperfyImage.clock.systemName)
-  public static let cloudX = UIImage.create(systemName: AmperfyImage.cloudX.systemName)
+  public static let cloudX = CassetteIcon.cancelDownload.uiImage
   public static let currentSongMenu = UIImage
     .create(systemName: AmperfyImage.currentSongMenu.systemName)
   public static let display = UIImage.create(systemName: AmperfyImage.display.systemName)
   public static let doc = UIImage.create(systemName: AmperfyImage.doc.systemName)
   public static let documents = UIImage.create(systemName: AmperfyImage.documents.systemName)
-  public static let download = UIImage.create(systemName: AmperfyImage.download.systemName)
-  public static let ellipsis = UIImage.create("cassette-lucide-ellipsis")
-  public static let equalizer = UIImage.create(systemName: AmperfyImage.equalizer.systemName)
+  public static let download = CassetteIcon.download.uiImage
+  public static let ellipsis = CassetteIcon.more.uiImage
+  public static let equalizer = CassetteIcon.adjust.uiImage
   public static let exclamation = UIImage.create(systemName: AmperfyImage.exclamation.systemName)
-  public static let filter = UIImage.create("cassette-lucide-filter")
+  public static let filter = CassetteIcon.filter.uiImage
   public static let followLink = UIImage.create(systemName: AmperfyImage.followLink.systemName)
-  public static let folder = UIImage.create(systemName: AmperfyImage.folder.systemName)
-  public static let forwardFill = UIImage.create(systemName: AmperfyImage.forwardFill.systemName)
+  public static let folder = CassetteIcon.folder.uiImage
+  public static let forwardFill = CassetteIcon.next.symbolImage
   public static let forwardMenu = UIImage.create(systemName: AmperfyImage.forwardMenu.systemName)
-  public static let genre = UIImage.create("cassette-lucide-genres")
+  public static let genre = CassetteIcon.genre.uiImage
   public static let goBackward15 = UIImage.create(systemName: AmperfyImage.goBackward15.systemName)
   public static let goForward30 = UIImage.create(systemName: AmperfyImage.goForward30.systemName)
   public static let grid = UIImage.create(systemName: AmperfyImage.grid.systemName)
@@ -340,9 +339,9 @@ extension UIImage {
   public static let heartEmpty = UIImage.create(systemName: AmperfyImage.heartEmpty.systemName)
   public static let heartFill = UIImage.create(systemName: AmperfyImage.heartFill.systemName)
   public static let heartSlash = UIImage.create(systemName: AmperfyImage.heartSlash.systemName)
-  public static let home = UIImage.create("cassette-lucide-house")
+  public static let home = CassetteIcon.home.uiImage
   // cassette Patch 053 (Phase H): outline counterpart for tab bar selection.
-  public static let homeOutline = UIImage.create("cassette-lucide-house")
+  public static let homeOutline = CassetteIcon.home.uiImage
   // cassette Patch 053 (Phase H): outline counterparts for the LibraryDisplayType
   // categories that have a real SF Symbol fill/outline pair. Library categories
   // whose icon is outline-only (square.stack, music.note, music.mic, etc.)
@@ -350,20 +349,19 @@ extension UIImage {
   // image as their outline form.
   public static let heartOutline = UIImage.create(systemName: "heart")
   public static let folderOutline = UIImage.create(systemName: "folder")
-  public static let guitarsOutline = UIImage.create(systemName: "guitars")
   public static let downloadOutline = UIImage.create(systemName: "arrow.down.circle")
-  public static let info = UIImage.create("cassette-lucide-info")
+  public static let info = CassetteIcon.info.uiImage
   public static let isSelected = UIImage.create(systemName: AmperfyImage.isSelected.systemName)
-  public static let listBullet = UIImage.create("cassette-lucide-list")
+  public static let listBullet = CassetteIcon.list.uiImage
   public static let login = UIImage.create(systemName: AmperfyImage.login.systemName)
-  public static let lyrics = UIImage.create(systemName: AmperfyImage.lyrics.systemName)
+  public static let lyrics = CassetteIcon.lyrics.uiImage
   public static let miniPlayer = UIImage.create(systemName: AmperfyImage.miniPlayer.systemName)
-  public static let minus = UIImage.create("cassette-lucide-minus")
-  public static let musicLibrary = UIImage.create("cassette-lucide-library")
+  public static let minus = CassetteIcon.minus.uiImage
+  public static let musicLibrary = CassetteIcon.library.uiImage
   // cassette Patch 053 (Phase H): outline counterpart for tab bar selection.
-  public static let musicLibraryOutline = UIImage.create("cassette-lucide-library")
-  public static let musicalNotes = UIImage.create("cassette-lucide-songs")
-  public static let pause = UIImage.create(systemName: AmperfyImage.pause.systemName)
+  public static let musicLibraryOutline = CassetteIcon.library.uiImage
+  public static let musicalNotes = CassetteIcon.song.uiImage
+  public static let pause = CassetteIcon.pause.symbolImage
   public static let pauseMenu = UIImage.create(systemName: AmperfyImage.pauseMenu.systemName)
   public static let password = UIImage.create(systemName: AmperfyImage.password.systemName)
   public static let person = UIImage.create(systemName: AmperfyImage.person.systemName)
@@ -371,30 +369,30 @@ extension UIImage {
   // Player transport stays on SF Symbols: sizing is symbol-driven (pointSize /
   // preferredSymbolConfiguration), which non-symbol Lucide assets ignore — a
   // Lucide play would render at a fixed 24pt (too small vs the 32pt popup player).
-  public static let play = UIImage.create(systemName: AmperfyImage.play.systemName)
+  public static let play = CassetteIcon.play.symbolImage
   public static let playCircle = UIImage.create(systemName: AmperfyImage.playCircle.systemName)
   public static let playMenu = UIImage.create(systemName: AmperfyImage.playMenu.systemName)
   public static let playbackRate = UIImage.create(systemName: AmperfyImage.playbackRate.systemName)
-  public static let playlist = UIImage.create("cassette-lucide-playlists")
+  public static let playlist = CassetteIcon.playlist.uiImage
   public static let playlistDisplayStyle = UIImage
     .create(systemName: AmperfyImage.playlistDisplayStyle.systemName)
   public static let playlistPlus = UIImage.create(systemName: AmperfyImage.playlistPlus.systemName)
   public static let playlistX = UIImage.create(systemName: AmperfyImage.playlistX.systemName)
-  public static let plus = UIImage.create("cassette-lucide-plus")
-  public static let plusCircle = UIImage.create("cassette-lucide-circle-plus")
-  public static let radio = UIImage.create("cassette-lucide-radio")
+  public static let plus = CassetteIcon.plus.uiImage
+  public static let plusCircle = CassetteIcon.plusCircle.uiImage
+  public static let radio = CassetteIcon.radio.uiImage
   public static let redo = UIImage.create(systemName: AmperfyImage.redo.systemName)
-  public static let refresh = UIImage.create("cassette-lucide-refresh-cw")
-  public static let repeatAll = UIImage.create(systemName: AmperfyImage.repeatAll.systemName)
+  public static let refresh = CassetteIcon.refresh.uiImage
+  public static let repeatAll = CassetteIcon.repeatAll.symbolImage
   public static let repeatMenu = UIImage.create(systemName: AmperfyImage.repeatMenu.systemName)
-  public static let repeatOff = UIImage.create(systemName: AmperfyImage.repeatOff.systemName)
-  public static let repeatOne = UIImage.create(systemName: AmperfyImage.repeatOne.systemName)
+  public static let repeatOff = CassetteIcon.repeatOff.symbolImage
+  public static let repeatOne = CassetteIcon.repeatOne.symbolImage
   public static let resize = UIImage.create(systemName: AmperfyImage.resize.systemName)
-  public static let search = UIImage.create("cassette-lucide-search")
+  public static let search = CassetteIcon.search.uiImage
   public static let server = UIImage.create(systemName: AmperfyImage.server.systemName)
   public static let serverUrl = UIImage.create(systemName: AmperfyImage.serverUrl.systemName)
-  public static let settings = UIImage.create("cassette-lucide-settings")
-  public static let shuffle = UIImage.create(systemName: AmperfyImage.shuffle.systemName)
+  public static let settings = CassetteIcon.settings.uiImage
+  public static let shuffle = CassetteIcon.shuffle.symbolImage
   public static let instantMix = UIImage.create(systemName: AmperfyImage.instantMix.systemName)
   public static let shuffleMenu = UIImage.create(systemName: AmperfyImage.shuffleMenu.systemName)
   public static let skipBackward10 = UIImage
@@ -411,17 +409,16 @@ extension UIImage {
     .create(systemName: AmperfyImage.skipForwardMenu.systemName)
   public static let sleep = UIImage.create(systemName: AmperfyImage.sleep.systemName)
   public static let sleepFill = UIImage.create(systemName: AmperfyImage.sleepFill.systemName)
-  public static let sort = UIImage.create("cassette-lucide-arrow-up-down")
-  public static let sparkles = UIImage.create(systemName: AmperfyImage.sparkles.systemName)
+  public static let sort = CassetteIcon.sort.uiImage
+  public static let sparkles = CassetteIcon.sparkles.uiImage
   public static let squareArrow = UIImage.create(systemName: AmperfyImage.squareArrow.systemName)
   public static let starEmpty = UIImage.create(systemName: AmperfyImage.starEmpty.systemName)
   public static let starFill = UIImage.create(systemName: AmperfyImage.starFill.systemName)
   public static let starSlash = UIImage.create(systemName: AmperfyImage.starSlash.systemName)
-  public static let startDownload = UIImage
-    .create(systemName: AmperfyImage.startDownload.systemName)
-  public static let stop = UIImage.create(systemName: AmperfyImage.stop.systemName)
+  public static let startDownload = CassetteIcon.download.uiImage
+  public static let stop = CassetteIcon.stop.symbolImage
   public static let stopMenu = UIImage.create(systemName: AmperfyImage.stopMenu.systemName)
-  public static let trash = UIImage.create("cassette-lucide-trash-2")
+  public static let trash = CassetteIcon.trash.uiImage
   public static let triangleDown = UIImage.create(systemName: AmperfyImage.triangleDown.systemName)
   public static let unSelected = UIImage.create(systemName: AmperfyImage.unSelected.systemName)
   public static let userCircleCheckmark = UIImage
@@ -630,13 +627,13 @@ extension UIImage {
   // Outline glyphs matching the web (lucide-react), loaded from the kit asset
   // catalog as template images. `carPlayGlyph` sizes + accent-tints them for the
   // in-car list. Deliberately CarPlay-only: the phone app stays on SF Symbols.
-  public static let lucideAlbums = UIImage.create("cassette-lucide-albums")
-  public static let lucideArtists = UIImage.create("cassette-lucide-artists")
-  public static let lucideSongs = UIImage.create("cassette-lucide-songs")
-  public static let lucidePlaylists = UIImage.create("cassette-lucide-playlists")
-  public static let lucideGenres = UIImage.create("cassette-lucide-genres")
-  public static let lucideRadio = UIImage.create("cassette-lucide-radio")
-  public static let lucideShuffle = UIImage.create("cassette-lucide-shuffle")
+  public static let lucideAlbums = CassetteIcon.album.uiImage
+  public static let lucideArtists = CassetteIcon.artist.uiImage
+  public static let lucideSongs = CassetteIcon.song.uiImage
+  public static let lucidePlaylists = CassetteIcon.playlist.uiImage
+  public static let lucideGenres = CassetteIcon.genre.uiImage
+  public static let lucideRadio = CassetteIcon.radio.uiImage
+  public static let lucideShuffle = CassetteIcon.shuffle.uiImage
 
   public static func createArtwork(
     with image: UIImage,

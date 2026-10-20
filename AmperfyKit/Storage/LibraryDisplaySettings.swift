@@ -159,11 +159,11 @@ public enum LibraryDisplayType: Int, CaseIterable, Sendable, Codable {
       return UIImage.heartOutline
     case .directories:
       return UIImage.folderOutline
-    case .genres:
-      return UIImage.guitarsOutline
     case .downloads:
       return UIImage.downloadOutline
-    case .albums, .artists, .newestAlbums, .playlists, .podcasts,
+    // cassette (audit ICO-1): genres is a Lucide glyph like the other library types; its
+    // SF "guitars" outline made the tab change icon family on selection.
+    case .albums, .artists, .genres, .newestAlbums, .playlists, .podcasts,
          .radios, .recentAlbums, .songs:
       return image
     }

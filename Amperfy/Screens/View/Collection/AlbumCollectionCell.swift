@@ -205,7 +205,7 @@ class AlbumCollectionCell: BasicCollectionCell {
     var config = UIButton.Configuration.glass()
     config.baseForegroundColor = UIColor.cassette(.textPrimary)
     config.cornerStyle = .capsule
-    config.image = UIImage(systemName: "play.fill")?
+    config.image = CassetteIcon.play.symbolImage
       .withConfiguration(UIImage.SymbolConfiguration(pointSize: 16, weight: .bold))
     return config
   }

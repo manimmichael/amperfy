@@ -253,7 +253,7 @@ class LibraryElementDetailTableHeaderView: UIView {
   /// bordered button to match live state.
   func refreshPlayButtonState() {
     let isPausable = isThisContextCurrent && (config?.player.isPlaying ?? false)
-    let symbolName = isPausable ? "pause.fill" : "play.fill"
+    let symbolName = (isPausable ? CassetteIcon.pause : CassetteIcon.play).symbolName
     let label = isPausable ? "Pause" : "Play"
 
     prominentPlayButton?.configuration?.image = UIImage(systemName: symbolName)
@@ -295,12 +295,12 @@ class LibraryElementDetailTableHeaderView: UIView {
     Self.applyCassetteStyle(
       to: playAllButton,
       title: config?.customPlayName ?? "Play",
-      systemImage: "play.fill"
+      systemImage: CassetteIcon.play.symbolName
     )
     Self.applyCassetteStyle(
       to: playShuffledButton,
       title: configuration.isShuffleOnContextNeccessary ? "Shuffle" : "Random",
-      systemImage: "shuffle",
+      systemImage: CassetteIcon.shuffle.symbolName,
       isHidden: configuration.isShuffleHidden
     )
     setupProminentLayoutIfNeeded()
@@ -369,11 +369,11 @@ class LibraryElementDetailTableHeaderView: UIView {
     let play = Self.makeDetailPlayCTA(diameter: Self.prominentPlayDiameter)
     play.addTarget(self, action: #selector(prominentPlayPressed), for: .touchUpInside)
 
-    let shuffle = Self.makePlainActionButton(systemImage: "shuffle")
+    let shuffle = Self.makePlainActionButton(systemImage: CassetteIcon.shuffle.symbolName)
     shuffle.accessibilityLabel = "Shuffle"
     shuffle.addTarget(self, action: #selector(prominentShufflePressed), for: .touchUpInside)
 
-    let repeatBtn = Self.makePlainActionButton(systemImage: "repeat")
+    let repeatBtn = Self.makePlainActionButton(systemImage: CassetteIcon.repeatAll.symbolName)
     repeatBtn.accessibilityLabel = "Repeat"
     repeatBtn.addTarget(self, action: #selector(prominentRepeatPressed), for: .touchUpInside)
 
@@ -453,7 +453,7 @@ class LibraryElementDetailTableHeaderView: UIView {
       config.baseForegroundColor = UIColor.cassette(.textPrimary)
     }
     config.cornerStyle = .capsule
-    config.image = UIImage(systemName: "play.fill")
+    config.image = CassetteIcon.play.symbolImage
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
       pointSize: (diameter * 0.35).rounded(),
       weight: .medium

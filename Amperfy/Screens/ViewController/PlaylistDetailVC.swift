@@ -176,7 +176,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     // cassette redesign (Surface 1): play bar-button revealed when the hero
     // collapses under the (native glass) navigation bar.
     collapsedPlayButton = UIBarButtonItem(
-      image: UIImage(systemName: "play.fill"),
+      image: CassetteIcon.play.symbolImage,
       primaryAction: UIAction { [weak self] _ in
         guard let self else { return }
         appDelegate.player.play(context: PlayContext(
@@ -344,7 +344,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   }
 
   private static let emptyPlaylistConfig: UIContentUnavailableConfiguration = .cassetteEmpty(
-    image: UIImage(systemName: "music.note.list"),
+    image: CassetteIcon.playlist.uiImage,
     title: "Empty playlist",
     body: "Add songs from any artist or album."
   )

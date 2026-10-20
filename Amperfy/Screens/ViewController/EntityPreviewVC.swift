@@ -516,7 +516,7 @@ class EntityPreviewActionBuilder {
   // generating a mixtape must never yank audio out from under whatever's
   // already playing.
   private func createMixtapeAction() -> UIAction {
-    UIAction(title: "Start Mixtape", image: UIImage(systemName: "sparkles")) { [weak self] _ in
+    UIAction(title: "Start Mixtape", image: CassetteIcon.sparkles.uiImage) { [weak self] _ in
       guard let self,
             let song = (entityContainer as? AbstractPlayable)?.asSong
       else { return }

@@ -151,7 +151,7 @@ struct MixtapePreviewSheet: View {
       Button {
         play()
       } label: {
-        Image(systemName: "play.fill")
+        Image(systemName: CassetteIcon.play.symbolName)
           .font(.title2)
           .foregroundStyle(Color.cassette(.textOnFill))
           .frame(width: 52, height: 52)
@@ -162,7 +162,7 @@ struct MixtapePreviewSheet: View {
         Button {
           Task { await rebuild(doorKey: doorKey) }
         } label: {
-          Image(systemName: "arrow.clockwise")
+          Image(systemName: CassetteIcon.refresh.symbolName)
             .font(.title3)
         }
         .disabled(rebuilding)

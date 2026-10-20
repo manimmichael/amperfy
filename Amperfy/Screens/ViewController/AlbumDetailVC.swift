@@ -131,7 +131,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       return EntityPreviewActionBuilder(container: album, on: self).createMenuActions()
     }
     collapsedPlayButton = UIBarButtonItem(
-      image: UIImage(systemName: "play.fill"),
+      image: CassetteIcon.play.symbolImage,
       primaryAction: UIAction { [weak self] _ in
         guard let self else { return }
         appDelegate.player.play(context: PlayContext(

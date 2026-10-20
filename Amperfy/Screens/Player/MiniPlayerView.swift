@@ -211,11 +211,9 @@ class MiniPlayerView: UIView {
 
   fileprivate lazy var moreButton: UIButton = {
     let button = UIButton()
-    button.setImage(
-      .ellipsis.withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
-        .withRenderingMode(.alwaysTemplate),
-      for: .normal
-    )
+    // A Lucide glyph ignores SymbolConfiguration, so this drew at its intrinsic 24pt beside
+    // 17pt symbols (audit ICO-2); the registry draws it at the same size as its neighbours.
+    button.setImage(CassetteIcon.more.uiImage(size: .control), for: .normal)
     button.imageView?.tintColor = UIColor.cassette(.textPrimary)
     button.showsMenuAsPrimaryAction = true
     return button

@@ -582,7 +582,7 @@ class AlbumsCommonVCInteractions {
     }
     return UIMenu(
       title: "Grouping",
-      image: UIImage(systemName: "textformat.abc.dottedunderline"),
+      image: CassetteIcon.sortByName.uiImage,
       options: [.displayInline],
       children: [
         makeAction("Auto", .auto),
