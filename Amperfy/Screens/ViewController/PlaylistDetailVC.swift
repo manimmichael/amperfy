@@ -96,10 +96,18 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   private var cassetteOwnedTrackIds: Set<String> = []
 
   private var editButton: UIBarButtonItem!
-  private var optionsButton: UIBarButtonItem!
-  private var collapsedPlayButton: UIBarButtonItem!
   var detailOperationsView: GenericDetailTableHeader?
-  private let stickyHeader = DetailStickyHeaderView()
+  /// The shared detail-page frame (Wave 3). The hero stays below the bar: this screen has
+  /// pull-to-refresh, whose spinner would sit under a transparent bar at the top edge.
+  private lazy var chrome = DetailScreenChrome(
+    host: self,
+    placement: .belowBar,
+    menu: { [weak self] in
+      guard let self else { return [] }
+      return EntityPreviewActionBuilder(container: playlist, on: self).createMenuActions()
+    },
+    playContext: { [weak self] in self?.playlistPlayContext() }
+  )
 
   init(account: Account, playlist: Playlist) {
     self.playlist = playlist
@@ -133,7 +141,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     // cassette Patch 037: see ArtistDetailVC for context — pin
     // inline title before super so the parent's large title
     // doesn't flash through the push transition.
-    navigationItem.largeTitleDisplayMode = .never
+    chrome.prepareBeforeLoad()
     super.viewDidLoad()
 
     #if !targetEnvironment(macCatalyst)
@@ -169,34 +177,9 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       target: self,
       action: #selector(openEditView)
     )
-    optionsButton = UIBarButtonItem.createOptionsBarButton()
-    optionsButton.menu = UIMenu.lazyMenu {
-      EntityPreviewActionBuilder(container: self.playlist, on: self).createMenuActions()
-    }
-    // cassette redesign (Surface 1): play bar-button revealed when the hero
-    // collapses under the (native glass) navigation bar.
-    collapsedPlayButton = UIBarButtonItem(
-      image: CassetteIcon.play.symbolImage,
-      primaryAction: UIAction { [weak self] _ in
-        guard let self else { return }
-        appDelegate.player.play(context: PlayContext(
-          containable: playlist,
-          playables: fetchedResultsController
-            .getContextSongs(onlyCachedSongs: appDelegate.storage.settings.user.isOfflineMode) ?? []
-        ))
-      }
-    )
-    collapsedPlayButton.accessibilityLabel = "Play"
-    collapsedPlayButton.isHidden = true
-
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
       infoCB: { "\(self.playlist.songCount) Song\(self.playlist.songCount == 1 ? "" : "s")" },
-      playContextCb: { () in PlayContext(
-        containable: self.playlist,
-        playables: self.fetchedResultsController
-          .getContextSongs(onlyCachedSongs: self.appDelegate.storage.settings.user.isOfflineMode) ??
-          []
-      ) },
+      playContextCb: { () in self.playlistPlayContext() },
       player: appDelegate.player,
       isInfoAlwaysHidden: true,
       usesProminentPlayButton: true
@@ -205,17 +188,13 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       entityContainer: playlist,
       rootView: self,
       tableView: tableView,
-      playShuffleInfoConfig: playShuffleInfoConfig
+      playShuffleInfoConfig: playShuffleInfoConfig,
+      extendsUnderNavigationBar: chrome.extendsUnderNavigationBar
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
     refreshPlaylistMetadataLine()
-    DetailStickyHeaderSupport.install(stickyHeader: stickyHeader, in: self)
-    stickyHeader.configure(title: playlist.name, subtitle: playlistStickySubtitle())
-    tableView.layoutIfNeeded()
-    DispatchQueue.main.async { [weak self] in
-      self?.stickyHeader.alpha = 0
-    }
+    chrome.install(header: detailOperationsView, title: playlist.name)
     refreshControl?.addTarget(
       self,
       action: #selector(Self.handleRefresh),
@@ -249,55 +228,50 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     refreshEmptyState()
   }
 
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    // Playlist never re-measured its hero on layout, so a rotation or iPad resize that kept
+    // the size class left it at the old width (DET-4).
+    chrome.viewDidLayoutSubviews()
+  }
+
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
-    // Reset the collapsed title only when PUSHING a child (this VC stays in the
-    // stack, so the child's bar starts clean). On a POP — including the
-    // interactive edge-swipe — `isMovingFromParent` is true; zeroing alpha here
-    // would snap the bar title off mid-swipe ("header re-expands"). Leave it so
-    // the title slides away continuously with the content. A cancelled swipe
-    // self-heals: viewIsAppearing recomputes alpha from the scroll offset.
-    if !isMovingFromParent {
-      stickyHeader.alpha = 0
-    } else {
-      // cassette (header-pop fix, round 3): playlist detail does NOT extend
-      // under the nav bar, so it's far less prone to the pop re-expand than
-      // album/artist — but it shares GenericDetailTableHeader, so apply the same
-      // whole-transition freeze for consistency and safety.
-      freezeCollapsingHeaderForPopTransition { [weak self] in
-        guard let self else { return }
-        // On a cancelled swipe, resume normal scroll-driven layout/alpha.
-        detailOperationsView?.resizeToFit()
-        updateStickyHeaderAlpha()
-      }
-    }
+    chrome.viewWillDisappear(isMovingFromParent: isMovingFromParent)
   }
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
-    updateStickyHeaderAlpha()
+    chrome.scrollViewDidScroll()
   }
 
-  private func updateStickyHeaderAlpha() {
-    DetailStickyHeaderSupport.updateAlpha(
-      stickyHeader: stickyHeader,
-      scrollView: tableView,
-      tableHeaderView: tableView.tableHeaderView,
-      in: self,
-      collapsedPlayItem: collapsedPlayButton
-    )
+  override func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    super.scrollViewDidEndDecelerating(scrollView)
+    chrome.scrollDidSettle()
   }
 
-  private func playlistStickySubtitle() -> String? {
-    var parts = ["Playlist"]
-    if playlist.songCount > 0 {
-      parts.append("\(playlist.songCount) song\(playlist.songCount == 1 ? "" : "s")")
+  override func scrollViewDidEndDragging(
+    _ scrollView: UIScrollView,
+    willDecelerate decelerate: Bool
+  ) {
+    super.scrollViewDidEndDragging(scrollView, willDecelerate: decelerate)
+    if !decelerate {
+      chrome.scrollDidSettle()
     }
-    return parts.joined(separator: " · ")
+  }
+
+  /// What Play plays, for the hero button and the collapsed bar button alike.
+  private func playlistPlayContext() -> PlayContext {
+    PlayContext(
+      containable: playlist,
+      playables: fetchedResultsController
+        .getContextSongs(onlyCachedSongs: appDelegate.storage.settings.user.isOfflineMode) ?? []
+    )
   }
 
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
+    chrome.viewIsAppearing()
     if appDelegate.storage.settings.user.isOfflineMode {
       tableView.isEditing = false
     }
@@ -332,7 +306,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       parts.append(playlist.duration.asDurationShortString)
     }
     detailOperationsView?.metadataOverride = parts.joined(separator: " · ")
-    stickyHeader.configure(title: playlist.name, subtitle: playlistStickySubtitle())
+    chrome.setTitle(playlist.name)
   }
 
   /// cassette Patch 020: Cassette-flavored "Empty playlist" state.
@@ -361,11 +335,8 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       }
     }
 
-    // cassette redesign (Surface 1): overflow returns to the navigation bar
-    // alongside Edit; the play bar-button sits between them and stays hidden
-    // until the hero collapses (DetailStickyHeaderSupport toggles it).
-    navigationItem.rightBarButtonItems = [optionsButton, collapsedPlayButton, edititingBarButton]
-      .compactMap { $0 }
+    // Overflow, then the collapsed play (hidden until the hero collapses), then Edit.
+    chrome.setExtraTrailingItems([edititingBarButton].compactMap { $0 })
   }
 
   func convertIndexPathToPlayContext(songIndexPath: IndexPath) -> PlayContext? {

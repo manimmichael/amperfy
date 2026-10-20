@@ -43,10 +43,17 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
 
   var songToScrollTo: Song?
   private var fetchedResultsController: AlbumSongsFetchedResultsController!
-  private var optionsButton: UIBarButtonItem!
-  private var collapsedPlayButton: UIBarButtonItem!
   private var detailOperationsView: GenericDetailTableHeader?
-  private let stickyHeader = DetailStickyHeaderView()
+  /// The shared detail-page frame: bar, collapsing title, overflow and bar play (Wave 3).
+  private lazy var chrome = DetailScreenChrome(
+    host: self,
+    placement: .underBar,
+    menu: { [weak self] in
+      guard let self else { return [] }
+      return EntityPreviewActionBuilder(container: album, on: self).createMenuActions()
+    },
+    playContext: { [weak self] in self?.albumPlayContext() }
+  )
   private var hideUniformArtistSubtitle = false
   // Cassette fork — Layer 3 Phase 3.2 (library filtering). Owned track ids used
   // to dim non-owned rows; the detail list itself is never filtered. Empty when
@@ -118,30 +125,9 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     // cassette Patch 037: see ArtistDetailVC for context — pin
     // inline title before super so the parent's large title
     // doesn't flash through the push transition.
-    navigationItem.largeTitleDisplayMode = .never
+    chrome.prepareBeforeLoad()
     super.viewDidLoad()
     appDelegate.userStatistics.visited(.albumDetail)
-
-    // cassette redesign (Surface 1): overflow returns to the navigation bar
-    // (native glass circle on iOS 26); a play bar-button joins it when the
-    // hero collapses under the bar.
-    optionsButton = UIBarButtonItem.createOptionsBarButton()
-    optionsButton.menu = UIMenu.lazyMenu { [weak self] in
-      guard let self else { return [] }
-      return EntityPreviewActionBuilder(container: album, on: self).createMenuActions()
-    }
-    collapsedPlayButton = UIBarButtonItem(
-      image: CassetteIcon.play.symbolImage,
-      primaryAction: UIAction { [weak self] _ in
-        guard let self else { return }
-        appDelegate.player.play(context: PlayContext(
-          containable: album,
-          playables: fetchedResultsController
-            .getContextSongs(onlyCachedSongs: appDelegate.storage.settings.user.isOfflineMode) ?? []
-        ))
-      }
-    )
-    collapsedPlayButton.accessibilityLabel = "Play"
 
     cassetteOwnedTrackIds = DeviceOwnershipManager(
       context: appDelegate.storage.main.context
@@ -188,39 +174,9 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     // Disc grouping is shown by the "Disc N" labels alone (no dividers).
     tableView.separatorStyle = .none
 
-    // cassette Patch 104 (Root 2): artwork is the first content of the
-    // scroll. The table extends under the navigation bar (insets mirrored
-    // manually in viewDidLayoutSubviews) and the bar is transparent at the
-    // scroll edge so back/overflow float over the artwork; the system
-    // restores the standard bar surface once content scrolls under it.
-    tableView.contentInsetAdjustmentBehavior = .never
-    // Patch 109: every appearance slot starts transparent so the bar never
-    // snaps to the opaque global standardAppearance the instant the user
-    // scrolls. DetailStickyHeaderSupport.updateAlpha then fades the bar
-    // background in lockstep with the title as the hero collapses.
-    let transparentBar = UINavigationBarAppearance()
-    transparentBar.configureWithTransparentBackground()
-    navigationItem.standardAppearance = transparentBar
-    navigationItem.compactAppearance = transparentBar
-    navigationItem.scrollEdgeAppearance = transparentBar
-    navigationItem.compactScrollEdgeAppearance = transparentBar
-    // cassette Patch 108: iOS 26 adds an always-on soft top scroll-edge effect
-    // (a dark gradient/scrim) over content that extends under the bar, which
-    // darkens the top of the artwork at rest. Hide it so the artwork is clean
-    // at rest; the opaque standardAppearance still supplies the solid bar
-    // surface once content scrolls under it.
-    if #available(iOS 26.0, *) {
-      tableView.topEdgeEffect.isHidden = true
-    }
-
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
       infoCB: { "\(self.album.songCount) Song\(self.album.songCount == 1 ? "" : "s")" },
-      playContextCb: { () in PlayContext(
-        containable: self.album,
-        playables: self.fetchedResultsController
-          .getContextSongs(onlyCachedSongs: self.appDelegate.storage.settings.user.isOfflineMode) ??
-          []
-      ) },
+      playContextCb: { () in self.albumPlayContext() },
       player: appDelegate.player,
       isInfoAlwaysHidden: true,
       usesProminentPlayButton: true
@@ -230,22 +186,12 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       rootView: self,
       tableView: tableView,
       playShuffleInfoConfig: playShuffleInfoConfig,
-      extendsUnderNavigationBar: true
+      extendsUnderNavigationBar: chrome.extendsUnderNavigationBar
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
     refreshAlbumMetadataLine()
-    DetailStickyHeaderSupport.install(
-      stickyHeader: stickyHeader,
-      in: self,
-      overflowItem: optionsButton,
-      collapsedPlayItem: collapsedPlayButton
-    )
-    stickyHeader.configure(title: album.name, subtitle: album.subtitle)
-    tableView.layoutIfNeeded()
-    DispatchQueue.main.async { [weak self] in
-      self?.stickyHeader.alpha = 0
-    }
+    chrome.install(header: detailOperationsView, title: album.name)
     updateHideUniformArtistSubtitle()
     snapshotDidChange = { [weak self] in
       self?.updateHideUniformArtistSubtitle()
@@ -275,60 +221,29 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       album = fresh
     }
     // Regroup may have stamped year while we were away — refresh the header line
-    // from the (possibly new) album wrapper.
+    // from the (possibly new) album wrapper, and the collapsed title (DET-7).
     refreshAlbumMetadataLine()
+    chrome.setTitle(album.name)
     navigationController?.navigationBar.prefersLargeTitles = false
   }
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
-    // cassette (header-pop fix, round 3): while popping, skip ALL of the
-    // inset-driven re-layout. With contentInsetAdjustmentBehavior == .never the
-    // insets/indicator insets are derived from safeAreaInsets, which SHIFT as
-    // the bar transitions toward the destination's large-title layout; writing
-    // them (and re-measuring the header) mid-pop is one of the triggers that
-    // re-expands the hero. Leave everything as-is until the transition settles.
-    guard !isHeaderTransitionFrozen else { return }
-    // Patch 104 (Root 2): with contentInsetAdjustmentBehavior == .never the
-    // safe areas are mirrored manually (bottom = tab bar + mini player).
-    tableView.contentInset.bottom = view.safeAreaInsets.bottom
-    tableView.verticalScrollIndicatorInsets.top = view.safeAreaInsets.top
-    tableView.verticalScrollIndicatorInsets.bottom = view.safeAreaInsets.bottom
-    detailOperationsView?.resizeToFit()
+    chrome.viewDidLayoutSubviews()
   }
 
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
-    // Reset the collapsed title only when PUSHING a child (this VC stays in the
-    // stack, so the child's bar starts clean). On a POP — including the
-    // interactive edge-swipe — `isMovingFromParent` is true; zeroing alpha here
-    // would snap the bar title off mid-swipe ("header re-expands"). Leave it so
-    // the title slides away continuously with the content. A cancelled swipe
-    // self-heals: viewIsAppearing recomputes alpha from the scroll offset.
-    if !isMovingFromParent {
-      stickyHeader.alpha = 0
-    } else {
-      // cassette (header-pop fix, round 3): freeze the collapsing header for the
-      // whole pop so it rides off-screen instead of re-expanding.
-      freezeCollapsingHeaderForPopTransition { [weak self] in
-        guard let self else { return }
-        // On a cancelled swipe, resume normal scroll-driven layout/alpha.
-        detailOperationsView?.resizeToFit()
-        updateStickyHeaderAlpha()
-      }
-    }
+    chrome.viewWillDisappear(isMovingFromParent: isMovingFromParent)
   }
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
-    updateStickyHeaderAlpha()
+    chrome.scrollViewDidScroll()
   }
 
-  // resizeToFit defers any header re-measure that arrives mid-scroll (it would
-  // flash the collapsed title — see GenericDetailTableHeader.resizeToFit). Land
-  // the deferred size once the scroll settles.
   override func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
     super.scrollViewDidEndDecelerating(scrollView)
-    detailOperationsView?.resizeToFit()
+    chrome.scrollDidSettle()
   }
 
   override func scrollViewDidEndDragging(
@@ -337,17 +252,16 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   ) {
     super.scrollViewDidEndDragging(scrollView, willDecelerate: decelerate)
     if !decelerate {
-      detailOperationsView?.resizeToFit()
+      chrome.scrollDidSettle()
     }
   }
 
-  private func updateStickyHeaderAlpha() {
-    DetailStickyHeaderSupport.updateAlpha(
-      stickyHeader: stickyHeader,
-      scrollView: tableView,
-      tableHeaderView: tableView.tableHeaderView,
-      in: self,
-      collapsedPlayItem: collapsedPlayButton
+  /// What Play plays, for the hero button and the collapsed bar button alike.
+  private func albumPlayContext() -> PlayContext {
+    PlayContext(
+      containable: album,
+      playables: fetchedResultsController
+        .getContextSongs(onlyCachedSongs: appDelegate.storage.settings.user.isOfflineMode) ?? []
     )
   }
 
@@ -361,9 +275,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
-    // Restore the correct alpha when popping back to a scrolled screen —
-    // viewWillDisappear resets alpha to 0 for the push transition.
-    updateStickyHeaderAlpha()
+    chrome.viewIsAppearing()
 
     Task { @MainActor in
       do {
