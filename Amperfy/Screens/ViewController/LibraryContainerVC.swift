@@ -213,6 +213,11 @@ final class LibraryContainerVC: UIViewController {
     ])
     child.didMove(toParent: self)
     embeddedChild = child
+    // cassette (rail): the tab bar minimizes and expands by watching the
+    // selected screen's content scroll view. A plain container has none, so
+    // the bar never saw a scroll here and the manual reveal hack grew in its
+    // place. Forward the child's.
+    setContentScrollView(child.contentScrollView(for: .bottom), for: .bottom)
 
     navigationItem.searchController = child.navigationItem.searchController
     navigationItem.hidesSearchBarWhenScrolling = true
@@ -226,6 +231,7 @@ final class LibraryContainerVC: UIViewController {
     child.view.removeFromSuperview()
     child.removeFromParent()
     embeddedChild = nil
+    setContentScrollView(nil, for: .bottom)
     navigationItem.searchController = nil
     navigationItem.rightBarButtonItems = nil
   }

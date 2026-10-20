@@ -149,8 +149,10 @@ class TabBarVC: UITabBarController {
 
     heightConstraint = miniPlayer!.glassContainer.heightAnchor.constraint(equalToConstant: 48.0)
     heightConstraint?.isActive = true
-    compactWidthConstraint = miniPlayer!.glassContainer.widthAnchor
-      .constraint(equalTo: miniPlayer!.glassContainer.superview!.widthAnchor)
+    if let host = miniPlayer!.glassContainer.superview {
+      compactWidthConstraint = miniPlayer!.glassContainer.widthAnchor
+        .constraint(equalTo: host.widthAnchor)
+    }
 
     miniPlayer!.tabAccessoryTraitChangeCB = configureTraitChangesForMiniPlayer
     configureTraitChangesForMiniPlayer()
@@ -169,49 +171,74 @@ class TabBarVC: UITabBarController {
     }
   }
 
-  // cassette (manual eager reveal): iOS 26's tab bar only re-expands at the very
-  // top with our nested navigation, and there's no imperative "expand" API. So we
-  // drive `tabBarMinimizeBehavior` from scroll DIRECTION: scrolling UP flips it to
-  // `.never` (which should un-minimize the bar immediately), scrolling DOWN flips
-  // it back to `.onScrollDown` (so it minimizes again as you read on). Only toggles
-  // on a real direction change past a small threshold, so a steady scroll doesn't
-  // thrash the property.
-  private var cassetteLastScrollY: CGFloat = 0
-  private var cassetteLastToggleAt: TimeInterval = 0
+  // MARK: - Rail reveal
+
+  /// cassette (rail): what the platform does, measured on 2026-10-19 with a
+  /// completely stock UITabBarController on the iOS 26.4 simulator: with
+  /// `.onScrollDown` the bar minimizes on a scroll down and comes back ONLY when
+  /// the content reaches the top. A short flick up, a slow 300pt drag up and a
+  /// 600pt drag up mid-list all leave it minimized. Reddit's bar comes back on
+  /// the first upward movement, which is the feel the founder wants, so the
+  /// reveal is ours and the minimize stays UIKit's:
+  ///
+  /// - an upward run of `railRevealDistance` points (while not at the top) sets
+  ///   `.never`, which makes UIKit expand the bar at once;
+  /// - `railRearmDelay` later, once that animation is done, the behaviour goes
+  ///   back to `.onScrollDown`, and UIKit minimizes again on the next downward
+  ///   drag (measured: it decides per drag, so handing it back mid-drag does
+  ///   nothing until the finger lifts).
+  ///
+  /// One flip pair per upward run, hysteresis in points, no direction-flip
+  /// cooldowns. The old version flipped on every sub-pixel reversal behind
+  /// timers, which is where the stutter came from.
+  private var railRunStartY: CGFloat = 0
+  private var railLastY: CGFloat = 0
+  private var railLastDirectionDown = true
+  private var railRevealedThisRun = false
+  private var railRearmWorkItem: DispatchWorkItem?
+  private static let railRevealDistance: CGFloat = 24
+  private static let railRearmDelay: TimeInterval = 0.4
+
   func cassetteUpdateMinimizeForScroll(_ scrollView: UIScrollView) {
-    let y = scrollView.contentOffset.y
-    let dy = y - cassetteLastScrollY
-    cassetteLastScrollY = y
-
-    // Asymmetric sensitivity (the "Reddit feel"): the bar should POP BACK on the
-    // faintest upward flick — that's the motion users notice — but hide a little
-    // more deliberately so a jittery downward read doesn't yank it away. Small
-    // reveal threshold, larger hide threshold, a shallow dead-zone between them.
-    let desired: UITabBarController.MinimizeBehavior
-    if dy < -1.5 {
-      desired = .never // scrolling UP → reveal
-    } else if dy > 6 {
-      desired = .onScrollDown // scrolling DOWN deliberately → allow minimize
-    } else {
-      return // dead-zone: sub-pixel jitter / direction unclear
+    let topInset = scrollView.adjustedContentInset.top
+    let y = scrollView.contentOffset.y + topInset
+    // Only the user's own movement counts: programmatic offsets (reloads, the
+    // keyboard, a content-inset change) must not flip the bar.
+    guard scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating else {
+      railLastY = y
+      railRunStartY = y
+      railRevealedThisRun = false
+      return
     }
-    guard tabBarMinimizeBehavior != desired else { return }
-
-    // Anti-thrash cooldown: each behavior change animates the bar; hammering the
-    // property on rapid reversals piles up animations and UIKit stalls ("tired
-    // out"). Reveal gets a SHORTER cooldown so popping the bar back always feels
-    // instant; hiding is rate-limited a touch more. The first toggle fires
-    // immediately (cassetteLastToggleAt == 0); only a fast wiggle is throttled.
-    let now = ProcessInfo.processInfo.systemUptime
-    let cooldown: TimeInterval = desired == .never ? 0.18 : 0.30
-    guard now - cassetteLastToggleAt > cooldown else { return }
-    cassetteLastToggleAt = now
-    tabBarMinimizeBehavior = desired
-    #if DEBUG
-      print(
-        "CASSETTE-NAV: \(desired == .never ? "REVEAL" : "hide") dy=\(String(format: "%.1f", dy))"
-      )
-    #endif
+    let maxY = scrollView.contentSize.height + scrollView.adjustedContentInset.bottom
+      - scrollView.bounds.height + topInset
+    let dy = y - railLastY
+    railLastY = y
+    // At the top UIKit expands on its own; nothing to do.
+    if y <= 0 {
+      railRunStartY = y
+      railRevealedThisRun = false
+      return
+    }
+    // Rubber-band at the bottom is not a direction change.
+    if y >= maxY, dy > 0 { return }
+    guard dy != 0 else { return }
+    let movingDown = dy > 0
+    if movingDown != railLastDirectionDown {
+      railLastDirectionDown = movingDown
+      railRunStartY = y
+      railRevealedThisRun = false
+    }
+    guard !movingDown, !railRevealedThisRun, y - railRunStartY <= -Self.railRevealDistance
+    else { return }
+    railRevealedThisRun = true
+    railRearmWorkItem?.cancel()
+    tabBarMinimizeBehavior = .never
+    let rearm = DispatchWorkItem { [weak self] in
+      self?.tabBarMinimizeBehavior = .onScrollDown
+    }
+    railRearmWorkItem = rearm
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.railRearmDelay, execute: rearm)
   }
 
   private func mainContent() -> UIView {
@@ -227,12 +254,29 @@ class TabBarVC: UITabBarController {
   var regularWidthConstraint: NSLayoutConstraint?
   var heightConstraint: NSLayoutConstraint?
   var compactWidthConstraint: NSLayoutConstraint?
+  var inlineHeightConstraint: NSLayoutConstraint?
 
   func configureTraitChangesForMiniPlayer() {
     guard let miniPlayer else { return }
     let isInline = miniPlayer.glassContainer.traitCollection.tabAccessoryEnvironment == .inline
 
-    if traitCollection.horizontalSizeClass == .regular {
+    if isInline {
+      // cassette (rail): inline means inside the minimized tab bar, where the
+      // system sizes the accessory slot. The old full-width + 48pt required
+      // constraints fought that slot and the content spilled over the search
+      // button (artwork and scrubber drawn on top of it). Fill the slot the
+      // system gives: width AND height from the host, no fixed 48.
+      heightConstraint?.isActive = false
+      centerConstraint?.isActive = false
+      regularWidthConstraint?.isActive = false
+      compactWidthConstraint?.isActive = true
+      if inlineHeightConstraint == nil, let host = miniPlayer.glassContainer.superview {
+        inlineHeightConstraint = miniPlayer.glassContainer.heightAnchor
+          .constraint(equalTo: host.heightAnchor)
+      }
+      inlineHeightConstraint?.isActive = true
+    } else if traitCollection.horizontalSizeClass == .regular {
+      inlineHeightConstraint?.isActive = false
       centerConstraint = miniPlayer.glassContainer.safeAreaLayoutGuide.centerXAnchor.constraint(
         equalTo: mainContent().safeAreaLayoutGuide.centerXAnchor,
         constant: 0
@@ -248,13 +292,11 @@ class TabBarVC: UITabBarController {
       regularWidthConstraint?.isActive = true
       centerConstraint?.isActive = true
       heightConstraint?.constant = 60.0
-    } else if isInline {
-      heightConstraint?.constant = 48.0
-      centerConstraint?.isActive = false
-      regularWidthConstraint?.isActive = false
-      compactWidthConstraint?.isActive = true
+      heightConstraint?.isActive = true
     } else {
+      inlineHeightConstraint?.isActive = false
       heightConstraint?.constant = 48.0
+      heightConstraint?.isActive = true
       centerConstraint?.isActive = false
       regularWidthConstraint?.isActive = false
       compactWidthConstraint?.isActive = true

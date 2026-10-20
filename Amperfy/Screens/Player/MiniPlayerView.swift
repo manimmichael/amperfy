@@ -614,11 +614,18 @@ class MiniPlayerView: UIView {
   private func refreshForTabAccessoryTraitChange() {
     let isInline = traitCollection.tabAccessoryEnvironment == .inline
     playButtonTrailingConstraint?.isActive = false
+    // cassette (rail): inline is the slot inside the minimized tab bar. Cover,
+    // one title line and play only; no artist line, no scrubber, and no glass
+    // of our own because the bar is the glass there (ours rendered as a pale
+    // square behind the cover).
+    subtitleLabel.isHidden = isInline
+    timeSlider.isHidden = isInline
+    glassContainer.effect = isInline ? nil : miniPlayerGlassEffect
     if isInline {
       nextButton.isHidden = true
       playButtonTrailingConstraint = playButton.trailingAnchor.constraint(
         equalTo: trailingAnchor,
-        constant: -10
+        constant: -6
       )
     } else {
       nextButton.isHidden = false
@@ -918,11 +925,15 @@ class MiniPlayerView: UIView {
     fatalError("init(coder:) has not been implemented")
   }
 
-  public lazy var glassContainer: UIVisualEffectView = {
-    let container = UIVisualEffectView()
+  private lazy var miniPlayerGlassEffect: UIGlassEffect = {
     let glassEffect = UIGlassEffect(style: .regular)
     glassEffect.isInteractive = false
-    container.effect = glassEffect
+    return glassEffect
+  }()
+
+  public lazy var glassContainer: UIVisualEffectView = {
+    let container = UIVisualEffectView()
+    container.effect = miniPlayerGlassEffect
     container.contentView.addSubview(self)
 
     container.translatesAutoresizingMaskIntoConstraints = false
