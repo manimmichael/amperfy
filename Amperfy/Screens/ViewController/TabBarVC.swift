@@ -238,6 +238,11 @@ class TabBarVC: UITabBarController {
     // opposite; flipping mid-animation is what left the bar half way.
     guard ProcessInfo.processInfo.systemUptime - railWentInlineAt > Self.railSettleDelay
     else { return }
+    // Nothing to reveal when the bar is already out. At the end of a list
+    // UIKit often brings it back by itself on the bounce; setting `.never`
+    // on an expanded bar then made it re-run its expansion, which read as a
+    // flash on the next scroll up from the bottom.
+    guard appliedRailLayout == .inline else { return }
     railRevealedThisRun = true
     railRearmWorkItem?.cancel()
     tabBarMinimizeBehavior = .never
