@@ -642,7 +642,7 @@
 		256157FBDC1FDF2EAF577851 /* MoodDoorsHeaderView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MoodDoorsHeaderView.swift; sourceTree = "<group>"; };
 		3557CBE43996FBDA91123169 /* MoodDoorArt.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MoodDoorArt.swift; sourceTree = "<group>"; };
 		43FBE27E250D4DFD00D5F9B3 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
-		4C44F47230378D70006EED5B /* HomeShelfEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeShelfEngine.swift; sourceTree = "<group>"; };
+		4C44F47230378D70006EED5B /* HomeShelfEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HomeShelfEngine.swift; path = AmperfyKit/Home/HomeShelfEngine.swift; sourceTree = "<group>"; };
 		4D4E80DE1B5D5CCA34E33817 /* MixtapePreviewSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MixtapePreviewSheet.swift; sourceTree = "<group>"; };
 		5002565625E69DC700674CE1 /* SpinnerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpinnerViewController.swift; sourceTree = "<group>"; };
 		5003D8F62678DD39006946BF /* SsAlbumParserPreCreatedArtistsTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SsAlbumParserPreCreatedArtistsTest.swift; sourceTree = "<group>"; };
