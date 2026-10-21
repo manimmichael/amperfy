@@ -624,21 +624,32 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
         lines: 2
       ))
     }
-    if let match = live.match, let url = match.albumURL {
-      // The record we carry: the same "see it on Cassette" the web's page offers.
+    if let match = live.match {
+      // The record we carry: its page in the app, or the person's own copy (RecordOpener).
       let see = UIButton(configuration: .plain())
       see.configuration?.contentInsets = .zero
       see.configuration?.attributedTitle = AttributedString(NSAttributedString.cassette(
-        "\(match.title) is on Cassette",
+        "Go to \(match.title)",
         .metadata,
         color: .cassette(.textPrimary)
       ))
-      see.configuration?.image = CassetteIcon.openExternal.uiImage(size: .small)
+      see.configuration?.image = CassetteIcon.chevronRight.uiImage(size: .small)
       see.configuration?.imagePlacement = .trailing
       see.configuration?.imagePadding = 4
       see.configuration?.baseForegroundColor = .cassette(.textPrimary)
       see.contentHorizontalAlignment = .leading
-      see.addAction(UIAction { _ in UIApplication.shared.open(url) }, for: .primaryActionTriggered)
+      see.addAction(UIAction { [weak self] _ in
+        guard let self else { return }
+        let cover = [match.coverFullUrl, match.coverUrl].compactMap { $0 }.first { !$0.isEmpty }
+        RecordOpener.open(
+          albumSlug: match.albumSlug,
+          title: match.title,
+          placeholder: cover.flatMap { RadioArtLoader.shared.cachedImage(for: $0) },
+          account: account
+        ) { [weak self] vc in
+          self?.navigationController?.pushViewController(vc, animated: true)
+        }
+      }, for: .primaryActionTriggered)
       text.addArrangedSubview(see)
     }
     if let next = live.next?.first {

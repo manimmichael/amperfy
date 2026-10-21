@@ -27,6 +27,7 @@
 		5007CE4721EF6A8E00BC5CBA /* PlaylistDetailVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5007CE4621EF6A8E00BC5CBA /* PlaylistDetailVC.swift */; };
 		C0FFEE5F0000000000000002 /* MixDetailVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE5F0000000000000001 /* MixDetailVC.swift */; };
 		C0FFEE600000000000000002 /* RadioStationVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE600000000000000001 /* RadioStationVC.swift */; };
+		C0FFEE610000000000000002 /* CassetteWebPageVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE610000000000000001 /* CassetteWebPageVC.swift */; };
 		500B7D4521EDB05F0083ED6F /* LibraryElementDetailTableHeaderView.xib in Resources */ = {isa = PBXBuildFile; fileRef = 500B7D4421EDB05F0083ED6F /* LibraryElementDetailTableHeaderView.xib */; };
 		500B7D4721EDB0890083ED6F /* LibraryElementDetailTableHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500B7D4621EDB0890083ED6F /* LibraryElementDetailTableHeaderView.swift */; };
 		500B7D4921EDD6250083ED6F /* ViewCreator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500B7D4821EDD6250083ED6F /* ViewCreator.swift */; };
@@ -680,6 +681,7 @@
 		5007CE4621EF6A8E00BC5CBA /* PlaylistDetailVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistDetailVC.swift; sourceTree = "<group>"; };
 		C0FFEE5F0000000000000001 /* MixDetailVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixDetailVC.swift; sourceTree = "<group>"; };
 		C0FFEE600000000000000001 /* RadioStationVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RadioStationVC.swift; sourceTree = "<group>"; };
+		C0FFEE610000000000000001 /* CassetteWebPageVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteWebPageVC.swift; sourceTree = "<group>"; };
 		5009863B2208CB650057A1A6 /* OptionsButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptionsButton.swift; sourceTree = "<group>"; };
 		5009863D2208CC1E0057A1A6 /* BasicButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BasicButton.swift; sourceTree = "<group>"; };
 		500B2B302249607B00D14EF4 /* BackendProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendProxy.swift; sourceTree = "<group>"; };
@@ -1949,6 +1951,7 @@
 				50BA92F921CC37F800E5901D /* SongsVC.swift */,
 				50CEC64A2D1F4C0A00D0E696 /* RadiosVC.swift */,
 				C0FFEE600000000000000001 /* RadioStationVC.swift */,
+				C0FFEE610000000000000001 /* CassetteWebPageVC.swift */,
 				5007CE4021EF5F4300BC5CBA /* PlaylistsVC.swift */,
 				5007CE4621EF6A8E00BC5CBA /* PlaylistDetailVC.swift */,
 				C0FFEE5F0000000000000001 /* MixDetailVC.swift */,
@@ -2799,6 +2802,7 @@
 				5007CE4721EF6A8E00BC5CBA /* PlaylistDetailVC.swift in Sources */,
 				C0FFEE5F0000000000000002 /* MixDetailVC.swift in Sources */,
 				C0FFEE600000000000000002 /* RadioStationVC.swift in Sources */,
+				C0FFEE610000000000000002 /* CassetteWebPageVC.swift in Sources */,
 				50AAB9F32F0154EB004A39C6 /* SeekToPlaybackTimeIntent.swift in Sources */,
 				5078AFB22B40CA5E0038FD17 /* DisplaySettingsView.swift in Sources */,
 				50DEEE07265E27070073FF20 /* DirectoryTableCell.swift in Sources */,

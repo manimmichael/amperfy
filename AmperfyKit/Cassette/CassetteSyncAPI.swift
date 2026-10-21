@@ -1356,6 +1356,19 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     return response.signedIn == true ? response.saved : nil
   }
 
+  /// cassette 2026-10-21: which of a catalog record's songs this account owns, as the hub's
+  /// own song ids (the ids this phone's library uses), from the site's album source
+  /// (GET /api/album/<slug>/tracks, signed in). Empty when they own none of it.
+  public func getOwnedSongIds(albumSlug: String) async throws -> [String] {
+    struct Response: Decodable {
+      struct Track: Decodable { let subsonicTrackId: String? }
+      let tracks: [Track]
+    }
+    let slug = albumSlug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? albumSlug
+    let data = try await get(path: "/api/album/\(slug)/tracks", timeout: 4)
+    return try JSONDecoder().decode(Response.self, from: data).tracks.compactMap(\.subsonicTrackId)
+  }
+
   /// Save or unsave a station through the web's own follow edge (POST / DELETE
   /// /api/follows, type `radio_station`), so a save on the phone is the web's save.
   public func setRadioStationSaved(slug: String, saved: Bool) async throws {
