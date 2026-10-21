@@ -195,10 +195,16 @@ extension PopupPlayerVC {
     fakeImageView.contentMode = .scaleAspectFill
     fakeImageView.clipsToBounds = true
     fakeImageView.alpha = sourceView.alpha
+    // phone-taste: the replica starts with the corner of the cover it leaves (the Now
+    // Playing cover's CassetteRadius.playerArtwork, or the queue row's smaller one) and
+    // eases into the corner of the cover it lands on, so neither end pops.
+    fakeImageView.layer.cornerRadius = sourceView.layer.cornerRadius
+    let targetCornerRadius = targetView.layer.cornerRadius
 
     // animate alpha for active lyrics view
     UIView.animate(withDuration: Self.displaStyleAnimationDuration, delay: 0, animations: {
       fakeImageView.alpha = targetView.alpha
+      fakeImageView.layer.cornerRadius = targetCornerRadius
     }, completion: { _ in
       fakeImageView.alpha = targetView.alpha
     })

@@ -56,13 +56,21 @@ class CurrentlyPlayingTableCell: BasicTableCell {
   }
 
   /// cassette (BUG-418): the compact now-playing header at the top of the queue
-  /// rendered in the XIB's bold-system 17/19 and system 16/17. Title on the
-  /// display face, artist in mono, both re-stamped on trait change.
+  /// rendered in the XIB's bold-system 17/19 and system 16/17. Re-stamped on trait change.
+  /// phone-taste (queue-now-row): the same voice as Now Playing, a step smaller: the song in
+  /// Barlow ExtraBold 24 capitals (refresh() sets the capitals), the artist in the answer
+  /// voice (New York italic 20) in the record's colour.
   private func applyCassetteType() {
-    titleLabel.font = UIFont.cassetteDisplay(size: 20, weight: .semibold)
+    titleLabel.font = UIFont.cassetteDisplay(size: 24, weight: .extraBold)
     titleLabel.textColor = UIColor.cassette(.textPrimary)
-    artistLabel.font = UIFont.cassette(.cardSubtitle)
-    artistLabel.textColor = UIColor.cassette(.textSecondary)
+    artistLabel.font = UIFont.cassette(.answerCompact)
+    applyCoverTint(rootView?.coverTint ?? .neutral)
+  }
+
+  /// phone-taste: the artist line speaks in the record's colour (`.neutral` until one is
+  /// read, never orange).
+  func applyCoverTint(_ tint: CoverTint) {
+    artistLabel.textColor = tint.text
   }
 
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -70,12 +78,20 @@ class CurrentlyPlayingTableCell: BasicTableCell {
     applyCassetteType()
   }
 
+  /// The shared refresh writes the song title here in mixed case, and only its capitals
+  /// reach the marquee, which then restarts its scroll only when the song changes.
+  private lazy var mixedCaseTitle = UILabel()
+
   func refresh() {
     rootView?.playerHandler?.refreshCurrentlyPlayingInfo(
       artworkImage: artworkImage,
-      titleLabel: titleLabel,
+      titleLabel: mixedCaseTitle,
       artistLabel: artistLabel
     )
+    // phone-taste: capitals here only; the mini player and the lock screen keep mixed
+    // case, and VoiceOver reads the title as written.
+    titleLabel.text = mixedCaseTitle.text?.uppercased()
+    titleLabel.accessibilityLabel = mixedCaseTitle.text
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
   }
 

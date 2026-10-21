@@ -61,6 +61,12 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
   let ambientBackdropModel = AmbientBackdropModel()
   private var ambientBackdropHost: UIHostingController<AmbientCoverBackdrop>?
 
+  /// phone-taste: the record's colour, read once per cover from the same thumbnail the
+  /// glow decodes (refreshBackgroundItemArtwork). A plain stored value, deliberately not on
+  /// AmbientBackdropModel: a new tint must not re-render the glow or the EQ panel that
+  /// observe that model. `.neutral` until a cover is read, and for a track without one.
+  var coverTint: CoverTint = .neutral
+
   var currentlyPlayingTableCell: CurrentlyPlayingTableCell?
   var contextPrevQueueSectionHeader: ContextQueuePrevSectionHeader?
   var userQueueSectionHeader: UserQueueSectionHeader?
@@ -321,6 +327,24 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
   func refreshContextQueueSectionHeader() {
     guard let contextNextQueueSectionHeader = contextNextQueueSectionHeader else { return }
     contextNextQueueSectionHeader.refresh()
+  }
+
+  /// phone-taste: keep a newly read record colour and hand it on. An unchanged colour stops
+  /// here, so a refresh for the same cover touches no label.
+  func updateCoverTint(_ tint: CoverTint) {
+    guard tint != coverTint else { return }
+    coverTint = tint
+    applyCoverTint()
+  }
+
+  /// phone-taste: push the record's colour to every label that speaks in it: the artist
+  /// line on Now Playing, the queue's now row and the queue head. Each of them also reads
+  /// `coverTint` itself when it is built or its traits change, because the now row is only
+  /// made on the first visit to the queue.
+  func applyCoverTint() {
+    largeCurrentlyPlayingView?.applyCoverTint(coverTint)
+    currentlyPlayingTableCell?.applyCoverTint(coverTint)
+    contextNextQueueSectionHeader?.applyCoverTint(coverTint)
   }
 
   // MARK: - UIScrollViewDelegate

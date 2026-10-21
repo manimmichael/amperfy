@@ -29,7 +29,14 @@ import UIKit
 class PlayerControlView: UIView {
   // cassette Patch 104: +12pt so the added breathing room between the
   // transport row and the airplay/queue row isn't squeezed out.
-  static let frameHeight: CGFloat = 187
+  // phone-taste (play-disc): +8pt (slider-to-transport gap 22 -> 30 in the XIB) so the
+  // 78pt disc, which overhangs the 50pt transport row, clears the time labels.
+  static let frameHeight: CGFloat = 195
+  /// phone-taste: the cream play disc (the mock's .npPlay).
+  static private let playDiscDiameter: CGFloat = 78
+  /// phone-taste: the AirPlay and queue glyphs sit this far in from each edge (the mock's
+  /// 26pt sheet padding plus the foot row's own 6pt).
+  static private let footRowInset: CGFloat = 32
   static private let margin = UIEdgeInsets(
     top: 0,
     left: UIView.defaultMarginX,
@@ -112,27 +119,43 @@ class PlayerControlView: UIView {
 
     playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
 
-    // cassette redesign (Surface 5): no container box behind play/pause —
-    // the bg3 capsule (Patch 047) is retired and the play/pause glyph
-    // carries the state on its own, matching the prev/next treatment.
-    // Patch 104: transport glyphs were oversized — play/pause drops
-    // 40 -> 32 (prev/next/skip drop to 20 in the XIB) and the config
-    // routes through cassetteBare() (Root 1) so no glass capsule leaks.
-    var playConfig = UIButton.Configuration.cassetteBare()
-    playConfig.baseForegroundColor = UIColor.cassette(.textPrimary)
-    playConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-      pointSize: 32, weight: .bold
-    )
+    // phone-taste (play-disc): play/pause sits on the mock's cream disc again, a 78pt
+    // ink circle (sized in setupCassetteTransportLayout) with a dark 30pt glyph, the
+    // biggest target on the sheet. A filled configuration, not the iOS 26 system glass.
+    // refreshPlayButton only swaps the image, so this configuration survives.
+    var playConfig = UIButton.Configuration.filled()
+    playConfig.baseBackgroundColor = UIColor.cassette(.fillSelected)
+    playConfig.baseForegroundColor = UIColor.cassette(.surfaceSunken)
+    playConfig.cornerStyle = .capsule
+    let playSymbol = UIImage.SymbolConfiguration(pointSize: 30, weight: .bold)
+    playConfig.preferredSymbolConfigurationForImage = playSymbol
     playButton.configuration = playConfig
+    // The nib's state image carries its own 32pt symbol size; match it, whichever wins.
+    playButton.setPreferredSymbolConfiguration(playSymbol, forImageIn: .normal)
     playButton.tintColor = UIColor.cassette(.textPrimary)
+    // Prev and next take 28pt glyphs (the mock's 30px skip arrows) through their own
+    // configuration; refreshPrevNextButtons swaps only their image.
+    let skipSymbol = UIImage.SymbolConfiguration(pointSize: 28)
+    for button in [previousButton, nextButton] {
+      guard let button else { continue }
+      var config = UIButton.Configuration.cassetteBare()
+      config.baseForegroundColor = UIColor.cassette(.textPrimary)
+      config.preferredSymbolConfigurationForImage = skipSymbol
+      config.image = button.image(for: .normal)
+      button.configuration = config
+      button.setPreferredSymbolConfiguration(skipSymbol, forImageIn: .normal)
+    }
     previousButton.tintColor = UIColor.cassette(.textPrimary)
     nextButton.tintColor = UIColor.cassette(.textPrimary)
     skipBackwardButton.tintColor = UIColor.cassette(.textPrimary)
     skipForwardButton.tintColor = UIColor.cassette(.textPrimary)
-    // cassette Polish 2 (G2): AirPlay + player-mode buttons were ink2 while
-    // every other bottom-row glyph is ink — uniform ink reads as one row.
-    airplayButton.tintColor = UIColor.cassette(.textPrimary)
-    playerModeButton.tintColor = UIColor.cassette(.textPrimary)
+    // phone-taste (foot-row): the foot row goes quiet in ink2 (the mock's .npFoot), which
+    // reverses Polish 2's uniform ink so the transport and the title lead. The queue
+    // toggle's unselected glyph follows in refreshDisplayPlaylistButton; selected, it
+    // keeps its ink fill.
+    airplayButton.tintColor = UIColor.cassette(.textSecondary)
+    playerModeButton.tintColor = UIColor.cassette(.textSecondary)
+    pinFootRowToEdges()
     elapsedTimeLabel.font = UIFont.cassette(.metadata)
     elapsedTimeLabel.textColor = UIColor.cassette(.textSecondary)
     remainingTimeLabel.font = UIFont.cassette(.metadata)
@@ -287,6 +310,30 @@ class PlayerControlView: UIView {
     // Skip buttons (default-hidden in Cassette) flank symmetrically further out.
     pin(skipBackwardButton, centerXMultiplier: 0.25)
     pin(skipForwardButton, centerXMultiplier: 1.75)
+
+    // phone-taste (play-disc): the disc is a fixed 78pt circle, centred on the row.
+    NSLayoutConstraint.activate([
+      playButton.widthAnchor.constraint(equalToConstant: Self.playDiscDiameter),
+      playButton.heightAnchor.constraint(equalToConstant: Self.playDiscDiameter),
+    ])
+  }
+
+  /// phone-taste (foot-row): AirPlay and the queue toggle move out toward the edges (the
+  /// mock's space-between foot row) instead of sitting in a centred 300pt row. The nib's
+  /// width constraint on the row (dMH-9W-9do) has no outlet, so it is found by its shape.
+  private func pinFootRowToEdges() {
+    guard let stack = optionsStackView else { return }
+    // The stack's own layout constraints carry a "UISV-" identifier; the nib's do not.
+    for constraint in stack.constraints
+      where constraint.firstItem === stack && constraint.secondItem == nil
+      && constraint.firstAttribute == .width
+      && !(constraint.identifier?.hasPrefix("UISV") ?? false) {
+      constraint.isActive = false
+    }
+    NSLayoutConstraint.activate([
+      stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.footRowInset),
+      stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.footRowInset),
+    ])
   }
 
   @IBAction

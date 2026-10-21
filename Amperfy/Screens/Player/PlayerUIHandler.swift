@@ -198,23 +198,33 @@ class PlayerUIHandler: NSObject {
       repeatButton.tintColor = isSelected ? UIColor.cassette(.textOnFill) : UIColor.cassette(.textPrimary)
       repeatButton.backgroundColor = isSelected ? UIColor.cassette(.fillSelected) : .clear
     case .popupPlayer:
-      var config = UIButton.Configuration.player(isSelected: isSelected)
-      config.image = image
+      // phone-taste (queue-shuffle-repeat): a quiet glyph, ink2 when off and ink when on
+      // (never orange: orange means live state, and repeat is a setting).
+      var config = UIButton.Configuration.playerQuietToggle(
+        isOn: isSelected,
+        onColor: UIColor.cassette(.textPrimary)
+      )
+      config.image = player.repeatMode == .single
+        ? CassetteIcon.repeatOne.symbolImage
+        : CassetteIcon.repeatAll.symbolImage
       repeatButton.configuration = config
     }
     repeatButton.isSelected = isSelected
   }
 
   func refreshShuffleButton(shuffleButton: UIButton) {
+    // phone-taste (live-state-orange): Shuffle on is live state, so its glyph lights orange
+    // on a clear ground in every player; off, it is a quiet ink2 glyph.
+    var config = UIButton.Configuration.playerShuffle(isOn: player.isShuffle)
     switch style {
     case .miniPlayeriOS, .miniPlayerMac:
-      // cassette Patch 047 (Phase B): see refreshRepeatButton rationale.
-      shuffleButton.configuration?.image = .shuffle
-        .withConfiguration(UIImage.SymbolConfiguration(scale: .medium))
-      shuffleButton.tintColor = player.isShuffle ? UIColor.cassette(.textOnFill) : UIColor.cassette(.textPrimary)
-      shuffleButton.backgroundColor = player.isShuffle ? UIColor.cassette(.fillSelected) : .clear
+      // The mini players keep their own glyph size (sizes there are a separate pass).
+      let medium = UIImage.SymbolConfiguration(scale: .medium)
+      config.preferredSymbolConfigurationForImage = medium
+      config.image = .shuffle.withConfiguration(medium)
+      shuffleButton.configuration = config
+      shuffleButton.backgroundColor = .clear
     case .popupPlayer:
-      var config = UIButton.Configuration.player(isSelected: player.isShuffle)
       config.image = .shuffle
       shuffleButton.configuration = config
     }
@@ -234,6 +244,11 @@ class PlayerUIHandler: NSObject {
     case .popupPlayer:
       var config = UIButton.Configuration.player(isSelected: isSelected)
       config.image = .playlistDisplayStyle
+      // phone-taste (foot-row): unselected, the queue glyph is ink2 like AirPlay beside it;
+      // selected, it keeps the ink fill with a dark glyph.
+      if !isSelected {
+        config.baseForegroundColor = UIColor.cassette(.textSecondary)
+      }
       displayPlaylistButton.isSelected = isSelected
       displayPlaylistButton.configuration = config
     }
@@ -373,6 +388,28 @@ class PlayerUIHandler: NSObject {
     return nil
   }
 
+  /// The song's length in whole seconds, when there is a song with a known length.
+  private var songLength: Int? {
+    let duration = player.duration
+    if player.currentlyPlaying != nil, duration.isNormal, !duration.isZero {
+      return Int(ceil(duration))
+    }
+    return nil
+  }
+
+  /// The right-hand time. phone-taste (time-right-length): the player sheet shows the
+  /// song's length ("3:34"), as the mock does; the mini players keep the countdown.
+  private var rightTimeText: String {
+    switch style {
+    case .popupPlayer:
+      guard let songLength else { return "--:--" }
+      return ClockTime(timeInSeconds: songLength).asShortString()
+    case .miniPlayeriOS, .miniPlayerMac:
+      guard let remainingTime else { return "--:--" }
+      return ClockTime(timeInSeconds: remainingTime).asShortString()
+    }
+  }
+
   func timeSliderChanged(timeSlider: UISlider) {
     player.seek(toSecond: Double(timeSlider.value))
   }
@@ -384,9 +421,15 @@ class PlayerUIHandler: NSObject {
   ) {
     let elapsedClockTime = ClockTime(timeInSeconds: Int(timeSlider.value))
     elapsedTimeLabel.text = elapsedClockTime.asShortString()
-    let remainingTime =
-      ClockTime(timeInSeconds: Int(Double(timeSlider.value) - ceil(player.duration)))
-    remainingTimeLabel.text = remainingTime.asShortString()
+    switch style {
+    case .popupPlayer:
+      // phone-taste: the length does not change while scrubbing.
+      remainingTimeLabel.text = rightTimeText
+    case .miniPlayeriOS, .miniPlayerMac:
+      let remainingTime =
+        ClockTime(timeInSeconds: Int(Double(timeSlider.value) - ceil(player.duration)))
+      remainingTimeLabel.text = remainingTime.asShortString()
+    }
   }
 
   // cassette polish Part 1: audioInfoLabel + playTypeIcon (the "MP3 2658 kbps"
@@ -411,11 +454,7 @@ class PlayerUIHandler: NSObject {
       if !timeSlider.isTracking, supportTimeInteraction {
         let elapsedClockTime = ClockTime(timeInSeconds: Int(player.elapsedTime))
         elapsedTimeLabel.text = elapsedClockTime.asShortString()
-        if let remainingTime = remainingTime {
-          remainingTimeLabel.text = ClockTime(timeInSeconds: remainingTime).asShortString()
-        } else {
-          remainingTimeLabel.text = "--:--"
-        }
+        remainingTimeLabel.text = rightTimeText
         timeSlider.value = Float(player.elapsedTime)
       }
 

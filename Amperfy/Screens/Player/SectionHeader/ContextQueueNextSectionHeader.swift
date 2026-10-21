@@ -56,6 +56,30 @@ class ContextQueueNextSectionHeader: UIView {
     self.playerHandler = PlayerUIHandler(player: player, style: .popupPlayer)
   }
 
+  /// phone-taste: the record's colour for the heading's answer. The player sheet pushes it;
+  /// the Mac queue, which has no record colour, keeps `.neutral`.
+  private var coverTint: CoverTint = .neutral
+
+  override func awakeFromNib() {
+    super.awakeFromNib()
+    // phone-taste (queue-head-two-voice): the head is one line, "UP NEXT" and then what
+    // the queue was started from, so the second label goes. Done here rather than in
+    // prepare() so the Mac queue, which never calls prepare(), reads the same.
+    MainActor.assumeIsolated {
+      contextNameLabel.isHidden = true
+      queueNameLabel.numberOfLines = 1
+      queueNameLabel.lineBreakMode = .byTruncatingTail
+      queueNameLabel.adjustsFontSizeToFitWidth = false
+      queueNameLabel.accessibilityTraits = .header
+      // Centre the line on the shuffle and repeat glyphs. The nib's top pin stays: the
+      // label has no height of its own, so it grows down to this centre line and UILabel
+      // centres its text in the space.
+      queueNameLabel.centerYAnchor.constraint(equalTo: shuffleButton.centerYAnchor)
+        .isActive = true
+      refreshHeading()
+    }
+  }
+
   func prepare(toWorkOnRootView: PopupPlayerVC?) {
     rootView = toWorkOnRootView
     contextNameLabel.applyAmperfyStyle()
@@ -63,16 +87,47 @@ class ContextQueueNextSectionHeader: UIView {
     refresh()
   }
 
-  /// cassette (BUG-418): the XIB carries system fonts (semibold 17 / 14). The
-  /// queue name is a section label like every other list header on the phone
-  /// (13pt display, uppercase, ink2); the context name is a row title in ink.
-  /// Re-stamped on trait change because the nib's variations put SF back.
+  /// cassette (BUG-418): the XIB carries system fonts. Re-stamped on trait change because
+  /// the nib's variations put SF back. phone-taste: the head is the two-voice heading (the
+  /// shout in Barlow ExtraBold 26, the answer in the New York italic 25 in the record's
+  /// colour), rebuilt here, in refresh() and when a new colour arrives.
   private func applyCassetteType() {
-    queueNameLabel.font = UIFont.cassette(.sectionLabel)
-    queueNameLabel.textColor = UIColor.cassette(.textSecondary)
-    queueNameLabel.text = "NEXT FROM"
-    contextNameLabel.font = UIFont.cassette(.rowTitle)
-    contextNameLabel.textColor = UIColor.cassette(.textPrimary)
+    if let rootView {
+      coverTint = rootView.coverTint
+    }
+    refreshHeading()
+  }
+
+  /// phone-taste: a newly read record colour for the heading's answer.
+  func applyCoverTint(_ tint: CoverTint) {
+    coverTint = tint
+    refreshHeading()
+  }
+
+  /// What the queue was started from, or nil when there is no honest name for it: an empty
+  /// context, or the player's internal "Mixed Context" and "Siri Intent" labels. Then the
+  /// head reads just "UP NEXT". Display only; the stored context name is untouched.
+  static func queueAnswer(contextName: String) -> String? {
+    let name = contextName.trimmingCharacters(in: .whitespacesAndNewlines)
+    switch name {
+    case "", "Mixed Context", "Siri Intent":
+      return nil
+    default:
+      return name
+    }
+  }
+
+  private func refreshHeading() {
+    let answer = Self.queueAnswer(contextName: player.contextName)
+    queueNameLabel.attributedText = CassetteHeading.attributed(
+      shout: "UP NEXT",
+      answer: answer,
+      answerColor: coverTint.text
+    )
+    queueNameLabel.accessibilityLabel = CassetteHeading.accessibilityLabel(
+      shout: "Up next",
+      answer: answer
+    )
   }
 
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -81,7 +136,7 @@ class ContextQueueNextSectionHeader: UIView {
   }
 
   func refresh() {
-    contextNameLabel.text = "\(player.contextName)"
+    refreshHeading()
     refreshCurrentlyPlayingInfo()
     playerHandler?.refreshRepeatButton(repeatButton: repeatButton)
     playerHandler?.refreshShuffleButton(shuffleButton: shuffleButton)

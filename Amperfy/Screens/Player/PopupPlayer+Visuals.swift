@@ -65,17 +65,21 @@ extension PopupPlayerVC {
   }
 
   func refreshOptionButton(button: UIButton, rootView: UIViewController?) {
-    // cassette polish Part 5: per-track overflow sits plain against the player
-    // background (no bg2 circular tile). Patch 104 (Root 1): routed through
-    // cassetteBare() so the iOS 26 default glass capsule is opted out.
-    // 19pt ellipsis in ink; 44pt hit target preserved via symmetric insets.
+    // phone-taste: the ••• is the mock's dark glass circle (.glassBtn): 44pt (the nibs size
+    // it), a translucent bg4 fill, a faint ink ring and a 20pt ink ellipsis. It is our own
+    // fill on cassetteBare(), not iOS 26's system glass, which Patch 104 opted out of. The
+    // stand-in button in the style-switch animation comes through here too, so it matches.
     var config = UIButton.Configuration.cassetteBare()
-    config.image = .ellipsis
+    config.image = CassetteIcon.more.symbolImage
     config.baseForegroundColor = UIColor.cassette(.textPrimary)
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-      pointSize: 19,
+      pointSize: 20,
       weight: .regular
     )
+    config.background.backgroundColor = UIColor.cassette(.surfaceSunken).withAlphaComponent(0.55)
+    config.background.strokeColor = UIColor.cassette(.textPrimary).withAlphaComponent(0.08)
+    config.background.strokeWidth = 1
+    config.cornerStyle = .capsule
     config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)
     button.isEnabled = true
     button.configuration = config
@@ -150,6 +154,7 @@ extension PopupPlayerVC {
     guard let playable = player.currentlyPlaying else {
       ambientBackdropModel.image = nil
       ambientBackdropModel.coverID = "ambient-placeholder"
+      updateCoverTint(.neutral)
       return
     }
     let setting = appDelegate.storage.settings.accounts.getSetting(playable.account?.info).read
@@ -171,7 +176,11 @@ extension PopupPlayerVC {
         let thumb = await Task.detached(priority: .utility) {
           AmbientSourceDecoder.thumbnail(contentsOfFile: artworkPath, maxPixelSize: 600)
         }.value
-        guard let self, let thumb else { return }
+        guard let thumb else { return }
+        // phone-taste: the record's colour, read from this same thumbnail off the main
+        // thread and cached by cover path, so a repeat refresh of one cover reads nothing.
+        let tint = await CoverTint.resolve(image: thumb, key: artworkPath)
+        guard let self else { return }
         // Staleness guard: only apply if the live track's cover is still this
         // one (a newer track may have started while we decoded).
         let currentPath = player.currentlyPlaying.flatMap { current -> String? in
@@ -182,6 +191,7 @@ extension PopupPlayerVC {
         guard currentPath == artworkPath else { return }
         ambientBackdropModel.image = thumb
         ambientBackdropModel.coverID = coverID
+        updateCoverTint(tint)
       }
     } else {
       // No cover on disk → the on-brand generated placeholder is in-memory and
@@ -193,6 +203,8 @@ extension PopupPlayerVC {
         useCache: true
       )
       ambientBackdropModel.coverID = "ambient-placeholder"
+      // phone-taste: the generated tile is not the record, so its colour is never read.
+      updateCoverTint(.neutral)
     }
   }
 

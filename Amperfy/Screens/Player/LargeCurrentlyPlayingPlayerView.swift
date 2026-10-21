@@ -184,16 +184,19 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     // vertical metadata stack, so hiding it collapses the row with no gap.
     // refresh() also stops feeding the album outlets so nothing un-hides it.
     albumContainerView.isHidden = true
-    // cassette polish Part 3: intentionally composed metadata stack.
-    // Title -> heroTitle (28pt Barlow Bold, ink); artist -> miniTitle (14pt
-    // Barlow Semibold, ink). (Album style retained for completeness though the
-    // album row is hidden above.)
-    titleLabel.font = UIFont.cassette(.heroTitle)
+    // phone-taste (np-title-type, np-artist-voice): the song in the player's big condensed
+    // capitals (Barlow ExtraBold 34; refresh() sets the capitals, so the mini player and
+    // the lock screen keep mixed case), and the artist in the answer voice (New York italic
+    // 23) in the record's colour. (Album style retained for completeness though the album
+    // row is hidden above.)
+    titleLabel.font = UIFont.cassette(.playerTitle)
     titleLabel.textColor = UIColor.cassette(.textPrimary)
     albumLabel.font = UIFont.cassette(.metadata)
     albumLabel.textColor = UIColor.cassette(.textSecondary)
-    artistLabel.font = UIFont.cassette(.miniTitle)
-    artistLabel.textColor = UIColor.cassette(.textPrimary)
+    artistLabel.font = UIFont.cassette(.answerPlayer)
+    applyCoverTint(rootView?.coverTint ?? .neutral)
+    // phone-taste (np-cover-size): the Now Playing cover's own, rounder corner.
+    artworkImage.layer.cornerRadius = CassetteRadius.playerArtwork
 
     lyricsView = LyricsView()
     lyricsView!.frame = upperContainerView.bounds
@@ -418,15 +421,30 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     lyricsView?.isHidden = false
   }
 
+  /// phone-taste: the artist line speaks in the record's colour (`.neutral` until one is
+  /// read, never orange).
+  func applyCoverTint(_ tint: CoverTint) {
+    artistLabel.textColor = tint.text
+  }
+
+  /// The shared refresh writes the song title here in mixed case, and only its capitals
+  /// reach the marquee. Writing both cases into the marquee would restart its scroll on
+  /// every refresh, since it only skips a text it already shows.
+  private lazy var mixedCaseTitle = UILabel()
+
   func refresh() {
     // cassette polish: the album outlets are intentionally NOT passed so the
     // hidden album row (see prepare()) is never re-shown by the shared refresh
     // (which would otherwise un-hide albumContainerView for songs).
     rootView?.playerHandler?.refreshCurrentlyPlayingInfo(
       artworkImage: artworkImage,
-      titleLabel: titleLabel,
+      titleLabel: mixedCaseTitle,
       artistLabel: artistLabel
     )
+    // phone-taste: capitals on this sheet only (the mock's text-transform); VoiceOver
+    // still reads the title as written.
+    titleLabel.text = mixedCaseTitle.text?.uppercased()
+    titleLabel.accessibilityLabel = mixedCaseTitle.text
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
     // cassette Patch 054 (Phase I): refreshRating call removed; popup
     // rating view deleted.

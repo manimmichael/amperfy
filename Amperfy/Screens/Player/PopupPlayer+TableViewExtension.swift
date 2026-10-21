@@ -93,11 +93,16 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
     activeDisplayedSectionHeader.remove(category)
   }
 
+  // phone-taste (queue-hide-previous): the queue is one list in play order, the now row
+  // and then UP NEXT, with no history above it (founder rule). The .contextPrev section
+  // stays, empty and without header or footer, so PlayerIndex.create(from:) still maps
+  // every index path; the songs already played stay in the player, so Back still works.
+
   func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
     let sectionCategors = PlayerSectionCategory(rawValue: section)
     switch sectionCategors {
     case .contextPrev:
-      return contextPrevQueueSectionHeader
+      return nil
     case .currentlyPlaying:
       return nil
     case .userQueue:
@@ -113,7 +118,7 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
   func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
     switch PlayerSectionCategory(rawValue: section) {
     case .contextPrev:
-      return ContextQueuePrevSectionHeader.frameHeight
+      return CGFloat.leastNormalMagnitude
     case .currentlyPlaying:
       return 0.0
     case .userQueue:
@@ -131,30 +136,23 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
 
   func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
     switch PlayerSectionCategory(rawValue: section) {
-    case .contextNext, .contextPrev:
+    case .contextNext:
       return clearEmptySectionFooter
-    case .currentlyPlaying, .none, .userQueue:
+    case .contextPrev, .currentlyPlaying, .none, .userQueue:
       return nil
     }
   }
 
   func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
-    switch PlayerSectionCategory(rawValue: section) {
-    case .contextPrev: return 30.0 // bottom padding of prev section (space above currently playing cell)
-    case .currentlyPlaying, .none, .userQueue: return 0.0
-    case .contextNext: // calculate footer height to keep currently playing row on top of table view
-      let heightOfContextNextRows = tableView.frame.height - CurrentlyPlayingTableCell
-        .rowHeight - ContextQueueNextSectionHeader.frameHeight
-      let contextNextRowOccupiedHeight = CGFloat(player.nextQueueCount) * PlayableTableCell
-        .rowHeight
-      let offset = heightOfContextNextRows - contextNextRowOccupiedHeight
-      return offset > 0.0 ? offset : 0.0
-    }
+    // phone-taste: with no history above the now row, it needs neither the padding that
+    // sat under the history nor the tall footer under UP NEXT that let it scroll up past
+    // the history to the top. Every footer is 0.
+    0.0
   }
 
   func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
     switch PlayerSectionCategory(rawValue: section) {
-    case .contextPrev: return player.prevQueueCount
+    case .contextPrev: return 0
     case .currentlyPlaying: return 1
     case .userQueue: return player.userQueueCount
     case .contextNext: return player.nextQueueCount
@@ -257,10 +255,12 @@ extension PopupPlayerVC: UITableViewDataSource, UITableViewDelegate {
   )
     -> IndexPath {
     refreshCellMasks()
-    // deny moving rows to currently playing section
-    if PlayerSectionCategory(rawValue: targetIndexPath.section) == .currentlyPlaying {
+    // deny moving rows to currently playing section, and (phone-taste) into the hidden
+    // history above it
+    switch PlayerSectionCategory(rawValue: targetIndexPath.section) {
+    case .contextPrev, .currentlyPlaying:
       return sourceIndexPath
-    } else {
+    case .contextNext, .none, .userQueue:
       return targetIndexPath
     }
   }
