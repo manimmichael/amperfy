@@ -110,14 +110,13 @@ class PlayableTableCell: BasicTableCell {
   @IBOutlet
   weak var playOverNumberButton: UIButton!
 
-  /// cassette Patch 028: orange `waveform` SF Symbol shown in the
-  /// leading column when this row is currently playing. Replaces both
-  /// the muddy `orange.withAlphaComponent(0.04)` row-fill (Patch 019)
-  /// and the legacy small VYPlayIndicator overlay (deleted in Patch 054)
-  /// so there is a single, clear "this is the active row" signal.
-  /// This `playingSymbolView` is one of the three permitted orange
-  /// surfaces post-Phase 5.2; the other two are the mini + popup
-  /// time scrubbers.
+  /// cassette Patch 028: animated bars shown in the leading column when this
+  /// row is currently playing. Replaces both the muddy
+  /// `orange.withAlphaComponent(0.04)` row-fill (Patch 019) and the legacy
+  /// small VYPlayIndicator overlay (deleted in Patch 054) so there is a
+  /// single, clear "this is the active row" signal. Since 2026-10-21 the
+  /// bars, like the mini and popup scrubbers, are the playing record's
+  /// colour (`CoverTint.nowPlaying`), no longer brand orange.
   private lazy var playingSymbolView: WaveformAnimatedView = {
     let view = WaveformAnimatedView()
     view.translatesAutoresizingMaskIntoConstraints = false

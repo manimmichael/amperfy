@@ -97,6 +97,14 @@ class PlayerControlView: UIView {
   /// by default in Cassette) flank at the eighth points (0.25 / 1.75). Set once.
   private var didSetupCassetteTransportLayout = false
 
+  /// The scrubber's played part and thumb in the playing record's colour (founder,
+  /// 2026-10-21), the colour of its artist name above, instead of brand orange.
+  @objc
+  func applyNowPlayingTint() {
+    timeSlider.minimumTrackTintColor = CoverTint.nowPlaying.text
+    timeSlider.thumbTintColor = CoverTint.nowPlaying.text
+  }
+
   required init?(coder aDecoder: NSCoder) {
     #if targetEnvironment(macCatalyst) // ok
       self.airplayVolume = MPVolumeView(frame: .zero)
@@ -108,6 +116,12 @@ class PlayerControlView: UIView {
     self.layoutMargins = Self.margin
     self.player = appDelegate.player
     player.addNotifier(notifier: self)
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(applyNowPlayingTint),
+      name: .cassetteNowPlayingTintChanged,
+      object: nil
+    )
 
     #if targetEnvironment(macCatalyst) // ok
       addSubview(airplayVolume!)
@@ -160,9 +174,8 @@ class PlayerControlView: UIView {
     elapsedTimeLabel.textColor = UIColor.cassette(.textSecondary)
     remainingTimeLabel.font = UIFont.cassette(.metadata)
     remainingTimeLabel.textColor = UIColor.cassette(.textSecondary)
-    timeSlider.minimumTrackTintColor = UIColor.cassette(.accentProgress)
+    applyNowPlayingTint()
     timeSlider.maximumTrackTintColor = UIColor.cassette(.hairline)
-    timeSlider.thumbTintColor = UIColor.cassette(.accentProgress)
     // Wave 4: the radio LIVE marker took boldSystem 14 from the XIB.
     CassetteIBStyle.label(liveLabel, .sectionLabel, .textSecondary)
     // cassette polish Part 1: drop the "MP3 2658 kbps" bitrate strip beneath the

@@ -332,6 +332,7 @@ class PopupPlayerVC: UIViewController, UIScrollViewDelegate {
   /// phone-taste: keep a newly read record colour and hand it on. An unchanged colour stops
   /// here, so a refresh for the same cover touches no label.
   func updateCoverTint(_ tint: CoverTint) {
+    CoverTint.nowPlaying = tint
     guard tint != coverTint else { return }
     coverTint = tint
     applyCoverTint()

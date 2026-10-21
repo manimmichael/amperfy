@@ -120,15 +120,13 @@ class MiniPlayerView: UIView {
   fileprivate lazy var timeSlider: SeekableTimeSlider = {
     let slider = SeekableTimeSlider(frame: .zero)
     slider.preferredBehavioralStyle = .pad
-    // cassette Patch 046: pin the scrubber orange explicitly. After Phase A
-    // moves the global tint cascade to ink, sliders that previously inherited
-    // `window.tintColor` would silently turn ink. The mini scrubber is one of
-    // the three permitted orange exceptions (popup scrubber, mini scrubber,
-    // currently-playing waveform), so set the track + thumb colors locally
-    // and use ink4 for the unfilled track to match the popup player.
-    slider.minimumTrackTintColor = UIColor.cassette(.accentProgress)
+    // cassette Patch 046: set the scrubber's colours locally, so the global tint cascade
+    // (ink) never reaches it. Its played part and thumb are the playing record's colour
+    // (founder, 2026-10-21; was brand orange), kept current by `applyNowPlayingTint`, and
+    // the unfilled track matches the popup player.
+    slider.minimumTrackTintColor = CoverTint.nowPlaying.text
     slider.maximumTrackTintColor = UIColor.cassette(.hairline)
-    slider.thumbTintColor = UIColor.cassette(.accentProgress)
+    slider.thumbTintColor = CoverTint.nowPlaying.text
     return slider
   }()
 
@@ -590,6 +588,12 @@ class MiniPlayerView: UIView {
     #endif
 
     player.addNotifier(notifier: self)
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(applyNowPlayingTint),
+      name: .cassetteNowPlayingTintChanged,
+      object: nil
+    )
 
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
@@ -887,6 +891,37 @@ class MiniPlayerView: UIView {
     return overlay
   }
 
+  /// Reads the playing record's colour into `CoverTint.nowPlaying` (the bars on its row and
+  /// both scrubbers), the way Now Playing reads it; neutral with no cover on disk. The mini
+  /// player is up whenever something plays, so it keeps the colour current on every track.
+  private func refreshNowPlayingTint() {
+    guard let path = nowPlayingCoverPath() else {
+      CoverTint.nowPlaying = .neutral
+      return
+    }
+    Task { @MainActor [weak self] in
+      let tint = await CoverTint.resolve(coverPath: path) ?? .neutral
+      // A newer track may have started while the cover was read.
+      guard let self, self.nowPlayingCoverPath() == path else { return }
+      CoverTint.nowPlaying = tint
+    }
+  }
+
+  private func nowPlayingCoverPath() -> String? {
+    guard let playable = player.currentlyPlaying else { return nil }
+    let setting = appDelegate.storage.settings.accounts.getSetting(playable.account?.info).read
+    guard let path = playable.imagePath(setting: setting.artworkDisplayPreference),
+          FileManager.default.fileExists(atPath: path)
+    else { return nil }
+    return path
+  }
+
+  @objc
+  private func applyNowPlayingTint() {
+    timeSlider.minimumTrackTintColor = CoverTint.nowPlaying.text
+    timeSlider.thumbTintColor = CoverTint.nowPlaying.text
+  }
+
   func refreshPlayer() {
     // cassette Patch 016: hold the Cassette ink tokens regardless of the
     // system's reported userInterfaceStyle (the app is forced dark anyway).
@@ -901,6 +936,7 @@ class MiniPlayerView: UIView {
       albumContainerView: nil
     )
     playerHandler?.refreshArtwork(artworkImage: artworkImage)
+    refreshNowPlayingTint()
     playerHandler?.refreshPlayButton(playButton)
     playerHandler?.refreshPrevNextButtons(previousButton: previousButton, nextButton: nextButton)
     playerHandler?.refreshDisplayPlaylistButton(displayPlaylistButton: playlistButton)

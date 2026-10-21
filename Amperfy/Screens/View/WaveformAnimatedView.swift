@@ -22,12 +22,14 @@ final class WaveformAnimatedView: UIView {
     super.init(frame: frame)
     isUserInteractionEnabled = false
     setupBars()
+    observeNowPlayingTint()
   }
 
   required init?(coder: NSCoder) {
     super.init(coder: coder)
     isUserInteractionEnabled = false
     setupBars()
+    observeNowPlayingTint()
   }
 
   private func setupBars() {
@@ -48,7 +50,7 @@ final class WaveformAnimatedView: UIView {
     for _ in 0 ..< 3 {
       let bar = UIView()
       bar.translatesAutoresizingMaskIntoConstraints = false
-      bar.backgroundColor = UIColor.cassette(.accentProgress)
+      bar.backgroundColor = CoverTint.nowPlaying.text
       bar.layer.cornerRadius = 1
       let height = bar.heightAnchor.constraint(equalToConstant: Self.midBarHeight)
       NSLayoutConstraint.activate([
@@ -60,6 +62,22 @@ final class WaveformAnimatedView: UIView {
       stack.addArrangedSubview(bar)
     }
     setBarHeights(to: Self.midBarHeight)
+  }
+
+  /// The bars only ever mark the playing song, so they speak in the playing record's colour
+  /// (`CoverTint.nowPlaying`), as its artist name does, and follow it to the next record.
+  private func observeNowPlayingTint() {
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(nowPlayingTintChanged),
+      name: .cassetteNowPlayingTintChanged,
+      object: nil
+    )
+  }
+
+  @objc
+  private func nowPlayingTintChanged() {
+    for bar in bars { bar.backgroundColor = CoverTint.nowPlaying.text }
   }
 
   private static var midBarHeight: CGFloat {

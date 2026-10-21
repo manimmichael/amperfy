@@ -168,6 +168,11 @@ public enum CassetteOpacity {
 /// Stored as 0xRRGGBB integers so the value is Sendable and Hashable; colours are built
 /// on read. `neutral` is the only fallback (never orange): a cover that cannot be read,
 /// or a page whose cover has not been read yet.
+extension Notification.Name {
+  /// Posted on the main actor when `CoverTint.nowPlaying` changes.
+  public static let cassetteNowPlayingTintChanged = Notification.Name("cassette.nowPlayingTintChanged")
+}
+
 public struct CoverTint: Sendable, Hashable {
   /// 0xRRGGBB, the mock's `coverColor()`.
   public let baseRGB: UInt32
@@ -204,6 +209,19 @@ public struct CoverTint: Sendable, Hashable {
 
   /// The only fallback: a warm neutral (glow #A17236, text #D4AE7D). Never orange.
   public static let neutral = CoverTint(baseRGB: 0x6B5A44)
+
+  /// The colour of the record playing now (founder, 2026-10-21: the playing row's bars and
+  /// the scrubbers speak in the record's colour, like its artist name, instead of brand
+  /// orange). Set by whoever reads the playing cover: the mini player on every track change
+  /// and Now Playing. `neutral` when nothing plays or the cover cannot be read. Readers use
+  /// `text`, which reads at 4.5:1 or better on the page; they listen for
+  /// `.cassetteNowPlayingTintChanged`.
+  @MainActor public static var nowPlaying: CoverTint = .neutral {
+    didSet {
+      guard nowPlaying != oldValue else { return }
+      NotificationCenter.default.post(name: .cassetteNowPlayingTintChanged, object: nil)
+    }
+  }
 
   // MARK: Reading a cover
 
