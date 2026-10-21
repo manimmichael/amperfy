@@ -178,6 +178,14 @@ class SingleSnapshotFetchedResultsCollectionViewController<ResultType>:
   var snapshotDidChange: (() -> ())?
   /// cassette Patch 059: hide duplicate ArtistMO/AlbumMO rows by server id at render time.
   var suppressDuplicateLibraryEntityIds = false
+  /// phone-taste: reshapes each fetched snapshot (after the duplicate filter) before it is
+  /// applied, e.g. the Library grid's own letter sections. It must read only
+  /// `itemIdentifiers`: the fetch's section ids are NSString underneath and crash when read
+  /// as Int. Changed covers are found against the reshaped order, so they still repaint.
+  var snapshotTransform: (
+    (NSDiffableDataSourceSnapshot<Int, NSManagedObjectID>, NSManagedObjectContext)
+      -> NSDiffableDataSourceSnapshot<Int, NSManagedObjectID>
+  )?
   let account: Account
 
   init(collectionViewLayout: UICollectionViewLayout, account: Account) {
@@ -221,6 +229,19 @@ class SingleSnapshotFetchedResultsCollectionViewController<ResultType>:
         NSManagedObjectID
       >
 
+      if suppressDuplicateLibraryEntityIds {
+        snapshot = LibrarySnapshotDedup.suppressingDuplicateServerIds(
+          snapshot: snapshot,
+          context: controller.managedObjectContext
+        )
+      }
+      if let snapshotTransform {
+        snapshot = snapshotTransform(snapshot, controller.managedObjectContext)
+      }
+
+      // Repaint items whose object changed but whose place did not. Compared against the
+      // snapshot that is about to be applied (filtered and reshaped), since that is the
+      // order the current snapshot was applied in too.
       let reloadIdentifiers: [NSManagedObjectID] = snapshot.itemIdentifiers
         .compactMap { itemIdentifier in
           guard let currentIndex = currentSnapshot.indexOfItem(itemIdentifier),
@@ -232,13 +253,6 @@ class SingleSnapshotFetchedResultsCollectionViewController<ResultType>:
           return itemIdentifier
         }
       snapshot.reconfigureItems(reloadIdentifiers)
-
-      if suppressDuplicateLibraryEntityIds {
-        snapshot = LibrarySnapshotDedup.suppressingDuplicateServerIds(
-          snapshot: snapshot,
-          context: controller.managedObjectContext
-        )
-      }
 
       dataSource.apply(
         snapshot as NSDiffableDataSourceSnapshot<Int, NSManagedObjectID>,

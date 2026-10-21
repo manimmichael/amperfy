@@ -159,6 +159,17 @@ class AlbumsCommonVCInteractions {
   /// would otherwise render the first album's letter as a lone header).
   public private(set) var isGroupedInAlphabeticSections = false
 
+  /// phone-taste: opt-in (the Albums grid only). When the sort is Name and the grid is
+  /// grouped, fetch flat and let the grid file the albums into letters itself by the
+  /// mock's sort key ("The Bends" under B). The table and the playlist picker leave this
+  /// off and keep the stored-initial sections.
+  public var isLetterResectioningEnabled = false
+
+  /// phone-taste: the grid is filing a flat Name fetch into its own letter sections. In
+  /// that mode `isGroupedInAlphabeticSections` is false (the fetch is flat) and this flag
+  /// drives the headers, their heights and the index instead.
+  public private(set) var isLetterResectioned = false
+
   private let account: Account
 
   init(account: Account, isSetNavbarButton: Bool = true) {
@@ -174,6 +185,8 @@ class AlbumsCommonVCInteractions {
   /// an empty query, so an idle empty library used to show the "no results"
   /// state. Only a typed query (remembered from updateSearchResults) counts.
   private var lastSearchText = ""
+  /// The scope the last search ran with (the cached-only scope), for `refreshOwnedScope`.
+  private var lastSearchOnlyCached = false
 
   func updateContentUnavailable() {
     rootVC?.applyEmptyState(
@@ -247,6 +260,16 @@ class AlbumsCommonVCInteractions {
   func change(sortType: AlbumElementSortType) {
     self.sortType = sortType
     fetchedResultsController?.clearResults()
+    makeFetchedResultsController()
+    updateFetchDataSourceCB?()
+    fetchedResultsController.fetch()
+    updateRightBarButtonItems()
+    updateContentUnavailable()
+  }
+
+  /// Builds the fetch for `sortType` with a fresh grouping decision and, through
+  /// AlbumFetchedResultsController, a fresh copy of the set of albums on the phone.
+  private func makeFetchedResultsController() {
     var baseEligible = false
     switch sortType {
     case .artist, .duration, .name, .rating, .year:
@@ -258,11 +281,15 @@ class AlbumsCommonVCInteractions {
     // headers, no alpha index). For .all / .favorites filters applyFilter()
     // seeds isIndexTitelsHidden=false; here we refine it to match the actual
     // grouping decision so the scrubber index disappears when flat.
-    let isGroupedInAlphabeticSections =
-      shouldGroupInAlphabeticSections(baseEligible: baseEligible)
+    let isGrouped = shouldGroupInAlphabeticSections(baseEligible: baseEligible)
+    // phone-taste: the grid files a grouped Name sort into letters itself, so its fetch
+    // stays flat (see isLetterResectioningEnabled).
+    let isLetterResectioned = isLetterResectioningEnabled && sortType == .name && isGrouped
+    self.isLetterResectioned = isLetterResectioned
+    let isGroupedInAlphabeticSections = isGrouped && !isLetterResectioned
     self.isGroupedInAlphabeticSections = isGroupedInAlphabeticSections
     if baseEligible {
-      isIndexTitelsHidden = !isGroupedInAlphabeticSections
+      isIndexTitelsHidden = !isGrouped
     }
 
     fetchedResultsController = AlbumFetchedResultsController(
@@ -271,10 +298,30 @@ class AlbumsCommonVCInteractions {
       isGroupedInAlphabeticSections: isGroupedInAlphabeticSections
     )
     fetchedResultsController.fetchResultsController.sectionIndexType = sortType.asSectionIndexType
+  }
+
+  /// phone-taste (the Albums grid only): music arrived on or left the phone. The fetch
+  /// copied the set of on-phone albums when it was made, so make it again with a fresh
+  /// set and a fresh grouping decision. Unlike `change(sortType:)` the old fetch is not
+  /// cleared first: the grid goes straight from the old albums to the new ones, so it
+  /// keeps its scroll position instead of flashing empty and jumping to the top.
+  /// Returns true when the grid's sectioning flipped (grouped or flat), so the caller can
+  /// reload for the new header sizes.
+  @discardableResult
+  func refreshOwnedScope() -> Bool {
+    let wasSectioned = isGroupedInAlphabeticSections || isLetterResectioned
+    fetchedResultsController?.delegate = nil
+    makeFetchedResultsController()
     updateFetchDataSourceCB?()
-    fetchedResultsController.fetch()
-    updateRightBarButtonItems()
+    // Re-run the current query (the Favorites filter is a search) on the new fetch; with
+    // no query this is the plain fetch.
+    fetchedResultsController.search(
+      searchText: lastSearchText,
+      onlyCached: lastSearchOnlyCached,
+      displayFilter: displayFilter
+    )
     updateContentUnavailable()
+    return wasSectioned != (isGroupedInAlphabeticSections || isLetterResectioned)
   }
 
   func listViewWillDisplayCell(at indexPath: IndexPath, searchBarText: String?) {
@@ -672,6 +719,7 @@ class AlbumsCommonVCInteractions {
   func updateSearchResults(for searchController: UISearchController) {
     let searchText = searchController.searchBar.text ?? ""
     lastSearchText = searchText
+    lastSearchOnlyCached = searchController.searchBar.selectedScopeButtonIndex == 1
     if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 0,
        CassetteLibraryFilterProvider.shared.currentFilter == .everything {
       // Cassette fork — Layer 3 Phase 3.2 (library filtering). Remote Subsonic

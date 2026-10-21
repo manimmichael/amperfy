@@ -91,9 +91,14 @@
             <color key="backgroundColor" white="0.0" alpha="0.0" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
             <size key="customSize" width="815" height="461"/>
             <connections>
+                <outlet property="artworkCenterYConstraint" destination="2xn-8g-Jf4" id="pTc-05-aCy"/>
                 <outlet property="artworkImageWidthConstraint" destination="OsA-td-n73" id="Q6V-ou-Bix"/>
                 <outlet property="entityImage" destination="vhw-xr-Op6" id="0UN-yk-SoR"/>
+                <outlet property="subtitleHeightConstraint" destination="F1P-zn-bmx" id="pTc-02-sHc"/>
                 <outlet property="subtitleLabel" destination="d1W-z7-anZ" id="NeW-X1-aKJ"/>
+                <outlet property="textStackHeightConstraint" destination="RXp-z1-4PU" id="pTc-03-kHc"/>
+                <outlet property="textStackView" destination="fZp-PJ-7R1" id="pTc-04-kSv"/>
+                <outlet property="titleHeightConstraint" destination="hQa-4Q-xIT" id="pTc-01-tHc"/>
                 <outlet property="titleLabel" destination="hHv-Ol-9T7" id="rDP-vC-J3G"/>
             </connections>
             <point key="canvasLocation" x="-353.07692307692304" y="-247.39336492890993"/>

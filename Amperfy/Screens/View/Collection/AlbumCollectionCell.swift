@@ -31,8 +31,54 @@ class AlbumCollectionCell: BasicCollectionCell {
   weak var entityImage: EntityImageView!
   @IBOutlet
   weak var artworkImageWidthConstraint: NSLayoutConstraint!
+  /// The XIB's text heights and the cover's centring, driven by `isCompact`. The centring
+  /// is held strongly: it is switched off for compact tiles and back on afterwards.
+  @IBOutlet
+  weak var titleHeightConstraint: NSLayoutConstraint?
+  @IBOutlet
+  weak var subtitleHeightConstraint: NSLayoutConstraint?
+  @IBOutlet
+  weak var textStackHeightConstraint: NSLayoutConstraint?
+  @IBOutlet
+  weak var textStackView: UIStackView?
+  @IBOutlet
+  var artworkCenterYConstraint: NSLayoutConstraint?
 
   static let maxWidth: CGFloat = 250.0
+
+  // MARK: Compact tile (phone-taste Library grid)
+
+  /// The Library grid's smaller tile (the mock's `.gridItem`): a 15pt title and the 13pt
+  /// mono artist, 2pt apart, under a cover pinned to the top with a small gap. Set only by
+  /// AlbumsCollectionVC before `display`; Home shelves and carousels keep the regular tile.
+  /// Reset in `prepareForReuse`.
+  var isCompact = false
+
+  /// The mock's 5pt cover margin plus its 2pt row gap, less the 1pt taller ascender box a
+  /// UILabel draws above the capitals: the title's capitals land where the mock's do.
+  static let compactCoverGap: CGFloat = 6
+  static let compactLineSpacing: CGFloat = 2
+  /// One line of each label, measured from the fonts (Barlow SemiBold 15: 18pt, DM Mono
+  /// 13: 17pt), so the tile height and the labels agree.
+  static let compactTitleHeight: CGFloat = UIFont.cassette(.miniTitle).lineHeight.rounded(.up)
+  static let compactSubtitleHeight: CGFloat = UIFont.cassette(.cardSubtitle).lineHeight
+    .rounded(.up)
+  static let compactTextStackHeight: CGFloat = compactTitleHeight + compactLineSpacing +
+    compactSubtitleHeight
+  /// What a compact tile adds under its square cover. AlbumsCollectionVC sizes tiles by it.
+  static let compactTextBlockHeight: CGFloat = compactCoverGap + compactTextStackHeight
+
+  /// The XIB's regular values, put back when a tile stops being compact.
+  private static let regularTitleHeight: CGFloat = 22
+  private static let regularSubtitleHeight: CGFloat = 16
+  private static let regularLineSpacing: CGFloat = 4
+  private func regularTextStackHeight() -> CGFloat {
+    traitCollection.horizontalSizeClass == .regular ? 42 : 41
+  }
+
+  /// Whether the compact values are on the constraints now.
+  private var isCompactApplied = false
+  private var artworkTopConstraint: NSLayoutConstraint?
 
   private var container: PlayableContainable?
   private var rootView: UICollectionViewController?
@@ -44,12 +90,50 @@ class AlbumCollectionCell: BasicCollectionCell {
   /// to card. Fonts are owned here only - awakeFromNib, every bind, and any
   /// trait change - never by the XIB.
   private func applyCassetteType() {
-    titleLabel?.font = UIFont.cassette(.rowTitle)
+    // phone-taste: the compact tile's title is the 15pt mini title (the mock's 14).
+    titleLabel?.font = UIFont.cassette(isCompact ? .miniTitle : .rowTitle)
     titleLabel?.textColor = UIColor.cassette(.textPrimary)
     titleLabel?.adjustsFontForContentSizeCategory = false
     subtitleLabel?.font = UIFont.cassette(.cardSubtitle)
     subtitleLabel?.textColor = UIColor.cassette(.textSecondary)
     subtitleLabel?.adjustsFontForContentSizeCategory = false
+    applyDensity()
+  }
+
+  /// Puts the compact or the regular text heights, spacing and cover pin on the XIB's
+  /// constraints. A tile that was never compact is left to its XIB values.
+  private func applyDensity() {
+    guard let titleHeightConstraint, let subtitleHeightConstraint,
+          let textStackHeightConstraint else { return }
+    if isCompact {
+      Self.set(titleHeightConstraint, Self.compactTitleHeight)
+      Self.set(subtitleHeightConstraint, Self.compactSubtitleHeight)
+      Self.set(textStackHeightConstraint, Self.compactTextStackHeight)
+      if textStackView?.spacing != Self.compactLineSpacing {
+        textStackView?.spacing = Self.compactLineSpacing
+      }
+      // The cover sits at the top of its box, so the spare height is the gap under it.
+      if artworkTopConstraint == nil, let entityImage, let outerView = entityImage.superview {
+        artworkTopConstraint = entityImage.topAnchor.constraint(equalTo: outerView.topAnchor)
+      }
+      if artworkCenterYConstraint?.isActive == true { artworkCenterYConstraint?.isActive = false }
+      if artworkTopConstraint?.isActive == false { artworkTopConstraint?.isActive = true }
+      isCompactApplied = true
+    } else if isCompactApplied {
+      Self.set(titleHeightConstraint, Self.regularTitleHeight)
+      Self.set(subtitleHeightConstraint, Self.regularSubtitleHeight)
+      Self.set(textStackHeightConstraint, regularTextStackHeight())
+      if textStackView?.spacing != Self.regularLineSpacing {
+        textStackView?.spacing = Self.regularLineSpacing
+      }
+      if artworkTopConstraint?.isActive == true { artworkTopConstraint?.isActive = false }
+      if artworkCenterYConstraint?.isActive == false { artworkCenterYConstraint?.isActive = true }
+      isCompactApplied = false
+    }
+  }
+
+  private static func set(_ constraint: NSLayoutConstraint, _ constant: CGFloat) {
+    if constraint.constant != constant { constraint.constant = constant }
   }
 
   override func awakeFromNib() {
@@ -176,9 +260,14 @@ class AlbumCollectionCell: BasicCollectionCell {
     playOverlay?.isHidden = true
     subtitleOverride = nil
     clearsBackground = false
+    // phone-taste: back to the regular tile until a host asks for compact again.
+    isCompact = false
+    applyCassetteType()
   }
 
   override func layoutSubviews() {
+    // A size-class change can put the XIB's own heights back; keep a compact tile compact.
+    if isCompact { applyDensity() }
     if let indexPath = rootView?.collectionView.indexPath(for: self) {
       updateArtworkImageConstraint(indexPath: indexPath)
     } else if itemWidth != nil {

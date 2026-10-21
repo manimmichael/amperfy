@@ -28,6 +28,13 @@ import UIKit
 class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSource {
   var vc: AlbumsCollectionVC
 
+  /// phone-taste: the letter of each section while the grid files albums by letter ("#"
+  /// first, then the letters that have albums). Set with each snapshot, before it is
+  /// applied. Empty for every other layout.
+  var letters = [String]()
+  /// Tiles in the applied snapshot, after duplicates are dropped: the count line's number.
+  var itemCount = 0
+
   init(
     vc: AlbumsCollectionVC,
     collectionView: UICollectionView,
@@ -75,40 +82,90 @@ class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSourc
         withReuseIdentifier: CommonCollectionSectionHeader.typeName,
         for: indexPath
       ) as! CommonCollectionSectionHeader
-
-    // cassette: adaptive grouping — when flattened, show no section title (the
-    // header is also 0-height; this keeps it empty rather than a lone letter).
-    guard vc.common.isGroupedInAlphabeticSections else {
-      sectionHeader.display(title: nil)
-      return sectionHeader
-    }
-    switch vc.common.sortType {
-    case .artist, .name:
-      sectionHeader
-        .display(title: sectionTitleToIndexTitle(sectionName: sectionTitle(for: indexPath.section)))
-    case .rating, .year:
-      sectionHeader.display(title: sectionTitle(for: indexPath.section))
-    case .duration, .newest, .recent:
-      sectionHeader.display(title: nil)
-    }
-
     // cassette Polish 2 (B2): no Play/Shuffle header on the Albums grid listing.
+    configure(header: sectionHeader, section: indexPath.section)
     return sectionHeader
   }
 
-  override func indexTitles(for collectionView: UICollectionView) -> [String]? {
+  /// Fills a section header: its letter (or sort title) and, above the first one, the
+  /// count line. Also used to refresh headers already on screen when the albums change.
+  func configure(header: CommonCollectionSectionHeader, section: Int) {
+    header.display(title: headerTitle(for: section), count: countLine(for: section))
+  }
+
+  /// The mono count line over the first section ("139 albums"): the All filter only, and
+  /// none for an empty grid.
+  func countLine(for section: Int) -> String? {
+    guard section == 0, vc.displayFilter == .all, itemCount > 0 else { return nil }
+    return itemCount == 1 ? "1 album" : "\(itemCount) albums"
+  }
+
+  /// Whether a section header carries a title. Cheap, for header sizing.
+  func showsHeaderTitle(in section: Int) -> Bool {
+    if vc.common.isLetterResectioned { return section < letters.count }
+    // cassette: adaptive grouping. When flattened, show no section title.
+    guard vc.common.isGroupedInAlphabeticSections else { return false }
     switch vc.common.sortType {
-    case .artist, .duration, .name, .rating, .year:
-      let sectionCount = numberOfSections(in: collectionView)
-      var indexTitles = [String]()
-      for i in 0 ..< sectionCount {
-        let sectionName = sectionTitle(for: i)
-        indexTitles.append(sectionTitleToIndexTitle(sectionName: sectionName))
-      }
-      return indexTitles
-    case .newest, .recent:
+    case .artist, .name, .rating, .year: return true
+    case .duration, .newest, .recent: return false
+    }
+  }
+
+  func headerTitle(for section: Int) -> String? {
+    guard showsHeaderTitle(in: section) else { return nil }
+    if vc.common.isLetterResectioned { return letters[section] }
+    switch vc.common.sortType {
+    case .artist, .name:
+      return sectionTitleToIndexTitle(sectionName: sectionTitle(for: section))
+    case .rating, .year:
+      return sectionTitle(for: section)
+    case .duration, .newest, .recent:
       return nil
     }
+  }
+
+  /// Whether the A to Z index shows down the right edge: a grid filed by letter with at
+  /// least two letters, or a grouped Rating / Artist / Year / Duration sort. Never for a
+  /// flat grid, where it would be one lone letter.
+  var isIndexShown: Bool {
+    guard !vc.isIndexTitelsHidden else { return false }
+    if vc.common.isLetterResectioned { return letters.count >= 2 }
+    switch vc.common.sortType {
+    case .artist, .duration, .name, .rating, .year:
+      return vc.common.isGroupedInAlphabeticSections
+    case .newest, .recent:
+      return false
+    }
+  }
+
+  override func indexTitles(for collectionView: UICollectionView) -> [String]? {
+    guard isIndexShown else { return nil }
+    // phone-taste: the whole alphabet, steady, whatever letters the library has.
+    if vc.common.isLetterResectioned { return String.libraryLetters }
+    let sectionCount = numberOfSections(in: collectionView)
+    var indexTitles = [String]()
+    for i in 0 ..< sectionCount {
+      let sectionName = sectionTitle(for: i)
+      indexTitles.append(sectionTitleToIndexTitle(sectionName: sectionName))
+    }
+    return indexTitles
+  }
+
+  override func collectionView(
+    _ collectionView: UICollectionView,
+    indexPathForIndexTitle title: String,
+    at index: Int
+  )
+    -> IndexPath {
+    guard vc.common.isLetterResectioned, !letters.isEmpty else {
+      return super.collectionView(collectionView, indexPathForIndexTitle: title, at: index)
+    }
+    // A letter with no albums jumps to the next letter that has some, else the last one.
+    let order = String.libraryLetters
+    let tapped = order.firstIndex(of: title) ?? index
+    let section = letters.firstIndex { (order.firstIndex(of: $0) ?? 0) >= tapped }
+      ?? letters.count - 1
+    return IndexPath(item: 0, section: section)
   }
 
   func sectionTitleToIndexTitle(sectionName: String) -> String {
@@ -174,6 +231,8 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
   fileprivate var common: AlbumsCommonVCInteractions
 
   private var previousSize: CGSize = .zero
+  /// Whether the index showed for the last applied snapshot, to reload when it comes or goes.
+  private var wasIndexShown: Bool?
 
   public var displayFilter: DisplayCategoryFilter {
     set { common.displayFilter = newValue }
@@ -233,6 +292,14 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
     common.updateFetchDataSourceCB = {
       self.common.fetchedResultsController.delegate = self
     }
+    // phone-taste: file a grouped Name sort into the mock's letters ("The Bends" under B),
+    // computed here from the titles in memory. Set before the first fetch.
+    common.isLetterResectioningEnabled = true
+    snapshotTransform = { snapshot, context in
+      self.librarySnapshot(from: snapshot, context: context)
+    }
+    // The index down the right edge reads in ink2, never the accent.
+    collectionView.tintColor = .cassette(.textSecondary)
 
     common.applyFilter()
     // cassette Polish 2 (B1): per-category search removed; use the global Search tab.
@@ -273,7 +340,111 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
     }
     snapshotDidChange = {
       self.common.updateContentUnavailable()
+      self.refreshVisibleSectionHeaders()
+      self.reloadIfIndexVisibilityChanged()
     }
+
+    // phone-taste: a phone shows only what is on it. When music arrives on or leaves the
+    // phone (or Server Mode flips), make the fetch again with the new set of albums.
+    // Posted on the main queue, debounced (CassetteOwnershipNotifier).
+    appDelegate.notificationHandler.register(
+      self,
+      selector: #selector(onPhoneLibraryChanged),
+      name: CassetteLibraryFilterProvider.filterChangedNotification,
+      object: nil
+    )
+  }
+
+  @objc
+  private func onPhoneLibraryChanged() {
+    // The grid diffs from the old albums to the new ones and keeps its place. Only a flip
+    // between grouped and flat changes header sizes, which needs a reload.
+    if common.refreshOwnedScope() {
+      collectionView.reloadData()
+    }
+  }
+
+  /// phone-taste: the mock's Library order (data.ts libraryOf). For the Name sort the
+  /// fetched albums are sorted by `librarySortKey` and, while grouped, filed under their
+  /// `libraryLetter` with "#" first, in a snapshot built fresh: only the item ids are read,
+  /// never the fetch's section ids. Titles come from the albums already in memory; nothing
+  /// stored is read or written. Every other sort keeps the fetch's own sections.
+  private func librarySnapshot(
+    from snapshot: NSDiffableDataSourceSnapshot<Int, NSManagedObjectID>,
+    context: NSManagedObjectContext
+  )
+    -> NSDiffableDataSourceSnapshot<Int, NSManagedObjectID> {
+    let dataSource = albumsDataSource
+    guard common.isLetterResectioningEnabled, common.sortType == .name else {
+      dataSource?.letters = []
+      dataSource?.itemCount = snapshot.numberOfItems
+      return snapshot
+    }
+    let keyed: [(id: NSManagedObjectID, key: String)] = snapshot.itemIdentifiers.map { id in
+      let albumMO = (try? context.existingObject(with: id)) as? AlbumMO
+      let name = albumMO.map { Album(managedObject: $0).name } ?? ""
+      return (id: id, key: name.librarySortKey)
+    }
+    let sorted = keyed.sorted { lhs, rhs in
+      switch lhs.key.localizedStandardCompare(rhs.key) {
+      case .orderedAscending: return true
+      case .orderedDescending: return false
+      case .orderedSame:
+        // Same key: a steady order, so equal titles never trade places between updates.
+        return lhs.id.uriRepresentation().absoluteString < rhs.id.uriRepresentation()
+          .absoluteString
+      }
+    }
+
+    var result = NSDiffableDataSourceSnapshot<Int, NSManagedObjectID>()
+    var letters = [String]()
+    if common.isLetterResectioned {
+      var buckets = [String: [NSManagedObjectID]]()
+      for album in sorted {
+        buckets[String.libraryLetter(forSortKey: album.key), default: []].append(album.id)
+      }
+      letters = String.libraryLetters.filter { buckets[$0] != nil }
+      for letter in letters {
+        // A letter keeps one section id ("#" 0, A 1 ... Z 26), so a letter that comes or
+        // goes moves the sections after it instead of relabelling them.
+        let section = Self.sectionIdentifier(forLetter: letter)
+        result.appendSections([section])
+        result.appendItems(buckets[letter] ?? [], toSection: section)
+      }
+    } else if !sorted.isEmpty {
+      result.appendSections([0])
+      result.appendItems(sorted.map { $0.id }, toSection: 0)
+    }
+    dataSource?.letters = letters
+    dataSource?.itemCount = result.numberOfItems
+    return result
+  }
+
+  private static func sectionIdentifier(forLetter letter: String) -> Int {
+    String.libraryLetters.firstIndex(of: letter) ?? 0
+  }
+
+  /// Headers on screen are not dequeued again when the albums change, so repaint their
+  /// letter and count line in place (a new letter can shift which section sits first).
+  private func refreshVisibleSectionHeaders() {
+    guard let albumsDataSource else { return }
+    let kind = UICollectionView.elementKindSectionHeader
+    for indexPath in collectionView.indexPathsForVisibleSupplementaryElements(ofKind: kind) {
+      guard let header = collectionView.supplementaryView(
+        forElementKind: kind,
+        at: indexPath
+      ) as? CommonCollectionSectionHeader else { continue }
+      albumsDataSource.configure(header: header, section: indexPath.section)
+    }
+  }
+
+  /// The index and the right gutter it needs come and go with the second letter. Reload
+  /// then, so the index bar and the tile widths follow.
+  private func reloadIfIndexVisibilityChanged() {
+    let isIndexShown = albumsDataSource?.isIndexShown ?? false
+    defer { wasIndexShown = isIndexShown }
+    guard let wasIndexShown, wasIndexShown != isIndexShown else { return }
+    collectionView.reloadData()
   }
 
   override func viewWillAppear(_ animated: Bool) {
@@ -301,6 +472,8 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
     ) as! AlbumCollectionCell
     if let album = (diffableDataSource as? AlbumsCollectionDiffableDataSource)?
       .getAlbum(at: indexPath) {
+      // phone-taste: the Library grid's smaller tile type, on the phone.
+      cell.isCompact = Self.isPhoneGrid(collectionView)
       cell.display(
         container: album,
         rootView: self,
@@ -332,10 +505,6 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
     common.listViewWillDisplayCell(at: indexPath, searchBarText: searchController.searchBar.text)
   }
 
-  override func indexTitles(for collectionView: UICollectionView) -> [String]? {
-    isIndexTitelsHidden ? nil : albumsDataSource?.indexTitles(for: collectionView)
-  }
-
   override func updateSearchResults(for searchController: UISearchController) {
     common.updateSearchResults(for: searchController)
     collectionView.reloadData()
@@ -358,6 +527,25 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
 extension AlbumsCollectionVC: UICollectionViewDelegateFlowLayout {
   static let minimumLineSpacing: CGFloat = 16
   static let minimumInteritemSpacing: CGFloat = 16
+  /// phone-taste `.grid` gap: 14 between rows, 10 between columns (phone).
+  static let phoneLineSpacing: CGFloat = 14
+  static let phoneInteritemSpacing: CGFloat = 10
+  /// phone-taste `.libSection` padding: 20 on the left, 34 on the right while the index
+  /// shows (it sits in that gutter), else 20.
+  static let phoneSideInset: CGFloat = 20
+  static let phoneIndexedTrailingInset: CGFloat = 34
+
+  static func isPhoneGrid(_ collectionView: UICollectionView) -> Bool {
+    collectionView.traitCollection.userInterfaceIdiom == .phone
+  }
+
+  private func lineSpacing(_ collectionView: UICollectionView) -> CGFloat {
+    Self.isPhoneGrid(collectionView) ? Self.phoneLineSpacing : Self.minimumLineSpacing
+  }
+
+  private func interitemSpacing(_ collectionView: UICollectionView) -> CGFloat {
+    Self.isPhoneGrid(collectionView) ? Self.phoneInteritemSpacing : Self.minimumInteritemSpacing
+  }
 
   func collectionView(
     _ collectionView: UICollectionView,
@@ -372,15 +560,18 @@ extension AlbumsCollectionVC: UICollectionViewDelegateFlowLayout {
     )
 
     let marginsAndInsets = inset.left + inset.right + collectionView.safeAreaInsets
-      .left + collectionView.safeAreaInsets.right + Self
-      .minimumInteritemSpacing *
+      .left + collectionView.safeAreaInsets.right + interitemSpacing(collectionView) *
       CGFloat(appDelegate.storage.settings.user.albumsGridSizeSetting - 1)
     let itemWidth =
       (
         (collectionView.bounds.size.width - marginsAndInsets) /
           CGFloat(appDelegate.storage.settings.user.albumsGridSizeSetting)
       ).rounded(.down)
-    return CGSize(width: itemWidth, height: itemWidth + 45)
+    // The tile is its square cover plus the text under it: the compact phone block
+    // (measured from the fonts, see AlbumCollectionCell) or the regular one.
+    let textBlockHeight = Self.isPhoneGrid(collectionView) ?
+      AlbumCollectionCell.compactTextBlockHeight : 45
+    return CGSize(width: itemWidth, height: itemWidth + textBlockHeight)
   }
 
   func collectionView(
@@ -389,7 +580,7 @@ extension AlbumsCollectionVC: UICollectionViewDelegateFlowLayout {
     minimumLineSpacingForSectionAt section: Int
   )
     -> CGFloat {
-    Self.minimumLineSpacing
+    lineSpacing(collectionView)
   }
 
   func collectionView(
@@ -398,7 +589,7 @@ extension AlbumsCollectionVC: UICollectionViewDelegateFlowLayout {
     minimumInteritemSpacingForSectionAt section: Int
   )
     -> CGFloat {
-    Self.minimumInteritemSpacing
+    interitemSpacing(collectionView)
   }
 
   func collectionView(
@@ -407,11 +598,26 @@ extension AlbumsCollectionVC: UICollectionViewDelegateFlowLayout {
     insetForSectionAt section: Int
   )
     -> UIEdgeInsets {
-    if self.collectionView.traitCollection.userInterfaceIdiom == .phone {
-      return UIEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
+    if Self.isPhoneGrid(self.collectionView) {
+      // The header above each section carries the spacing. A section without one (the
+      // Duration sort, Newest, Recent) keeps a row gap above it.
+      let top = headerHeight(for: section) > 0 ? 0 : Self.phoneLineSpacing
+      let trailing = (albumsDataSource?.isIndexShown ?? false) ?
+        Self.phoneIndexedTrailingInset : Self.phoneSideInset
+      return UIEdgeInsets(top: top, left: Self.phoneSideInset, bottom: 0, right: trailing)
     } else {
       return UIEdgeInsets(top: 8, left: 16, bottom: 8, right: 32)
     }
+  }
+
+  /// The header above `section`: the count line over the first section, then the letter
+  /// (or the sort's title). Zero when it would be empty.
+  private func headerHeight(for section: Int) -> CGFloat {
+    guard let albumsDataSource else { return 0 }
+    return CommonCollectionSectionHeader.height(
+      showsCount: albumsDataSource.countLine(for: section) != nil,
+      showsTitle: albumsDataSource.showsHeaderTitle(in: section)
+    )
   }
 
   func collectionView(
@@ -420,22 +626,8 @@ extension AlbumsCollectionVC: UICollectionViewDelegateFlowLayout {
     referenceSizeForHeaderInSection section: Int
   )
     -> CGSize {
-    // cassette Polish 2 (B2): Play/Shuffle header removed, so reserve no extra
-    // top height for section 0.
-    let headerTopHeight = 0.0
-    // cassette: adaptive grouping — a flattened (un-grouped) small collection is
-    // one section; reserve no header height so no lone letter header shows.
-    guard common.isGroupedInAlphabeticSections else {
-      return CGSize(width: collectionView.bounds.size.width, height: headerTopHeight)
-    }
-    switch common.sortType {
-    case .artist, .name, .rating, .year:
-      return CGSize(
-        width: collectionView.bounds.size.width,
-        height: CommonCollectionSectionHeader.frameHeight + headerTopHeight
-      )
-    case .duration, .newest, .recent:
-      return CGSize(width: collectionView.bounds.size.width, height: headerTopHeight)
-    }
+    // cassette Polish 2 (B2): no Play/Shuffle header. phone-taste: section 0 carries the
+    // count line; a flat grid shows the count line alone, never a lone letter.
+    CGSize(width: collectionView.bounds.size.width, height: headerHeight(for: section))
   }
 }
