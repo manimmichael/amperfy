@@ -109,6 +109,36 @@ extension CarPlaySceneDelegate {
   /// Rows in a browse list (the three tabs and every pushed range list), paging row included.
   var carPlayBrowseItemBudget: Int { carPlayLimits.browseItems }
 
+  // MARK: - On this phone (phone-taste)
+
+  /// What CarPlay may show and queue from `containable`: only songs on this phone, by the
+  /// foundation's OneTapPlay rule (the DeviceOwnership set in on-device mode; in Server Mode
+  /// cached items while offline). `onlyCached` keeps a caller's explicit cached-only request
+  /// in Server Mode; owned songs play from the phone in on-device mode and need no cache.
+  func onPhonePlayables(
+    of containable: PlayableContainable,
+    onlyCached: Bool = false
+  )
+    -> [AbstractPlayable] {
+    let playables = OneTapPlay.playables(of: containable)
+    guard onlyCached, !CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return playables }
+    return playables.filterCached(dependigOn: true)
+  }
+
+  /// The same rule for a list that is not a container (a mix): in on-device mode only the
+  /// songs this phone owns; in Server Mode only cached items while offline.
+  func onPhonePlayables(_ list: [AbstractPlayable]) -> [AbstractPlayable] {
+    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else {
+      return list.filterCached(dependigOn: isOfflineMode)
+    }
+    let owned = DeviceOwnershipManager(context: appDelegate.storage.main.context)
+      .fetchAllSubsonicTrackIds()
+    return list.filter { playable in
+      guard let song = playable.asSong else { return true }
+      return owned.contains(song.id)
+    }
+  }
+
   var carPlayBrowseSectionBudget: Int { carPlayLimits.sections }
 
   // MARK: - Browse tabs (cassette, BUG-337)
@@ -555,7 +585,8 @@ extension CarPlaySceneDelegate {
   // list is offered only while parked: when the car limits lists, it is left out.
   func makeArtistDetailTemplate(for artist: Artist, onlyCached: Bool) -> CPListTemplate? {
     guard let activeAccount else { return nil }
-    let artistPlayables = artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
+    // phone-taste: only songs on this phone (OneTapPlay's rule), for Most Played and Shuffle.
+    let artistPlayables = onPhonePlayables(of: artist, onlyCached: onlyCached || isOfflineMode)
     var sections = [CPListSection]()
 
     let topSongs = artistPlayables
@@ -564,10 +595,12 @@ extension CarPlaySceneDelegate {
       .prefix(Self.artistTopSongCount)
     if !topSongs.isEmpty {
       let context = Array(topSongs)
+      // phone-taste: a top song's second line is its album (the artist is the page).
       let rows: [CPListItem] = context.enumerated().map { index, song in
         createDetailTemplate(
           for: song,
-          playContext: PlayContext(containable: artist, index: index, playables: context)
+          playContext: PlayContext(containable: artist, index: index, playables: context),
+          detail: .some(song.subsubtitle)
         )
       }
       sections.append(CPListSection(items: rows, header: "Most Played", sectionIndexTitle: nil))
@@ -594,14 +627,14 @@ extension CarPlaySceneDelegate {
 
     let template = CPListTemplate(title: artist.name, sections: sections)
     template.emptyViewTitleVariants = ["Nothing by this artist on this phone"]
+    // phone-taste: "N albums", counted from the same list the Albums row shows, so the number
+    // and the covers always agree; nothing at zero.
+    let albumCount = artistAlbums.count
     applyPlayHeader(
       to: template,
-      image: style.artwork(
-        for: artist,
-        artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference
-      ),
+      image: artistHeaderImage(artist, albums: artistAlbums),
       title: artist.name,
-      subtitle: artist.subtitle,
+      subtitle: albumCount == 0 ? nil : (albumCount == 1 ? "1 album" : "\(albumCount) albums"),
       play: nil,
       shuffle: artistPlayables.isEmpty ? nil : PlayContext(
         containable: artist,
@@ -612,6 +645,32 @@ extension CarPlaySceneDelegate {
   }
 
   static let artistTopSongCount = 5
+
+  /// phone-taste: the artist page's header picture. Their own photo keeps the circle (tested
+  /// with `hasOwnPhotoOnDisk`, never "has any image": a shared artwork row can carry someone
+  /// else's face). Without one, the first of their albums with a cover, square, as in the car
+  /// mock; with neither, the initial in a circle as before.
+  private func artistHeaderImage(_ artist: Artist, albums: [Album]) -> UIImage {
+    let preference = getPreference(activeAccountInfo).artworkDisplayPreference
+    if artist.hasOwnPhotoOnDisk,
+       let photo = LibraryEntityImage.coverImage(
+         libraryEntity: artist,
+         artworkDisplayPreference: preference,
+         useCache: false
+       ) {
+      return style.artwork(photo, kind: .artist, name: artist.name, circle: true)
+    }
+    for album in albums {
+      if let cover = LibraryEntityImage.coverImage(
+        libraryEntity: album,
+        artworkDisplayPreference: preference,
+        useCache: false
+      ) {
+        return style.artwork(cover, kind: .album, name: album.name, circle: false)
+      }
+    }
+    return style.artwork(nil, kind: .artist, name: artist.name, circle: true)
+  }
 
   /// One row of album covers. A cover plays its album from the top; the row's title opens
   /// the albums as a plain list for browsing.
@@ -629,10 +688,10 @@ extension CarPlaySceneDelegate {
     row.listImageRowHandler = { [weak self] _, index, completion in
       guard let self, index >= 0, index < shown.count else { completion(); return }
       let album = shown[index]
-      appDelegate.player.play(context: PlayContext(
-        containable: album,
-        playables: album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-      ))
+      // phone-taste: only the album's songs on this phone; none, and nothing plays.
+      let playables = onPhonePlayables(of: album, onlyCached: onlyCached || isOfflineMode)
+      guard !playables.isEmpty else { completion(); return }
+      appDelegate.player.play(context: PlayContext(containable: album, playables: playables))
       displayNowPlaying { completion() }
     }
     row.handler = { [weak self] _, completion in
@@ -702,14 +761,15 @@ extension CarPlaySceneDelegate {
     section.handler = { [weak self] item, completion in
       guard let self = self else { completion(); return }
       var songItems = [CPListItem]()
-      let artistPlayables = artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
+      // phone-taste: only songs on this phone (OneTapPlay's rule).
+      let artistPlayables = onPhonePlayables(of: artist, onlyCached: onlyCached || isOfflineMode)
       if !artistPlayables.isEmpty {
         songItems.append(createPlayShuffledListItem(playContext: PlayContext(
           containable: artist,
           playables: artistPlayables
         )))
       }
-      let artistSongs = artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
+      let artistSongs = artistPlayables
         .sortByTitle().prefix(carPlayLeafItemLimit(reserved: songItems.count))
       for (index, song) in artistSongs.enumerated() {
         let listItem = createDetailTemplate(
@@ -765,10 +825,10 @@ extension CarPlaySceneDelegate {
         makeAlbumDetailTemplate(for: album, onlyCached: onlyCached),
         animated: true
       ) {
-        appDelegate.player.play(context: PlayContext(
-          containable: album,
-          playables: album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-        ))
+        // phone-taste: only the album's songs on this phone.
+        let playables = onPhonePlayables(of: album, onlyCached: onlyCached || isOfflineMode)
+        guard !playables.isEmpty else { completion(); return }
+        appDelegate.player.play(context: PlayContext(containable: album, playables: playables))
         displayNowPlaying { completion() }
         return
       }
@@ -784,13 +844,17 @@ extension CarPlaySceneDelegate {
   // the track list instead of a Shuffle row inside it.
   func makeAlbumDetailTemplate(for album: Album, onlyCached: Bool) -> CPListTemplate {
     var songItems = [CPListItem]()
-    let albumPlayables = album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
+    // phone-taste: only the album's songs on this phone (OneTapPlay's rule), for the rows and
+    // for the header's Play and Shuffle.
+    let albumPlayables = onPhonePlayables(of: album, onlyCached: onlyCached || isOfflineMode)
     let albumSongs = albumPlayables.prefix(carPlayLeafItemLimit(reserved: 0))
     for (index, song) in albumSongs.enumerated() {
+      // phone-taste: a row's second line is the song's length (the artist is in the header).
       let listItem = createDetailTemplate(
         for: song,
         playContext: PlayContext(containable: album, index: index, playables: Array(albumSongs)),
-        isTrackDisplayed: true
+        isTrackDisplayed: true,
+        detail: .some(song.duration > 0 ? song.duration.asColonDurationString : nil)
       )
       songItems.append(listItem)
     }
@@ -809,11 +873,19 @@ extension CarPlaySceneDelegate {
         artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference
       ),
       title: album.name,
-      subtitle: album.subtitle,
+      subtitle: albumHeaderLine(album),
       play: context,
       shuffle: context
     )
     return template
+  }
+
+  /// phone-taste: the album header's line, "Artist · Year", either part left out when unknown.
+  private func albumHeaderLine(_ album: Album) -> String? {
+    let parts = [album.artist?.name, album.year > 0 ? String(album.year) : nil]
+      .compactMap { $0 }
+      .filter { !$0.isEmpty }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
   /// One playlist row (local cover, name, subtitle, disclosure; tap pushes the playlist
@@ -890,10 +962,13 @@ extension CarPlaySceneDelegate {
     case isTrackDisplayed
   }
 
+  /// One song row. `detail` overrides the second line (`.some(nil)` leaves it empty); left out,
+  /// it is the song's artist, as everywhere before phone-taste.
   func createDetailTemplate(
     for playable: AbstractPlayable,
     playContext: PlayContext,
-    isTrackDisplayed: Bool = false
+    isTrackDisplayed: Bool = false,
+    detail: String?? = .none
   )
     -> CPListItem {
     // Cassette CarPlay: the cloud/"cached" badge is gated to Server Mode
@@ -910,9 +985,14 @@ extension CarPlaySceneDelegate {
     if let artwork = playable.artwork, let accountInfo = artwork.account?.info {
       appDelegate.getMeta(accountInfo).artworkDownloadManager.download(object: artwork)
     }
+    let detailText: String?
+    switch detail {
+    case let .some(override): detailText = override
+    case .none: detailText = playable.subtitle
+    }
     let listItem = CPListItem(
       text: playable.title,
-      detailText: playable.subtitle,
+      detailText: detailText,
       image: image,
       accessoryImage: nil,
       accessoryType: accessoryType

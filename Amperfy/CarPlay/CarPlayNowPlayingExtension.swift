@@ -37,7 +37,7 @@ extension CarPlaySceneDelegate {
 
   func configureNowPlayingTemplate() {
     // The now-playing button SET depends ONLY on the player mode (music →
-    // repeat+shuffle, podcast → repeat+playback-rate) — never on the track. The
+    // shuffle+repeat, podcast → repeat+playback-rate), never on the track. The
     // MusicPlayable.didStartPlaying observer calls this on every track change;
     // pushing a fresh button array via updateNowPlayingButtons then tears down and
     // recreates the button row, flashing the active repeat/shuffle selection and
@@ -49,21 +49,24 @@ extension CarPlaySceneDelegate {
     lastConfiguredNowPlayingMode = mode
 
     var buttons: [CPNowPlayingButton] = []
-    buttons.append(
-      CPNowPlayingRepeatButton(handler: { [weak self] button in
-        guard let self = self else { return }
-        appDelegate.player.setRepeatMode(appDelegate.player.repeatMode.nextMode)
-      })
-    )
+    let repeatButton = CPNowPlayingRepeatButton(handler: { [weak self] button in
+      guard let self = self else { return }
+      appDelegate.player.setRepeatMode(appDelegate.player.repeatMode.nextMode)
+    })
     if appDelegate.player.playerMode == .music {
+      // phone-taste: Shuffle first, then Repeat (the car mock's transport, and the usual
+      // Shuffle-left, Repeat-right layout).
       buttons.append(
         CPNowPlayingShuffleButton(handler: { [weak self] button in
           guard let self = self else { return }
           appDelegate.player.toggleShuffle()
         })
       )
+      buttons.append(repeatButton)
       // cassette (favorites rip-out): the CarPlay now-playing favorite (heart)
-      // button was removed. Repeat + shuffle remain.
+      // button was removed. Shuffle + repeat remain.
+    } else {
+      buttons.append(repeatButton)
     }
     // Cassette CarPlay: the playback-speed multiplier only makes sense for
     // spoken-word content. Cassette surfaces podcasts as a real, playable
@@ -244,6 +247,9 @@ extension CarPlaySceneDelegate: MusicPlayable {
   func didElapsedTimeChange() {}
   func didPlaylistChange() {
     updatePlayerQueueSection()
+    // phone-taste: something else started (or the queue was edited): a Mood door still
+    // loading drops its result instead of taking over.
+    noteQueueChangedForDoorLoad()
   }
 
   func didArtworkChange() {}

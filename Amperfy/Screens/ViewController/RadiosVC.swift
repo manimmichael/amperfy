@@ -161,6 +161,12 @@ final class RadioArtLoader {
   private let cache = NSCache<NSString, UIImage>()
   private init() { cache.countLimit = 200 }
 
+  /// The logo when it is already in memory, with no fetch: a rebuilt CarPlay row shows it at
+  /// once instead of flashing the word picture first.
+  func cachedImage(for urlString: String) -> UIImage? {
+    cache.object(forKey: urlString as NSString)
+  }
+
   func image(for urlString: String) async -> UIImage? {
     if let hit = cache.object(forKey: urlString as NSString) { return hit }
     guard let url = URL(string: urlString) else { return nil }

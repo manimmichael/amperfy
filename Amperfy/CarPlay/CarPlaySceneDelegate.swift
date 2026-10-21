@@ -62,7 +62,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   var sharedHome: HomeManager?
 
   /// The player mode the now-playing button row was last built for. The button
-  /// SET depends only on the mode (music: repeat+shuffle; podcast: repeat+rate),
+  /// SET depends only on the mode (music: shuffle+repeat; podcast: repeat+rate),
   /// never the track — so `configureNowPlayingTemplate()` skips the rebuild when
   /// this is unchanged, avoiding the on-track-change flash of the active
   /// repeat/shuffle selection + scrubber. Reset on disconnect so a fresh connect
@@ -129,6 +129,20 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         self,
         selector: #selector(refreshOwnedLibrary),
         name: CassetteLibraryFilterProvider.filterChangedNotification,
+        object: nil
+      )
+      // phone-taste: the Mood row's doors follow the Mixtape beta flag, and its Lately tile
+      // follows the mood tags, which can both arrive mid-drive.
+      appDelegate.notificationHandler.register(
+        self,
+        selector: #selector(refreshMoodRow),
+        name: CassetteBetaAccess.changedNotification,
+        object: nil
+      )
+      appDelegate.notificationHandler.register(
+        self,
+        selector: #selector(libraryMoodsChanged),
+        name: .cassetteLibraryMoodsChanged,
         object: nil
       )
       accountNotificationHandler = AccountNotificationHandler(
@@ -310,6 +324,12 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         name: CassetteLibraryFilterProvider.filterChangedNotification,
         object: nil
       )
+      appDelegate.notificationHandler.remove(
+        self,
+        name: CassetteBetaAccess.changedNotification,
+        object: nil
+      )
+      appDelegate.notificationHandler.remove(self, name: .cassetteLibraryMoodsChanged, object: nil)
       accountNotificationHandler?.performOnAllRegisteredAccounts { [weak self] accountInfo in
         guard let self else { return }
         let meta = appDelegate.getMeta(accountInfo)
@@ -420,6 +440,22 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     var homeImageRows: [HomeSection: CPListImageRowItem] = [:]
     var homeRowData: [HomeSection: [HomeItem]] = [:]
     var homeArtworkUpdate: [String: EntityImageRowContainer] = [:] // String is Artwork.uniqueID
+    /// phone-taste: the Mood row is built outside the HomeItem pipeline (a door is not a
+    /// library entity). The tiles it shows, in order, are what a tap resolves against; the
+    /// signature (Lately lead album ids, whether the doors show, the door keys) is what
+    /// `updateHomeSections` compares, so the row's art is drawn only when it changes.
+    var moodRow: CPListImageRowItem?
+    var moodTiles: [CarMoodTile] = []
+    /// The Lately tile's four covers, decoded once per signature (the Mood list reuses them).
+    var moodCovers: [UIImage] = []
+    var moodSignature: String?
+    /// The time-of-day row's title as last rendered, so a title-only change gets through the
+    /// early-out (Weekday Evenings becomes Weekday Nights with the same albums).
+    var aroundTitle: String?
+    /// The door mix being fetched (one at a time), and whether something else played since
+    /// the tap, in which case its result is dropped.
+    var doorLoad: UUID?
+    var doorLoadOvertaken = false
   }
 
   var session = SessionState()
@@ -636,6 +672,20 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     )
     resetFetchController()
     refreshOfflineMode()
+  }
+
+  /// phone-taste: the Mixtape beta flag changed, so the doors appear or go (the Mood row's
+  /// signature carries the flag).
+  @objc
+  private func refreshMoodRow() {
+    updateHomeSections()
+  }
+
+  /// phone-taste: new mood tags or a new lately profile. Home recomputes (debounced), which
+  /// rebuilds the Lately mix and, through the signature, the Lately tile.
+  @objc
+  private func libraryMoodsChanged() {
+    sharedHome?.refreshListeningShelves()
   }
 
   @objc

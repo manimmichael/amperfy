@@ -40,6 +40,48 @@ enum MixtapePlayback {
       )
     }
   }
+
+  /// What a door's mix came to for a surface that plays it at once (CarPlay).
+  enum DoorMixOutcome {
+    /// The mix's name and the songs of it that this phone can play.
+    case ok(name: String, songs: [AbstractPlayable])
+    /// The server made a mix, but none of it is on this phone.
+    case nothingOnPhone
+    /// The server says the library has too little that fits this door (422).
+    case notEnough
+    /// No mix right now: no signal, no account, left the beta (404), anything else.
+    case unavailable
+  }
+
+  /// A door's mix, cut to the songs on this phone, for a surface with no preview sheet: the
+  /// car, where a tile tap is the play gesture. The phone's sheet keeps its own flow.
+  /// "On this phone" is the foundation's rule (OneTapPlay): resolveSong matches only songs
+  /// this phone owns; in Server Mode the offline setting also keeps only cached ones.
+  static func makeDoorMix(doorKey: String) async -> DoorMixOutcome {
+    let mixtape: CassetteMixtapeResponse
+    do {
+      mixtape = try await CassetteSyncAPI.shared.generateDoorMixtape(doorKey: doorKey)
+    } catch let CassetteSyncError.http(status) where status == 422 {
+      return .notEnough
+    } catch {
+      return .unavailable
+    }
+    // A static context has no `appDelegate` property; ask the application for it.
+    let delegate = UIApplication.shared.delegate as! AppDelegate
+    let storage = delegate.storage
+    guard let accountInfo = storage.settings.accounts.active else { return .unavailable }
+    let account = storage.main.library.getAccount(info: accountInfo)
+    let resolved: [AbstractPlayable] = resolveSongs(
+      tracks: mixtape.tracks,
+      storage: storage,
+      account: account
+    )
+    let songs = CassetteLibraryFilterProvider.shared.isOnDeviceOnly
+      ? resolved
+      : resolved.filterCached(dependigOn: storage.settings.user.isOfflineMode)
+    guard !songs.isEmpty else { return .nothingOnPhone }
+    return .ok(name: mixtape.name, songs: songs)
+  }
 }
 
 // MARK: - MixtapePreviewSheet

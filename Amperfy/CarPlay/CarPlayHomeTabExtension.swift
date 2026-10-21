@@ -24,6 +24,19 @@ import CarPlay
 import CoreData
 import Foundation
 
+// MARK: - CarMoodTile
+
+/// phone-taste: one tile of the car's Mood row. A tap resolves to one of these (stored in the
+/// session when the row is drawn), never to live data.
+enum CarMoodTile: Equatable {
+  /// The Lately mix (HomeManager.latelyMix): songs on this phone that match recent listening.
+  case lately
+  /// A mood door: POST /api/mixtape/door, cut to the songs on this phone.
+  case door(key: String, label: String, hexColor: String)
+}
+
+// MARK: - CarPlaySceneDelegate + Home
+
 extension CarPlaySceneDelegate {
   /// cassette (CarPlay feel-good, Jobs 1.2/1.3): CarPlay Home is album-forward —
   /// two album shelves lead, then Playlists, then Artists. Resume is omitted (an
@@ -39,9 +52,26 @@ extension CarPlaySceneDelegate {
   /// the Resume item at its head, since CarPlay has no Resume card), then Radio, the most
   /// natural thing to play while driving, then Playlists, Newest Albums and Artists.
   /// On Repeat and Around This Time follow Recent (the phone's own play log).
+  ///
+  /// phone-taste: Mood sits between On Repeat and the time-of-day row, as in the car mock.
   private var carPlayHomeSections: [HomeSection] {
-    [.recent, .onRepeat, .aroundNow, .radios, .yourPlaylists, .newestAlbums, .recentlyPlayedArtists]
+    [
+      .recent,
+      .onRepeat,
+      .moodDoors,
+      .aroundNow,
+      .radios,
+      .yourPlaylists,
+      .newestAlbums,
+      .recentlyPlayedArtists,
+    ]
   }
+
+  /// The doors the car offers, in the car's order (Road Trip first; no Focus or Feel Good).
+  private static let carDoorKeys = ["road-trip", "get-pumped", "wind-down", "late-night"]
+
+  /// The Lately tile needs four covers for its picture (the mock shows it at four or more).
+  private static let latelyCoverCount = 4
 
   /// The items a CarPlay Home row shows. Recent carries the Resume item first.
   private func carPlayItems(_ section: HomeSection) -> [HomeItem]? {
@@ -63,35 +93,45 @@ extension CarPlaySceneDelegate {
   /// A Home tile plays straight away and shows Now Playing (founder, 2026-10-20: one tap
   /// to music behind the wheel). An album plays from the top, an artist shuffled. Browsing
   /// stays one tap away on the row's title.
+  ///
+  /// phone-taste: only what is on this phone is queued (the foundation's OneTapPlay rule). A
+  /// station plays as itself. Nothing of it on the phone: nothing plays and Now Playing stays
+  /// shut (Home rows hold only records on the phone, so this is the rare race with a removal).
   private func playFromHome(_ containable: PlayableContainable) {
-    let onlyCached = isOfflineMode
-    if let album = containable as? Album {
-      appDelegate.player.play(context: PlayContext(
-        containable: album,
-        playables: album.playables.filterCached(dependigOn: onlyCached)
-      ))
-    } else if let artist = containable as? Artist {
-      appDelegate.player.playShuffled(context: PlayContext(
-        containable: artist,
-        playables: artist.playables.filterCached(dependigOn: onlyCached)
-      ))
-    } else {
+    if containable is Radio {
       appDelegate.player.play(context: PlayContext(containable: containable))
+      displayNowPlaying {}
+      return
+    }
+    let playables = onPhonePlayables(of: containable)
+    guard !playables.isEmpty else { return }
+    let context = PlayContext(containable: containable, playables: playables)
+    if containable is Artist {
+      appDelegate.player.playShuffled(context: context)
+    } else {
+      appDelegate.player.play(context: context)
     }
     displayNowPlaying {}
   }
 
   func updateHomeSections() {
-    guard interfaceController != nil, let sharedHome else { return }
+    guard interfaceController != nil, sharedHome != nil else { return }
     // cassette: compare only the sections CarPlay actually renders. Comparing
     // the full `session.homeRowData` / `sharedHome.data` dicts would always differ on
     // the unrendered `.resume` key and permanently defeat this early-out.
     let renderedNow = carPlayHomeSections.map { session.homeRowData[$0] ?? [] }
     let requestedNow = carPlayHomeSections.map { carPlayItems($0) ?? [] }
-    guard renderedNow != requestedNow else {
+    // phone-taste: the Mood row is not made of HomeItems, so its signature is compared too;
+    // and the time-of-day row can change its title while its albums stay the same.
+    let aroundTitle = carPlayTitle(.aroundNow)
+    guard renderedNow != requestedNow
+      || moodSignature() != session.moodSignature
+      || aroundTitle != session.aroundTitle
+    else {
       return
     }
     let homeRows = createHomeImageRows()
+    session.aroundTitle = aroundTitle
     let homeSection = CPListSection(items: homeRows, header: nil, sectionIndexTitle: nil)
     homeTab.updateSections([homeSection])
     pruneHomeArtworkIndex()
@@ -116,6 +156,12 @@ extension CarPlaySceneDelegate {
     guard sharedHome != nil else { return [] }
     var imageRows = [CPListImageRowItem]()
     for section in carPlayHomeSections {
+      // phone-taste: the Mood row has no HomeItems by design (HomeSection.moodDoors), so it
+      // is built before the empty-shelf guard below, which would always hide it.
+      if section == .moodDoors {
+        if let row = makeMoodRow() { imageRows.append(row) }
+        continue
+      }
       // cassette: hide-when-empty on CarPlay (mirrors HomeVC Patch 036 at
       // HomeVC.swift:399). Skip shelves with no items and clear any stale
       // rendered snapshot so `updateHomeSections`' change-detection settles
@@ -132,6 +178,9 @@ extension CarPlaySceneDelegate {
           let imageRowElements = createHomeRowImageElements(section: section)
           row.elements = imageRowElements
         }
+        // phone-taste: a reused row takes its current title (the time-of-day row turns
+        // from Evenings to Nights mid-drive).
+        row.text = carPlayTitle(section)
         imageRows.append(row)
       } else if let row = createHomeRow(section: section) {
         session.homeImageRows[section] = row
@@ -205,6 +254,13 @@ extension CarPlaySceneDelegate {
     var imageRowElements = [CPListImageRowItemRowElement]()
     let items = requestedData ?? []
     for item in items {
+      // phone-taste: a station is dressed from the radio catalog (its own name, its network
+      // or "Live", its logo or a word picture in its colour). Checked before the library
+      // entity cast, which a Radio also passes, and never registered for artwork updates.
+      if let radio = item.playableContainable as? Radio {
+        imageRowElements.append(makeRadioElement(radio))
+        continue
+      }
       var image: UIImage?
       var artwork: Artwork?
       var entity: AbstractLibraryEntity?
@@ -276,9 +332,12 @@ extension CarPlaySceneDelegate {
         rows.append(createDetailTemplate(for: artist, onlyCached: isOfflineMode))
       } else if let playlist = containable as? Playlist {
         rows.append(createPlaylistRow(playlist))
+      } else if let radio = containable as? Radio {
+        rows.append(makeRadioRow(radio))
       } else {
-        // Unreachable for the four CarPlay shelves today; exists so nothing is ever
-        // silently skipped if a shelf of another kind is added.
+        // Reached by no CarPlay shelf today (albums, artists, playlists and stations have
+        // their own rows); exists so nothing is ever silently skipped if a shelf of another
+        // kind is added.
         rows.append(makePlayContainableRow(containable))
       }
     }
@@ -303,5 +362,279 @@ extension CarPlaySceneDelegate {
       displayNowPlaying { completion() }
     }
     return row
+  }
+}
+
+// MARK: - Mood row (phone-taste)
+
+extension CarPlaySceneDelegate {
+  /// What decides the Mood row's tiles and art: the Lately mix's lead albums (when it has
+  /// songs), whether the doors show, and the door keys. Cheap: no image is decoded here.
+  func moodSignature() -> String {
+    var parts = [String]()
+    if let mix = sharedHome?.latelyMix, !mix.songs.isEmpty {
+      parts.append("lately:" + mix.leadAlbums.map(\.id).joined(separator: ","))
+    }
+    if CassetteBetaAccess.isBetaTester {
+      parts.append("doors:" + Self.carDoorKeys.joined(separator: ","))
+    }
+    return parts.joined(separator: "|")
+  }
+
+  /// The Mood row, rebuilt (tiles, covers, art) only when its signature changed, or nil when
+  /// it has no tiles. The row object is kept for the session, so a tile list that empties
+  /// and fills again reuses it.
+  fileprivate func makeMoodRow() -> CPListImageRowItem? {
+    let signature = moodSignature()
+    if signature != session.moodSignature {
+      session.moodSignature = signature
+      rebuildMoodTiles()
+      let elements = session.moodTiles.map { makeMoodElement($0) }
+      if let row = session.moodRow {
+        row.elements = elements
+      } else if !elements.isEmpty {
+        session.moodRow = createMoodRow(elements: elements)
+      }
+    }
+    return session.moodTiles.isEmpty ? nil : session.moodRow
+  }
+
+  /// The Lately tile when the mix has songs and four of its lead albums have a cover on disk
+  /// (decoded here, once per signature), then the four doors for Mixtape beta accounts.
+  private func rebuildMoodTiles() {
+    var tiles = [CarMoodTile]()
+    var covers = [UIImage]()
+    if let mix = sharedHome?.latelyMix, !mix.songs.isEmpty {
+      let preference = getPreference(activeAccountInfo).artworkDisplayPreference
+      covers = mix.leadAlbums.compactMap {
+        LibraryEntityImage.coverImage(
+          libraryEntity: $0,
+          artworkDisplayPreference: preference,
+          useCache: false
+        )
+      }
+      if covers.count >= Self.latelyCoverCount {
+        covers = Array(covers.prefix(Self.latelyCoverCount))
+        tiles.append(.lately)
+      } else {
+        covers = []
+      }
+    }
+    if CassetteBetaAccess.isBetaTester {
+      for key in Self.carDoorKeys {
+        guard let door = MoodDoors.all.first(where: { $0.key == key }) else { continue }
+        tiles.append(.door(key: door.key, label: door.label, hexColor: door.hexColor))
+      }
+    }
+    session.moodTiles = tiles
+    session.moodCovers = covers
+  }
+
+  /// A tile's picture and title. Lately: its records in a square with LATELY across them. A
+  /// door: its colour and its name.
+  private func moodArt(_ tile: CarMoodTile, slot: CarPlayStyle.Slot) -> (image: UIImage, title: String) {
+    switch tile {
+    case .lately:
+      return (style.mosaicArt(covers: session.moodCovers, word: "Lately", slot: slot), "Lately")
+    case let .door(_, label, hexColor):
+      let color = UIColor(cassetteHexString: hexColor) ?? UIColor.cassette(.surfaceElevated)
+      return (style.wordArt(word: label, color: color, slot: slot), label)
+    }
+  }
+
+  private func makeMoodElement(_ tile: CarMoodTile) -> CPListImageRowItemRowElement {
+    let art = moodArt(tile, slot: .shelf)
+    return CPListImageRowItemRowElement(image: art.image, title: art.title, subtitle: "Mix")
+  }
+
+  private func createMoodRow(elements: [CPListImageRowItemRowElement]) -> CPListImageRowItem {
+    let row = CPListImageRowItem(text: "Mood", elements: elements, allowsMultipleLines: false)
+    // The title opens the tiles as a plain list (the same art at row size).
+    row.handler = { [weak self] _, completion in
+      guard let self else { completion(); return }
+      Task { @MainActor in
+        self.pushTemplateIfAllowed(self.makeMoodListTemplate(), animated: true)
+        completion()
+      }
+    }
+    // A tile plays at once. The tap resolves against the tiles the row was drawn from.
+    row.listImageRowHandler = { [weak self] _, index, completion in
+      guard let self else { completion(); return }
+      Task { @MainActor in
+        let tiles = self.session.moodTiles
+        guard index >= 0, index < tiles.count else { completion(); return }
+        self.playMoodTile(tiles[index], completion: completion)
+      }
+    }
+    return row
+  }
+
+  /// The Mood row's title tap: one row per tile, detail "Mix". A row plays, as the tile does.
+  private func makeMoodListTemplate() -> CPListTemplate {
+    let rows: [CPListItem] = session.moodTiles.map { tile in
+      let art = moodArt(tile, slot: .row)
+      let item = CPListItem(
+        text: art.title,
+        detailText: "Mix",
+        image: art.image,
+        accessoryImage: nil,
+        accessoryType: .none
+      )
+      item.handler = { [weak self] _, completion in
+        guard let self else { completion(); return }
+        Task { @MainActor in
+          self.playMoodTile(tile, completion: completion)
+        }
+      }
+      return item
+    }
+    let template = CPListTemplate(title: "Mood", sections: [CPListSection(items: rows)])
+    template.emptyViewTitleVariants = ["Nothing here yet"]
+    return template
+  }
+
+  private func playMoodTile(_ tile: CarMoodTile, completion: @escaping () -> ()) {
+    switch tile {
+    case .lately:
+      playLately(completion: completion)
+    case let .door(key, label, _):
+      playDoor(key: key, label: label, completion: completion)
+    }
+  }
+
+  /// The Lately mix Home built with the tile (songs on this phone matching recent listening),
+  /// played at once.
+  private func playLately(completion: @escaping () -> ()) {
+    let songs = onPhonePlayables(sharedHome?.latelyMix?.songs ?? [])
+    guard !songs.isEmpty else {
+      presentCarAlert("Not enough music on this phone matches lately yet", completion: completion)
+      return
+    }
+    appDelegate.player.play(context: PlayContext(name: "Lately", playables: songs))
+    displayNowPlaying { completion() }
+  }
+
+  /// A door's mix, fetched and played at once (the car has no preview sheet). One door loads
+  /// at a time; a result that arrives after something else started playing is dropped, so a
+  /// slow network never yanks away what the driver chose since. `completion` runs on every
+  /// path.
+  private func playDoor(key: String, label: String, completion: @escaping () -> ()) {
+    guard session.doorLoad == nil else { completion(); return }
+    let token = UUID()
+    session.doorLoad = token
+    session.doorLoadOvertaken = false
+    Task { @MainActor [weak self] in
+      let outcome = await MixtapePlayback.makeDoorMix(doorKey: key)
+      // A disconnect or an account change replaced the session: drop it.
+      guard let self, self.session.doorLoad == token else { completion(); return }
+      let overtaken = self.session.doorLoadOvertaken
+      self.session.doorLoad = nil
+      self.session.doorLoadOvertaken = false
+      guard !overtaken else { completion(); return }
+      switch outcome {
+      case let .ok(name, songs):
+        self.appDelegate.player.play(context: PlayContext(name: name, playables: songs))
+        self.displayNowPlaying { completion() }
+      case .notEnough:
+        self.presentCarAlert("Not enough of your music fits \(label) yet", completion: completion)
+      case .nothingOnPhone:
+        self.presentCarAlert("None of \(label) is on this phone yet", completion: completion)
+      case .unavailable:
+        self.presentCarAlert("Can't make \(label) right now", completion: completion)
+      }
+    }
+  }
+
+  /// The player's queue changed (anything played, from the car or the phone): a door mix
+  /// still loading must not take over when it lands. Called from the player notifier.
+  func noteQueueChangedForDoorLoad() {
+    if session.doorLoad != nil { session.doorLoadOvertaken = true }
+  }
+
+  /// A one-line car alert with a single OK that dismisses it. Always presented with a
+  /// completion, so a refused present is reported rather than raised.
+  func presentCarAlert(_ message: String, completion: @escaping () -> ()) {
+    guard let interfaceController else { completion(); return }
+    let ok = CPAlertAction(title: "OK", style: .cancel) { [weak self] _ in
+      self?.interfaceController?.dismissTemplate(animated: true) { _, _ in }
+    }
+    let alert = CPAlertTemplate(titleVariants: [message], actions: [ok])
+    interfaceController.presentTemplate(alert, animated: true) { _, _ in }
+    completion()
+  }
+}
+
+// MARK: - Radio tiles and rows (phone-taste)
+
+extension CarPlaySceneDelegate {
+  /// A station's words from the bundled radio catalog: its own name (else the hub's), and its
+  /// network, or "Live" when the network is the station itself (nil for a station the catalog
+  /// does not know).
+  private func radioWords(_ radio: Radio) -> (name: String, line: String?, info: RadioCatalogStation?) {
+    let info = RadioCatalog.shared.station(forStreamUrl: radio.url)
+    let name = info?.name ?? radio.title
+    let line = info.map { $0.sourceLabel != $0.name ? $0.sourceLabel : "Live" }
+    return (name, line, info)
+  }
+
+  /// The station's logo when it is already in memory, else a word picture in its colour.
+  private func radioArt(info: RadioCatalogStation?, name: String, slot: CarPlayStyle.Slot) -> UIImage {
+    if let url = info?.image, !url.isEmpty, let logo = RadioArtLoader.shared.cachedImage(for: url) {
+      return style.artwork(logo, kind: .radio, name: name, slot: slot)
+    }
+    let color = info.flatMap { UIColor(cassetteHexString: $0.accent) }
+      ?? UIColor.cassette(.surfaceElevated)
+    return style.wordArt(word: name, color: color, slot: slot)
+  }
+
+  /// Fetches the station's logo when it has one that is not in memory yet, and hands it over
+  /// drawn for `slot`. Offline the word picture simply stays.
+  private func loadRadioLogo(
+    info: RadioCatalogStation?,
+    name: String,
+    slot: CarPlayStyle.Slot,
+    apply: @escaping (UIImage) -> ()
+  ) {
+    guard let url = info?.image, !url.isEmpty, RadioArtLoader.shared.cachedImage(for: url) == nil
+    else { return }
+    Task { @MainActor [weak self] in
+      guard let logo = await RadioArtLoader.shared.image(for: url), let self else { return }
+      apply(self.style.artwork(logo, kind: .radio, name: name, slot: slot))
+    }
+  }
+
+  fileprivate func makeRadioElement(_ radio: Radio) -> CPListImageRowItemRowElement {
+    let words = radioWords(radio)
+    let element = CPListImageRowItemRowElement(
+      image: radioArt(info: words.info, name: words.name, slot: .shelf),
+      title: words.name,
+      subtitle: words.line
+    )
+    loadRadioLogo(info: words.info, name: words.name, slot: .shelf) { [weak element] logo in
+      element?.image = logo
+    }
+    return element
+  }
+
+  /// The Radio row's list: the same name, line and picture at row size. A tap plays the
+  /// station and shows Now Playing, as the tile does.
+  fileprivate func makeRadioRow(_ radio: Radio) -> CPListItem {
+    let words = radioWords(radio)
+    let item = CPListItem(
+      text: words.name,
+      detailText: words.line,
+      image: radioArt(info: words.info, name: words.name, slot: .row),
+      accessoryImage: nil,
+      accessoryType: .none
+    )
+    loadRadioLogo(info: words.info, name: words.name, slot: .row) { [weak item] logo in
+      item?.setImage(logo)
+    }
+    item.handler = { [weak self] _, completion in
+      guard let self else { completion(); return }
+      appDelegate.player.play(context: PlayContext(containable: radio))
+      displayNowPlaying { completion() }
+    }
+    return item
   }
 }
