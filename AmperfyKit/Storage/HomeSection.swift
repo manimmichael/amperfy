@@ -73,26 +73,32 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   // Ordinal 19. Takes the Albums row's place on Home when it has anything to show.
   case moreLikeLately
 
-  // cassette redesign (Surface 4): Resume leads the Home IA again — a
-  // single full-width card sourced from the lastPlayedDate FRCs. The four
-  // shelves follow (Recent = recently played; typed shelves = browse).
+  // cassette redesign (Surface 4): Resume leads the Home IA again - a
+  // single full-width card sourced from the lastPlayedDate FRCs.
+  //
+  // phone-taste (approved phone mock, 2026-10-20): the mock's rows come straight under
+  // Resume, in the mock's order: ON REPEAT, the time-of-day row, MOOD, MORE LIKE. The
+  // rows the mock does not draw stay below them until the founder decides on them.
+  // CarPlay keeps its own list (CarPlayHomeTabExtension.carPlayHomeSections).
   public static let defaultValue: [HomeSection] = [
     .resume,
-    .recent,
     // cassette 2026-10-20: what you are into now, and what you play at this time.
     .onRepeat,
     .aroundNow,
-    // cassette 2026-10-13: the dial on Home — stations ranked by what you
+    // phone-taste: the approved mock puts Mood right after the time-of-day row (it
+    // used to sit below Playlists).
+    .moodDoors,
+    .moreLikeLately,
+    // cassette: "Albums" is the from-your-collection shelf (`.forgottenAlbums`,
+    // retitled). It sits right after More Like Lately so it fills that slot whenever
+    // More Like is empty (HomeManager clears Albums while More Like has rows). The old
+    // played->newest "Albums" row (`.recentlyAdded`) is retired from Home.
+    .forgottenAlbums,
+    .recent,
+    // cassette 2026-10-13: the dial on Home - stations ranked by what you
     // listen to and what you own (HomeManager.updateRadios).
     .radios,
     .yourPlaylists,
-    // cassette: Mood sits right below Playlists, per founder direction.
-    .moodDoors,
-    // cassette: "Albums" is now the from-your-collection shelf (`.forgottenAlbums`,
-    // retitled). The old played->newest "Albums" row (`.recentlyAdded`) is retired
-    // from Home — `Recent` covers recently-played albums.
-    .moreLikeLately,
-    .forgottenAlbums,
     .recentlyPlayedArtists,
   ]
 

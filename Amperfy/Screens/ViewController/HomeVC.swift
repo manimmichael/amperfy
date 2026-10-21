@@ -32,8 +32,9 @@ final class HomeVC: UICollectionViewController {
   private var dataSource: UICollectionViewDiffableDataSource<HomeSection, HomeItem>!
   private let log = OSLog(subsystem: "Amperfy", category: "HomeVC")
 
-  private static let itemWidth: CGFloat = 160.0
-  private static let shelfEstimatedHeight: CGFloat = 210.0
+  /// phone-taste: the mock's 150pt tiles (`PlayTile`) in its 20pt gutter.
+  private static let itemWidth: CGFloat = AlbumCarousel.mockItemWidth
+  private static let shelfEstimatedHeight: CGFloat = AlbumShelfView.preferredHeight(for: .mock)
 
   private var userButton: UIButton?
   private var userBarButtonItem: UIBarButtonItem?
@@ -48,6 +49,8 @@ final class HomeVC: UICollectionViewController {
   // updates" in place (no height change) while a pull-triggered refresh runs.
   private var isCheckingForUpdates = false
   private var pullPastThreshold = false
+  /// The Lately mix generation the Mood row was last drawn with (see applySnapshot).
+  private var appliedLatelyGeneration: Int?
 
   // MARK: - Init
 
@@ -178,6 +181,16 @@ final class HomeVC: UICollectionViewController {
       name: CassetteBetaAccess.changedNotification,
       object: nil
     )
+
+    // phone-taste: rebuild MOOD and MORE LIKE when the mood tags or the lately profile
+    // arrive (posted on the main actor by LibraryMoods), instead of waiting for the next
+    // unrelated recompute.
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(cassetteLibraryMoodsChanged),
+      name: .cassetteLibraryMoodsChanged,
+      object: nil
+    )
   }
 
   // cassette (manual eager tab-bar reveal): drive minimize/expand from scroll
@@ -244,6 +257,15 @@ final class HomeVC: UICollectionViewController {
     applySnapshot(animated: false)
   }
 
+  /// New mood tags or a new lately profile: drop the cached lately snapshot and rebuild
+  /// the rows. HomeManager defers the rebuild while Home is off screen (isHostVisible);
+  /// the apply that follows redraws the Mood row when the Lately mix changed.
+  @objc
+  private func cassetteLibraryMoodsChanged() {
+    LatelyLibrary.invalidate()
+    sharedHome.refreshListeningShelves()
+  }
+
   @objc
   private func cassetteSyncActiveChanged() {
     updateSyncBannerPresentation(animated: true)
@@ -278,17 +300,18 @@ final class HomeVC: UICollectionViewController {
     title = "Home"
     // cassette: Home wears its name inline, the way Library wears "Albums".
     // The large title used to eat a full title-height band at the top and
-    // then animate away on the first scroll — two different-looking Homes for
-    // the same screen. Inline at `.sectionTitle` (the exact token the Library
-    // dropdown uses) means the header never changes and the first shelf sits
-    // that much higher.
+    // then animate away on the first scroll - two different-looking Homes for
+    // the same screen. Inline means the header never changes and the first shelf
+    // sits that much higher. phone-taste: the inline title is `.navTitle`, the
+    // mock's nav-bar title (`.navTitle`, SemiBold); the Library tab makes the same
+    // change, so the two tabs' titles still match.
     navigationItem.largeTitleDisplayMode = .never
     navigationController?.navigationBar.prefersLargeTitles = false
     let appearance = UINavigationBarAppearance()
     appearance.configureWithDefaultBackground()
     appearance.titleTextAttributes = [
-      .font: UIFont.cassette(.sectionTitle),
-      .foregroundColor: CassetteTheme.UIColors.ink,
+      .font: UIFont.cassette(.navTitle),
+      .foregroundColor: UIColor.cassette(.textPrimary),
     ]
     navigationItem.standardAppearance = appearance
     navigationItem.scrollEdgeAppearance = appearance
@@ -350,8 +373,15 @@ final class HomeVC: UICollectionViewController {
 
     // cassette Patch 025 / Polish 2 (A2): top inset is 0 (the SectionHeaderView
     // owns the vertical rhythm) and supplementariesFollowContentInsets is false
-    // so the header's own 16pt leading lines up with the first card column.
-    let contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 24, trailing: 16)
+    // so the header's own leading lines up with the first card column.
+    // phone-taste: the mock's `.shelf` (padding 0 20 2); the next row's heading brings
+    // its own 28pt of air (`.block`).
+    let contentInsets = NSDirectionalEdgeInsets(
+      top: 0,
+      leading: AlbumCarousel.mockGutter,
+      bottom: 2,
+      trailing: AlbumCarousel.mockGutter
+    )
 
     // cassette: .moodDoors is header-only (zero HomeItems — see
     // HomeSection.swift) — a near-zero item group, all real height comes
@@ -375,9 +405,10 @@ final class HomeVC: UICollectionViewController {
         trailing: 0
       )
       sectionLayout.supplementariesFollowContentInsets = false
+      // phone-taste: 28 above the MOOD heading, the heading, 12, a 150pt tile, 2.
       let headerSize = NSCollectionLayoutSize(
         widthDimension: .fractionalWidth(1.0),
-        heightDimension: .estimated(180)
+        heightDimension: .estimated(224)
       )
       let header = NSCollectionLayoutBoundarySupplementaryItem(
         layoutSize: headerSize,
@@ -397,11 +428,12 @@ final class HomeVC: UICollectionViewController {
         itemWidth: itemWidth,
         estimatedHeight: shelfEstimatedHeight,
         contentInsets: contentInsets,
+        interGroupSpacing: 12,
         includeHeader: true
       )
     }
 
-    // Resume: a single full-width glass card (no orthogonal scrolling).
+    // Resume: a single full-width card lit by its record (no orthogonal scrolling).
     let itemSize = NSCollectionLayoutSize(
       widthDimension: .fractionalWidth(1.0),
       heightDimension: .fractionalHeight(1.0)
@@ -413,23 +445,16 @@ final class HomeVC: UICollectionViewController {
     )
     let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
 
+    // phone-taste: no clock greeting above the card (the mock dropped it). The card
+    // sits 18pt under the nav bar in the 20pt gutter (`.resume`, margin 18 20 0); the
+    // first row's heading brings its own 28pt.
     let sectionLayout = NSCollectionLayoutSection(group: group)
-    sectionLayout.contentInsets = contentInsets
-    sectionLayout.supplementariesFollowContentInsets = false
-
-    let headerSize = NSCollectionLayoutSize(
-      widthDimension: .fractionalWidth(1.0),
-      heightDimension: .estimated(44)
+    sectionLayout.contentInsets = NSDirectionalEdgeInsets(
+      top: 18,
+      leading: AlbumCarousel.mockGutter,
+      bottom: 0,
+      trailing: AlbumCarousel.mockGutter
     )
-    let header = NSCollectionLayoutBoundarySupplementaryItem(
-      layoutSize: headerSize,
-      elementKind: UICollectionView.elementKindSectionHeader,
-      alignment: .top
-    )
-    header.pinToVisibleBounds = false
-    header.zIndex = 1
-    sectionLayout.boundarySupplementaryItems = [header]
-
     return sectionLayout
   }
 
@@ -480,16 +505,16 @@ final class HomeVC: UICollectionViewController {
       HomeItem
     >(collectionView: collectionView) { [unowned self] collectionView, indexPath, item in
       let section = dataSource.snapshot().sectionIdentifiers.element(at: indexPath.section)
-      // cassette redesign (Surface 4): the Resume card is the screen's one
-      // dedicated play surface — the shelf cards below navigate only, so
-      // the old Recent[0] play overlay (Patch 069) is retired.
+      // phone-taste: every cover plays in one tap (approved phone mock 2026-10-20). The
+      // Resume card's disc resumes; each album, playlist and artist tile below carries the
+      // 34pt play disc, and its body still opens the page. Radio tiles tune in on a tap.
       if section == .resume {
         let cell = collectionView.dequeueReusableCell(
           withReuseIdentifier: ResumeCardCell.typeName,
           for: indexPath
         ) as! ResumeCardCell
         let containable = item.playableContainable
-        cell.display(container: containable)
+        cell.display(container: containable, resumeLine: resumeLine(for: containable))
         // Reflect an in-flight pull-to-refresh: the card shows "Checking for
         // updates" in place instead of a height-changing pull spinner.
         cell.setChecking(isCheckingForUpdates)
@@ -500,23 +525,28 @@ final class HomeVC: UICollectionViewController {
           // restores its queue + musicIndex on launch; play() resumes that
           // current track and we seek it to its saved playProgress (the
           // backend defers the seek until the item is ready). The seek is done
-          // explicitly here so ONLY the Resume card resumes mid-track — the
+          // explicitly here so ONLY the Resume card resumes mid-track - the
           // global isPlayerSongPlaybackResumeEnabled setting is left untouched.
-          // Falls back to playing the container when nothing is queued to
-          // resume.
+          //
+          // phone-taste: the card plays what it shows. It resumes mid-track ONLY when
+          // the player's current song belongs to the card's record (the same album, a
+          // song in the playlist, a song by the artist). Anything else, a radio
+          // station or a podcast included, plays the card's record from the top, with
+          // only the songs on this phone.
           let player = appDelegate.player
-          if let resumeTrack = player.currentMusicItem {
+          if player.playerMode == .music, let resumeTrack = currentSong(in: containable) {
             player.play()
             if resumeTrack.playProgress > 0 {
               player.seek(toSecond: Double(resumeTrack.playProgress))
             }
           } else {
-            player.play(context: PlayContext(containable: containable))
+            OneTapPlay.play(containable)
           }
         }
         return cell
       }
       if let radio = item.playableContainable as? Radio {
+        // A station has no play disc: the tile itself tunes in (didSelectItemAt).
         let cell = collectionView.dequeueReusableCell(
           withReuseIdentifier: RadioShelfCell.typeName,
           for: indexPath
@@ -529,15 +559,25 @@ final class HomeVC: UICollectionViewController {
           withReuseIdentifier: ArtistCircleCollectionCell.typeName,
           for: indexPath
         ) as! ArtistCircleCollectionCell
-        cell.display(artist: artist)
+        // The disc shuffles the artist (OneTapPlay); the circle opens the artist page.
+        cell.onPlayTapped = { OneTapPlay.play(artist) }
+        cell.display(artist: artist, showsPlayOverlay: true, metrics: .homeShelf)
         return cell
       }
       let cell = collectionView.dequeueReusableCell(
         withReuseIdentifier: AlbumCollectionCell.typeName,
         for: indexPath
       ) as! AlbumCollectionCell
+      let container = item.playableContainable
+      // Set before display(): the tile reads them while it binds, and prepareForReuse
+      // clears them. The disc plays an album from the top and a playlist in order, and
+      // Home stays put (the mini player appears).
+      if container is Album || container is Playlist {
+        cell.showsPlayOverlay = true
+        cell.onPlayTapped = { OneTapPlay.play(container) }
+      }
       cell.display(
-        container: item.playableContainable,
+        container: container,
         rootView: self,
         itemWidth: Self.itemWidth,
         initialIndexPath: indexPath
@@ -559,7 +599,9 @@ final class HomeVC: UICollectionViewController {
           withReuseIdentifier: MoodDoorsHeaderView.reuseID,
           for: indexPath
         ) as? MoodDoorsHeaderView, let self else { return nil }
-        moodHeader.configure(parentViewController: self)
+        // phone-taste: the Lately tile shows and plays the mix HomeManager already
+        // built, so opening Home never builds it on the main thread.
+        moodHeader.configure(parentViewController: self, latelyMix: sharedHome.latelyMix)
         return moodHeader
       }
 
@@ -571,16 +613,9 @@ final class HomeVC: UICollectionViewController {
       else {
         return nil
       }
-      // cassette redesign (Surface 4): the Resume section's header is the
-      // greeting line — quiet DM Mono, not a shelf title (and definitely
-      // not Newsreader, which isn't bundled).
-      if snapshotSection == .resume {
-        header.style = .greeting
-        header.title = Self.greetingText()
-      } else {
-        header.style = .shelf
-        header.title = snapshotSection.title
-      }
+      // phone-taste: every row title in two voices, the shout and its answer.
+      let heading = Self.heading(for: snapshotSection)
+      header.configure(shout: heading.shout, answer: heading.answer)
       // cassette Patch 035: every shelf is deterministic now; no
       // refresh button surfaces on any header.
       header.showsRefreshButton = false
@@ -593,14 +628,77 @@ final class HomeVC: UICollectionViewController {
     }
   }
 
-  /// cassette redesign (Surface 4): time-of-day greeting above the Resume
-  /// card, set in DM Mono caps like the app's other data labels.
-  private static func greetingText() -> String {
-    switch Calendar.current.component(.hour, from: Date()) {
-    case 5 ..< 12: return "GOOD MORNING"
-    case 12 ..< 18: return "GOOD AFTERNOON"
-    default: return "GOOD EVENING"
+  /// phone-taste: a Home row's title in two voices (approved phone mock 2026-10-20: "rows
+  /// of music, renamed and nothing else"). Home's own copy, deliberately not
+  /// `HomeSection.title`: CarPlay, the Home editor and the Radio play context read that.
+  /// Rows the mock does not draw get the shout alone.
+  private static func heading(
+    for section: HomeSection,
+    now: Date = Date()
+  )
+    -> (shout: String, answer: String?) {
+    switch section {
+    case .onRepeat: return ("ON REPEAT", "lately")
+    case .aroundNow: return (ListeningShelves.aroundNowTitle(now: now).uppercased(), "around now")
+    case .moreLikeLately: return ("MORE LIKE", "this month")
+    case .forgottenAlbums: return ("ALBUMS", nil)
+    case .recent: return ("RECENT", nil)
+    case .radios: return ("RADIO", nil)
+    case .yourPlaylists: return ("PLAYLISTS", nil)
+    case .recentlyPlayedArtists: return ("ARTISTS", nil)
+    case .moodDoors: return ("MOOD", nil)
+    default: return (section.title.uppercased(), nil)
     }
+  }
+
+  // MARK: - Resume
+
+  /// The player's current song when it belongs to `container`: the same album, a song in
+  /// the playlist, or a song by the artist (its own artist or its album's).
+  private func currentSong(in container: PlayableContainable) -> Song? {
+    guard let song = appDelegate.player.currentMusicItem?.asSong,
+          Self.song(song, belongsTo: container)
+    else { return nil }
+    return song
+  }
+
+  private static func song(_ song: Song, belongsTo container: PlayableContainable) -> Bool {
+    if let album = container as? Album {
+      return !album.id.isEmpty && song.album?.id == album.id
+    }
+    if let artist = container as? Artist {
+      guard !artist.id.isEmpty else { return false }
+      return song.artist?.id == artist.id || song.album?.artist?.id == artist.id
+    }
+    if let playlist = container as? Playlist {
+      return playlist.managedObject.items.contains { $0.playable.id == song.id }
+    }
+    return false
+  }
+
+  /// The Resume card's second line answers "where was I" with a song: the song playing
+  /// now when it belongs to the card's record, else the record's most recently played
+  /// song (other devices' plays included, via CloudPlayReconciler), else the record's
+  /// own subtitle.
+  private func resumeLine(for container: PlayableContainable) -> String? {
+    if let song = currentSong(in: container) { return song.title }
+    let songs: [AbstractPlayable]
+    if let album = container as? Album {
+      songs = album.songs
+    } else if let playlist = container as? Playlist {
+      songs = playlist.playables
+    } else if let artist = container as? Artist {
+      songs = artist.songs
+    } else {
+      songs = []
+    }
+    var latest: (date: Date, title: String)?
+    for song in songs {
+      guard let date = song.lastTimePlayed else { continue }
+      if let current = latest, current.date >= date { continue }
+      latest = (date, song.title)
+    }
+    return latest?.title ?? container.subtitle
   }
 
   /// cassette Patch 042: returns the handler that fires when the
@@ -649,12 +747,16 @@ final class HomeVC: UICollectionViewController {
       // populates, and skip the empty-shelf guard below that every other
       // section relies on to hide itself when it has nothing to show.
       if section == .moodDoors {
-        // cassette (BUG-348): the Mood shelf renders only for accounts in the
+        // cassette (BUG-348): the mood doors render only for accounts in the
         // Mixtape beta. The door API answers 404 otherwise, so an opted-out
         // account must never see tiles that can only fail.
-        // cassette 2026-10-20: also shown without the beta when the phone has mood tags,
-        // for the Lately tile alone (MoodDoorRow).
-        guard CassetteBetaAccess.isBetaTester || LibraryMoods.shared.hasTags else { continue }
+        // phone-taste: without the beta the row shows only when there is a Lately mix
+        // to play (never an empty Mood row). This reads the mix HomeManager already
+        // built; never call LatelyLibrary.snapshot here, because on a cache miss it walks
+        // the whole library on the main thread and this also runs from the sync banner
+        // and beta paths.
+        let hasLatelyMix = !(sharedHome.latelyMix?.songs.isEmpty ?? true)
+        guard CassetteBetaAccess.isBetaTester || hasLatelyMix else { continue }
         snapshot.appendSections([section])
         continue
       }
@@ -667,6 +769,24 @@ final class HomeVC: UICollectionViewController {
       snapshot.appendItems(items, toSection: section)
       totalItems += items.count
     }
+    let current = dataSource.snapshot()
+    // phone-taste: redraw the Resume card on every apply, so its song line follows the
+    // track (a new track inside the same album keeps the item's identity). Only items
+    // already on screen are reconfigured; a new one is configured as it is inserted.
+    if snapshot.sectionIdentifiers.contains(.resume) {
+      let shown = snapshot.itemIdentifiers(inSection: .resume)
+        .filter { current.indexOfItem($0) != nil }
+      if !shown.isEmpty { snapshot.reconfigureItems(shown) }
+    }
+    // phone-taste: the Mood row is SwiftUI hosted in a header, so it only picks up a new
+    // Lately mix when the header is rebuilt. Reload the section when the mix changed.
+    let latelyGeneration = sharedHome.latelyMix?.generation
+    if latelyGeneration != appliedLatelyGeneration,
+       snapshot.sectionIdentifiers.contains(.moodDoors),
+       current.sectionIdentifiers.contains(.moodDoors) {
+      snapshot.reloadSections([.moodDoors])
+    }
+    appliedLatelyGeneration = latelyGeneration
     // cassette (CarPlay off-window crash): never run the animated diff while Home is
     // off-window (CarPlay is the active scene). An animated apply against a collection
     // view that is not in any window is the production SIGTRAP; a non-animated apply
@@ -708,14 +828,13 @@ final class HomeVC: UICollectionViewController {
     sharedHome.createFetchController()
   }
 
-  /// cassette Patch 035: builds the screen-specific entries that
-  /// get prepended to the account-button menu on the Home tab.
-  /// Today: only "Edit Home." Other tabs pass no extras and see
-  /// the unmodified account menu.
+  /// cassette Patch 035: builds the Home tab's own entry in the account-button menu,
+  /// "Edit Home", which now sits beside Settings (the account menu places it). Other
+  /// tabs pass no extras and see the unmodified account menu.
   private func makeHomeMenuExtras() -> [UIMenuElement] {
     let editHome = UIAction(
       title: "Edit Home",
-      image: UIImage(systemName: "slider.horizontal.3"),
+      image: CassetteIcon.adjust.uiImage,
       handler: { [weak self] _ in
         self?.presentSectionEditor()
       }
@@ -729,12 +848,15 @@ final class HomeVC: UICollectionViewController {
   func presentSectionEditor() {
     let editor = HomeEditorVC(current: sharedHome.orderedVisibleSections) { [weak self] newOrder in
       guard let self else { return }
-      // cassette redesign (Surface 4): Resume isn't editable — the editor
-      // only surfaces the shelves, so re-pin the Resume card to the top.
-      sharedHome.orderedVisibleSections = [.resume] + newOrder.filter { $0 != .resume }
+      // phone-taste: the editor only shows and hides the editable rows, so Done must
+      // keep every other row (Resume, On Repeat, the time-of-day row, Mood, More Like,
+      // Radio) where the default order puts them. It used to set [.resume] + the
+      // editor's rows, which dropped all of those until the next launch.
+      let merged = Self.homeSections(keepingEditable: newOrder)
+      sharedHome.orderedVisibleSections = merged
       if let accountInfo = appDelegate.storage.settings.accounts.active {
         appDelegate.storage.settings.accounts.updateSetting(accountInfo) { accountSettings in
-          accountSettings.homeSections = newOrder
+          accountSettings.homeSections = merged
         }
       }
       applySnapshot(animated: true)
@@ -745,6 +867,24 @@ final class HomeVC: UICollectionViewController {
     let nav = UINavigationController(rootViewController: editor)
     nav.modalPresentationStyle = .formSheet
     present(nav, animated: true)
+  }
+
+  /// Home's rows after Edit Home: the default order, with the editable rows the person
+  /// hid taken out and the default's editable slots filled, in order, by the editable
+  /// rows they kept, in their order. Every other row stays where the default puts it.
+  static func homeSections(keepingEditable kept: [HomeSection]) -> [HomeSection] {
+    let editable = Set(HomeSection.editableSections)
+    var seen = Set<HomeSection>()
+    var queue = kept.filter { editable.contains($0) && seen.insert($0).inserted }
+    var result = [HomeSection]()
+    for section in HomeSection.defaultValue {
+      if editable.contains(section) {
+        if !queue.isEmpty { result.append(queue.removeFirst()) }
+      } else {
+        result.append(section)
+      }
+    }
+    return result
   }
 
   // MARK: - Selection Handling
@@ -856,8 +996,15 @@ extension HomeVC {
       }
       return vc
     }) { suggestedActions in
-      var playIndexCB: (() -> PlayContext?)?
-      playIndexCB = { PlayContext(containable: containable) }
+      // phone-taste: the long-press Play queues what the play disc would, only the
+      // songs on this phone (OneTapPlay), never the record's whole server track list.
+      let playIndexCB: GetPlayContextCallback = {
+        PlayContext(
+          containable: containable,
+          index: 0,
+          playables: OneTapPlay.playables(of: containable)
+        )
+      }
       return EntityPreviewActionBuilder(
         container: containable,
         on: self,
@@ -888,31 +1035,6 @@ extension HomeVC {
 final class SectionHeaderView: UICollectionReusableView {
   static let reuseID = "SectionHeaderView"
 
-  /// cassette redesign (Surface 4): the Resume section's header is the
-  /// greeting line (Barlow, `.greeting` role); the shelves keep the Barlow
-  /// section title.
-  enum Style {
-    case shelf
-    case greeting
-  }
-
-  var style: Style = .shelf {
-    didSet {
-      switch style {
-      case .shelf:
-        titleLabel.font = UIFont.cassette(.sectionTitle)
-        titleLabel.textColor = CassetteTheme.UIColors.ink
-      case .greeting:
-        // cassette Patch 104 (Root 4): the greeting used to render in 12pt
-        // metadata mono — a fallback after Newsreader was dropped — which
-        // read as a tiny caption. It now uses the dedicated `.greeting`
-        // role (Barlow Condensed SemiBold 20pt, ink).
-        titleLabel.font = UIFont.cassette(.greeting)
-        titleLabel.textColor = CassetteTheme.UIColors.ink
-      }
-    }
-  }
-
   private let refreshButton: UIButton = {
     let btn = UIButton(type: .system)
     btn.translatesAutoresizingMaskIntoConstraints = false
@@ -927,14 +1049,13 @@ final class SectionHeaderView: UICollectionReusableView {
     return btn
   }()
 
+  /// phone-taste: the row title in two voices on one line (CassetteHeading): the Barlow
+  /// shout in ink, then the answer in the serif italic in brand orange (Home row answers
+  /// only). It truncates at the tail rather than push the chevron off the row.
   private let titleLabel: UILabel = {
-    let lbl = UILabel()
-    lbl.translatesAutoresizingMaskIntoConstraints = false
-    // cassette Patch 032: section title routes through .sectionTitle
-    // (22pt bold display) — consistent with empty-state titles and other
-    // section headings.
-    lbl.font = UIFont.cassette(.sectionTitle)
-    lbl.textColor = CassetteTheme.UIColors.ink
+    let lbl = CassetteHeading.makeLabel()
+    lbl.setContentHuggingPriority(.required, for: .horizontal)
+    lbl.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     return lbl
   }()
 
@@ -951,11 +1072,8 @@ final class SectionHeaderView: UICollectionReusableView {
     // of the title it sits beside, and ink (not ink2) stops it looking
     // half-disabled. The Library dropdown chevron is semibold/12 for the same
     // reason.
-    iv.image = UIImage(
-      systemName: "chevron.right",
-      withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)
-    )
-    iv.tintColor = CassetteTheme.UIColors.ink
+    iv.image = CassetteIcon.chevronRight.symbolImage(size: .small, weight: .bold)
+    iv.tintColor = UIColor.cassette(.textPrimary)
     // `.center`, not `.scaleAspectFit`: aspect-fit would rescale the glyph to
     // the box and throw away the point size we just set.
     iv.contentMode = .center
@@ -997,11 +1115,18 @@ final class SectionHeaderView: UICollectionReusableView {
     }
   }
 
-  var title: String? {
-    didSet {
-      titleLabel.text = title
-      tapButton.accessibilityLabel = title
-    }
+  /// phone-taste: the row title in two voices, the SHOUT and its answer ("ON REPEAT
+  /// lately"). `answer` nil draws the shout alone.
+  func configure(shout: String, answer: String?) {
+    titleLabel.attributedText = CassetteHeading.attributed(
+      shout: shout,
+      answer: answer,
+      answerColor: UIColor.cassette(.accentAnswer)
+    )
+    // VoiceOver reads "On Repeat, lately", not a spelled-out run of capitals.
+    let spoken = CassetteHeading.accessibilityLabel(shout: shout.capitalized, answer: answer)
+    titleLabel.accessibilityLabel = spoken
+    tapButton.accessibilityLabel = spoken
   }
 
   override init(frame: CGRect) {
@@ -1019,14 +1144,14 @@ final class SectionHeaderView: UICollectionReusableView {
     tapHandler = nil
     setRefreshHandler(nil)
     showsRefreshButton = false
-    style = .shelf
+    titleLabel.attributedText = nil
+    titleLabel.accessibilityLabel = nil
+    tapButton.accessibilityLabel = nil
   }
 
-  /// cassette Patch 025: give the section title room to breathe. The
-  /// XIB previously pinned title flush top-to-bottom; now there's
-  /// 16pt above it (separating it from the previous section's bottom
-  /// inset / nav-bar zone) and 8pt below it (gap to the first cell
-  /// row, replacing the section `contentInsets.top` that was zeroed).
+  /// cassette Patch 025: give the section title room to breathe.
+  /// phone-taste: the mock's `.block` / `.head` rhythm: 28pt above the heading, 12pt
+  /// down to the row, in the 20pt gutter (CassetteHeading's spacing).
   ///
   /// cassette Patch 042: also hosts the optional chevron and the
   /// transparent tap target.
@@ -1039,12 +1164,22 @@ final class SectionHeaderView: UICollectionReusableView {
     // title (6pt gap) instead of floating against the trailing edge. On Home
     // it reads "tap into this shelf"; in Library the same glyph (rotated to
     // chevron.down) reads "dropdown". The trailing region is intentionally
-    // empty space.
-    titleLabel.setContentHuggingPriority(.required, for: .horizontal)
+    // empty space. phone-taste: the title gives way first (its compression
+    // resistance is low), so a long answer truncates before the chevron moves.
+    // The bottom pin sits just under required so the self-sizing pass, not the
+    // estimated height, sets the header's height.
+    let bottom = titleLabel.bottomAnchor.constraint(
+      equalTo: bottomAnchor,
+      constant: -CassetteHeading.bottomSpacing
+    )
+    bottom.priority = UILayoutPriority(999)
     NSLayoutConstraint.activate([
-      titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 16),
-      titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+      titleLabel.leadingAnchor.constraint(
+        equalTo: leadingAnchor,
+        constant: CassetteHeading.sideInset
+      ),
+      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: CassetteHeading.topSpacing),
+      bottom,
 
       chevronImageView.leadingAnchor.constraint(
         equalTo: titleLabel.trailingAnchor,
@@ -1052,13 +1187,16 @@ final class SectionHeaderView: UICollectionReusableView {
       ),
       chevronImageView.trailingAnchor.constraint(
         lessThanOrEqualTo: trailingAnchor,
-        constant: -16
+        constant: -CassetteHeading.sideInset
       ),
       chevronImageView.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
       chevronImageView.widthAnchor.constraint(equalToConstant: 14),
       chevronImageView.heightAnchor.constraint(equalToConstant: 18),
 
-      refreshButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+      refreshButton.trailingAnchor.constraint(
+        equalTo: trailingAnchor,
+        constant: -CassetteHeading.sideInset
+      ),
       refreshButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
 
       tapButton.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
@@ -1090,10 +1228,9 @@ extension UIFont {
 /// is something to say about the hub (the person's Cassette Player): music arriving
 /// ("Syncing 3 of 12 albums from Michael's MacBook Pro") or the hub out of reach with
 /// albums waiting ("Can't reach Michael's MacBook Pro · new music arrives when it's
-/// back"). When everything is in sync it is hidden; the account menu keeps the quiet
-/// "Synced 5m ago". Text comes from `CassetteSyncStatus.statusLine`. It replaced the
-/// two-line "SYNCING YOUR LIBRARY" card with its indeterminate bar (founder 2026-10-20:
-/// "clean and minimal").
+/// back"). When everything is in sync it is hidden. Text comes from
+/// `CassetteSyncStatus.statusLine`. It replaced the two-line "SYNCING YOUR LIBRARY" card
+/// with its indeterminate bar (founder 2026-10-20: "clean and minimal").
 ///
 /// Defined here rather than in its own file on purpose: HomeVC is the only caller.
 final class SyncBannerView: UIView {

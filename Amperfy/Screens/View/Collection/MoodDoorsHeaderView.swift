@@ -40,14 +40,17 @@ final class MoodDoorsHeaderView: UICollectionReusableView {
   /// can outlive the view controller that first hosted it (e.g. across a
   /// pull-to-refresh), so the hosting controller is torn down and rebuilt on
   /// every configure rather than only once in init.
-  func configure(parentViewController: UIViewController) {
+  ///
+  /// phone-taste: `latelyMix` is HomeManager's Lately mix (nil when there is none). The
+  /// row draws and plays exactly that mix, and never builds one itself.
+  func configure(parentViewController: UIViewController, latelyMix: HomeManager.LatelyMix?) {
     self.parentViewController = parentViewController
 
     hostingController?.willMove(toParent: nil)
     hostingController?.view.removeFromSuperview()
     hostingController?.removeFromParent()
 
-    let row = MoodDoorRow { [weak self, weak parentViewController] mixtape in
+    let row = MoodDoorRow(latelyMix: latelyMix) { [weak self, weak parentViewController] mixtape in
       parentViewController?.presentMixtapePreview(mixtape)
       _ = self // keep the row's callback alive for the lifetime of this configure
     }
