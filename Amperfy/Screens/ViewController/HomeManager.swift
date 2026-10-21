@@ -182,9 +182,10 @@ class HomeManager: NSObject {
   }
 
   /// The current Lately mix, or nil when there is no lately profile (no mood tags or no
-  /// recent listening). It is drawn again only when what it is drawn from changes (new
-  /// mood tags, a new lately profile from the cloud, or more tagged music on the phone),
-  /// never on a play, a pause or a cache expiry. Songs that leave the phone drop out of it
+  /// recent listening). It is drawn again only when what it is drawn from changes (a new
+  /// day, new mood tags, a new lately profile from the cloud, or more tagged music on the
+  /// phone), never on a play, a pause or a cache expiry, and the draw is seeded by the day,
+  /// so a relaunch draws the same mix (BUG-494). Songs that leave the phone drop out of it
   /// on the next recompute.
   private(set) var latelyMix: LatelyMix?
   /// What `latelyMix` was drawn from (see `LatelyMixKey`).
@@ -198,17 +199,21 @@ class HomeManager: NSObject {
   /// (it shifts on every play) and not the time: those would reshuffle the tile under the
   /// person's finger.
   private struct LatelyMixKey: Equatable {
+    /// The day it is drawn for: the mix is the same all day and new the next.
+    let day: Date
     let tagCount: Int
     let sharedProfile: ListeningShelves.TagVector
     /// Tagged songs on the phone.
     let candidateCount: Int
+    /// Whether the songs carry sound (BUG-498): the index can land after the profile does.
+    let hasSound: Bool
 
-    /// Whether a mix drawn from `self` should be drawn again for `new`: new tags, a new
-    /// cloud profile, or more tagged music on the phone. Fewer songs does not reshuffle;
-    /// the songs that left just drop out of the mix.
+    /// Whether a mix drawn from `self` should be drawn again for `new`: a new day, new tags,
+    /// a new cloud profile, more tagged music on the phone, or sound arriving. Fewer songs
+    /// does not reshuffle; the songs that left just drop out of the mix.
     func isOutdated(by new: LatelyMixKey) -> Bool {
-      tagCount != new.tagCount || sharedProfile != new.sharedProfile
-        || new.candidateCount > candidateCount
+      day != new.day || tagCount != new.tagCount || sharedProfile != new.sharedProfile
+        || new.candidateCount > candidateCount || hasSound != new.hasSound
     }
   }
 
@@ -279,6 +284,8 @@ class HomeManager: NSObject {
     let daypart: ListeningShelves.Daypart
     let tagCount: Int
     let candidateCount: Int
+    /// Whether the songs carry sound: the day it first arrives redraws them once.
+    let hasSound: Bool
     /// The time-of-day mix leaves out Lately's songs, so a new Lately redraws it.
     let latelySongIDs: [String]
   }
@@ -1002,9 +1009,11 @@ class HomeManager: NSObject {
 
     let sharedProfile = LibraryMoods.shared.sharedProfile
     let key = LatelyMixKey(
+      day: Calendar.current.startOfDay(for: now),
       tagCount: tags.count,
       sharedProfile: sharedProfile,
-      candidateCount: index.songCandidates.count
+      candidateCount: index.songCandidates.count,
+      hasSound: index.hasSound
     )
     // The cloud's lately profile (every device's plays) when the phone has it, else one
     // built from this phone's own plays, as LatelyLibrary.snapshot builds it. Built only
@@ -1074,7 +1083,7 @@ class HomeManager: NSObject {
       setLatelyMix(nil, key: nil)
       return
     }
-    var rng = SystemRandomNumberGenerator()
+    var rng = ListeningShelves.DailyGenerator(day: now, key: "lately")
     let ids = ListeningShelves.latelyMix(
       index.songCandidates,
       profile: profile(),
@@ -1169,8 +1178,10 @@ class HomeManager: NSObject {
 
   /// The playlists made for you after Lately: this part of the day, Been a While, then the
   /// mood mixes in the order this part of the day suits them. Each is seeded by the day, so
-  /// it is the same all day and new the next. They are drawn again only when the day, the
-  /// part of the day, the tags, the tagged music on the phone or Lately's songs change;
+  /// it is the same all day and new the next. They are drawn in row order and a song goes
+  /// to the first playlist that takes it, never to two (BUG-497). They are drawn again only
+  /// when the day, the part of the day, the tags, the tagged music on the phone or Lately's
+  /// songs change;
   /// otherwise they stay, minus songs that have left the phone. The mood index is read
   /// through `moodIndexIfReady`, never built here on the main thread.
   private func updateMadeForYouMixes(
@@ -1198,6 +1209,7 @@ class HomeManager: NSObject {
       daypart: daypart,
       tagCount: tags.count,
       candidateCount: index.songCandidates.count,
+      hasSound: index.hasSound,
       latelySongIDs: latelyMix?.songs.map(\.id) ?? []
     )
     guard key != otherMixesKey else {
@@ -1225,12 +1237,15 @@ class HomeManager: NSObject {
     var mixes = [MadeForYouMix]()
     let slotKey = "\(key.weekend ? "weekend" : "weekday")-\(daypart)"
 
+    // Songs already in a playlist to the left: one song, one playlist (BUG-497).
+    var taken = Set(key.latelySongIDs)
+
     // This part of the day.
     var daypartRNG = ListeningShelves.DailyGenerator(day: now, key: "daypart|\(slotKey)", calendar: calendar)
     let daypartIDs = ListeningShelves.daypartMix(
       plays: songPlays,
       songs: mixSongs,
-      excluding: Set(key.latelySongIDs),
+      excluding: taken,
       playedRecently: lately.songsJustPlayed,
       now: now,
       calendar: calendar,
@@ -1244,16 +1259,17 @@ class HomeManager: NSObject {
       isOnPhone: isOnPhone
     ) {
       mixes.append(mix)
+      taken.formUnion(mix.songs.map(\.id))
     }
 
-    // Been a While: favourites on the phone, untagged ones too.
+    // Been a While: favourites on the phone, untagged ones too, never an interlude (BUG-496).
     let cutoff = now.addingTimeInterval(-45 * 86400)
     let former = storage.main.library.getFormerFavoriteSongs(
       for: account,
       lastPlayedBefore: cutoff,
       minPlayCount: 4,
       fetchLimit: 400
-    ).filter { isOnPhone.contains($0) }
+    ).filter { isOnPhone.contains($0) && !ListeningShelves.isInterlude(title: $0.title, duration: $0.duration) }
     var formerByID = [String: Song]()
     for song in former { formerByID[song.id] = song }
     var whileRNG = ListeningShelves.DailyGenerator(day: now, key: "been-a-while", calendar: calendar)
@@ -1267,11 +1283,13 @@ class HomeManager: NSObject {
           lastPlayed: $0.lastTimePlayed
         )
       },
+      excluding: taken,
       now: now,
       using: &whileRNG
     )
     if let mix = makeMix(.beenAWhile, title: "Been a While", ids: whileIDs, songsByID: formerByID, isOnPhone: isOnPhone) {
       mixes.append(mix)
+      taken.formUnion(mix.songs.map(\.id))
     }
 
     // The mood mixes, the ones this part of the day suits first.
@@ -1279,7 +1297,13 @@ class HomeManager: NSObject {
     for moodKey in ListeningShelves.moodMixOrder(for: daypart) {
       guard let mood = ListeningShelves.moodMixes.first(where: { $0.key == moodKey }) else { continue }
       var moodRNG = ListeningShelves.DailyGenerator(day: now, key: "mood|\(mood.key)", calendar: calendar)
-      let ids = ListeningShelves.moodMix(mood, songs: mixSongs, favored: favored, using: &moodRNG)
+      let ids = ListeningShelves.moodMix(
+        mood,
+        songs: mixSongs,
+        favored: favored,
+        excluding: taken,
+        using: &moodRNG
+      )
       if let mix = makeMix(
         .mood(key: mood.key, hexColor: mood.hexColor),
         title: mood.title,
@@ -1288,6 +1312,7 @@ class HomeManager: NSObject {
         isOnPhone: isOnPhone
       ) {
         mixes.append(mix)
+        taken.formUnion(mix.songs.map(\.id))
       }
     }
     setOtherMixes(mixes)

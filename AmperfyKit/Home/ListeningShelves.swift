@@ -184,7 +184,8 @@ public enum ListeningShelves {
 
   // MARK: - Mood matching
 
-  /// A song's tags as weighted tokens: each mood counts 1, energy and valence a half.
+  /// A song's tags as weighted tokens: each mood counts 1, energy and valence a half, and each
+  /// subgenre of its sound 1 (`sound:<subgenre>`, matched apart from the moods: `likeness`).
   public typealias TagVector = [String: Double]
 
   static let latelyWindowDays = 30
@@ -195,24 +196,169 @@ public enum ListeningShelves {
   static let mixPoolSize = 120
   static let mixPerAlbum = 3
 
-  public static func tagVector(moods: [String], energy: String?, valence: String?) -> TagVector {
+  public static func tagVector(
+    moods: [String],
+    energy: String?,
+    valence: String?,
+    sound: [String] = []
+  )
+    -> TagVector {
     var v = TagVector()
     for m in moods { v["mood:\(m)", default: 0] += 1 }
     if let energy, !energy.isEmpty { v["energy:\(energy)", default: 0] += 0.5 }
     if let valence, !valence.isEmpty { v["valence:\(valence)", default: 0] += 0.5 }
+    for s in sound where !s.isEmpty { v["\(soundPrefix)\(s)"] = 1 }
     return v
   }
+
+  static let soundPrefix = "sound:"
 
   public static func add(_ v: TagVector, into acc: inout TagVector, weight: Double = 1) {
     for (k, x) in v { acc[k, default: 0] += x * weight }
   }
 
+  /// A tag set made ready to compare: its keys in order and its norms summed once, in that
+  /// order. Every sum here runs in key order and every score is rounded, so the same tags
+  /// score the same on every launch (BUG-494: a dictionary's order changes per launch, and
+  /// ties that should fall to the song id fell to rounding noise instead).
+  public struct Prepared {
+    let tags: TagVector
+    let keys: [String]
+    let norm: Double
+    let moodNorm: Double
+    let soundNorm: Double
+    /// The sound weights summed: what a share of the sound is out of.
+    let soundTotal: Double
+
+    public init(_ tags: TagVector) {
+      self.tags = tags
+      keys = tags.keys.sorted()
+      var all = 0.0, mood = 0.0, sound = 0.0, total = 0.0
+      for k in keys {
+        let x = tags[k]!
+        all += x * x
+        if k.hasPrefix(ListeningShelves.soundPrefix) {
+          sound += x * x
+          total += x
+        } else {
+          mood += x * x
+        }
+      }
+      norm = all.squareRoot()
+      moodNorm = mood.squareRoot()
+      soundNorm = sound.squareRoot()
+      soundTotal = total
+    }
+  }
+
+  /// How alike two tag sets are, as two numbers: mood (moods, energy, valence) and sound
+  /// (subgenres). Mood words alone pair records that sound nothing alike (BUG-498: Modern
+  /// Vampires of the City beside Tubthumper on "contemplative, wistful"), so where both sides
+  /// carry sound it counts as much as the mood. `sound` is nil when either side has none (tags
+  /// from a server before sound, a song with no subgenres), and matching falls back to mood.
+  public struct Likeness: Sendable, Equatable {
+    public let mood: Double
+    public let sound: Double?
+    /// Whether `sound` ranks as well as gates (record against record), or only gates (a song
+    /// or record against the lately profile, where it is a share: see `likeness(_:toProfile:)`).
+    let soundRanks: Bool
+
+    /// One number to rank by: the mean of the two, or the mood alone.
+    public var score: Double {
+      guard soundRanks, let sound else { return mood }
+      return ListeningShelves.rounded((mood + sound) / 2)
+    }
+
+    /// With sound: the mood and the sound each clear their bar. Without: the mood clears
+    /// `bar.moodOnly`, the bar this match used before sound.
+    public func passes(_ bar: Bar) -> Bool {
+      if let sound { return mood >= bar.mood && sound >= bar.sound }
+      return mood >= bar.moodOnly
+    }
+  }
+
+  public struct Bar: Sendable {
+    public let mood: Double
+    public let sound: Double
+    public let moodOnly: Double
+
+    public init(mood: Double, sound: Double, moodOnly: Double) {
+      self.mood = mood
+      self.sound = sound
+      self.moodOnly = moodOnly
+    }
+  }
+
+  public static func likeness(_ a: Prepared, _ b: Prepared) -> Likeness {
+    // Walk the smaller set; both orders give the same sums because each runs in key order.
+    let (small, large) = a.keys.count <= b.keys.count ? (a, b) : (b, a)
+    var moodDot = 0.0, soundDot = 0.0
+    for k in small.keys {
+      guard let y = large.tags[k] else { continue }
+      if k.hasPrefix(soundPrefix) { soundDot += small.tags[k]! * y } else { moodDot += small.tags[k]! * y }
+    }
+    let mood = a.moodNorm > 0 && b.moodNorm > 0 ? rounded(moodDot / (a.moodNorm * b.moodNorm)) : 0
+    let sound = a.soundNorm > 0 && b.soundNorm > 0 ? rounded(soundDot / (a.soundNorm * b.soundNorm)) : nil
+    return Likeness(mood: mood, sound: sound, soundRanks: true)
+  }
+
+  public static func likeness(_ a: TagVector, _ b: TagVector) -> Likeness {
+    likeness(Prepared(a), Prepared(b))
+  }
+
+  /// A song or a record against a listening profile. The mood is the cosine, as ever. The
+  /// sound is how much of what was played carries the item's sound: each of the item's
+  /// subgenres, as its share of the item, up to that subgenre's share of the profile, summed
+  /// (0 to 1). Unlike a cosine it does not favour the profile's one biggest style: a person
+  /// who plays mostly indie rock and some folk gets folk too, but never a style they have not
+  /// played at all. So it only gates; the mood ranks.
+  public static func likeness(_ item: Prepared, toProfile profile: Prepared) -> Likeness {
+    let mood = likeness(item, profile).mood
+    guard item.soundTotal > 0, profile.soundTotal > 0 else {
+      return Likeness(mood: mood, sound: nil, soundRanks: false)
+    }
+    var overlap = 0.0
+    for k in item.keys where k.hasPrefix(soundPrefix) {
+      overlap += min(item.tags[k]! / item.soundTotal, (profile.tags[k] ?? 0) / profile.soundTotal)
+    }
+    return Likeness(mood: mood, sound: rounded(overlap), soundRanks: false)
+  }
+
+  /// The plain cosine over every token, in key order and rounded (see `Prepared`).
   public static func cosine(_ a: TagVector, _ b: TagVector) -> Double {
+    let pa = Prepared(a), pb = Prepared(b)
+    guard pa.norm > 0, pb.norm > 0 else { return 0 }
+    let (small, large) = pa.keys.count <= pb.keys.count ? (pa, pb) : (pb, pa)
     var dot = 0.0
-    for (k, x) in a { dot += x * (b[k] ?? 0) }
-    let na = a.values.reduce(0) { $0 + $1 * $1 }.squareRoot()
-    let nb = b.values.reduce(0) { $0 + $1 * $1 }.squareRoot()
-    return na > 0 && nb > 0 ? dot / (na * nb) : 0
+    for k in small.keys { dot += small.tags[k]! * (large.tags[k] ?? 0) }
+    return rounded(dot / (pa.norm * pb.norm))
+  }
+
+  /// Nine places: far below any bar's meaning, far above summing noise.
+  static func rounded(_ x: Double) -> Double { (x * 1e9).rounded() / 1e9 }
+
+  // MARK: Songs that are not songs (BUG-496)
+
+  /// Whether a track is an interlude, an intro or a sketch rather than a song: under a minute,
+  /// or "interlude" / "skit" / "segue" in the title, or a short one (under two and a half
+  /// minutes) titled intro, outro, reprise, instrumental, untitled, prelude and the like, or
+  /// wholly in brackets ("(Vegas // Dad)", "[untitled]"). The tagger gives these pure
+  /// atmosphere, so they used to be the best fit for a mood. A length of 0 is unknown.
+  /// Kept out of every made-for-you playlist and every record's summed tags.
+  public static func isInterlude(title: String?, duration: Int) -> Bool {
+    if duration > 0, duration < 60 { return true }
+    let text = (title ?? "").lowercased()
+    let words = Set(text.split(whereSeparator: { !$0.isLetter }).map(String.init))
+    if !words.isDisjoint(with: ["interlude", "skit", "segue"]) { return true }
+    let short = duration > 0 && duration < 150
+    guard short else { return false }
+    if !words.isDisjoint(with: [
+      "intro", "introduction", "outro", "reprise", "instrumental", "untitled", "prelude",
+      "overture", "foreword",
+    ]) { return true }
+    let trimmed = text.trimmingCharacters(in: .whitespaces)
+    guard let first = trimmed.first, let last = trimmed.last else { return false }
+    return ("([{".contains(first) && ")]}".contains(last))
   }
 
   /// What you have been playing lately as one weighted tag profile: the last 30 days of
@@ -253,9 +399,26 @@ public enum ListeningShelves {
       self.artistID = artistID
       self.songTags = songTags
     }
+
+    /// The record's songs' tags summed, in the order given (keep it stable: LatelyLibrary
+    /// sorts by song id).
+    public var summedTags: TagVector {
+      var vector = TagVector()
+      for tags in songTags { ListeningShelves.add(tags, into: &vector) }
+      return vector
+    }
   }
 
-  /// Albums whose combined song tags match the profile closely (0.6 or better), best first,
+  /// How close a song or a record must be to the lately profile (Home's MORE LIKE, Lately and
+  /// the time-of-day playlist): the old mood bar, and a sound that is at least a few percent
+  /// of what was played (`likeness(_:toProfile:)`). Without sound, the mood alone.
+  public static let latelyBar = Bar(mood: moreLikeLatelyMinMatch, sound: 0.03, moodOnly: moreLikeLatelyMinMatch)
+  /// How close another record must be to a page's record, artist or playlist (MORE LIKE).
+  public static func recordBar(moodOnly: Double) -> Bar {
+    Bar(mood: 0.6, sound: 0.3, moodOnly: moodOnly)
+  }
+
+  /// Albums whose combined song tags match the profile closely (`latelyBar`), best first,
   /// at most two per artist, leaving out albums played in the last 30 days.
   public static func moreLikeLately(
     _ albums: [AlbumCandidate],
@@ -264,12 +427,11 @@ public enum ListeningShelves {
   )
     -> [String] {
     guard !profile.isEmpty else { return [] }
+    let prepared = Prepared(profile)
     let scored: [(String, String, Double)] = albums.compactMap { album in
       guard !playedRecently.contains(album.albumID), !album.songTags.isEmpty else { return nil }
-      var vector = TagVector()
-      for tags in album.songTags { add(tags, into: &vector) }
-      let match = cosine(vector, profile)
-      return match >= moreLikeLatelyMinMatch ? (album.albumID, album.artistID, match) : nil
+      let match = likeness(Prepared(album.summedTags), toProfile: prepared)
+      return match.passes(latelyBar) ? (album.albumID, album.artistID, match.score) : nil
     }
     var perArtist = [String: Int]()
     return scored
@@ -292,11 +454,11 @@ public enum ListeningShelves {
   }
 
   /// MORE LIKE on an artist page: other artists on the phone whose music carries the same
-  /// moods, one album each. Artists are grouped by normalised NAME (the phone can hold one
-  /// artist under several ids). Each artist's tags are the sum over all their songs; each
-  /// is shown by their album with the most tag weight; they rank by how closely their
-  /// tags match the page artist's (cosine, `minMatch` or better), best first, ties by name.
-  /// The page artist and "Various Artists" are left out. Returns album ids.
+  /// moods and sound, one album each. Artists are grouped by normalised NAME (the phone can
+  /// hold one artist under several ids). Each artist's tags are the sum over all their songs;
+  /// each is shown by their album with the most tag weight; they rank by how closely their
+  /// tags match the page artist's (`recordBar`, `minMatch` when there is no sound), best
+  /// first, ties by name. The page artist and "Various Artists" are left out. Returns album ids.
   public static func moreLikeArtist(
     pageArtistName: String,
     albums: [AlbumCandidate],
@@ -309,14 +471,14 @@ public enum ListeningShelves {
     guard !page.isEmpty else { return [] }
     var vectorByArtist = [String: TagVector]()
     var tileByArtist = [String: (albumID: String, weight: Double)]()
-    for album in albums where !album.songTags.isEmpty {
+    // Album id order, so an artist's tags sum the same way on every launch.
+    for album in albums.sorted(by: { $0.albumID < $1.albumID }) where !album.songTags.isEmpty {
       guard let rawName = artistNameByAlbum[album.albumID] else { continue }
       let name = normalizedArtistName(rawName)
       guard !name.isEmpty else { continue }
-      var albumVector = TagVector()
-      for tags in album.songTags { add(tags, into: &albumVector) }
+      let albumVector = album.summedTags
       add(albumVector, into: &vectorByArtist[name, default: TagVector()])
-      let weight = albumVector.values.reduce(0, +)
+      let weight = rounded(albumVector.keys.sorted().reduce(0) { $0 + albumVector[$1]! })
       if let tile = tileByArtist[name],
          tile.weight > weight || (tile.weight == weight && tile.albumID < album.albumID) {
         continue
@@ -325,10 +487,12 @@ public enum ListeningShelves {
     }
     guard let pageVector = vectorByArtist[page], !pageVector.isEmpty else { return [] }
     let excluded: Set<String> = [page, "various artists"]
+    let prepared = Prepared(pageVector)
+    let bar = recordBar(moodOnly: minMatch)
     let scored: [(name: String, albumID: String, match: Double)] = vectorByArtist.compactMap { name, vector in
       guard !excluded.contains(name), let tile = tileByArtist[name] else { return nil }
-      let match = cosine(vector, pageVector)
-      return match >= minMatch ? (name, tile.albumID, match) : nil
+      let match = likeness(Prepared(vector), prepared)
+      return match.passes(bar) ? (name, tile.albumID, match.score) : nil
     }
     return scored
       .sorted { $0.match != $1.match ? $0.match > $1.match : $0.name < $1.name }
@@ -337,7 +501,8 @@ public enum ListeningShelves {
   }
 
   /// MORE LIKE for any tag profile (a playlist's songs, say): albums on the phone whose
-  /// combined song tags match `profile` (`minMatch` or better), best first (ties by id),
+  /// combined song tags match `profile` (`recordBar`; `minMatch` when either side has no
+  /// sound), best first (ties by id),
   /// at most `perArtist` per artist, leaving out `excluding`. The same scoring as
   /// `moreLikeLately`, with no played-recently filter. Returns album ids.
   public static func moreLike(
@@ -351,12 +516,12 @@ public enum ListeningShelves {
   )
     -> [String] {
     guard !profile.isEmpty else { return [] }
+    let prepared = Prepared(profile)
+    let bar = recordBar(moodOnly: minMatch)
     let scored: [(album: AlbumCandidate, match: Double)] = albums.compactMap { album in
       guard !excluding.contains(album.albumID), !album.songTags.isEmpty else { return nil }
-      var vector = TagVector()
-      for tags in album.songTags { add(tags, into: &vector) }
-      let match = cosine(vector, profile)
-      return match >= minMatch ? (album, match) : nil
+      let match = likeness(Prepared(album.summedTags), prepared)
+      return match.passes(bar) ? (album, match.score) : nil
     }
     var countByArtist = [String: Int]()
     var picked = [String]()
@@ -374,17 +539,24 @@ public enum ListeningShelves {
   public struct SongCandidate {
     public let songID: String
     public let albumID: String
+    /// The artist, normalised (`normalizedArtistName`), for the per-artist cap; "" when
+    /// unknown (no cap).
+    public let artistKey: String
     public let tags: TagVector
 
-    public init(songID: String, albumID: String, tags: TagVector) {
+    public init(songID: String, albumID: String, artistKey: String = "", tags: TagVector) {
       self.songID = songID
       self.albumID = albumID
+      self.artistKey = artistKey
       self.tags = tags
     }
   }
 
-  /// A mix of `count` songs drawn from the 120 closest to the profile, skipping songs played
-  /// in the last three days and taking at most three from one album, in shuffled order.
+  /// A mix of `count` songs drawn from the 120 closest in mood to the profile, among songs
+  /// whose sound it has been playing (`latelyBar`), skipping songs played in the last three
+  /// days and taking at most three
+  /// from one album and three from one artist (BUG-495), in shuffled order. Seed `rng` by
+  /// the day (`DailyGenerator`) and the mix stays the same all day.
   public static func latelyMix<R: RandomNumberGenerator>(
     _ songs: [SongCandidate],
     profile: TagVector,
@@ -394,10 +566,11 @@ public enum ListeningShelves {
   )
     -> [String] {
     guard !profile.isEmpty else { return [] }
+    let prepared = Prepared(profile)
     var scored: [(song: SongCandidate, match: Double)] = []
     for song in songs where !playedRecently.contains(song.songID) {
-      let match = cosine(song.tags, profile)
-      if match >= moreLikeLatelyMinMatch { scored.append((song, match)) }
+      let match = likeness(Prepared(song.tags), toProfile: prepared)
+      if match.passes(latelyBar) { scored.append((song, match.score)) }
     }
     scored.sort { lhs, rhs in
       if lhs.match != rhs.match { return lhs.match > rhs.match }
@@ -405,10 +578,15 @@ public enum ListeningShelves {
     }
     let pool: [SongCandidate] = scored.prefix(mixPoolSize).map(\.song)
     var perAlbum = [String: Int]()
+    var perArtist = [String: Int]()
     var picked = [String]()
     for song in pool.shuffled(using: &rng) where picked.count < count {
+      guard perAlbum[song.albumID, default: 0] < mixPerAlbum,
+            song.artistKey.isEmpty || perArtist[song.artistKey, default: 0] < mixMaxPerArtist
+      else { continue }
       perAlbum[song.albumID, default: 0] += 1
-      if perAlbum[song.albumID]! <= mixPerAlbum { picked.append(song.songID) }
+      if !song.artistKey.isEmpty { perArtist[song.artistKey, default: 0] += 1 }
+      picked.append(song.songID)
     }
     return picked
   }
@@ -622,21 +800,23 @@ extension ListeningShelves {
   ///
   /// Grown from one seed: the best-fitting song among those played lately (`favored`),
   /// chosen at random from the top three, else the best fit overall. Each next song is one of
-  /// the five best by fit to the mood (55%) and closeness to the songs already in (45%),
-  /// with a small pull toward the seed's genre and away from records more than a dozen years
-  /// from the seed's. No artist within `mixArtistGap` songs of itself (relaxed only when
-  /// nothing else is left), at most two songs per album and three per artist.
+  /// the five best by fit to the mood (55%) and closeness in mood and sound to the songs
+  /// already in (45%), with a small pull toward the seed's genre and away from records more
+  /// than a dozen years from the seed's. No artist within `mixArtistGap` songs of itself (the
+  /// mix ends early rather than break that), at most two songs per album and three per
+  /// artist. Songs in `excluding` (an earlier playlist's, BUG-497) never join.
   public static func moodMix<R: RandomNumberGenerator>(
     _ mood: MoodMix,
     songs: [MixSong],
     favored: Set<String>,
+    excluding: Set<String> = [],
     count: Int = madeMixLength,
     minSongs: Int = madeMixMinSongs,
     using rng: inout R
   )
     -> [String] {
     var eligible: [(song: MixSong, fit: Double)] = []
-    for song in songs {
+    for song in songs where !excluding.contains(song.songID) {
       if let fit = mood.fit(song) { eligible.append((song, fit)) }
     }
     guard eligible.count >= minSongs else { return [] }
@@ -650,13 +830,13 @@ extension ListeningShelves {
       from: seed.song,
       candidates: eligible,
       count: count,
-      score: { candidate, centroid in
-        var score = 0.55 * candidate.fit + 0.45 * cosine(candidate.song.tags, centroid)
+      score: { candidate, closeness in
+        var score = 0.55 * candidate.fit + 0.45 * closeness.score
         if let genre = seed.song.genre, candidate.song.genre == genre { score += 0.08 }
         if seed.song.year > 0, candidate.song.year > 0, abs(candidate.song.year - seed.song.year) > 12 {
           score -= 0.08
         }
-        return score
+        return rounded(score)
       },
       using: &rng
     )
@@ -693,7 +873,7 @@ extension ListeningShelves {
     guard slotPlays >= 8, !profile.isEmpty else { return [] }
     let candidates = songs
       .filter { !excluding.contains($0.songID) }
-      .map { SongCandidate(songID: $0.songID, albumID: $0.albumID, tags: $0.tags) }
+      .map { SongCandidate(songID: $0.songID, albumID: $0.albumID, artistKey: $0.artistKey, tags: $0.tags) }
     let picked = latelyMix(candidates, profile: profile, playedRecently: playedRecently, count: count, using: &rng)
     guard picked.count >= minSongs else { return [] }
     let artistByID = Dictionary(songs.map { ($0.songID, $0.artistKey) }, uniquingKeysWith: { first, _ in first })
@@ -719,9 +899,11 @@ extension ListeningShelves {
 
   /// Favourites you have not played in a while: songs played at least four times, none of
   /// them in the last 45 days, drawn from the 80 most played, at most two per album and three
-  /// per artist, artists spaced out. [] when fewer than `minSongs` qualify.
+  /// per artist, artists spaced out, never a song in `excluding` (an earlier playlist's,
+  /// BUG-497). [] when fewer than `minSongs` qualify.
   public static func beenAWhile<R: RandomNumberGenerator>(
     _ songs: [PlayedSong],
+    excluding: Set<String> = [],
     now: Date,
     count: Int = madeMixLength,
     minSongs: Int = madeMixMinSongs,
@@ -730,6 +912,7 @@ extension ListeningShelves {
     -> [String] {
     let cutoff = now.addingTimeInterval(-45 * 86400)
     let pool = songs
+      .filter { !excluding.contains($0.songID) }
       .filter { $0.playCount >= 4 && ($0.lastPlayed.map { $0 < cutoff } ?? false) }
       .sorted { $0.playCount != $1.playCount ? $0.playCount > $1.playCount : $0.songID < $1.songID }
       .prefix(80)
@@ -750,8 +933,11 @@ extension ListeningShelves {
     return spacedByArtist(picked, artistOf: { artistByID[$0] ?? $0 })
   }
 
-  /// The same songs, reordered so an artist does not come back within `gap` songs wherever
-  /// the mix allows it (the founder's rule, 2026-08-20). Stable otherwise.
+  /// The songs reordered so an artist never comes back within `gap` songs (the founder's
+  /// rule, 2026-08-20). Each step takes the first song that fits, unless an artist's songs
+  /// still to place only just fit in what is left: then that artist's first, so it is not
+  /// left to bunch up at the end. A song that still cannot fit is left out rather than played
+  /// too soon (BUG-495: Weekday Evenings used to end on three Novo Amor songs in a row).
   public static func spacedByArtist(
     _ ids: [String],
     artistOf: (String) -> String,
@@ -759,23 +945,34 @@ extension ListeningShelves {
   )
     -> [String] {
     var remaining = ids
+    var left = [String: Int]()
+    for id in ids { left[artistOf(id), default: 0] += 1 }
     var result = [String]()
     result.reserveCapacity(ids.count)
     while !remaining.isEmpty {
       let recent = Set(result.suffix(gap).map(artistOf))
-      let index = remaining.firstIndex { !recent.contains(artistOf($0)) } ?? 0
-      result.append(remaining.remove(at: index))
+      // An artist with n songs left needs (n - 1) * (gap + 1) + 1 places.
+      let fits = remaining.indices.filter { !recent.contains(artistOf(remaining[$0])) }
+      let tight = fits.first { i in
+        let n = left[artistOf(remaining[i]), default: 0]
+        return n > 1 && (n - 1) * (gap + 1) + 1 >= remaining.count
+      }
+      guard let index = tight ?? fits.first else { break }
+      let id = remaining.remove(at: index)
+      left[artistOf(id), default: 0] -= 1
+      result.append(id)
     }
     return result
   }
 
   /// Grows a mix from `seed`: each step scores every song still allowed against the songs
-  /// already in (their summed tags) and takes one of the best five at random.
+  /// already in (their summed tags: `likeness`) and takes one of the best five at random.
+  /// Stops early rather than bring an artist back within `mixArtistGap` songs.
   static func grow<R: RandomNumberGenerator>(
     from seed: MixSong,
     candidates: [(song: MixSong, fit: Double)],
     count: Int,
-    score: ((song: MixSong, fit: Double), TagVector) -> Double,
+    score: ((song: MixSong, fit: Double), Likeness) -> Double,
     using rng: inout R
   )
     -> [String] {
@@ -785,17 +982,19 @@ extension ListeningShelves {
     var perArtist = [seed.artistKey: 1]
     var centroid = seed.tags
     var pool = candidates.filter { $0.song.songID != seed.songID }
+    var preparedByID = [String: Prepared](minimumCapacity: pool.count)
+    for candidate in pool { preparedByID[candidate.song.songID] = Prepared(candidate.song.tags) }
     while picked.count < count, !pool.isEmpty {
       let recentArtists = Set(pickedArtists.suffix(mixArtistGap))
-      let capped = pool.filter {
+      let options = pool.filter {
         perAlbum[$0.song.albumID, default: 0] < mixMaxPerAlbum
           && perArtist[$0.song.artistKey, default: 0] < mixMaxPerArtist
+          && !recentArtists.contains($0.song.artistKey)
       }
-      guard !capped.isEmpty else { break }
-      let spaced = capped.filter { !recentArtists.contains($0.song.artistKey) }
-      let options = spaced.isEmpty ? capped : spaced
+      guard !options.isEmpty else { break }
+      let preparedCentroid = Prepared(centroid)
       let best = options
-        .map { (candidate: $0, score: score($0, centroid)) }
+        .map { (candidate: $0, score: score($0, likeness(preparedByID[$0.song.songID]!, preparedCentroid))) }
         .sorted { $0.score != $1.score ? $0.score > $1.score : $0.candidate.song.songID < $1.candidate.song.songID }
         .prefix(5)
       guard let next = best.randomElement(using: &rng)?.candidate else { break }

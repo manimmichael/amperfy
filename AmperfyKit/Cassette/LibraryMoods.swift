@@ -37,9 +37,12 @@ public struct LibraryMoodTags: Codable, Sendable, Equatable {
   public let moods: [String]
   public let energy: String?
   public let valence: String?
+  /// The song's sound (its subgenres, else its record's), nil from a server or a cache
+  /// from before sound (BUG-498).
+  public let subgenres: [String]?
 
   public var vector: ListeningShelves.TagVector {
-    ListeningShelves.tagVector(moods: moods, energy: energy, valence: valence)
+    ListeningShelves.tagVector(moods: moods, energy: energy, valence: valence, sound: subgenres ?? [])
   }
 }
 
@@ -49,10 +52,11 @@ struct LibraryMoodsResponse: Decodable {
     let moods: [String]
     let energy: String?
     let valence: String?
+    let subgenres: [String]?
 
     enum CodingKeys: String, CodingKey {
       case cassetteLocalId = "cassette_local_id"
-      case moods, energy, valence
+      case moods, energy, valence, subgenres
     }
   }
 
@@ -65,6 +69,14 @@ public final class LibraryMoods {
 
   private static let refreshInterval: TimeInterval = 12 * 3600
   private static let lastFetchKey = "cassette.libraryMoods.lastFetchAt"
+  /// Bumped when the payload grows, so a phone holding an older cache fetches at once instead
+  /// of waiting out the twelve hours (2: each song's sound and the profile's, BUG-498). Set
+  /// only once a fetch actually carries the new fields; until then the phone asks again
+  /// hourly (a phone can be built before the server it talks to is deployed).
+  private static let formatKey = "cassette.libraryMoods.format"
+  private static let formatTriedKey = "cassette.libraryMoods.formatTriedAt"
+  private static let format = 2
+  private static let formatRetryInterval: TimeInterval = 3600
 
   public private(set) var byLocalID: [String: LibraryMoodTags] = [:]
   public var hasTags: Bool { !byLocalID.isEmpty }
@@ -85,8 +97,13 @@ public final class LibraryMoods {
   /// Fetch the tags when the cache is older than twelve hours (or `force`). A failure
   /// keeps the cached tags and tries again on a later pass.
   public func refreshIfDue(force: Bool = false) async {
-    let last = UserDefaults.standard.object(forKey: Self.lastFetchKey) as? Date ?? .distantPast
-    guard force || Date().timeIntervalSince(last) > Self.refreshInterval else { return }
+    let defaults = UserDefaults.standard
+    let last = defaults.object(forKey: Self.lastFetchKey) as? Date ?? .distantPast
+    let formatTried = defaults.object(forKey: Self.formatTriedKey) as? Date ?? .distantPast
+    let formatDue = defaults.integer(forKey: Self.formatKey) < Self.format
+      && Date().timeIntervalSince(formatTried) > Self.formatRetryInterval
+    guard force || formatDue || Date().timeIntervalSince(last) > Self.refreshInterval else { return }
+    if formatDue { defaults.set(Date(), forKey: Self.formatTriedKey) }
     var changed = false
     defer {
       if changed {
@@ -107,6 +124,9 @@ public final class LibraryMoods {
     do {
       let fresh = try await CassetteSyncAPI.shared.getLibraryMoods()
       UserDefaults.standard.set(Date(), forKey: Self.lastFetchKey)
+      if fresh.values.contains(where: { $0.subgenres != nil }) {
+        UserDefaults.standard.set(Self.format, forKey: Self.formatKey)
+      }
       guard fresh != byLocalID else { return }
       byLocalID = fresh
       changed = true

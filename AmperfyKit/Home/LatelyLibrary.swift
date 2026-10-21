@@ -59,6 +59,9 @@ public enum LatelyLibrary {
     public let songsByID: [String: Song]
     /// The album's artist name (album artist, else the song's), for grouping by name.
     public let artistNameByAlbumID: [String: String]
+    /// Whether any song carries sound (`sound:` tags; BUG-498), so a holder of something
+    /// drawn from an index without it can tell when it arrives.
+    public let hasSound: Bool
   }
 
   /// Bumped every time `snapshot` rebuilds (a cache miss), so a holder of something built
@@ -147,9 +150,10 @@ public enum LatelyLibrary {
   }
 
   /// A Lately mix from a snapshot: `count` songs on the phone matching the profile, at most
-  /// three per album, skipping songs played in the last three days, freshly shuffled.
-  public static func makeLatelyMix(snapshot: Snapshot, count: Int = 40) -> [Song] {
-    var rng = SystemRandomNumberGenerator()
+  /// three per album and per artist, skipping songs played in the last three days, drawn
+  /// the same way all day.
+  public static func makeLatelyMix(snapshot: Snapshot, count: Int = 40, now: Date = Date()) -> [Song] {
+    var rng = ListeningShelves.DailyGenerator(day: now, key: "lately")
     let ids = ListeningShelves.latelyMix(
       snapshot.songCandidates,
       profile: snapshot.profile,
@@ -273,6 +277,8 @@ public enum LatelyLibrary {
     var rows = [RawIndex.Row]()
     for songMO in (try? context.fetch(request)) ?? [] {
       guard let localID = localIDBySongID[songMO.id], let songTags = tags[localID] else { continue }
+      // Interludes, intros and sketches are not songs to recommend (BUG-496).
+      if ListeningShelves.isInterlude(title: songMO.title, duration: Int(songMO.combinedDuration)) { continue }
       let album = songMO.album
       let albumID = album?.id ?? ""
       rows.append(RawIndex.Row(
@@ -286,6 +292,9 @@ public enum LatelyLibrary {
       ))
     }
     guard !rows.isEmpty else { return nil }
+    // Song id order: the fetch's order is not fixed, and summed tags must add up the same
+    // way on every launch (BUG-494).
+    rows.sort { $0.songID < $1.songID }
     return RawIndex(rows: rows)
   }
 
@@ -315,7 +324,12 @@ public enum LatelyLibrary {
             !songMO.isDeleted
       else { continue }
       songsByID[row.songID] = Song(managedObject: songMO)
-      songCandidates.append(.init(songID: row.songID, albumID: row.albumID, tags: row.tags))
+      songCandidates.append(.init(
+        songID: row.songID,
+        albumID: row.albumID,
+        artistKey: artistKey(row),
+        tags: row.tags
+      ))
       guard !row.albumID.isEmpty, let albumObjectID = row.albumObjectID else { continue }
       if albumsByID[row.albumID] == nil,
          liveAlbums?.contains(albumObjectID) ?? true,
@@ -336,14 +350,22 @@ public enum LatelyLibrary {
         artistID: artistByAlbum[albumID] ?? albumID,
         songTags: vectors
       )
-    }
+    }.sorted { $0.albumID < $1.albumID }
     return MoodIndex(
       songCandidates: songCandidates,
       albumCandidates: albumCandidates,
       albumsByID: albumsByID,
       songsByID: songsByID,
-      artistNameByAlbumID: artistNameByAlbum
+      artistNameByAlbumID: artistNameByAlbum,
+      hasSound: songCandidates.contains { $0.tags.keys.contains { $0.hasPrefix(ListeningShelves.soundPrefix) } }
     )
+  }
+
+  /// The artist as the made-for-you playlists cap and space it: the normalised name (one
+  /// artist can sit under several ids), else the id. HomeManager.artistKey(of:) matches it.
+  private static func artistKey(_ row: RawIndex.Row) -> String {
+    let name = ListeningShelves.normalizedArtistName(row.artistName ?? "")
+    return name.isEmpty ? row.artistKey : name
   }
 
   /// Which of `ids` still have a row in `context` (pending deletes count as gone), read with

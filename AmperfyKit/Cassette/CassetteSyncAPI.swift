@@ -1034,18 +1034,28 @@ public final class CassetteSyncAPI: @unchecked Sendable {
       byLocalID[track.cassetteLocalId] = LibraryMoodTags(
         moods: track.moods,
         energy: track.energy,
-        valence: track.valence
+        valence: track.valence,
+        subgenres: track.subgenres
       )
     }
     return byLocalID
   }
 
   /// The shared "lately" profile from every device's plays (GET /api/sync/taste-lately),
-  /// keyed by the same tokens ListeningShelves uses (`mood:<m>`, `energy:<e>`, ...).
+  /// keyed by the same tokens ListeningShelves uses (`mood:<m>`, `energy:<e>`, ...), with
+  /// the plays' sound (`sound:<subgenre>`, sent apart as `sound`) added in.
   public func getLatelyProfile() async throws -> [String: Double] {
-    struct Response: Decodable { let profile: [String: Double] }
+    struct Response: Decodable {
+      let profile: [String: Double]
+      let sound: [String: Double]?
+    }
     let data = try await get(path: "/api/sync/taste-lately")
-    return try JSONDecoder().decode(Response.self, from: data).profile
+    let response = try JSONDecoder().decode(Response.self, from: data)
+    var profile = response.profile
+    for (key, weight) in response.sound ?? [:] where key.hasPrefix("sound:") {
+      profile[key] = weight
+    }
+    return profile
   }
 
   /// Keep the albums holding these songs off this phone (the phone just removed them).
