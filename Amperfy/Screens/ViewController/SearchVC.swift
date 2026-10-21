@@ -25,41 +25,109 @@ import UIKit
 
 // MARK: - SearchSection
 
+/// The Search table's sections, top to bottom. phone-taste (approved mock, Screens.tsx
+/// SearchResultsScreen): one top result to play at once, then SONGS, ALBUMS, ARTISTS and
+/// PLAYLISTS. Recently Searched shows only before anyone types.
 public enum SearchSection: Int, CaseIterable {
   case History
-  case Artist
-  case Album
-  case Playlist
+  case Top
   case Song
+  case Album
+  case Artist
+  case Playlist
+
+  /// The section's shout heading (none for the top card).
+  var shout: String {
+    switch self {
+    case .History: return "RECENT"
+    case .Top: return ""
+    case .Song: return "SONGS"
+    case .Album: return "ALBUMS"
+    case .Artist: return "ARTISTS"
+    case .Playlist: return "PLAYLISTS"
+    }
+  }
+}
+
+// MARK: - SearchRow
+
+/// One row of the Search table. Song, playlist and history rows are entity rows; the top
+/// card and the two shelves are rows of their own, so a swipe or a long-press is routed by
+/// what the row is and never lands on an album or an artist by position.
+enum SearchRow: Hashable, Sendable {
+  case top(NSManagedObjectID)
+  case entity(NSManagedObjectID)
+  case albumShelf
+  case artistShelf
 }
 
 // MARK: - SearchDiffableDataSource
 
-class SearchDiffableDataSource: BasicUITableViewDiffableDataSource {
-  public var searchVC: SearchVC!
+final class SearchDiffableDataSource: UITableViewDiffableDataSource<Int, SearchRow> {
+  weak var searchVC: SearchVC?
 
   override func tableView(
     _ tableView: UITableView,
     titleForHeaderInSection section: Int
   )
     -> String? {
-    switch SearchSection(rawValue: section) {
-    case .History:
-      if searchVC.searchHistory.isEmpty {
-        return ""
-      } else {
-        return "Recently Searched"
-      }
-    case .Playlist:
-      return "Playlists"
-    case .Artist:
-      return "Artists"
-    case .Album:
-      return "Albums"
-    case .Song:
-      return "Songs"
-    case .none:
-      return ""
+    searchVC?.headerShout(for: section)
+  }
+
+  /// Only entity rows swipe: song, playlist and history rows keep their actions; the top
+  /// card and the shelves have none.
+  override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
+    if case .entity = itemIdentifier(for: indexPath) { return true }
+    return false
+  }
+}
+
+// MARK: - SearchTopPick
+
+/// The top result as found in the background context: an artist whose name starts with
+/// the query, else the first album. Sendable, resolved on the main context.
+struct SearchTopPick: Sendable {
+  let isArtist: Bool
+  let objectID: NSManagedObjectID
+  /// Albums whose cover can light the card, best first (for an album, the album itself).
+  let coverAlbumIDs: [NSManagedObjectID]
+}
+
+// MARK: - SearchOwnedIDs
+
+/// The ids of what is on this phone (DeviceOwnership), for filtering search history.
+struct SearchOwnedIDs: Sendable {
+  let songs: Set<String>
+  let albums: Set<String>
+  let artists: Set<String>
+}
+
+// MARK: - SearchTopResult
+
+/// The top result on the main context.
+struct SearchTopResult {
+  enum Kind {
+    case artist(Artist)
+    case album(Album)
+  }
+
+  let kind: Kind
+  /// The album whose cover lights the card, and stands in for a missing artist photo.
+  let coverAlbum: Album?
+  /// An artist with their own photo on disk shows it in a circle.
+  let showsPhoto: Bool
+
+  var container: PlayableContainable {
+    switch kind {
+    case let .artist(artist): return artist
+    case let .album(album): return album
+    }
+  }
+
+  var objectID: NSManagedObjectID {
+    switch kind {
+    case let .artist(artist): return artist.managedObject.objectID
+    case let .album(album): return album.managedObject.objectID
     }
   }
 }
@@ -69,24 +137,37 @@ class SearchDiffableDataSource: BasicUITableViewDiffableDataSource {
 class SearchVC: BasicTableViewController {
   override var sceneTitle: String { "Search" }
 
-  nonisolated private static let categoryItemLimit = 10
-
   private var diffableDataSource: SearchDiffableDataSource?
   fileprivate var searchHistory: [SearchHistoryItem] = []
   fileprivate var artists: [Artist] = []
   fileprivate var albums: [Album] = []
   fileprivate var playlists: [Playlist] = []
   fileprivate var songs: [Song] = []
+  private var topResult: SearchTopResult?
+  /// The query the shown results were found for (the top card lights its letters).
+  private var currentQuery = ""
+  /// What is on this phone, for the history filter; nil until first read.
+  private var ownedIDs: SearchOwnedIDs?
+  /// Plays per song and album over the last 60 days, read once per search (cleared when
+  /// the field empties).
+  private var playCounts: SearchMatcher.PlayCounts?
+  /// What the GENRES grid shows now, so an unchanged summary does not rebuild it.
+  private var genreSignature: [String]?
 
   private var optionsButton: UIBarButtonItem = .createOptionsBarButton()
-  private var userButton: UIButton?
-  private var userBarButtonItem: UIBarButtonItem?
   private var isSearchActive = false
   // cassette (UX review 2026-10-20): starting points shown before anyone types.
   private lazy var startView = makeStartView()
+  /// A grouped table adds a gap above its first section when it has no header view; this
+  /// near-zero header keeps the top card 8pt under the bar.
+  private lazy var resultsHeaderSpacer = UIView(frame: CGRect(
+    x: 0,
+    y: 0,
+    width: 0,
+    height: CGFloat.leastNormalMagnitude
+  ))
   private var accountObjectId: NSManagedObjectID?
   private let account: Account
-  private var accountNotificationHandler: AccountNotificationHandler?
 
   init(account: Account) {
     self.account = account
@@ -99,139 +180,141 @@ class SearchVC: BasicTableViewController {
 
   func createDiffableDataSource() -> SearchDiffableDataSource {
     let source =
-      SearchDiffableDataSource(tableView: tableView) { tableView, indexPath, objectID -> UITableViewCell? in
-        return self.tableView(self.tableView, cellForRowAt: indexPath)
+      SearchDiffableDataSource(tableView: tableView) { [weak self] tableView, indexPath, row in
+        guard let self else { return UITableViewCell() }
+        return self.cell(for: row, at: indexPath, in: tableView)
       }
     source.searchVC = self
     return source
   }
 
   func updateDataSource(animated: Bool) {
-    guard let dataSource = tableView?.dataSource as? UITableViewDiffableDataSource<
-      Int,
-      NSManagedObjectID
-    > else {
-      assertionFailure("The data source has not implemented snapshot support while it should")
-      return
-    }
-    var snapshot = dataSource.snapshot() as NSDiffableDataSourceSnapshot<Int, NSManagedObjectID>
-    snapshot.deleteAllItems()
-    snapshot.appendSections(SearchSection.allCases.compactMap { $0.rawValue })
+    guard let dataSource = diffableDataSource else { return }
+    var snapshot = NSDiffableDataSourceSnapshot<Int, SearchRow>()
+    snapshot.appendSections(SearchSection.allCases.map(\.rawValue))
     snapshot.appendItems(
-      searchHistory.compactMap { $0.managedObject.objectID },
+      searchHistory.map { .entity($0.managedObject.objectID) },
       toSection: SearchSection.History.rawValue
     )
+    // The top card and the shelves keep one identity while what they show changes, so
+    // they are rebuilt on every pass.
+    var rebuilt = [SearchRow]()
+    if let topResult {
+      let row = SearchRow.top(topResult.objectID)
+      snapshot.appendItems([row], toSection: SearchSection.Top.rawValue)
+      rebuilt.append(row)
+    }
     snapshot.appendItems(
-      artists.compactMap { $0.managedObject.objectID },
-      toSection: SearchSection.Artist.rawValue
-    )
-    snapshot.appendItems(
-      albums.compactMap { $0.managedObject.objectID },
-      toSection: SearchSection.Album.rawValue
-    )
-    snapshot.appendItems(
-      playlists.compactMap { $0.managedObject.objectID },
-      toSection: SearchSection.Playlist.rawValue
-    )
-    snapshot.appendItems(
-      songs.compactMap { $0.managedObject.objectID },
+      songs.map { .entity($0.managedObject.objectID) },
       toSection: SearchSection.Song.rawValue
     )
+    if !albums.isEmpty {
+      snapshot.appendItems([.albumShelf], toSection: SearchSection.Album.rawValue)
+      rebuilt.append(.albumShelf)
+    }
+    if !artists.isEmpty {
+      snapshot.appendItems([.artistShelf], toSection: SearchSection.Artist.rawValue)
+      rebuilt.append(.artistShelf)
+    }
+    snapshot.appendItems(
+      playlists.map { .entity($0.managedObject.objectID) },
+      toSection: SearchSection.Playlist.rawValue
+    )
+    let previous = dataSource.snapshot()
+    let reloads = rebuilt.filter { previous.indexOfItem($0) != nil }
+    if !reloads.isEmpty {
+      snapshot.reloadItems(reloads)
+    }
     dataSource.apply(snapshot, animatingDifferences: animated)
   }
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    tableView.register(nibName: PlaylistTableCell.typeName)
+    tableView.register(nibName: GenericTableCell.typeName)
+    tableView.register(nibName: PlayableTableCell.typeName)
+    tableView.register(
+      SearchTopResultCell.self,
+      forCellReuseIdentifier: SearchTopResultCell.reuseIdentifier
+    )
+    tableView.register(
+      AlbumCarouselTableCell.self,
+      forCellReuseIdentifier: AlbumCarouselTableCell.reuseIdentifier
+    )
+    tableView.register(
+      SearchArtistShelfCell.self,
+      forCellReuseIdentifier: SearchArtistShelfCell.reuseIdentifier
+    )
+
     /// Store the data source in an instance property to make sure it's retained.
     diffableDataSource = createDiffableDataSource()
     /// Assign the data source to your collection view.
     tableView.dataSource = diffableDataSource
 
     accountObjectId = account.managedObject.objectID
-    searchHistory = appDelegate.storage.main.library.getSearchHistory(for: account)
+    reloadHistory()
     updateDataSource(animated: false)
     // cassette (search fix): bind the search controller to THIS view controller's
     // own navigationItem EARLY (viewDidLoad, before the tab activates search), and
     // put `searchBarPlacementAllowsExternalIntegration` on the SAME navigationItem
-    // that holds the searchController. iOS 26's UISearchTab (automaticallyActivates-
-    // Search) hoists the search bar from the VC's navigationItem and routes typing
-    // to its searchResultsUpdater. Previously the flag was set on the NAVIGATION
-    // CONTROLLER's navigationItem (which has no searchController) while the
-    // searchController itself was wired only later in viewIsAppearing — so the
-    // tab's search field was never bound to `updateSearchResults` and typing did
-    // nothing. configureSearchController (viewIsAppearing) still refreshes the
-    // scope titles / placeholder on top of this.
+    // that holds the searchController. iOS 26's UISearchTab hoists the search bar from
+    // the VC's navigationItem and routes typing to its searchResultsUpdater.
+    // Previously the flag was set on the NAVIGATION CONTROLLER's navigationItem (which
+    // has no searchController) while the searchController itself was wired only later
+    // in viewIsAppearing, so the tab's search field was never bound to
+    // `updateSearchResults` and typing did nothing. configureSearchController
+    // (viewIsAppearing) still refreshes the scope titles / placeholder on top of this.
+    // phone-taste: the tab no longer activates the field on selection
+    // (automaticallyActivatesSearch = false); this binding does not depend on that.
     navigationItem.searchController = searchController
     searchController.searchResultsUpdater = self
     navigationItem.searchBarPlacementAllowsExternalIntegration = true
+    applySearchTitleAppearance()
 
-    tableView.register(nibName: PlaylistTableCell.typeName)
-    tableView.register(nibName: GenericTableCell.typeName)
-    tableView.register(nibName: GenericTableCell.typeName)
-    tableView.register(nibName: PlayableTableCell.typeName)
     tableView.sectionHeaderHeight = 0.0
     tableView.estimatedSectionHeaderHeight = 0.0
     tableView.sectionFooterHeight = 0.0
     tableView.estimatedSectionFooterHeight = 0.0
+    // The table is grouped: without this the 28pt above each shout heading doubles.
+    tableView.sectionHeaderTopPadding = 0
+    // The founder's no-separators rule (2026-10-13); Search used to force lines back on.
+    tableView.separatorStyle = .none
     tableView.backgroundColor = .backgroundColor
     tableView.tableHeaderView = startView
 
-    containableAtIndexPathCallback = { indexPath in
-      switch SearchSection(rawValue: indexPath.section) {
-      case .History:
-        return self.searchHistory[indexPath.row].searchedPlayableContainable
-      case .Playlist:
-        return self.playlists[indexPath.row]
-      case .Artist:
-        return self.artists[indexPath.row]
-      case .Album:
-        return self.albums[indexPath.row]
-      case .Song:
-        return self.songs[indexPath.row]
-      case .none:
+    containableAtIndexPathCallback = { [weak self] indexPath in
+      guard let self else { return nil }
+      switch resolvedRow(at: indexPath) {
+      case let .history(item): return item.searchedPlayableContainable
+      case let .song(song): return song
+      case let .playlist(playlist): return playlist
+      case .top, .albumShelf, .artistShelf, .none: return nil
+      }
+    }
+    playContextAtIndexPathCallback = { [weak self] indexPath in
+      guard let self else { return nil }
+      switch resolvedRow(at: indexPath) {
+      case let .history(item):
+        guard let container = item.searchedPlayableContainable else { return nil }
+        return Self.onPhonePlayContext(container)
+      case let .song(song):
+        return PlayContext(containable: song)
+      case let .playlist(playlist):
+        return Self.onPhonePlayContext(playlist)
+      case .top, .albumShelf, .artistShelf, .none:
         return nil
       }
     }
-    playContextAtIndexPathCallback = { indexPath in
-      switch SearchSection(rawValue: indexPath.section) {
-      case .History:
-        let history = self.searchHistory[indexPath.row]
-        guard let container = history.searchedPlayableContainable else { return nil }
-        return PlayContext(containable: container)
-      case .Playlist:
-        let entity = self.playlists[indexPath.row]
-        return PlayContext(containable: entity)
-      case .Artist:
-        let entity = self.artists[indexPath.row]
-        return PlayContext(containable: entity)
-      case .Album:
-        let entity = self.albums[indexPath.row]
-        return PlayContext(containable: entity)
-      case .Song:
-        let entity = self.songs[indexPath.row]
-        return PlayContext(containable: entity)
-      case .none:
-        return nil
-      }
-    }
-    swipeCallback = { indexPath, completionHandler in
-      self.determSwipeActionContext(at: indexPath) { actionContext in
+    swipeCallback = { [weak self] indexPath, completionHandler in
+      guard let self else { completionHandler(nil); return }
+      determSwipeActionContext(at: indexPath) { actionContext in
         completionHandler(actionContext)
       }
     }
     updateContentUnavailable()
-    accountNotificationHandler = AccountNotificationHandler(
-      storage: appDelegate.storage,
-      notificationHandler: appDelegate.notificationHandler
-    )
-    accountNotificationHandler?.registerCallbackForActiveAccountChange { [weak self] accountInfo in
-      guard let self else { return }
-      setupUserNavButton(
-        currentAccount: account,
-        userButton: &userButton,
-        userBarButtonItem: &userBarButtonItem
-      )
-    }
+    refreshOptionsButton()
+    // phone-taste: no account avatar on Search (the approved start page is a bare
+    // title). The avatar and its profile menu stay on Home and Library.
   }
 
   override func viewWillAppear(_ animated: Bool) {
@@ -245,7 +328,7 @@ class SearchVC: BasicTableViewController {
     appDelegate.userStatistics.visited(.search)
     // cassette: the All/Cached scope is gated to Server Mode. In the default
     // on-device experience everything is already on the phone, so "All" already
-    // means "Downloaded" and the toggle is a no-op — hide it (nil scope titles).
+    // means "Downloaded" and the toggle is a no-op, so it is hidden (nil scope titles).
     // In Server Mode it returns, with "Cached" relabeled to "Downloaded".
     let scopeButtonTitles: [String]? = CassetteLibraryFilterProvider.shared.isOnDeviceOnly
       ? nil
@@ -254,6 +337,16 @@ class SearchVC: BasicTableViewController {
       placeholder: "Search your music",
       scopeButtonTitles: scopeButtonTitles
     )
+    refreshOwnedIDs()
+    refreshGenres()
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    // The start page's height depends on the genre rows, not on Auto Layout.
+    if !isSearchActive, startView.frame.height != startView.preferredHeight {
+      relayoutStartView()
+    }
   }
 
   public func activateSearchBar() {
@@ -272,30 +365,146 @@ class SearchVC: BasicTableViewController {
       scopeButtonTitles: scopeButtonTitles
     )
 
-    // Install the options button
+    // The options button (Clear Search History) shows only while there is history.
     optionsButton = UIBarButtonItem.createOptionsBarButton()
     optionsButton.menu = UIMenu(children: [
-      UIAction(title: "Clear Search History", image: .clear, handler: { _ in
-        self.appDelegate.storage.main.library.deleteSearchHistory()
-        self.appDelegate.storage.main.library.saveContext()
-        self.searchHistory = []
-        self.updateDataSource(animated: true)
-        self.updateContentUnavailable()
+      UIAction(title: "Clear Search History", image: .clear, handler: { [weak self] _ in
+        guard let self else { return }
+        appDelegate.storage.main.library.deleteSearchHistory()
+        appDelegate.storage.main.library.saveContext()
+        searchHistory = []
+        updateDataSource(animated: true)
+        updateContentUnavailable()
+        refreshOptionsButton()
       }),
     ])
+    refreshOptionsButton()
+  }
 
-    navigationItem.rightBarButtonItem = optionsButton
+  private func refreshOptionsButton() {
+    navigationItem.rightBarButtonItem = searchHistory.isEmpty ? nil : optionsButton
+  }
+
+  /// phone-taste: the "Search" large title in Barlow ExtraBold 38 on this screen only. The
+  /// rest of the bar is the global one (CassetteTheme.applyGlobalAppearance) attribute for
+  /// attribute, so the bar never flashes a different style; Library and Genres keep the
+  /// global large title.
+  private func applySearchTitleAppearance() {
+    let appearance = UINavigationBarAppearance()
+    appearance.configureWithOpaqueBackground()
+    appearance.backgroundColor = .cassette(.surfaceBase)
+    appearance.shadowColor = .cassette(.hairline)
+    appearance.titleTextAttributes = [
+      .font: UIFont.cassette(.navTitle),
+      .foregroundColor: UIColor.cassette(.textPrimary),
+    ]
+    appearance.largeTitleTextAttributes = [
+      .font: UIFont.cassetteDisplay(size: 38, weight: .extraBold),
+      .foregroundColor: UIColor.cassette(.textPrimary),
+    ]
+    let barButton = UIBarButtonItemAppearance()
+    barButton.normal.titleTextAttributes = [
+      .foregroundColor: UIColor.cassette(.textSecondary),
+      .font: UIFont.cassette(.rowTitle),
+    ]
+    appearance.buttonAppearance = barButton
+    appearance.backButtonAppearance = barButton
+    navigationItem.standardAppearance = appearance
+    navigationItem.scrollEdgeAppearance = appearance.copy()
+    navigationItem.compactAppearance = appearance.copy()
+  }
+
+  func headerShout(for section: Int) -> String? {
+    guard let section = SearchSection(rawValue: section), headerHeight(for: section) > 0
+    else { return nil }
+    return section.shout
+  }
+
+  // MARK: - Rows
+
+  /// A row with the entity behind it.
+  private enum ResolvedRow {
+    case history(SearchHistoryItem)
+    case song(Song)
+    case playlist(Playlist)
+    case top(SearchTopResult)
+    case albumShelf
+    case artistShelf
+  }
+
+  private func resolvedRow(at indexPath: IndexPath) -> ResolvedRow? {
+    guard let row = diffableDataSource?.itemIdentifier(for: indexPath) else { return nil }
+    return resolve(row, at: indexPath)
+  }
+
+  /// The entity behind `row`, which sits at `indexPath` (entity rows are found by their
+  /// section's list).
+  private func resolve(_ row: SearchRow, at indexPath: IndexPath) -> ResolvedRow? {
+    switch row {
+    case .top:
+      return topResult.map { .top($0) }
+    case .albumShelf:
+      return .albumShelf
+    case .artistShelf:
+      return .artistShelf
+    case let .entity(objectID):
+      switch SearchSection(rawValue: indexPath.section) {
+      case .History:
+        return Self.entity(objectID, at: indexPath.row, in: searchHistory) {
+          $0.managedObject.objectID
+        }.map { .history($0) }
+      case .Song:
+        return Self.entity(objectID, at: indexPath.row, in: songs) {
+          $0.managedObject.objectID
+        }.map { .song($0) }
+      case .Playlist:
+        return Self.entity(objectID, at: indexPath.row, in: playlists) {
+          $0.managedObject.objectID
+        }.map { .playlist($0) }
+      default:
+        return nil
+      }
+    }
+  }
+
+  /// The element at `index` when it is `objectID`, else the one that is (the arrays and
+  /// the snapshot change together, so the first test almost always holds).
+  private static func entity<T>(
+    _ objectID: NSManagedObjectID,
+    at index: Int,
+    in list: [T],
+    id: (T) -> NSManagedObjectID
+  )
+    -> T? {
+    if let item = list.element(at: index), id(item) == objectID {
+      return item
+    }
+    return list.first { id($0) == objectID }
+  }
+
+  /// A play context holding only what this phone can play (OneTapPlay's rule), so a
+  /// long-press or swipe Play never queues music that is not here.
+  private static func onPhonePlayContext(_ containable: PlayableContainable) -> PlayContext {
+    if containable is Song { return PlayContext(containable: containable) }
+    return PlayContext(
+      containable: containable,
+      index: 0,
+      playables: OneTapPlay.playables(of: containable)
+    )
   }
 
   func determSwipeActionContext(
     at indexPath: IndexPath,
     completionHandler: @escaping (_ actionContext: SwipeActionContext?) -> ()
   ) {
-    switch SearchSection(rawValue: indexPath.section) {
-    case .History:
-      let history = searchHistory[indexPath.row]
+    switch resolvedRow(at: indexPath) {
+    case let .history(history):
       guard let container = history.searchedPlayableContainable
       else { completionHandler(nil); return }
+      if container is Song {
+        completionHandler(SwipeActionContext(containable: container))
+        return
+      }
       Task { @MainActor in
         do {
           try await container.fetch(
@@ -312,10 +521,12 @@ class SearchVC: BasicTableViewController {
             isBackground: true
           )
         }
-        completionHandler(SwipeActionContext(containable: container))
+        completionHandler(SwipeActionContext(
+          containable: container,
+          playContext: Self.onPhonePlayContext(container)
+        ))
       }
-    case .Playlist:
-      let playlist = playlists[indexPath.row]
+    case let .playlist(playlist):
       Task { @MainActor in
         do {
           try await playlist.fetch(
@@ -331,138 +542,170 @@ class SearchVC: BasicTableViewController {
             isBackground: true
           )
         }
-        completionHandler(SwipeActionContext(containable: playlist))
+        completionHandler(SwipeActionContext(
+          containable: playlist,
+          playContext: Self.onPhonePlayContext(playlist)
+        ))
       }
-    case .Artist:
-      let artist = artists[indexPath.row]
-      Task { @MainActor in
-        do {
-          try await artist.fetch(
-            storage: self.appDelegate.storage,
-            librarySyncer: self.appDelegate.getMeta(self.account.info).librarySyncer,
-            playableDownloadManager: self.appDelegate.getMeta(self.account.info)
-              .playableDownloadManager
-          )
-        } catch {
-          self.appDelegate.eventLogger.report(
-            topic: "Artist Sync",
-            error: error,
-            isBackground: true
-          )
-        }
-        completionHandler(SwipeActionContext(containable: artist))
-      }
-    case .Album:
-      let album = albums[indexPath.row]
-      Task { @MainActor in
-        do {
-          try await album.fetch(
-            storage: self.appDelegate.storage,
-            librarySyncer: self.appDelegate.getMeta(self.account.info).librarySyncer,
-            playableDownloadManager: self.appDelegate.getMeta(self.account.info)
-              .playableDownloadManager
-          )
-        } catch {
-          self.appDelegate.eventLogger.report(
-            topic: "Album Sync",
-            error: error,
-            isBackground: true
-          )
-        }
-        completionHandler(SwipeActionContext(containable: album))
-      }
-    case .Song:
-      let song = songs[indexPath.row]
+    case let .song(song):
       completionHandler(SwipeActionContext(containable: song))
-    case .none:
+    case .top, .albumShelf, .artistShelf, .none:
       completionHandler(nil)
     }
   }
 
   func convertCellViewToPlayContext(cell: UITableViewCell) -> PlayContext? {
     guard let indexPath = tableView.indexPath(for: cell) else { return nil }
-    if SearchSection(rawValue: indexPath.section) == .Song {
-      let song = songs[indexPath.row]
+    switch resolvedRow(at: indexPath) {
+    case let .song(song):
       return PlayContext(containable: song)
-    } else if SearchSection(rawValue: indexPath.section) == .History {
-      let history = searchHistory[indexPath.row]
+    case let .history(history):
       guard let song = history.searchedPlayableContainable as? Song else { return nil }
       return PlayContext(containable: song)
+    default:
+      return nil
     }
-    return nil
   }
 
   // MARK: - Table view data source
 
-  override func tableView(
-    _ tableView: UITableView,
-    cellForRowAt indexPath: IndexPath
+  private func cell(
+    for row: SearchRow,
+    at indexPath: IndexPath,
+    in tableView: UITableView
   )
     -> UITableViewCell {
-    switch SearchSection(rawValue: indexPath.section) {
-    case .History:
-      let history = searchHistory[indexPath.row]
-      guard let container = history.searchedPlayableContainable else { return UITableViewCell() }
-      if let playlist = container as? Playlist {
+    switch row {
+    case .top:
+      let cell = tableView.dequeueReusableCell(
+        withIdentifier: SearchTopResultCell.reuseIdentifier,
+        for: indexPath
+      ) as! SearchTopResultCell
+      if let topResult {
+        let settings = appDelegate.storage.settings.accounts.getSetting(account.info).read
+        cell.configure(
+          top: topResult,
+          query: currentQuery,
+          theme: settings.themePreference,
+          artworkSetting: settings.artworkDisplayPreference
+        )
+        let container = topResult.container
+        // Plays only what is on this phone (never PlayContext(containable:) directly).
+        cell.onPlay = { _ = OneTapPlay.play(container) }
+      }
+      return cell
+    case .albumShelf:
+      let cell = tableView.dequeueReusableCell(
+        withIdentifier: AlbumCarouselTableCell.reuseIdentifier,
+        for: indexPath
+      ) as! AlbumCarouselTableCell
+      cell.configure(
+        albums: albums,
+        onSelect: { [weak self] album in self?.open(album) },
+        onPlay: { album in _ = OneTapPlay.play(album) },
+        style: .mock
+      )
+      return cell
+    case .artistShelf:
+      let cell = tableView.dequeueReusableCell(
+        withIdentifier: SearchArtistShelfCell.reuseIdentifier,
+        for: indexPath
+      ) as! SearchArtistShelfCell
+      cell.configure(artists: artists) { [weak self] artist in self?.open(artist) }
+      return cell
+    case .entity:
+      switch resolve(row, at: indexPath) {
+      case let .history(history):
+        guard let container = history.searchedPlayableContainable else { return UITableViewCell() }
+        if let playlist = container as? Playlist {
+          let cell: PlaylistTableCell = dequeueCell(for: tableView, at: indexPath)
+          cell.display(playlist: playlist, rootView: self)
+          return cell
+        } else if let song = container as? Song {
+          let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
+          cell.display(playable: song, playContextCb: convertCellViewToPlayContext, rootView: self)
+          return cell
+        } else {
+          let cell: GenericTableCell = dequeueCell(for: tableView, at: indexPath)
+          cell.display(container: container, rootView: self)
+          return cell
+        }
+      case let .song(song):
+        let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
+        // "artist · album" under the title, so two songs of one name tell apart; the
+        // app's 48pt art and 18/13 type stay. The 20pt gutter lines the rows up with
+        // the SONGS heading and the shelves (the mock's page gutter).
+        let subtitle = [song.creatorName, song.album?.name ?? ""]
+          .filter { !$0.isEmpty }
+          .joined(separator: " \(CommonString.oneMiddleDot) ")
+        cell.display(
+          playable: song,
+          playContextCb: convertCellViewToPlayContext,
+          rootView: self,
+          options: PlayableCellOptions(
+            horizontalMargin: CassetteHeading.sideInset,
+            subtitleOverride: subtitle.isEmpty ? nil : subtitle
+          )
+        )
+        return cell
+      case let .playlist(playlist):
         let cell: PlaylistTableCell = dequeueCell(for: tableView, at: indexPath)
         cell.display(playlist: playlist, rootView: self)
         return cell
-      } else if let song = container as? Song {
-        let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
-        cell.display(playable: song, playContextCb: convertCellViewToPlayContext, rootView: self)
-        return cell
-      } else {
-        let cell: GenericTableCell = dequeueCell(for: tableView, at: indexPath)
-        cell.display(container: container, rootView: self)
-        return cell
+      default:
+        return UITableViewCell()
       }
-    case .Playlist:
-      let cell: PlaylistTableCell = dequeueCell(for: tableView, at: indexPath)
-      let playlist = playlists[indexPath.row]
-      cell.display(playlist: playlist, rootView: self)
-      return cell
-    case .Artist:
-      let cell: GenericTableCell = dequeueCell(for: tableView, at: indexPath)
-      let artist = artists[indexPath.row]
-      cell.display(container: artist, rootView: self)
-      return cell
-    case .Album:
-      let cell: GenericTableCell = dequeueCell(for: tableView, at: indexPath)
-      let album = albums[indexPath.row]
-      cell.display(container: album, rootView: self)
-      return cell
-    case .Song:
-      let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
-      let song = songs[indexPath.row]
-      cell.display(playable: song, playContextCb: convertCellViewToPlayContext, rootView: self)
-      return cell
-    case .none:
-      return UITableViewCell()
     }
   }
 
+  private func headerHeight(for section: SearchSection) -> CGFloat {
+    let shows: Bool
+    switch section {
+    case .History: shows = !isSearchActive && !searchHistory.isEmpty
+    case .Top: shows = false
+    case .Song: shows = isSearchActive && !songs.isEmpty
+    case .Album: shows = isSearchActive && !albums.isEmpty
+    case .Artist: shows = isSearchActive && !artists.isEmpty
+    case .Playlist: shows = isSearchActive && !playlists.isEmpty
+    }
+    return shows ? CassetteHeading.tableHeaderHeight : 0
+  }
+
+  /// A hidden heading is a hair, not 0: a grouped table can read 0 as "the default
+  /// height", which would open gaps above the top card and between the shelves.
   override func tableView(
     _ tableView: UITableView,
     heightForHeaderInSection section: Int
   )
     -> CGFloat {
-    switch SearchSection(rawValue: section) {
-    case .History:
-      return !isSearchActive ? CommonScreenOperations.tableSectionHeightLarge : 0
-    case .Playlist:
-      return (isSearchActive && !playlists.isEmpty) ? CommonScreenOperations
-        .tableSectionHeightLarge : 0
-    case .Artist:
-      return (isSearchActive && !artists.isEmpty) ? CommonScreenOperations
-        .tableSectionHeightLarge : 0
-    case .Album:
-      return (isSearchActive && !albums.isEmpty) ? CommonScreenOperations
-        .tableSectionHeightLarge : 0
-    case .Song:
-      return (isSearchActive && !songs.isEmpty) ? CommonScreenOperations.tableSectionHeightLarge : 0
-    case .none:
-      return 0.0
-    }
+    guard let section = SearchSection(rawValue: section) else { return .leastNormalMagnitude }
+    let height = headerHeight(for: section)
+    return height > 0 ? height : .leastNormalMagnitude
+  }
+
+  /// The shout heading (SONGS, ALBUMS, ARTISTS, PLAYLISTS, RECENT): Barlow ExtraBold 26,
+  /// 28pt above and 12pt below, in the page gutter. A plain view, so the base class's
+  /// small-caps restyle of header views leaves it alone.
+  override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+    guard let section = SearchSection(rawValue: section), headerHeight(for: section) > 0
+    else { return nil }
+    return CassetteHeading.makeTableHeaderView(
+      shout: section.shout,
+      answer: nil,
+      answerColor: .cassette(.textSecondary)
+    )
+  }
+
+  override func tableView(
+    _ tableView: UITableView,
+    heightForFooterInSection section: Int
+  )
+    -> CGFloat {
+    .leastNormalMagnitude
+  }
+
+  override func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
+    nil
   }
 
   override func tableView(
@@ -470,9 +713,8 @@ class SearchVC: BasicTableViewController {
     heightForRowAt indexPath: IndexPath
   )
     -> CGFloat {
-    switch SearchSection(rawValue: indexPath.section) {
-    case .History:
-      let history = searchHistory[indexPath.row]
+    switch resolvedRow(at: indexPath) {
+    case let .history(history):
       guard let container = history.searchedPlayableContainable else { return 0.0 }
       if container is Playlist {
         return PlaylistTableCell.rowHeight
@@ -481,86 +723,101 @@ class SearchVC: BasicTableViewController {
       } else {
         return GenericTableCell.rowHeight
       }
-    case .Playlist:
-      return PlaylistTableCell.rowHeight
-    case .Artist:
-      return GenericTableCell.rowHeight
-    case .Album:
-      return GenericTableCell.rowHeight
-    case .Song:
+    case .top:
+      return SearchTopResultCell.rowHeight
+    case .song:
       return PlayableTableCell.rowHeight
+    case .albumShelf:
+      return AlbumShelfView.preferredHeight(for: .mock)
+    case .artistShelf:
+      return SearchArtistShelfCell.rowHeight
+    case .playlist:
+      return PlaylistTableCell.rowHeight
     case .none:
       return 0.0
     }
   }
 
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-    switch SearchSection(rawValue: indexPath.section) {
-    case .History:
-      let history = searchHistory[indexPath.row]
+    switch resolvedRow(at: indexPath) {
+    case let .history(history):
       guard let container = history.searchedPlayableContainable else { break }
       let _ = appDelegate.storage.main.library.createOrUpdateSearchHistory(container: container)
       if !(container is Song) {
         EntityPreviewActionBuilder(container: container, on: self).performPreviewTransition()
       }
-    case .Playlist:
-      let playlist = playlists[indexPath.row]
+      appDelegate.storage.main.library.saveContext()
+    case let .playlist(playlist):
       let _ = appDelegate.storage.main.library.createOrUpdateSearchHistory(container: playlist)
+      appDelegate.storage.main.library.saveContext()
       navigationController?.pushViewController(
         AppStoryboard.Main.segueToPlaylistDetail(account: account, playlist: playlist),
         animated: true
       )
-    case .Artist:
-      let artist = artists[indexPath.row]
-      let _ = appDelegate.storage.main.library.createOrUpdateSearchHistory(container: artist)
-      navigationController?.pushViewController(
-        AppStoryboard.Main.segueToArtistDetail(account: account, artist: artist),
-        animated: true
-      )
-    case .Album:
-      let album = albums[indexPath.row]
-      let _ = appDelegate.storage.main.library.createOrUpdateSearchHistory(container: album)
-      navigationController?.pushViewController(
-        AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
-        animated: true
-      )
-    case .Song:
-      let song = songs[indexPath.row]
+    case let .top(top):
+      switch top.kind {
+      case let .artist(artist): open(artist)
+      case let .album(album): open(album)
+      }
+    case let .song(song):
       let _ = appDelegate.storage.main.library.createOrUpdateSearchHistory(container: song)
-    case .none: break
+      appDelegate.storage.main.library.saveContext()
+    case .albumShelf, .artistShelf, .none:
+      break
     }
-    appDelegate.storage.main.library.saveContext()
+    tableView.deselectRow(at: indexPath, animated: true)
   }
+
+  /// Opens an album page and records it in the search history.
+  private func open(_ album: Album) {
+    let _ = appDelegate.storage.main.library.createOrUpdateSearchHistory(container: album)
+    appDelegate.storage.main.library.saveContext()
+    navigationController?.pushViewController(
+      AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
+      animated: true
+    )
+  }
+
+  /// Opens an artist page and records it in the search history.
+  private func open(_ artist: Artist) {
+    let _ = appDelegate.storage.main.library.createOrUpdateSearchHistory(container: artist)
+    appDelegate.storage.main.library.saveContext()
+    navigationController?.pushViewController(
+      AppStoryboard.Main.segueToArtistDetail(account: account, artist: artist),
+      animated: true
+    )
+  }
+
+  // MARK: - Searching
 
   struct SearchResultObjectContainer: Sendable {
     var artistsIDs = [NSManagedObjectID]()
     var albumsIDs = [NSManagedObjectID]()
     var playlistsIDs = [NSManagedObjectID]()
     var songsIDs = [NSManagedObjectID]()
+    var top: SearchTopPick?
+    var owned: SearchOwnedIDs?
+    var playCounts: SearchMatcher.PlayCounts?
   }
 
   override func updateSearchResults(for searchController: UISearchController) {
     guard let searchText = searchController.searchBar.text, let accountObjectId else { return }
-    // Cassette fork — Layer 3 Phase 3.2 (library filtering). In on-device-only
-    // mode global search stays local and is constrained to owned items; the
-    // remote Subsonic searches only run in Server Mode.
+    // Cassette fork, Layer 3 Phase 3.2 (library filtering). In on-device-only mode
+    // global search stays local and is constrained to owned items; the remote Subsonic
+    // searches only run in Server Mode.
     let isOnDeviceOnly = CassetteLibraryFilterProvider.shared.isOnDeviceOnly
     // cassette: reflect the "searching" state SYNCHRONOUSLY. Result population and
     // the final isSearchActive=true happen inside the async pass below; if that
     // pass races (its `searchText == searchBar.text` guard drops a late completion)
-    // or throws (previously swallowed by an empty catch), isSearchActive would stay
-    // false and the pre-search "No Search History" screen would remain up even
-    // though a query is typed. Setting it here means the empty state is at worst
-    // "No results", never "No Search History".
+    // or throws, isSearchActive would stay false and the start page would remain up
+    // even though a query is typed.
     if !searchText.isEmpty {
       isSearchActive = true
     }
-    // cassette (search fix — the real one): in on-device mode the scope bar is
+    // cassette (search fix, the real one): in on-device mode the scope bar is
     // hidden (scopeButtonTitles == nil), so `selectedScopeButtonIndex` is -1, NOT
-    // 0. This branch used `== 0`, so with no scope bar every keystroke fell through
-    // to the else clause that CLEARS results — the actual reason search "changed
-    // nothing" (verified on-device: FIRED text='djo' scope=-1). Treat anything that
-    // isn't the Downloaded scope (index 1) as the default local search (0 OR -1).
+    // 0. Treat anything that isn't the Downloaded scope (index 1) as the default
+    // local search (0 OR -1).
     if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex != 1 {
       if !isOnDeviceOnly {
         Task { @MainActor in do {
@@ -585,101 +842,29 @@ class SearchVC: BasicTableViewController {
         }}
       }
 
+      // The play log is read once per search: the first keystroke reads it, the rest
+      // reuse it until the field empties.
+      let knownCounts = playCounts
+      let since = Date().addingTimeInterval(-Double(ListeningShelves.lookbackDays) * 86400)
       Task { @MainActor in do {
         let searchResult = try await appDelegate.storage.async.performAndGet { asyncCompanion in
-          let accountAsync = asyncCompanion.library.getAccount(managedObjectId: accountObjectId)
-          let artists = asyncCompanion.library.searchArtists(
-            for: accountAsync,
-            searchText: searchText,
-            onlyCached: false,
-            displayFilter: .all
+          SearchMatcher.searchOnPhone(
+            library: asyncCompanion.library,
+            context: asyncCompanion.context,
+            accountObjectId: accountObjectId,
+            query: searchText,
+            isOnDeviceOnly: isOnDeviceOnly,
+            playsSince: since,
+            knownCounts: knownCounts
           )
-          let albums = asyncCompanion.library.searchAlbums(
-            for: accountAsync,
-            searchText: searchText,
-            onlyCached: false,
-            displayFilter: .all
-          )
-          let playlists = asyncCompanion.library.searchPlaylists(
-            for: accountAsync,
-            searchText: searchText,
-            playlistSearchCategory: .all
-          )
-          let songs = asyncCompanion.library.searchSongs(
-            for: accountAsync,
-            searchText: searchText,
-            onlyCached: false,
-            displayFilter: .all
-          )
-
-          // Cassette fork — Layer 3 Phase 3.2 (library filtering). Constrain the
-          // local search to owned items in on-device-only mode. Playlists are
-          // not ownership-scoped, so they pass through unfiltered.
-          var filteredArtists = artists
-          var filteredAlbums = albums
-          var filteredSongs = songs
-          if isOnDeviceOnly {
-            let ownership = DeviceOwnershipManager(context: asyncCompanion.context)
-            let ownedSongIds = ownership.fetchAllSubsonicTrackIds()
-            let ownedAlbumIds = ownership.fetchOwnedAlbumIds()
-            let ownedArtistIds = ownership.fetchOwnedArtistIds()
-            filteredArtists = artists.filter { ownedArtistIds.contains($0.id) }
-            filteredAlbums = albums.filter { ownedAlbumIds.contains($0.id) }
-            filteredSongs = songs.filter { ownedSongIds.contains($0.id) }
-          }
-
-          var result = SearchResultObjectContainer()
-          result.artistsIDs = FuzzySearcher.findBestMatch(in: filteredArtists, search: searchText)
-            .prefix(upToAsArray: Self.categoryItemLimit)
-            .compactMap { $0 as? Artist }
-            .compactMap { $0.managedObject.objectID }
-          result.albumsIDs = FuzzySearcher.findBestMatch(in: filteredAlbums, search: searchText)
-            .prefix(upToAsArray: Self.categoryItemLimit)
-            .compactMap { $0 as? Album }
-            .compactMap { $0.managedObject.objectID }
-          result.playlistsIDs = FuzzySearcher.findBestMatch(in: playlists, search: searchText)
-            .prefix(upToAsArray: Self.categoryItemLimit)
-            .compactMap { $0 as? Playlist }
-            .compactMap { $0.managedObject.objectID }
-          result.songsIDs = FuzzySearcher.findBestMatch(in: filteredSongs, search: searchText)
-            .prefix(upToAsArray: Self.categoryItemLimit)
-            .compactMap { $0 as? Song }
-            .compactMap { $0.managedObject.objectID }
-          return result
         }
-
-        guard searchText == self.searchController.searchBar.text else { return }
-        self.isSearchActive = true
-        self.searchHistory = []
-        self.artists = searchResult.artistsIDs
-          .compactMap {
-            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? ArtistMO
-          }
-          .compactMap { Artist(managedObject: $0) }
-        self.albums = searchResult.albumsIDs
-          .compactMap {
-            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? AlbumMO
-          }
-          .compactMap { Album(managedObject: $0) }
-        self.playlists = searchResult.playlistsIDs
-          .compactMap {
-            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? PlaylistMO
-          }
-          .compactMap { Playlist(library: self.appDelegate.storage.main.library, managedObject: $0)
-          }
-        self.songs = searchResult.songsIDs
-          .compactMap {
-            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? SongMO
-          }
-          .compactMap { Song(managedObject: $0) }
-        self.tableView.separatorStyle = .singleLine
-        self.updateDataSource(animated: false)
-        self.updateContentUnavailable()
+        self.applySearchResult(searchResult, for: searchText)
       } catch {
         self.appDelegate.eventLogger.report(topic: "Local Search", error: error, isBackground: true)
         self.updateContentUnavailable()
       }}
     } else if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 1 {
+      // Server Mode's Downloaded scope: matching unchanged (each entity's own name).
       Task { @MainActor in do {
         let searchResult = try await appDelegate.storage.async.performAndGet { asyncCompanion in
           let accountAsync = asyncCompanion.library.getAccount(managedObjectId: accountObjectId)
@@ -707,77 +892,124 @@ class SearchVC: BasicTableViewController {
             displayFilter: .all
           )
 
-          var result = SearchResultObjectContainer()
-          result.artistsIDs = FuzzySearcher.findBestMatch(in: artists, search: searchText)
-            .prefix(upToAsArray: Self.categoryItemLimit)
+          let rankedArtists = FuzzySearcher.findBestMatch(in: artists, search: searchText)
             .compactMap { $0 as? Artist }
-            .compactMap { $0.managedObject.objectID }
-          result.albumsIDs = FuzzySearcher.findBestMatch(in: albums, search: searchText)
-            .prefix(upToAsArray: Self.categoryItemLimit)
+          let rankedAlbums = FuzzySearcher.findBestMatch(in: albums, search: searchText)
             .compactMap { $0 as? Album }
-            .compactMap { $0.managedObject.objectID }
+          var result = SearchResultObjectContainer()
+          result.artistsIDs = rankedArtists
+            .prefix(SearchMatcher.artistLimit)
+            .map { $0.managedObject.objectID }
+          result.albumsIDs = rankedAlbums
+            .prefix(SearchMatcher.albumLimit)
+            .map { $0.managedObject.objectID }
           result.playlistsIDs = FuzzySearcher.findBestMatch(in: playlists, search: searchText)
-            .prefix(upToAsArray: Self.categoryItemLimit)
+            .prefix(upToAsArray: SearchMatcher.playlistLimit)
             .compactMap { $0 as? Playlist }
             .compactMap { $0.managedObject.objectID }
           result.songsIDs = FuzzySearcher.findBestMatch(in: songs, search: searchText)
-            .prefix(upToAsArray: Self.categoryItemLimit)
+            .prefix(upToAsArray: SearchMatcher.songLimit)
             .compactMap { $0 as? Song }
             .compactMap { $0.managedObject.objectID }
+          result.top = SearchMatcher.topPick(
+            artists: rankedArtists,
+            albums: rankedAlbums,
+            query: searchText,
+            ownedAlbumIds: nil,
+            ownedSongIds: nil
+          )
           return result
         }
-
-        guard searchText == self.searchController.searchBar.text else { return }
-        self.isSearchActive = true
-        self.searchHistory = []
-        self.artists = searchResult.artistsIDs
-          .compactMap {
-            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? ArtistMO
-          }
-          .compactMap { Artist(managedObject: $0) }
-        self.albums = searchResult.albumsIDs
-          .compactMap {
-            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? AlbumMO
-          }
-          .compactMap { Album(managedObject: $0) }
-        self.playlists = searchResult.playlistsIDs
-          .compactMap {
-            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? PlaylistMO
-          }
-          .compactMap { Playlist(library: self.appDelegate.storage.main.library, managedObject: $0)
-          }
-        self.songs = searchResult.songsIDs
-          .compactMap {
-            (try? self.appDelegate.storage.main.context.existingObject(with: $0)) as? SongMO
-          }
-          .compactMap { Song(managedObject: $0) }
-        self.tableView.separatorStyle = .singleLine
-        self.updateDataSource(animated: false)
-        self.updateContentUnavailable()
+        self.applySearchResult(searchResult, for: searchText)
       } catch {
         self.appDelegate.eventLogger.report(topic: "Local Search", error: error, isBackground: true)
         self.updateContentUnavailable()
       }}
     } else {
       isSearchActive = false
-      searchHistory = appDelegate.storage.main.library.getSearchHistory(for: account)
+      currentQuery = ""
+      playCounts = nil
+      reloadHistory()
       artists = []
       albums = []
       playlists = []
       songs = []
-      tableView.separatorStyle = .singleLine
+      topResult = nil
       updateDataSource(animated: false)
       updateContentUnavailable()
+      refreshOptionsButton()
     }
+  }
+
+  /// Shows a finished search pass, unless the field has moved on since it started.
+  private func applySearchResult(_ searchResult: SearchResultObjectContainer, for searchText: String) {
+    guard searchText == searchController.searchBar.text else { return }
+    let context = appDelegate.storage.main.context
+    isSearchActive = true
+    currentQuery = searchText
+    searchHistory = []
+    if let owned = searchResult.owned { ownedIDs = owned }
+    if let counts = searchResult.playCounts { playCounts = counts }
+    artists = searchResult.artistsIDs
+      .compactMap { (try? context.existingObject(with: $0)) as? ArtistMO }
+      .map { Artist(managedObject: $0) }
+    albums = searchResult.albumsIDs
+      .compactMap { (try? context.existingObject(with: $0)) as? AlbumMO }
+      .map { Album(managedObject: $0) }
+    playlists = searchResult.playlistsIDs
+      .compactMap { (try? context.existingObject(with: $0)) as? PlaylistMO }
+      .map { Playlist(library: appDelegate.storage.main.library, managedObject: $0) }
+    songs = searchResult.songsIDs
+      .compactMap { (try? context.existingObject(with: $0)) as? SongMO }
+      .map { Song(managedObject: $0) }
+    topResult = resolveTop(searchResult.top)
+    updateDataSource(animated: false)
+    updateContentUnavailable()
+    refreshOptionsButton()
+  }
+
+  /// The top pick on the main context. The card is lit by the first candidate album with a
+  /// cover on disk; an artist shows their own photo only when `hasOwnPhotoOnDisk` (a shared
+  /// artwork row can carry someone else's face).
+  private func resolveTop(_ pick: SearchTopPick?) -> SearchTopResult? {
+    guard let pick else { return nil }
+    let context = appDelegate.storage.main.context
+    let setting = appDelegate.storage.settings.accounts.getSetting(account.info).read
+      .artworkDisplayPreference
+    let candidates = pick.coverAlbumIDs
+      .compactMap { (try? context.existingObject(with: $0)) as? AlbumMO }
+      .map { Album(managedObject: $0) }
+    let coverAlbum = candidates.first { album in
+      guard let path = album.imagePath(setting: setting) else { return false }
+      return FileManager.default.fileExists(atPath: path)
+    } ?? candidates.first
+    if pick.isArtist {
+      guard let artistMO = (try? context.existingObject(with: pick.objectID)) as? ArtistMO
+      else { return nil }
+      let artist = Artist(managedObject: artistMO)
+      return SearchTopResult(
+        kind: .artist(artist),
+        coverAlbum: coverAlbum,
+        showsPhoto: artist.hasOwnPhotoOnDisk
+      )
+    }
+    guard let albumMO = (try? context.existingObject(with: pick.objectID)) as? AlbumMO
+    else { return nil }
+    let album = Album(managedObject: albumMO)
+    return SearchTopResult(kind: .album(album), coverAlbum: coverAlbum ?? album, showsPhoto: false)
   }
 
   func updateContentUnavailable() {
     // cassette: the starting points replace the old "No search history" page.
-    tableView.tableHeaderView = isSearchActive ? nil : startView
     if isSearchActive {
-      if artists.isEmpty, albums.isEmpty, playlists.isEmpty, songs.isEmpty {
+      tableView.tableHeaderView = resultsHeaderSpacer
+    } else {
+      relayoutStartView()
+    }
+    if isSearchActive {
+      if topResult == nil, artists.isEmpty, albums.isEmpty, playlists.isEmpty, songs.isEmpty {
         // cassette Layer 3 Phase 3.2: in on-device-only mode search is scoped to
-        // owned items, so steer the user to Server Mode when nothing matches.
+        // owned items.
         contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared.isOnDeviceOnly ?
           cassetteOnDeviceNoResultsConfig : noSearchResultsConfig
       } else {
@@ -787,6 +1019,8 @@ class SearchVC: BasicTableViewController {
       contentUnavailableConfiguration = nil
     }
   }
+
+  // MARK: - Start page
 
   private func makeStartView() -> SearchStartView {
     let account = account
@@ -808,6 +1042,142 @@ class SearchVC: BasicTableViewController {
         push(AppStoryboard.Main.segueToRadios(account: account))
       },
     ])
+  }
+
+  /// Sizes the start page to its content and puts it back as the table header (a table
+  /// header only relayouts when it is reassigned).
+  private func relayoutStartView() {
+    let width = tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width
+    startView.frame = CGRect(x: 0, y: 0, width: width, height: startView.preferredHeight)
+    tableView.tableHeaderView = startView
+  }
+
+  /// The GENRES grid: the genres of the music on this phone, biggest first (up to six),
+  /// each lit by one of its records. Counted off the main thread; the covers are picked
+  /// on the main thread, where a cover can be read.
+  private func refreshGenres() {
+    Task { @MainActor in
+      let summary: [DeviceOwnershipManager.OnPhoneGenre]
+      do {
+        // This task runs on the main actor, so the storage is read here directly.
+        summary = try await self.appDelegate.storage.async.performAndGet { asyncCompanion in
+          DeviceOwnershipManager(context: asyncCompanion.context).onPhoneGenreSummary()
+        }
+      } catch {
+        self.appDelegate.eventLogger.report(topic: "Search Genres", error: error, isBackground: true)
+        return
+      }
+      self.applyGenres(summary)
+    }
+  }
+
+  private func applyGenres(_ summary: [DeviceOwnershipManager.OnPhoneGenre]) {
+    let context = appDelegate.storage.main.context
+    let setting = appDelegate.storage.settings.accounts.getSetting(account.info).read
+      .artworkDisplayPreference
+    var tiles = [SearchStartView.GenreTile]()
+    var signature = [String]()
+    for genreSummary in summary {
+      guard let genreID = genreSummary.genreObjectID,
+            let genreMO = (try? context.existingObject(with: genreID)) as? GenreMO
+      else { continue }
+      let genre = Genre(managedObject: genreMO)
+      // The first sample record with a cover on disk.
+      var cover: UIImage?
+      var coverPath: String?
+      for albumID in genreSummary.sampleAlbumObjectIDs {
+        guard let albumMO = (try? context.existingObject(with: albumID)) as? AlbumMO
+        else { continue }
+        let album = Album(managedObject: albumMO)
+        if let image = LibraryEntityImage.coverImage(
+          libraryEntity: album,
+          artworkDisplayPreference: setting,
+          useCache: true
+        ) {
+          cover = image
+          coverPath = album.imagePath(setting: setting)
+          break
+        }
+      }
+      signature.append("\(genreSummary.name)|\(genreSummary.albumCount)|\(coverPath ?? "")")
+      tiles.append(SearchStartView.GenreTile(
+        name: genreSummary.name,
+        albumCount: genreSummary.albumCount,
+        cover: cover,
+        coverPath: coverPath
+      ) { [weak self] in
+        self?.openGenre(genre)
+      })
+    }
+    guard signature != genreSignature else { return }
+    genreSignature = signature
+    startView.setGenres(tiles)
+    if !isSearchActive {
+      relayoutStartView()
+    }
+  }
+
+  private func openGenre(_ genre: Genre) {
+    navigationController?.pushViewController(
+      AppStoryboard.Main.segueToGenreDetail(account: account, genre: genre),
+      animated: true
+    )
+  }
+
+  // MARK: - History
+
+  /// Recently Searched, only what is still on this phone (on the phone; everything in
+  /// Server Mode). Shown under GENRES before anyone types.
+  private func reloadHistory() {
+    let all = appDelegate.storage.main.library.getSearchHistory(for: account)
+    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else {
+      searchHistory = all.filter { $0.searchedPlayableContainable != nil }
+      return
+    }
+    // Until the on-phone sets are read, show none rather than something not here.
+    guard let owned = ownedIDs else {
+      searchHistory = []
+      return
+    }
+    searchHistory = all.filter { item in
+      guard let container = item.searchedPlayableContainable else { return false }
+      if let song = container as? Song { return owned.songs.contains(song.id) }
+      if let album = container as? Album { return owned.albums.contains(album.id) }
+      if let artist = container as? Artist { return owned.artists.contains(artist.id) }
+      return true
+    }
+  }
+
+  /// Reads what is on this phone off the main thread, then refilters the history.
+  private func refreshOwnedIDs() {
+    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else {
+      if !isSearchActive {
+        reloadHistory()
+        updateDataSource(animated: false)
+        refreshOptionsButton()
+      }
+      return
+    }
+    Task { @MainActor in
+      let owned: SearchOwnedIDs
+      do {
+        owned = try await self.appDelegate.storage.async.performAndGet { asyncCompanion in
+          let ownership = DeviceOwnershipManager(context: asyncCompanion.context)
+          return SearchOwnedIDs(
+            songs: ownership.fetchAllSubsonicTrackIds(),
+            albums: ownership.fetchOwnedAlbumIds(),
+            artists: ownership.fetchOwnedArtistIds()
+          )
+        }
+      } catch {
+        return
+      }
+      self.ownedIDs = owned
+      guard !self.isSearchActive else { return }
+      self.reloadHistory()
+      self.updateDataSource(animated: false)
+      self.refreshOptionsButton()
+    }
   }
 
   /// Shuffles the music on this phone (the whole library in Server Mode), capped so a
@@ -839,13 +1209,644 @@ class SearchVC: BasicTableViewController {
     // cassette (BUG-419): type via the shared factory.
     UIContentUnavailableConfiguration.cassetteNoResults()
   }()
+}
 
-  lazy var noSearchHistoryConfig: UIContentUnavailableConfiguration = {
-    // cassette (BUG-419): type via the shared factory.
-    UIContentUnavailableConfiguration.cassetteEmpty(
-      image: .clock,
-      title: "No search history",
-      body: "Your search history will appear here."
+// MARK: - SearchMatcher
+
+/// Search-local matching and ranking for the Search tab (phone-taste mock, data.ts
+/// searchOf). The shared LibraryStorage search predicates stay as they are, because other
+/// lists use them. Runs inside a background context's `performAndGet`.
+enum SearchMatcher {
+  /// Caps per section: five songs so the shelves land on the first screen, eight albums,
+  /// six artists, ten playlists.
+  static let songLimit = 5
+  static let albumLimit = 8
+  static let artistLimit = 6
+  static let playlistLimit = 10
+  /// Rows fetched per match tier before ranking.
+  private static let tierFetchLimit = 300
+  /// Two months of plays is about a thousand entries for a heavy listener.
+  private static let playFetchLimit = 5000
+
+  /// Plays per song id and per album id since a date, from the phone's own play log.
+  struct PlayCounts: Sendable {
+    var bySong = [String: Int]()
+    var byAlbum = [String: Int]()
+  }
+
+  /// The default search: songs by title, artist or album; albums by name or artist; artists
+  /// and playlists by name. On the phone, only what is on it. Ranked in three steps: the
+  /// title (or name) holds the query, then plays over the last 60 days, then the fuzzy
+  /// score.
+  static func searchOnPhone(
+    library: LibraryStorage,
+    context: NSManagedObjectContext,
+    accountObjectId: NSManagedObjectID,
+    query: String,
+    isOnDeviceOnly: Bool,
+    playsSince: Date,
+    knownCounts: PlayCounts?
+  )
+    -> SearchVC.SearchResultObjectContainer {
+    let account = library.getAccount(managedObjectId: accountObjectId)
+    var owned: SearchOwnedIDs?
+    if isOnDeviceOnly {
+      let ownership = DeviceOwnershipManager(context: context)
+      owned = SearchOwnedIDs(
+        songs: ownership.fetchAllSubsonicTrackIds(),
+        albums: ownership.fetchOwnedAlbumIds(),
+        artists: ownership.fetchOwnedArtistIds()
+      )
+    }
+    let counts = knownCounts ?? playCounts(library: library, account: account, since: playsSince)
+
+    // Artists: their own name, on the phone, best fuzzy match first (none dropped).
+    var artists = library.searchArtists(
+      for: account,
+      searchText: query,
+      onlyCached: false,
+      displayFilter: .all
     )
+    if let owned {
+      artists = artists.filter { owned.artists.contains($0.id) }
+    }
+    let rankedArtists = rank(artists, query: query) { _ in 0 }
+
+    // Albums: the name holds the query, or the artist's name does.
+    let albumBase = library.getSearchAlbumsPredicate(
+      for: account,
+      searchText: "",
+      onlyCached: false,
+      displayFilter: .all
+    )
+    let ownedAlbums = owned.map { NSPredicate(format: "id IN %@", $0.albums) }
+    let albumName = NSPredicate(format: "name CONTAINS[cd] %@", query)
+    let albumArtist = NSPredicate(format: "artist.name CONTAINS[cd] %@", query)
+    let namedAlbums = fetch(
+      AlbumMO.fetchRequest() as NSFetchRequest<AlbumMO>,
+      [albumBase, ownedAlbums, albumName],
+      sortKey: "name",
+      context: context
+    ).map { Album(managedObject: $0) }
+    let byArtistAlbums = fetch(
+      AlbumMO.fetchRequest() as NSFetchRequest<AlbumMO>,
+      [albumBase, ownedAlbums, albumArtist, NSCompoundPredicate(notPredicateWithSubpredicate: albumName)],
+      sortKey: "name",
+      context: context
+    ).map { Album(managedObject: $0) }
+    let albumPlays: (Album) -> Int = { counts.byAlbum[$0.id] ?? 0 }
+    let rankedAlbums = rank(namedAlbums, query: query, plays: albumPlays)
+      + rank(byArtistAlbums, query: query, plays: albumPlays)
+
+    // Songs: the title holds the query, or the artist's or the album's name does.
+    let songBase = library.getSearchSongsPredicate(
+      for: account,
+      searchText: "",
+      onlyCached: false,
+      displayFilter: .all
+    )
+    let ownedSongs = owned.map { NSPredicate(format: "id IN %@", $0.songs) }
+    let songTitle = NSPredicate(format: "title CONTAINS[cd] %@", query)
+    let songPeople = NSCompoundPredicate(orPredicateWithSubpredicates: [
+      NSPredicate(format: "artist.name CONTAINS[cd] %@", query),
+      NSPredicate(format: "album.name CONTAINS[cd] %@", query),
+    ])
+    let titledSongs = fetch(
+      SongMO.fetchRequest() as NSFetchRequest<SongMO>,
+      [songBase, ownedSongs, songTitle],
+      sortKey: "title",
+      context: context
+    ).map { Song(managedObject: $0) }
+    let otherSongs = fetch(
+      SongMO.fetchRequest() as NSFetchRequest<SongMO>,
+      [songBase, ownedSongs, songPeople, NSCompoundPredicate(notPredicateWithSubpredicate: songTitle)],
+      sortKey: "title",
+      context: context
+    ).map { Song(managedObject: $0) }
+    let songPlays: (Song) -> Int = { counts.bySong[$0.id] ?? 0 }
+    let rankedSongs = rank(titledSongs, query: query, plays: songPlays)
+      + rank(otherSongs, query: query, plays: songPlays)
+
+    // Playlists: their own name (not ownership-scoped), as before.
+    let playlists = library.searchPlaylists(
+      for: account,
+      searchText: query,
+      playlistSearchCategory: .all
+    )
+
+    var result = SearchVC.SearchResultObjectContainer()
+    result.artistsIDs = rankedArtists.prefix(artistLimit).map { $0.managedObject.objectID }
+    result.albumsIDs = rankedAlbums.prefix(albumLimit).map { $0.managedObject.objectID }
+    result.songsIDs = rankedSongs.prefix(songLimit).map { $0.managedObject.objectID }
+    result.playlistsIDs = FuzzySearcher.findBestMatch(in: playlists, search: query)
+      .prefix(upToAsArray: playlistLimit)
+      .compactMap { $0 as? Playlist }
+      .compactMap { $0.managedObject.objectID }
+    result.top = topPick(
+      artists: rankedArtists,
+      albums: rankedAlbums,
+      query: query,
+      ownedAlbumIds: owned?.albums,
+      ownedSongIds: owned?.songs
+    )
+    result.owned = owned
+    result.playCounts = counts
+    return result
+  }
+
+  /// The top result: the first artist whose name starts with the query (ignoring case and
+  /// accents), else the first album, else none. An artist's card is lit by their records
+  /// on the phone, those among the album results first; an artist with no album of their
+  /// own (a featured artist) by the records their songs here are on.
+  static func topPick(
+    artists: [Artist],
+    albums: [Album],
+    query: String,
+    ownedAlbumIds: Set<String>?,
+    ownedSongIds: Set<String>?
+  )
+    -> SearchTopPick? {
+    let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !needle.isEmpty else { return nil }
+    if let artist = artists.first(where: {
+      $0.name.range(of: needle, options: [.anchored, .caseInsensitive, .diacriticInsensitive]) != nil
+    }) {
+      let shown = albums.filter { $0.artist?.id == artist.id }
+      let others = artist.albums
+        .filter { ownedAlbumIds?.contains($0.id) ?? true }
+        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+      var seen = Set<String>()
+      var coverIDs = [NSManagedObjectID]()
+      for album in shown + others where seen.insert(album.id).inserted {
+        coverIDs.append(album.managedObject.objectID)
+        if coverIDs.count == 3 { break }
+      }
+      if coverIDs.isEmpty {
+        for song in artist.songs.compactMap(\.asSong)
+          where ownedSongIds?.contains(song.id) ?? true {
+          guard let album = song.album, !album.id.isEmpty,
+                seen.insert(album.id).inserted else { continue }
+          coverIDs.append(album.managedObject.objectID)
+          if coverIDs.count == 3 { break }
+        }
+      }
+      return SearchTopPick(
+        isArtist: true,
+        objectID: artist.managedObject.objectID,
+        coverAlbumIDs: coverIDs
+      )
+    }
+    if let album = albums.first {
+      return SearchTopPick(
+        isArtist: false,
+        objectID: album.managedObject.objectID,
+        coverAlbumIDs: [album.managedObject.objectID]
+      )
+    }
+    return nil
+  }
+
+  private static func playCounts(library: LibraryStorage, account: Account, since: Date) -> PlayCounts {
+    var counts = PlayCounts()
+    for entry in library.getScrobbleEntries(for: account, since: since, fetchLimit: playFetchLimit) {
+      guard let song = entry.playable?.asSong else { continue }
+      counts.bySong[song.id, default: 0] += 1
+      if let albumId = song.album?.id, !albumId.isEmpty {
+        counts.byAlbum[albumId, default: 0] += 1
+      }
+    }
+    return counts
+  }
+
+  private static func fetch<T: NSManagedObject>(
+    _ request: NSFetchRequest<T>,
+    _ predicates: [NSPredicate?],
+    sortKey: String,
+    context: NSManagedObjectContext
+  )
+    -> [T] {
+    request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates.compactMap { $0 })
+    request.sortDescriptors = [NSSortDescriptor(key: sortKey, ascending: true)]
+    request.fetchLimit = tierFetchLimit
+    request.returnsObjectsAsFaults = false
+    return (try? context.fetch(request)) ?? []
+  }
+
+  /// Most played first, then the best fuzzy match on the item's own name, then the order
+  /// they came in. Nothing is dropped: an artist's song whose title does not match stays.
+  private static func rank<T: PlayableContainable>(
+    _ items: [T],
+    query: String,
+    plays: (T) -> Int
+  )
+    -> [T] {
+    guard items.count > 1 else { return items }
+    let fuzzy = FuzzySearcher.findBestMatch(in: items.map { $0 as PlayableContainable }, search: query)
+    var fuzzyIndex = [ObjectIdentifier: Int]()
+    for (index, item) in fuzzy.enumerated() {
+      fuzzyIndex[ObjectIdentifier(item as AnyObject)] = index
+    }
+    return items.enumerated()
+      .map { (offset: $0.offset, item: $0.element, plays: plays($0.element)) }
+      .sorted { lhs, rhs in
+        if lhs.plays != rhs.plays { return lhs.plays > rhs.plays }
+        let lf = fuzzyIndex[ObjectIdentifier(lhs.item as AnyObject)] ?? Int.max
+        let rf = fuzzyIndex[ObjectIdentifier(rhs.item as AnyObject)] ?? Int.max
+        if lf != rf { return lf < rf }
+        return lhs.offset < rhs.offset
+      }
+      .map(\.item)
+  }
+}
+
+// MARK: - SearchHighlight
+
+/// The matched letters, lit (the mock's `Hit`). Used on the top card only tonight: rows
+/// and artist names stay plain, since the mock's orange breaks the colour rule and a
+/// per-row colour is the founder's call.
+enum SearchHighlight {
+  /// `text` in `style` (its font, tracking and capitals) with the first occurrence of
+  /// `query`, ignoring case and accents, in `hitColor`. No match, no highlight.
+  @MainActor
+  static func attributed(
+    _ text: String,
+    query: String,
+    style: CassetteTextStyle,
+    color: UIColor,
+    hitColor: UIColor
+  )
+    -> NSAttributedString {
+    let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !needle.isEmpty,
+          let range = text.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive])
+    else {
+      return .cassette(text, style, color: color)
+    }
+    // Each run is cased on its own, so a capital that changes length never shifts the lit
+    // letters.
+    let result = NSMutableAttributedString()
+    result.append(.cassette(String(text[..<range.lowerBound]), style, color: color))
+    result.append(.cassette(String(text[range]), style, color: hitColor))
+    result.append(.cassette(String(text[range.upperBound...]), style, color: color))
+    return result
+  }
+}
+
+// MARK: - SearchTopResultCell
+
+/// The top result (`.topResult`): one card lit by its record, a cover (or the artist's own
+/// photo), the kind, the name with the typed letters in the record's colour, and a play
+/// disc that starts only what is on the phone. A tap anywhere else opens the page.
+final class SearchTopResultCell: UITableViewCell {
+  static let reuseIdentifier = "SearchTopResultCell"
+  /// The card's margin (`.topResult` margin 8px 20px) and padding.
+  private static let topInset: CGFloat = 8
+  private static let sideInset: CGFloat = 20
+  private static let padding: CGFloat = 14
+  private static let imageSide: CGFloat = 96
+  private static let discDiameter: CGFloat = 52
+  static let rowHeight: CGFloat = topInset + 2 * padding + imageSide
+
+  var onPlay: (() -> ())?
+
+  private let card = UIView()
+  private lazy var glow = CoverGlowView(recipe: .topResult)
+  /// Carries the photo's soft shadow; the image itself clips to its shape.
+  private let imageHost = UIView()
+  private lazy var artworkView = EntityImageView(frame: CGRect(
+    x: 0,
+    y: 0,
+    width: SearchTopResultCell.imageSide,
+    height: SearchTopResultCell.imageSide
+  ))
+  /// The app's artist placeholder, for an artist with neither a photo of their own nor a
+  /// record on the phone (never the artist's shared artwork, which can be someone else).
+  private let placeholderView: UIImageView = {
+    let imageView = UIImageView()
+    imageView.translatesAutoresizingMaskIntoConstraints = false
+    imageView.contentMode = .scaleAspectFill
+    imageView.layer.cornerRadius = CassetteRadius.artworkRow
+    imageView.layer.masksToBounds = true
+    imageView.isHidden = true
+    return imageView
   }()
+  private let kickerLabel = UILabel()
+  private let nameLabel = UILabel()
+  private let subtitleLabel = UILabel()
+  private lazy var playButton: UIButton = {
+    // The cream disc, 52pt with a 22pt glyph (`.bigPlay`), nudged 3pt for optical
+    // centring.
+    let button = LibraryElementDetailTableHeaderView.makeDetailPlayCTA(
+      diameter: SearchTopResultCell.discDiameter,
+      glyphScale: 0.43
+    )
+    button.configuration?.contentInsets = NSDirectionalEdgeInsets(
+      top: 0,
+      leading: 3,
+      bottom: 0,
+      trailing: 0
+    )
+    button.addAction(UIAction { [weak self] _ in self?.onPlay?() }, for: .touchUpInside)
+    return button
+  }()
+
+  private var name = ""
+  private var query = ""
+  /// A newer bind replaces the token, so a late colour read for a reused cell is dropped.
+  private var tintToken = UUID()
+
+  override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+    super.init(style: style, reuseIdentifier: reuseIdentifier)
+    setUp()
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  private func setUp() {
+    backgroundColor = .clear
+    contentView.backgroundColor = .clear
+    selectionStyle = .none
+
+    card.translatesAutoresizingMaskIntoConstraints = false
+    card.backgroundColor = .cassette(.surfaceElevated)
+    card.layer.cornerRadius = CassetteRadius.litCard
+    card.layer.cornerCurve = .continuous
+    card.layer.borderWidth = 1
+    card.clipsToBounds = true
+    contentView.addSubview(card)
+
+    glow.translatesAutoresizingMaskIntoConstraints = false
+    card.addSubview(glow)
+
+    imageHost.translatesAutoresizingMaskIntoConstraints = false
+    imageHost.isUserInteractionEnabled = false
+    imageHost.layer.shadowColor = UIColor.black.cgColor
+    imageHost.layer.shadowOpacity = 0
+    imageHost.layer.shadowRadius = 12
+    imageHost.layer.shadowOffset = CGSize(width: 0, height: 10)
+    imageHost.layer.shadowPath = UIBezierPath(ovalIn: CGRect(
+      x: 0,
+      y: 0,
+      width: Self.imageSide,
+      height: Self.imageSide
+    )).cgPath
+    artworkView.translatesAutoresizingMaskIntoConstraints = false
+    imageHost.addSubview(artworkView)
+    imageHost.addSubview(placeholderView)
+    card.addSubview(imageHost)
+
+    kickerLabel.numberOfLines = 1
+    nameLabel.numberOfLines = 2
+    nameLabel.lineBreakMode = .byTruncatingTail
+    nameLabel.adjustsFontForContentSizeCategory = false
+    subtitleLabel.font = UIFont.cassette(.cardSubtitle)
+    subtitleLabel.textColor = .cassette(.textSecondary)
+    subtitleLabel.numberOfLines = 1
+    subtitleLabel.lineBreakMode = .byTruncatingTail
+    let textStack = UIStackView(arrangedSubviews: [kickerLabel, nameLabel, subtitleLabel])
+    textStack.axis = .vertical
+    textStack.alignment = .leading
+    textStack.spacing = 4
+    textStack.translatesAutoresizingMaskIntoConstraints = false
+    card.addSubview(textStack)
+
+    playButton.translatesAutoresizingMaskIntoConstraints = false
+    card.addSubview(playButton)
+
+    let cardHeight = card.heightAnchor.constraint(equalToConstant: 2 * Self.padding + Self.imageSide)
+    cardHeight.priority = UILayoutPriority(999)
+    NSLayoutConstraint.activate([
+      card.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Self.topInset),
+      card.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Self.sideInset),
+      card.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Self.sideInset),
+      cardHeight,
+
+      glow.topAnchor.constraint(equalTo: card.topAnchor),
+      glow.bottomAnchor.constraint(equalTo: card.bottomAnchor),
+      glow.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+      glow.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+
+      imageHost.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: Self.padding),
+      imageHost.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+      imageHost.widthAnchor.constraint(equalToConstant: Self.imageSide),
+      imageHost.heightAnchor.constraint(equalToConstant: Self.imageSide),
+      artworkView.topAnchor.constraint(equalTo: imageHost.topAnchor),
+      artworkView.bottomAnchor.constraint(equalTo: imageHost.bottomAnchor),
+      artworkView.leadingAnchor.constraint(equalTo: imageHost.leadingAnchor),
+      artworkView.trailingAnchor.constraint(equalTo: imageHost.trailingAnchor),
+      placeholderView.topAnchor.constraint(equalTo: imageHost.topAnchor),
+      placeholderView.bottomAnchor.constraint(equalTo: imageHost.bottomAnchor),
+      placeholderView.leadingAnchor.constraint(equalTo: imageHost.leadingAnchor),
+      placeholderView.trailingAnchor.constraint(equalTo: imageHost.trailingAnchor),
+
+      playButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -Self.padding),
+      playButton.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+      playButton.widthAnchor.constraint(equalToConstant: Self.discDiameter),
+      playButton.heightAnchor.constraint(equalToConstant: Self.discDiameter),
+
+      textStack.leadingAnchor.constraint(equalTo: imageHost.trailingAnchor, constant: Self.padding),
+      textStack.trailingAnchor.constraint(
+        lessThanOrEqualTo: playButton.leadingAnchor,
+        constant: -Self.padding
+      ),
+      textStack.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+    ])
+
+    applyBorderColor()
+    registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _: UITraitCollection) in
+      self.applyBorderColor()
+    }
+  }
+
+  /// The card's faint inner ring (`.topResult` inset 1px at 6%).
+  private func applyBorderColor() {
+    card.layer.borderColor = UIColor.cassette(.textPrimary).withAlphaComponent(0.06).cgColor
+  }
+
+  override func prepareForReuse() {
+    super.prepareForReuse()
+    onPlay = nil
+    tintToken = UUID()
+  }
+
+  override func setHighlighted(_ highlighted: Bool, animated: Bool) {
+    super.setHighlighted(highlighted, animated: animated)
+    card.alpha = highlighted ? 0.85 : 1
+  }
+
+  func configure(
+    top: SearchTopResult,
+    query: String,
+    theme: ThemePreference,
+    artworkSetting: ArtworkDisplayPreference
+  ) {
+    self.query = query
+    let kind: String
+    switch top.kind {
+    case let .artist(artist):
+      kind = "Artist"
+      name = artist.name
+      subtitleLabel.text = nil
+      subtitleLabel.isHidden = true
+    case let .album(album):
+      kind = "Album"
+      name = album.name
+      let artistName = album.artist?.name ?? ""
+      subtitleLabel.text = artistName
+      subtitleLabel.isHidden = artistName.isEmpty
+    }
+    kickerLabel.attributedText = .cassette(kind, .kicker, color: .cassette(.textSecondary))
+
+    // The image: an artist's own photo in a circle with a soft shadow; otherwise the
+    // record (an artist with no photo shows their first record on the phone, as drawn).
+    placeholderView.isHidden = true
+    artworkView.isHidden = false
+    if top.showsPhoto, case let .artist(artist) = top.kind {
+      artworkView.shape = .circle
+      artworkView.display(theme: theme, container: artist)
+      imageHost.layer.shadowOpacity = 0.45
+    } else if let coverAlbum = top.coverAlbum {
+      artworkView.shape = .rounded(.small)
+      artworkView.display(theme: theme, container: coverAlbum, cornerRadius: .small)
+      imageHost.layer.shadowOpacity = 0
+    } else {
+      artworkView.isHidden = true
+      placeholderView.image = UIImage.getGeneratedArtwork(theme: theme, artworkType: .artist)
+      placeholderView.isHidden = false
+      imageHost.layer.shadowOpacity = 0
+    }
+
+    // The light: the record's glow behind the card, and its colour on the typed letters
+    // (the neutral tint until the cover is read; never orange).
+    let coverPath = top.coverAlbum?.imagePath(setting: artworkSetting)
+    glow.show(coverPath: coverPath)
+    applyTint(coverPath: coverPath)
+
+    accessibilityLabel = "\(kind), \(name)"
+    playButton.accessibilityLabel = "Play \(name)"
+  }
+
+  private func applyTint(coverPath: String?) {
+    tintToken = UUID()
+    guard let coverPath, !coverPath.isEmpty else {
+      renderName(hitColor: CoverTint.neutral.text)
+      return
+    }
+    if let cached = CoverTint.cached(key: coverPath) {
+      renderName(hitColor: cached.text)
+      return
+    }
+    renderName(hitColor: CoverTint.neutral.text)
+    let token = tintToken
+    Task { [weak self] in
+      let tint = await CoverTint.resolve(coverPath: coverPath)
+      guard let self, self.tintToken == token else { return }
+      self.renderName(hitColor: (tint ?? .neutral).text)
+    }
+  }
+
+  /// The name in the shout role (Barlow ExtraBold 26, capitals), the typed letters lit.
+  private func renderName(hitColor: UIColor) {
+    nameLabel.attributedText = SearchHighlight.attributed(
+      name,
+      query: query,
+      style: .shout,
+      color: .cassette(.textPrimary),
+      hitColor: hitColor
+    )
+  }
+}
+
+// MARK: - SearchArtistShelfCell
+
+/// The ARTISTS shelf: a row of 104pt circles with a centred name under each (`.artistTile`,
+/// `.artistCircle`), in the 20pt gutter, 12pt apart (the mock's `.shelf` gap). A tap opens
+/// the artist. No play disc (none drawn).
+final class SearchArtistShelfCell: UITableViewCell, UICollectionViewDataSource,
+  UICollectionViewDelegate {
+  static let reuseIdentifier = "SearchArtistShelfCell"
+  private static let diameter: CGFloat = 104
+  private static let spacing: CGFloat = 12
+  private static let sideInset: CGFloat = 20
+  /// The circle, the 8pt gap and one name line, with a little air.
+  static let rowHeight: CGFloat = diameter + 8 + 24
+
+  private var artists: [Artist] = []
+  private var onSelect: ((Artist) -> ())?
+
+  private lazy var collectionView: UICollectionView = {
+    let layout = UICollectionViewFlowLayout()
+    layout.scrollDirection = .horizontal
+    layout.itemSize = CGSize(width: Self.diameter, height: Self.rowHeight)
+    layout.minimumLineSpacing = Self.spacing
+    layout.minimumInteritemSpacing = Self.spacing
+    layout.sectionInset = UIEdgeInsets(top: 0, left: Self.sideInset, bottom: 0, right: Self.sideInset)
+    let collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
+    collectionView.backgroundColor = .clear
+    collectionView.showsHorizontalScrollIndicator = false
+    collectionView.alwaysBounceHorizontal = true
+    collectionView.dataSource = self
+    collectionView.delegate = self
+    collectionView.register(
+      ArtistCircleCollectionCell.self,
+      forCellWithReuseIdentifier: ArtistCircleCollectionCell.typeName
+    )
+    collectionView.translatesAutoresizingMaskIntoConstraints = false
+    return collectionView
+  }()
+
+  override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+    super.init(style: style, reuseIdentifier: reuseIdentifier)
+    backgroundColor = .clear
+    contentView.backgroundColor = .clear
+    selectionStyle = .none
+    contentView.addSubview(collectionView)
+    NSLayoutConstraint.activate([
+      collectionView.topAnchor.constraint(equalTo: contentView.topAnchor),
+      collectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+      collectionView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+      collectionView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+    ])
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  func configure(artists: [Artist], onSelect: @escaping (Artist) -> ()) {
+    self.artists = artists
+    self.onSelect = onSelect
+    collectionView.reloadData()
+    collectionView.setContentOffset(.zero, animated: false)
+  }
+
+  func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+    artists.count
+  }
+
+  func collectionView(
+    _ collectionView: UICollectionView,
+    cellForItemAt indexPath: IndexPath
+  )
+    -> UICollectionViewCell {
+    let cell = collectionView.dequeueReusableCell(
+      withReuseIdentifier: ArtistCircleCollectionCell.typeName,
+      for: indexPath
+    ) as! ArtistCircleCollectionCell
+    // Names stay plain (no lit letters on rows tonight; see SearchHighlight).
+    cell.display(
+      artist: artists[indexPath.item],
+      showsPlayOverlay: false,
+      metrics: .compact(diameter: Self.diameter),
+      attributedName: nil
+    )
+    return cell
+  }
+
+  func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+    guard indexPath.item < artists.count else { return }
+    onSelect?(artists[indexPath.item])
+  }
 }

@@ -532,12 +532,10 @@ extension UIContentUnavailableConfiguration {
     )
   }
 
-  /// A search of the on-device library found nothing.
+  /// A search of the on-device library found nothing. The title alone (phone-taste: no
+  /// explainer copy). Shared by Search and the Songs, Artists and Albums list search.
   @MainActor
   static var cassetteOnDeviceNoResults: UIContentUnavailableConfiguration {
-    cassetteNoResults(
-      title: "No results on this phone",
-      body: "Only music on this phone is searched. Choose what else syncs here in Cassette Player on your computer."
-    )
+    cassetteNoResults(title: "No results on this phone", body: nil)
   }
 }

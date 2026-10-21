@@ -52,7 +52,10 @@ class TabBarVC: UITabBarController {
           .getController(account: self.account)
       )
     }
-    searchTab!.automaticallyActivatesSearch = true
+    // phone-taste: the tab lands on the start page (title, chips, genres) with the field
+    // resting at the bottom and the keyboard down; typing starts when the field is
+    // tapped. `displaySearch()` still focuses it for the keyboard shortcut and Siri.
+    searchTab!.automaticallyActivatesSearch = false
     fixTabs.append(searchTab!)
 
     // cassette Patch 053 (Phase H): tabs start with the outline icon. The
@@ -466,11 +469,15 @@ extension TabBarVC: MainSceneHostingViewController {
     guard let searchTab else { return }
     visualizePopupPlayer(direction: .close, animated: true) {
       self.selectedTab = searchTab
-      searchTab.viewController?.navigationController?.popToRootViewController(animated: false)
+      // The tab's view controller IS the navigation controller (it has no navigation
+      // controller of its own), so SearchVC is its root. Reading `.navigationController`
+      // here returned nil, and the shortcut never reached the field.
+      (searchTab.viewController as? UINavigationController)?
+        .popToRootViewController(animated: false)
       Task {
         try await Task.sleep(nanoseconds: 500_000_000)
-        if let searchTabVC = searchTab.viewController?.navigationController?
-          .topViewController as? SearchVC {
+        if let searchTabVC = (searchTab.viewController as? UINavigationController)?
+          .viewControllers.first as? SearchVC {
           searchTabVC.activateSearchBar()
         }
       }
