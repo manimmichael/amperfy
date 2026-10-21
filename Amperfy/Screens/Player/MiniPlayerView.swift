@@ -916,7 +916,13 @@ class MiniPlayerView: UIView {
     )
     refreshMoreButton()
     refreshTrailingButtons()
+    playablePresenceChangeCB?()
   }
+
+  /// cassette 2026-10-20: told after every refresh, so the host can hide the pill while
+  /// nothing is queued (TabBarVC.refreshMiniPlayerPresence) instead of showing a
+  /// "No music playing" bar with buttons that do nothing.
+  public var playablePresenceChangeCB: VoidFunctionCallback?
 
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")

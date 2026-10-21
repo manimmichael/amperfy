@@ -145,6 +145,7 @@ class TabBarVC: UITabBarController {
     miniPlayer!.glassContainer.translatesAutoresizingMaskIntoConstraints = false
 
     let accessory = UITabAccessory(contentView: miniPlayer!.glassContainer)
+    miniPlayerAccessory = accessory
     bottomAccessory = accessory
 
     heightConstraint = miniPlayer!.glassContainer.heightAnchor.constraint(equalToConstant: 48.0)
@@ -161,6 +162,8 @@ class TabBarVC: UITabBarController {
 
     miniPlayer!.tabAccessoryTraitChangeCB = configureTraitChangesForMiniPlayer
     configureTraitChangesForMiniPlayer()
+    miniPlayer!.playablePresenceChangeCB = { [weak self] in self?.refreshMiniPlayerPresence(animated: true) }
+    refreshMiniPlayerPresence(animated: false)
 
     registerForTraitChanges(
       [UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self],
@@ -286,6 +289,32 @@ class TabBarVC: UITabBarController {
 
   override func viewWillLayoutSubviews() {
     super.viewWillLayoutSubviews()
+    configureTraitChangesForMiniPlayer()
+  }
+
+  // MARK: - Mini player presence
+
+  /// The one accessory the mini player lives in, kept while it is off screen.
+  private var miniPlayerAccessory: UITabAccessory?
+
+  /// cassette 2026-10-20: the mini player shows only while something is queued. With an
+  /// empty queue (nothing played yet, or everything left the phone, BUG-437) the bar's
+  /// accessory slot is removed rather than showing "No music playing".
+  func refreshMiniPlayerPresence(animated: Bool) {
+    guard let miniPlayerAccessory else { return }
+    let wanted = appDelegate.player.currentlyPlaying != nil
+    let shown = bottomAccessory != nil
+    guard wanted != shown else { return }
+    setBottomAccessory(wanted ? miniPlayerAccessory : nil, animated: animated)
+    guard wanted, let miniPlayer, let host = miniPlayer.glassContainer.superview else { return }
+    // Back in a slot: the host-relative constraints point at the old host, so remake them
+    // and let the rail pass choose the layout again.
+    compactWidthConstraint?.isActive = false
+    compactWidthConstraint = miniPlayer.glassContainer.widthAnchor.constraint(equalTo: host.widthAnchor)
+    compactWidthConstraint?.priority = UILayoutPriority(999)
+    inlineHeightConstraint?.isActive = false
+    inlineHeightConstraint = nil
+    appliedRailLayout = nil
     configureTraitChangesForMiniPlayer()
   }
 
