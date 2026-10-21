@@ -657,6 +657,7 @@ final class HomeVC: UICollectionViewController {
     case .onRepeat: return ("ON REPEAT", "lately")
     case .aroundNow: return (ListeningShelves.aroundNowTitle(now: now).uppercased(), "around now")
     case .moreLikeLately: return ("MORE LIKE", "this month")
+    case .fromYourMixes: return ("FROM", "your mixes")
     case .forgottenAlbums: return ("ALBUMS", nil)
     case .recent: return ("RECENT", nil)
     case .radios: return ("RADIO", nil)

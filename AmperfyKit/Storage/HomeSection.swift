@@ -72,6 +72,10 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   // cassette 2026-10-20: albums on the phone matching the mood of recent listening.
   // Ordinal 19. Takes the Albums row's place on Home when it has anything to show.
   case moreLikeLately
+  // cassette 2026-10-21: records you heard a song or two of lately (mostly from the
+  // made-for-you playlists), a nudge to go deeper. Ordinal 20. Took over the one idea in
+  // Recent that no other row carried.
+  case fromYourMixes
 
   // cassette redesign (Surface 4): Resume leads the Home IA again - a
   // single full-width card sourced from the lastPlayedDate FRCs.
@@ -88,13 +92,17 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     // phone-taste: the approved mock puts Mood right after the time-of-day row (it
     // used to sit below Playlists).
     .moodDoors,
+    // cassette 2026-10-21: Recent left Home (founder): On Repeat is the way back to what
+    // you have been playing, Resume holds the last thing, the Playlists and Artists rows
+    // carry the playlists and artists you played. Its one new idea, records you heard a
+    // song or two of, is this row. CarPlay keeps its Recent list.
+    .fromYourMixes,
     .moreLikeLately,
     // cassette: "Albums" is the from-your-collection shelf (`.forgottenAlbums`,
     // retitled). It sits right after More Like Lately so it fills that slot whenever
     // More Like is empty (HomeManager clears Albums while More Like has rows). The old
     // played->newest "Albums" row (`.recentlyAdded`) is retired from Home.
     .forgottenAlbums,
-    .recent,
     // cassette 2026-10-13: the dial on Home - stations ranked by what you
     // listen to and what you own (HomeManager.updateRadios).
     .radios,
@@ -138,6 +146,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .onRepeat: return "On Repeat"
     case .aroundNow: return ListeningShelves.aroundNowTitle(now: Date())
     case .moreLikeLately: return "More Like Lately"
+    case .fromYourMixes: return "From Your Mixes"
     }
   }
 
@@ -167,6 +176,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .onRepeat: return false
     case .aroundNow: return false
     case .moreLikeLately: return false
+    case .fromYourMixes: return false
     }
   }
 }

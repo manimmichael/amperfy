@@ -612,13 +612,16 @@ class HomeManager: NSObject {
   }
 
   /// The rows that suggest rather than report: they give way to the rows above them.
-  private static let softerRows: Set<HomeSection> = [.aroundNow, .moreLikeLately, .forgottenAlbums]
+  private static let softerRows: Set<HomeSection> = [
+    .aroundNow, .fromYourMixes, .moreLikeLately, .forgottenAlbums,
+  ]
 
   /// Home's rows in cascading priority (founder, 2026-10-21: "everything else is a softer
-  /// recommendation and should emphasize variety over accuracy"). Resume, On Repeat and
-  /// Recent report what you play and stay exact. The softer rows (this time of day, More
-  /// Like, Albums) leave out any record, and any artist, already shown in a row above them,
-  /// and show one record per artist, so scrolling down keeps turning up something new.
+  /// recommendation and should emphasize variety over accuracy"). Resume and On Repeat
+  /// report what you play and stay exact. The softer rows (this time of day, From Your
+  /// Mixes, More Like, Albums) leave out any record, and any artist, already shown in a row
+  /// above them, and show one record per artist, so scrolling down keeps turning up
+  /// something new.
   /// Runs once at the end of a recompute, over the rows in the order Home shows them; the
   /// softer rows arrive uncapped so what they give way to is backfilled from further down.
   private func cascadeSofterRows() {
@@ -1007,11 +1010,37 @@ class HomeManager: NSObject {
         .map { HomeItem(section: section, stableID: Self.stableID(for: $0), playableContainable: $0) }
     }
     data[.onRepeat] = items(ListeningShelves.onRepeat(plays, now: now), .onRepeat)
+    data[.fromYourMixes] = items(Self.heardInPassing(entries, now: now), .fromYourMixes, capped: false)
     // Uncapped: cascadeSofterRows trims it against On Repeat, then caps it.
     data[.aroundNow] = items(ListeningShelves.aroundNow(plays, now: now), .aroundNow, capped: false)
     updateLatelyShelves(lately, now: now, isOnPhone: isOnPhone)
     updateMadeForYouMixes(songPlays: songPlays, lately: lately, now: now, isOnPhone: isOnPhone)
   }
+
+  /// From Your Mixes: records you heard one or two songs of in the last two weeks, most
+  /// recently heard first. Nearly all of them come from the made-for-you playlists, which
+  /// play single songs across many records; this is the nudge to go deeper on one. (Recent
+  /// used to show these as if they were records you had been playing.) Uncapped:
+  /// cascadeSofterRows trims it against the rows above, then caps it.
+  private static func heardInPassing(_ entries: [ScrobbleEntry], now: Date) -> [String] {
+    let since = now.addingTimeInterval(-Double(heardInPassingDays) * 86400)
+    var songsByAlbum = [String: Set<String>]()
+    var lastHeard = [String: Date]()
+    for entry in entries {
+      guard let date = entry.date, date >= since, date <= now, let song = entry.playable?.asSong,
+            let albumID = song.album?.id, !albumID.isEmpty
+      else { continue }
+      songsByAlbum[albumID, default: []].insert(song.id)
+      lastHeard[albumID] = max(lastHeard[albumID] ?? .distantPast, date)
+    }
+    return songsByAlbum
+      .filter { $0.value.count <= heardInPassingMaxSongs }
+      .keys
+      .sorted { lastHeard[$0]! != lastHeard[$1]! ? lastHeard[$0]! > lastHeard[$1]! : $0 < $1 }
+  }
+
+  private static let heardInPassingDays = 14
+  private static let heardInPassingMaxSongs = 2
 
   /// The last 30 days of plays as the lately pass needs them.
   private struct LatelyPlays {
@@ -1618,11 +1647,13 @@ class HomeManager: NSObject {
     return EngineShelfData(input: input, albumsByKey: albumsByKey, artistsByKey: artistsByKey)
   }
 
-  /// Keys already surfaced in Resume/Recent — excluded from the engine shelves so
-  /// nothing shows twice (matches the web engine's cross-shelf exclusion).
+  /// Keys already surfaced in Resume, excluded from the engine shelves so nothing shows
+  /// twice (matches the web engine's cross-shelf exclusion). Recent is no longer on Home
+  /// (2026-10-21), so its items no longer hold anything back; the softer rows give way to
+  /// the rows above them in `cascadeSofterRows`.
   private func recentExclusions() -> Set<String> {
     var out = Set<String>()
-    for section in [HomeSection.resume, .recent] {
+    for section in [HomeSection.resume] {
       for item in data[section] ?? [] { out.insert(item.stableID) }
     }
     return out
@@ -1712,9 +1743,9 @@ class HomeManager: NSObject {
     // FRC is newest-first; the OLDER end approximates "added long ago".
     let owned = albumMOs.map { Album(managedObject: $0) }
 
-    // Never repeat what Resume / Recent already show on the same screen.
+    // Never repeat what Resume already shows on the same screen.
     var excludedIDs = Set<String>()
-    for section in [HomeSection.resume, .recent] {
+    for section in [HomeSection.resume] {
       for item in data[section] ?? [] { excludedIDs.insert(item.stableID) }
     }
 
