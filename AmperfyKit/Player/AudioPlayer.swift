@@ -193,6 +193,45 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
     insertIntoPlayer(playable: playable)
   }
 
+  /// cassette (BUG-437): drop every queued item `isRejected` matches, so the player never
+  /// holds songs that are not on the phone (a queue saved before a removal, or from Server
+  /// Mode). If the current item goes, it stops and the next kept item becomes current
+  /// without starting playback; with nothing left, the queue clears and the player stops.
+  /// Returns whether anything changed.
+  @discardableResult
+  func removeQueuedItems(where isRejected: (AbstractPlayable) -> Bool) -> Bool {
+    var changed = false
+    func prune(_ type: PlayerQueueType, _ items: [AbstractPlayable]) {
+      for index in items.indices.reversed() where isRejected(items[index]) {
+        queueHandler.removePlayable(at: PlayerIndex(queueType: type, index: index))
+        changed = true
+      }
+    }
+    prune(.user, queueHandler.getAllUserQueueItems())
+    prune(.next, queueHandler.getAllNextQueueItems())
+    prune(.prev, queueHandler.getAllPrevQueueItems())
+
+    if let current = queueHandler.currentlyPlaying, isRejected(current) {
+      backendAudioPlayer.stop()
+      let currentID = current.objectID
+      if let next = nextPlayerIndex, queueHandler.markAndGetPlayableAsPlaying(at: next) != nil {
+        // The old item now sits behind (or, with repeat, ahead of) the new current one.
+        if let index = queueHandler.getAllPrevQueueItems().lastIndex(where: { $0.objectID == currentID }) {
+          queueHandler.removePlayable(at: PlayerIndex(queueType: .prev, index: index))
+        } else if let index = queueHandler.getAllNextQueueItems().firstIndex(where: { $0.objectID == currentID }) {
+          queueHandler.removePlayable(at: PlayerIndex(queueType: .next, index: index))
+        }
+      } else {
+        queueHandler.removeAllItems()
+        playerStatus.stop()
+      }
+      notifyPlayerStopped()
+      changed = true
+    }
+    if changed { notifyPlaylistUpdated() }
+    return changed
+  }
+
   func playPreviousOrReplay() {
     if shouldCurrentItemReplayedInsteadOfPrevious() {
       replayCurrentItem()

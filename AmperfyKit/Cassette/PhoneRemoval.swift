@@ -81,6 +81,21 @@ public enum PhoneRemoval {
     }
   }
 
+  /// Drop queued songs that are not on this phone, so the mini player and the queue never
+  /// show music the phone cannot play (BUG-437). Radio and podcasts are untouched. No-op in
+  /// Server Mode, where anything in the library can stream, and when ownership can't be read.
+  public static func pruneQueue() {
+    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return }
+    let context = AmperKit.shared.storage.main.context
+    guard let rows = try? DeviceOwnershipManager(context: context).fetchAll() else { return }
+    let owned = Set(rows.compactMap(\.subsonicTrackId))
+    let changed = AmperKit.shared.player.removeQueuedItems { playable in
+      guard let song = playable.asSong else { return false }
+      return !owned.contains(song.id)
+    }
+    if changed { print("Cassette queue: dropped songs that are not on this phone") }
+  }
+
   private static var pending: [String] {
     UserDefaults.standard.stringArray(forKey: pendingKey) ?? []
   }

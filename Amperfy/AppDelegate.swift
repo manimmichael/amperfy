@@ -343,6 +343,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
     userStatistics.sessionStarted()
 
+    // cassette (BUG-437): the queue never holds songs that are not on this phone. Once
+    // now, for a queue saved before music left (or from Server Mode), and again whenever
+    // music arrives or leaves (Remove from This Phone, a sync removal, logout).
+    PhoneRemoval.pruneQueue()
+    NotificationCenter.default.addObserver(
+      forName: CassetteLibraryFilterProvider.filterChangedNotification,
+      object: nil,
+      queue: .main
+    ) { _ in
+      MainActor.assumeIsolated { PhoneRemoval.pruneQueue() }
+    }
+
     return true
   }
 

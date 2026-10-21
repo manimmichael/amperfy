@@ -205,6 +205,9 @@ public protocol PlayerFacade {
   func insertPodcastQueue(playables: [AbstractPlayable])
   func appendPodcastQueue(playables: [AbstractPlayable])
   func removePlayable(at: PlayerIndex)
+  /// cassette (BUG-437): drop queued items that are no longer playable here; see AudioPlayer.
+  @discardableResult
+  func removeQueuedItems(where isRejected: (AbstractPlayable) -> Bool) -> Bool
   func movePlayable(from: PlayerIndex, to: PlayerIndex)
   func clearUserQueue()
   func clearContextQueue()
@@ -567,6 +570,11 @@ class PlayerFacadeImpl: PlayerFacade {
 
   func removePlayable(at: PlayerIndex) {
     queueHandler.removePlayable(at: at)
+  }
+
+  @discardableResult
+  func removeQueuedItems(where isRejected: (AbstractPlayable) -> Bool) -> Bool {
+    musicPlayer.removeQueuedItems(where: isRejected)
   }
 
   func movePlayable(from: PlayerIndex, to: PlayerIndex) {
