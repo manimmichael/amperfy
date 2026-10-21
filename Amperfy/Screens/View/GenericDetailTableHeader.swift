@@ -1081,7 +1081,9 @@ class GenericDetailTableHeader: UIView {
       return UIBezierPath(roundedRect: bounds, cornerRadius: entityImage.layer.cornerRadius)
     }
     let tinted = DetailCoverShadowView()
-    tinted.layer.shadowOpacity = 1
+    // Half strength (founder, 2026-10-21): at full strength a saturated cover's halo read as
+    // a second, brighter glow on top of the page's. Now Playing has none; this keeps a hint.
+    tinted.layer.shadowOpacity = 0.5
     tinted.layer.shadowRadius = 30
     tinted.layer.shadowOffset = CGSize(width: 0, height: 30)
     let depth = DetailCoverShadowView()

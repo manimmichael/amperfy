@@ -237,15 +237,19 @@ struct CoverGlowRecipe {
   var bottomFade: CGFloat = 0
 
   /// Album, artist and playlist pages (`.albumPage::after`): the glow rises above the hero
-  /// and the scrim reaches the solid page at the host's bottom edge.
+  /// and the scrim reaches the solid page at the host's bottom edge. Dialled toward Now
+  /// Playing's room (founder, 2026-10-21: a red cover lit the album page "REALLY intense",
+  /// Now Playing "soft and beautiful"): a dimmer glow (0.55 to 0.42) and a darker top (0.2
+  /// to 0.4, as Now Playing darkens toward its edges), so a strong cover tints the page
+  /// instead of painting it.
   static let page = CoverGlowRecipe(
     sizeFactor: 1.4,
     topFactor: 0,
     topOffset: -160,
-    alpha: 0.55,
+    alpha: 0.42,
     scrim: .vertical([
-      (.surfaceSunken, 0.2, 0),
-      (.surfaceBase, 0.55, 0.45),
+      (.surfaceSunken, 0.4, 0),
+      (.surfaceBase, 0.62, 0.45),
       (.surfaceBase, 1.0, 1.0),
     ]),
     bottomFade: 0.35
