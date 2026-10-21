@@ -43,6 +43,19 @@ protocol BackendAudioPlayerNotifiable {
 // MARK: - AudioStreamingPlayer
 
 public class AudioStreamingPlayer: AudioStreaming.AudioPlayer {
+  /// cassette: the buffer the dial needs. The library's defaults start after
+  /// ONE second of audio and resume after one second following a dropout, so
+  /// a live stream over a wobbly connection stuttered. Local and cached songs
+  /// fill these from disk instantly, so they are unaffected.
+  public static func forCassette() -> AudioStreamingPlayer {
+    AudioStreamingPlayer(configuration: AudioPlayerConfiguration(
+      bufferSizeInSeconds: 20,
+      secondsRequiredToStartPlaying: 2.5,
+      gracePeriodAfterSeekInSeconds: 0.5,
+      secondsRequiredToStartPlayingAfterBufferUnderrun: 3
+    ))
+  }
+
   public func elapsedTime() -> Double {
     progress
   }

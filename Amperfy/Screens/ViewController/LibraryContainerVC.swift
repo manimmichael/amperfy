@@ -48,12 +48,16 @@ final class LibraryContainerVC: UIViewController {
   /// cassette: Podcasts is hidden as a browse surface — dropped from the
   /// iOS dropdown. A stale persisted `.podcasts` selection falls back to
   /// Artists via the same allow-list check in `init` / `showCategory`.
+  /// cassette 2026-10-06: Radios is BACK in the dropdown. The hub now carries a
+  /// curated station list (docs/reference/CASSETTE_RADIO.md) and this screen is
+  /// how the phone plays it; Patch 104's removal stands only in history.
   private static let dropdownCategories: [LibraryDisplayType] = [
     .artists,
     .albums,
     .songs,
     .playlists,
     .genres,
+    .radios,
   ]
 
   // MARK: - State

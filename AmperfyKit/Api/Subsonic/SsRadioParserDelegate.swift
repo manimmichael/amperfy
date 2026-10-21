@@ -24,7 +24,8 @@ import Foundation
 import os.log
 import UIKit
 
-class SsRadioParserDelegate: SsXmlLibParser {
+// cassette: artwork-aware base, so a station's uploaded logo parses like a podcast cover.
+class SsRadioParserDelegate: SsXmlLibWithArtworkParser {
   var radioBuffer: Radio?
   var parsedRadios = [Radio]()
 
@@ -57,6 +58,13 @@ class SsRadioParserDelegate: SsXmlLibParser {
       }
       if let siteUrl = attributeDict["homePageUrl"] {
         radioBuffer?.siteURL = URL(string: siteUrl)
+      }
+      // cassette: the hub's music server serves a station logo as cover art
+      // (OpenSubsonic `coverArt`) once one is uploaded; wire it into the same
+      // artwork pipeline songs use, so the player, lock screen and CarPlay
+      // show it without any further work here.
+      if let coverArtId = attributeDict["coverArt"], !coverArtId.isEmpty {
+        radioBuffer?.artwork = parseArtwork(id: coverArtId)
       }
     }
 

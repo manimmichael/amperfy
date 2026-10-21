@@ -452,6 +452,11 @@ final class HomeVC: UICollectionViewController {
       ResumeCardCell.self,
       forCellWithReuseIdentifier: ResumeCardCell.typeName
     )
+    // cassette 2026-10-13: the Radio shelf's station card (programmatic).
+    collectionView.register(
+      RadioShelfCell.self,
+      forCellWithReuseIdentifier: RadioShelfCell.typeName
+    )
     collectionView.register(
       SectionHeaderView.self,
       forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
@@ -509,6 +514,14 @@ final class HomeVC: UICollectionViewController {
             player.play(context: PlayContext(containable: containable))
           }
         }
+        return cell
+      }
+      if let radio = item.playableContainable as? Radio {
+        let cell = collectionView.dequeueReusableCell(
+          withReuseIdentifier: RadioShelfCell.typeName,
+          for: indexPath
+        ) as! RadioShelfCell
+        cell.display(radio: radio, info: RadioCatalog.shared.station(forStreamUrl: radio.url))
         return cell
       }
       if let artist = item.playableContainable as? Artist {
@@ -603,6 +616,7 @@ final class HomeVC: UICollectionViewController {
     // `.recentlyAdded` stays mapped for the legacy/editor path.
     case .forgottenAlbums, .recentlyAdded: category = .albums
     case .recentlyPlayedArtists: category = .artists
+    case .radios: category = .radios
     // `.recent` is deliberately presentational: it mixes albums, playlists
     // and artists, so there is no single Library category to land on.
     default: return nil
@@ -789,12 +803,17 @@ final class HomeVC: UICollectionViewController {
         animated: true
       )
       navigationController?.navigationBar.prefersLargeTitles = false
-    } else if let _ = playableContainer as? Radio {
-      navigationController?.pushViewController(
-        AppStoryboard.Main.segueToRadios(account: account),
-        animated: true
-      )
-      navigationController?.navigationBar.prefersLargeTitles = false
+    } else if let radio = playableContainer as? Radio {
+      // cassette 2026-10-13: a station has no detail page; the tap tunes in,
+      // with the whole shelf as the context so Next / Previous move along it.
+      let shelf = dataSource.snapshot().itemIdentifiers(inSection: .radios)
+        .compactMap { $0.playableContainable as? Radio }
+      let index = shelf.firstIndex(where: { $0.id == radio.id }) ?? 0
+      appDelegate.player.play(context: PlayContext(
+        name: HomeSection.radios.title,
+        index: index,
+        playables: shelf.isEmpty ? [radio] : shelf
+      ))
     } else if let genre = playableContainer as? Genre {
       navigationController?.pushViewController(
         AppStoryboard.Main.segueToGenreDetail(account: account, genre: genre),

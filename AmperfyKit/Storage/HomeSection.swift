@@ -82,6 +82,9 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     // cassette 2026-10-20: what you are into now, and what you play at this time.
     .onRepeat,
     .aroundNow,
+    // cassette 2026-10-13: the dial on Home — stations ranked by what you
+    // listen to and what you own (HomeManager.updateRadios).
+    .radios,
     .yourPlaylists,
     // cassette: Mood sits right below Playlists, per founder direction.
     .moodDoors,

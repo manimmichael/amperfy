@@ -426,6 +426,7 @@ class HomeManager: NSObject {
     updateListeningShelves()
     updatePlaylists()
     updateAlbums()
+    updateRadios()
     // cassette: the Albums + Artists shelves now run the SHARED home-shelf engine
     // (the same algorithm as web + Android, kept in sync by the conformance
     // fixtures). Built ONCE from Core Data here, AFTER Recent so its items can be
@@ -761,6 +762,39 @@ class HomeManager: NSObject {
   /// present); we just rank by `container.lastTimePlayed`. Backfill (fill-to-N) is
   /// unchanged so the shelf never renders empty — an artist that only appears via
   /// alphabetical backfill is there by library membership, not "surfaced" by a play.
+  // cassette 2026-10-13: the Radio shelf. The stations the hub holds, ranked by
+  // what this person tunes to (play count + recency on the station itself),
+  // then by how well a station's genres match the genres they OWN, then live
+  // stations for breadth, capped per network. No network, no model; the
+  // registry rides inside the app (RadiosVC.swift). Batched like the rest.
+  func updateRadios() {
+    let radios = storage.main.library.getRadios(for: account)
+    guard !radios.isEmpty else {
+      data[.radios] = []
+      return
+    }
+    var genreWeight: [String: Int] = [:]
+    for album in storage.main.library.getAlbums(for: account) {
+      guard let name = album.genre?.name, !name.isEmpty else { continue }
+      genreWeight[RadioShelf.normalize(name), default: 0] += 1
+    }
+    // cassette 2026-10-20: and the genres of what was played in the last 30 days, recent
+    // plays weighted up (ten-day half-life), from the phone's own play log.
+    let now = Date()
+    var recentGenres: [String: Double] = [:]
+    let since = now.addingTimeInterval(-30 * 86400)
+    for entry in storage.main.library.getScrobbleEntries(for: account, since: since, fetchLimit: 5000) {
+      guard let date = entry.date, let song = entry.playable?.asSong,
+            let name = song.genre?.name ?? song.album?.genre?.name, !name.isEmpty else { continue }
+      let weight = pow(0.5, max(0, now.timeIntervalSince(date)) / 86400 / 10)
+      recentGenres[RadioShelf.normalize(name), default: 0] += weight
+    }
+    let ranked = RadioShelf.rank(radios: radios, libraryGenres: genreWeight, recentGenres: recentGenres, now: now)
+    data[.radios] = ranked.prefix(Self.shelfCarouselCap).map {
+      HomeItem(section: .radios, stableID: "radio:\($0.id)", playableContainable: $0)
+    }
+  }
+
   func updateRecentArtists() {
     let rankedByArtistPlay = artistScores
       .filter { $0.value.container.lastTimePlayed != nil }

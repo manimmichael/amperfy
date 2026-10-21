@@ -147,6 +147,10 @@ public enum CassetteTheme {
 
     UITableView.appearance().backgroundColor = .cassette(.surfaceBase)
     UITableView.appearance().separatorColor = .cassette(.hairline)
+    // cassette 2026-10-13 (founder): no row separators anywhere on the phone.
+    // The library lists, track lists and the dial all draw rows against bg
+    // with their own spacing; the hairlines read as clutter on the device.
+    UITableView.appearance().separatorStyle = .none
     UITableView.appearance().sectionIndexColor = .cassette(.textSecondary)
 
     UICollectionView.appearance().backgroundColor = .cassette(.surfaceBase)
