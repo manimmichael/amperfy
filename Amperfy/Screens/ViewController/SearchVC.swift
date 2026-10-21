@@ -279,8 +279,6 @@ class SearchVC: BasicTableViewController {
     // in viewIsAppearing, so the tab's search field was never bound to
     // `updateSearchResults` and typing did nothing. configureSearchController
     // (viewIsAppearing) still refreshes the scope titles / placeholder on top of this.
-    // phone-taste: the tab no longer activates the field on selection
-    // (automaticallyActivatesSearch = false); this binding does not depend on that.
     navigationItem.searchController = searchController
     searchController.searchResultsUpdater = self
     navigationItem.searchBarPlacementAllowsExternalIntegration = true
@@ -364,12 +362,10 @@ class SearchVC: BasicTableViewController {
     }
   }
 
-  /// The keyboard shortcut and Siri "search" (TabBarVC.displaySearch). The tab no longer
-  /// activates search when it is selected (phone-taste: the start page rests with the
-  /// keyboard down), so this activates the search controller itself and then focuses the
-  /// field: on the next turn of the main queue and again once the field is presented,
-  /// since focusing a field that is not active yet can leave the start page up with no
-  /// keyboard.
+  /// The keyboard shortcut and Siri "search" (TabBarVC.displaySearch). Activates the search
+  /// controller if it is not already active, then focuses the field: on the next turn of
+  /// the main queue and again once the field is presented, since focusing a field that is
+  /// not active yet can leave the start page up with no keyboard.
   public func activateSearchBar() {
     guard isViewLoaded else { return }
     if searchController.isActive {

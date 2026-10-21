@@ -52,10 +52,10 @@ class TabBarVC: UITabBarController {
           .getController(account: self.account)
       )
     }
-    // phone-taste: the tab lands on the start page (title, chips, genres) with the field
-    // resting at the bottom and the keyboard down; typing starts when the field is
-    // tapped. `displaySearch()` still focuses it for the keyboard shortcut and Siri.
-    searchTab!.automaticallyActivatesSearch = false
+    // Apple's convention (founder, 2026-10-21: follow Apple where it has a strong mobile
+    // pattern): selecting the tab focuses the field with the keyboard up. The start page
+    // (chips, genres) shows under it until something is typed.
+    searchTab!.automaticallyActivatesSearch = true
     fixTabs.append(searchTab!)
 
     // cassette Patch 053 (Phase H): tabs start with the outline icon. The
