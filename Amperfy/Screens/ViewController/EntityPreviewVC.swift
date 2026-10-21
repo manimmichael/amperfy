@@ -839,8 +839,12 @@ class EntityPreviewActionBuilder {
     }
   }
 
+  /// cassette 2026-10-21 (founder: "Go to site" said nothing): names the place it goes,
+  /// "Go to kexp.org", "Go to somafm.com".
   private func createGoToSiteUrl(url: URL) -> UIAction {
-    UIAction(title: "Go to Site", image: .followLink) { action in
+    let host = url.host()?.replacingOccurrences(of: #"^www\."#, with: "", options: .regularExpression)
+    let title = host.map { $0.isEmpty ? "Go to Website" : "Go to \($0)" } ?? "Go to Website"
+    return UIAction(title: title, image: .followLink) { action in
       UIApplication.shared.open(url)
     }
   }
