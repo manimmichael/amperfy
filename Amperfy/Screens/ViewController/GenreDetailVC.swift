@@ -400,9 +400,8 @@ class GenreDetailVC: MultiSourceTableViewController {
 
   /// A row's play context with only the songs this phone can play (OneTapPlay's rule), so
   /// a long-press or swipe Play never starts music that is not here. The swipe queue
-  /// actions get the same through OnPhoneContainable; long-press Play Next / Add to Queue /
-  /// Add to Playlist still read the shared menu builder's own list (reported for
-  /// integration).
+  /// actions get the same through OnPhoneContainable; the long-press menu's queue and Add to
+  /// Playlist actions apply the same rule themselves (EntityPreviewActionBuilder).
   private static func onPhonePlayContext(_ containable: PlayableContainable) -> PlayContext {
     PlayContext(containable: containable, index: 0, playables: OneTapPlay.playables(of: containable))
   }

@@ -221,6 +221,27 @@ public enum CassetteCloudPlaylistBridge {
     return materializedCoverImage(for: playlistId, url: urlString)
   }
 
+  /// phone-taste: the playlist's cover to draw right now from what is on the phone: its own
+  /// (`localCoverImage`), else, while a pick has not downloaded yet, its derived preset.
+  /// Never album art. The one fallback every surface uses (CarPlay rows and Home tiles, Siri,
+  /// the Resume card, the playlist page's light), matching the phone tile, which shows the
+  /// preset when a pick cannot load.
+  nonisolated public static func displayCoverImage(for playlistId: String) -> UIImage? {
+    localCoverImage(for: playlistId) ?? derivedPresetCoverImage(forPlaylistId: playlistId)
+  }
+
+  /// Whether `localCoverImage(for:)` has the playlist's own cover now: no pick (its preset),
+  /// a bundled preset, or a pick materialized for its current url. No decode, so a surface
+  /// can key its light on it and light again once a pending pick lands.
+  nonisolated public static func hasLocalCover(for playlistId: String) -> Bool {
+    guard let urlString = storedCoverUrl(for: playlistId) else { return true }
+    if bundledPresetAssetName(forCoverUrl: urlString) != nil { return true }
+    guard UserDefaults.standard.string(forKey: materializedUrlKey(playlistId)) == urlString,
+          let file = coverFileURL(playlistId)
+    else { return false }
+    return FileManager.default.fileExists(atPath: file.path)
+  }
+
   /// UserDefaults only — safe to call from a background Core Data perform.
   nonisolated private static func storeItemIds(_ ids: [String], for playlistId: String) {
     UserDefaults.standard.set(ids, forKey: itemIdsKey(playlistId))

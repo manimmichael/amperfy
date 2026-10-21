@@ -116,9 +116,6 @@ import UIKit
     /// the phone's own newest arrivals).
     @Published
     private(set) var newOnMac: [DeviceAlbum] = []
-    /// The catalog colour of the first NEW ON YOUR MAC album, until its cover is read.
-    @Published
-    private(set) var leadSeed: CoverTint?
     @Published
     private(set) var isResyncing = false
 
@@ -354,12 +351,10 @@ import UIKit
           }
         }
         newOnMac = fallback
-        leadSeed = nil
         return
       }
       var seen = Set<String>()
       var result: [DeviceAlbum] = []
-      var seed: CoverTint?
       for item in mac.recentItems {
         guard let album = resolveLocalAlbum(
           groupKey: item.groupKey,
@@ -371,19 +366,9 @@ import UIKit
           seen.insert(album.id).inserted,
           let entry = deviceAlbum(album)
         else { continue }
-        if result.isEmpty { seed = Self.tint(hex: item.dominantColor) }
         result.append(entry)
       }
       newOnMac = result
-      leadSeed = seed
-    }
-
-    /// "#RRGGBB" from the catalog, as a record colour.
-    static func tint(hex: String?) -> CoverTint? {
-      guard var hex = hex?.trimmingCharacters(in: .whitespaces), !hex.isEmpty else { return nil }
-      if hex.hasPrefix("#") { hex.removeFirst() }
-      guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }
-      return CoverTint(baseRGB: value)
     }
 
     // MARK: This phone, as the cloud sees it

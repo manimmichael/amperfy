@@ -368,13 +368,16 @@ final class CoverGlowView: UIView {
     }
   }
 
-  /// Glow from a cover on disk, keyed by its path (so Now Playing's cached tiny is
-  /// reused). A missing or unreadable file clears.
+  /// Glow from a cover on disk, keyed by the foundation's cover key (`CoverTint.cacheKey`:
+  /// the path plus the file's date), the key Now Playing and the record pages use, so their
+  /// cached tiny is reused and a cover replaced at the same path glows anew. A missing or
+  /// unreadable file clears.
   func show(coverPath: String?) {
     guard let coverPath, !coverPath.isEmpty else { clear(); return }
-    guard begin(key: coverPath) else { return }
+    let key = CoverTint.cacheKey(forCoverPath: coverPath)
+    guard begin(key: key) else { return }
     let token = loadToken
-    if let hit = AmbientBackdropCache.cachedTiny(for: coverPath) {
+    if let hit = AmbientBackdropCache.cachedTiny(for: key) {
       apply(hit)
       return
     }
@@ -387,7 +390,7 @@ final class CoverGlowView: UIView {
         self.clear()
         return
       }
-      let tiny = await AmbientBackdropCache.tiny(for: coverPath, image: decoded)
+      let tiny = await AmbientBackdropCache.tiny(for: key, image: decoded)
       guard self.loadToken == token else { return }
       self.apply(tiny)
     }

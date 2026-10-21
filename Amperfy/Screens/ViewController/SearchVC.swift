@@ -518,8 +518,8 @@ class SearchVC: BasicTableViewController {
 
   /// A play context holding only what this phone can play (OneTapPlay's rule), so a
   /// long-press or swipe Play, and the swipe queue actions (through OnPhoneContainable),
-  /// never queue music that is not here. Long-press Play Next / Add to Queue / Add to
-  /// Playlist still read the shared menu builder's own list (reported for integration).
+  /// never queue music that is not here. The long-press menu's queue and Add to Playlist
+  /// actions apply the same rule themselves (EntityPreviewActionBuilder).
   private static func onPhonePlayContext(_ containable: PlayableContainable) -> PlayContext {
     if containable is Song { return PlayContext(containable: containable) }
     return PlayContext(
@@ -1245,15 +1245,12 @@ class SearchVC: BasicTableViewController {
     }
   }
 
-  /// Shuffles the music on this phone (the whole library in Server Mode), capped so a
-  /// big library does not build a queue of tens of thousands.
+  /// Shuffles the music on this phone (OneTapPlay's rule: the whole library in Server Mode,
+  /// only cached songs while offline), capped so a big library does not build a queue of
+  /// tens of thousands.
   private func shuffleAll() {
-    var songs = appDelegate.storage.main.library.getSongs(for: account)
-    if CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
-      let owned = DeviceOwnershipManager(context: appDelegate.storage.main.context)
-        .fetchAllSubsonicTrackIds()
-      songs = songs.filter { owned.contains($0.id) }
-    }
+    let library: [AbstractPlayable] = appDelegate.storage.main.library.getSongs(for: account)
+    let songs = OneTapPlay.playables(library)
     guard !songs.isEmpty else { return }
     let playables: [AbstractPlayable] = Array(songs.shuffled().prefix(500))
     appDelegate.player.playShuffled(context: PlayContext(name: "All music", playables: playables))
@@ -1462,10 +1459,16 @@ enum SearchMatcher {
     return nil
   }
 
-  /// Up to three of an artist's records on the phone, best first: those among the album
-  /// results, then their other albums here by name; an artist with no album of their own
-  /// (a featured artist) gets the records their songs here are on. They light the top card
-  /// and stand in for an artist with no photo of their own, as the mock draws.
+  /// How many of an artist's records the main context looks through for a cover on disk.
+  private static let coverCandidateLimit = 12
+
+  /// An artist's records on the phone in the artist page's lead-record order
+  /// (`Artist.leadAlbum`): their own records (`Artist.isCredited`, among the album results
+  /// and their other albums here) newest first; an artist with no record of their own (a
+  /// featured artist) gets the records their songs here are on, newest first. The main
+  /// context takes the first with a cover on disk, else the first, so the card is lit by
+  /// the same record as the artist page it opens. They also stand in for an artist with no
+  /// photo of their own, as the mock draws.
   static func coverAlbumIDs(
     for artist: Artist,
     shown albums: [Album],
@@ -1473,26 +1476,24 @@ enum SearchMatcher {
     ownedSongIds: Set<String>?
   )
     -> [NSManagedObjectID] {
-    let shown = albums.filter { $0.artist?.id == artist.id }
-    let others = artist.albums
-      .filter { ownedAlbumIds?.contains($0.id) ?? true }
-      .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     var seen = Set<String>()
-    var coverIDs = [NSManagedObjectID]()
-    for album in shown + others where seen.insert(album.id).inserted {
-      coverIDs.append(album.managedObject.objectID)
-      if coverIDs.count == 3 { return coverIDs }
-    }
-    if coverIDs.isEmpty {
+    let credited = (
+      albums.filter { artist.isCredited($0) }
+        + artist.albums.filter { ownedAlbumIds?.contains($0.id) ?? true }
+    )
+    .filter { !$0.id.isEmpty && seen.insert($0.id).inserted }
+    var ordered = Artist.newestFirst(credited)
+    if ordered.isEmpty {
+      var appearances = [Album]()
       for song in artist.songs.compactMap(\.asSong)
         where ownedSongIds?.contains(song.id) ?? true {
         guard let album = song.album, !album.id.isEmpty,
               seen.insert(album.id).inserted else { continue }
-        coverIDs.append(album.managedObject.objectID)
-        if coverIDs.count == 3 { break }
+        appearances.append(album)
       }
+      ordered = Artist.newestFirst(appearances)
     }
-    return coverIDs
+    return ordered.prefix(coverCandidateLimit).map(\.managedObject.objectID)
   }
 
   /// `coverAlbumIDs` for each artist on the shelf.
@@ -1843,7 +1844,7 @@ final class SearchTopResultCell: UITableViewCell {
       renderName(hitColor: CoverTint.neutral.text)
       return
     }
-    if let cached = CoverTint.cached(key: coverPath) {
+    if let cached = CoverTint.cached(coverPath: coverPath) {
       renderName(hitColor: cached.text)
       return
     }

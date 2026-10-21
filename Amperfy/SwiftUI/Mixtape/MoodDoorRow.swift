@@ -89,27 +89,12 @@ struct MoodDoorRow: View {
 
   /// Plays the mix the tile shows: songs matching lately, checked against the phone at the
   /// tap (HomeManager keeps the mix between recomputes, and music can leave the phone in
-  /// between), by the same rule as OneTapPlay.
+  /// between), by OneTapPlay's rule.
   private func play(_ mix: HomeManager.LatelyMix) {
-    let songs = playableNow(mix.songs)
+    let songs = OneTapPlay.playables(mix.songs)
     guard !songs.isEmpty else { return }
     appDelegate.player.play(context: PlayContext(name: "Lately", playables: songs))
     Haptics.light.vibrate(isHapticsEnabled: appDelegate.storage.settings.user.isHapticsEnabled)
-  }
-
-  /// `songs` that this phone can play now: in on-device mode only songs in the
-  /// DeviceOwnership set (one fetch per tap); in Server Mode everything, or only cached
-  /// songs while offline. The same rule as `OneTapPlay.playables(of:)`.
-  private func playableNow(_ songs: [AbstractPlayable]) -> [AbstractPlayable] {
-    if CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
-      let owned = DeviceOwnershipManager(context: appDelegate.storage.main.context)
-        .fetchAllSubsonicTrackIds()
-      return songs.filter { playable in
-        guard let song = playable.asSong else { return true }
-        return owned.contains(song.id)
-      }
-    }
-    return songs.filterCached(dependigOn: appDelegate.storage.settings.user.isOfflineMode)
   }
 
   private func generate(door: MoodDoor) {

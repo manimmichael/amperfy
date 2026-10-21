@@ -111,7 +111,8 @@ public enum CassetteSyncStatus {
   /// - Hub out of reach with albums waiting: "Can't reach Michael's MacBook Pro · new music
   ///   arrives when it's back"
   public static func statusLine(hubName: String?) -> String? {
-    let hub = hubName ?? "your computer"
+    let inSentence = fallbackHubName.prefix(1).lowercased() + fallbackHubName.dropFirst()
+    let hub = hubName ?? inSentence
     if pendingAlbums > 0, !isHubReachable {
       return "Can't reach \(hub) · new music arrives when it's back"
     }
@@ -192,13 +193,19 @@ public enum CassetteSyncStatus {
   /// just the Mac's name until its state is known, or "Not paired to a computer".
   public static func menuLine(hubName: String?, state: MacState) -> String {
     if state == .notPaired { return "Not paired to a computer" }
-    let hub = hubName ?? "Your computer"
+    let hub = hubName ?? fallbackHubName
     guard let answer = state.answer else { return hub }
     return "\(hub) · \(answer)"
   }
 
+  /// The hub's name when there is none to show (a bare-IP pairing the cloud has not named
+  /// yet). The one fallback Home's line ("your Mac" mid-sentence), the avatar menu, Settings
+  /// and the Mac page all use, as the mock writes it.
+  public static let fallbackHubName = "Your Mac"
+
   /// The hub's name for display: from the paired LAN address, else from the hostname the
-  /// hub last reported to the cloud (a bare IP in the address carries no name).
+  /// hub last reported to the cloud (a bare IP in the address carries no name). Every
+  /// surface that names the hub reads this one, so Home and the avatar menu agree.
   public static func displayHubName(serverUrl: String?) -> String? {
     hubName(serverUrl: serverUrl) ?? hubName(host: CassetteSyncAPI.cachedMacSummary?.mac?.lanHostname)
   }

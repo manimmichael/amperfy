@@ -299,7 +299,9 @@ final class ResumeCardCell: BasicCollectionCell {
 
     var key: String {
       switch self {
-      case let .file(path): return path
+      // The foundation's cover key (the path plus the file's date): a cover replaced at the
+      // same path lights the card again, in the colour every other surface reads.
+      case let .file(path): return CoverTint.cacheKey(forCoverPath: path)
       case let .playlist(_, key): return key
       case .none: return "none"
       }
@@ -314,7 +316,10 @@ final class ResumeCardCell: BasicCollectionCell {
     if let playlist = container as? Playlist {
       guard !playlist.id.isEmpty else { return .none }
       let pick = CassetteCloudPlaylistBridge.storedCoverUrl(for: playlist.id) ?? "preset"
-      return .playlist(id: playlist.id, key: "playlist-cover:\(playlist.id):\(pick)")
+      // A pick not downloaded yet lights from the preset under its own key, so the pick's
+      // colour is read fresh (not the preset's, cached) once it lands.
+      let state = CassetteCloudPlaylistBridge.hasLocalCover(for: playlist.id) ? "own" : "pending"
+      return .playlist(id: playlist.id, key: "playlist-cover:\(playlist.id):\(pick):\(state)")
     }
     let entity: AbstractLibraryEntity?
     if let artist = container as? Artist {
@@ -341,7 +346,7 @@ final class ResumeCardCell: BasicCollectionCell {
     switch source {
     case let .file(path):
       glowView.show(coverPath: path)
-      if let hit = CoverTint.cached(key: path) {
+      if let hit = CoverTint.cached(coverPath: path) {
         applyTint(hit)
         return
       }
@@ -353,7 +358,7 @@ final class ResumeCardCell: BasicCollectionCell {
     case let .playlist(id, key):
       Task { @MainActor [weak self] in
         let image = await Task.detached(priority: .utility) {
-          CassetteCloudPlaylistBridge.localCoverImage(for: id)
+          CassetteCloudPlaylistBridge.displayCoverImage(for: id)
         }.value
         guard let self, tintToken == token else { return }
         guard let image else {

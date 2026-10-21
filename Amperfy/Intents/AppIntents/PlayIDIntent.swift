@@ -46,8 +46,7 @@ struct PlayPlayableContainableResultView: View {
     // phone-taste: a playlist shows its own cover, the person's pick, else its preset
     // (never album art).
     if let playlist = playableContainable as? Playlist,
-       let cover = CassetteCloudPlaylistBridge.localCoverImage(for: playlist.id)
-       ?? CassetteCloudPlaylistBridge.derivedPresetCoverImage(forPlaylistId: playlist.id) {
+       let cover = CassetteCloudPlaylistBridge.displayCoverImage(for: playlist.id) {
       return Image(uiImage: cover)
     }
     let account = playableContainable.account

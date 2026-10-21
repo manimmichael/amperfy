@@ -147,7 +147,8 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
     }
     playContextAtIndexPathCallback = { indexPath in
       guard let entity = self.playlistAt(indexPath: indexPath) else { return nil }
-      return PlayContext(containable: entity)
+      // phone-taste: only the playlist's songs on this phone (OneTapPlay).
+      return PlayContext(containable: entity, index: 0, playables: OneTapPlay.playables(of: entity))
     }
     swipeCallback = { indexPath, completionHandler in
       guard let playlist = self.playlistAt(indexPath: indexPath) else { return }
@@ -162,7 +163,8 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
         } catch {
           self.appDelegate.eventLogger.report(topic: "Playlist Sync", error: error)
         }
-        completionHandler(SwipeActionContext(containable: playlist))
+        // phone-taste: the swipe queues and plays only what is on this phone.
+        completionHandler(SwipeActionContext(containable: OnPhoneContainable(playlist)))
       }
     }
     snapshotDidChange = {

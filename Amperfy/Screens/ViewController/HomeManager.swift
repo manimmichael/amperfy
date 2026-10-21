@@ -1030,8 +1030,13 @@ class HomeManager: NSObject {
   }
 
   /// Store `songs` as the mix with its lead albums. The generation moves only when the
-  /// songs or the lead albums actually differ from what is there.
-  private func publishLatelyMix(_ songs: [AbstractPlayable]) {
+  /// songs or the lead albums actually differ from what is there. A song whose row is gone
+  /// (deleted, or no longer in a context) is dropped first: the Lately tile on the phone and
+  /// in the car must never hand the player a dead object.
+  private func publishLatelyMix(_ candidates: [AbstractPlayable]) {
+    let songs = candidates.filter {
+      !$0.playableManagedObject.isDeleted && $0.playableManagedObject.managedObjectContext != nil
+    }
     let lead = leadAlbums(for: songs)
     if let current = latelyMix,
        current.songs.map(\.id) == songs.map(\.id),

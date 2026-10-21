@@ -227,7 +227,8 @@ class AlbumsVC: SingleSnapshotFetchedResultsTableViewController<AlbumMO> {
     }
     playContextAtIndexPathCallback = { indexPath in
       guard let album = self.albumsDataSource?.getAlbum(at: indexPath) else { return nil }
-      return PlayContext(containable: album)
+      // phone-taste: only the album's songs on this phone (OneTapPlay).
+      return PlayContext(containable: album, index: 0, playables: OneTapPlay.playables(of: album))
     }
     swipeCallback = { indexPath, completionHandler in
       guard let album = self.albumsDataSource?.getAlbum(at: indexPath) else {
@@ -250,7 +251,8 @@ class AlbumsVC: SingleSnapshotFetchedResultsTableViewController<AlbumMO> {
             isBackground: true
           )
         }
-        completionHandler(SwipeActionContext(containable: album))
+        // phone-taste: the swipe queues and plays only what is on this phone.
+        completionHandler(SwipeActionContext(containable: OnPhoneContainable(album)))
       }
     }
     snapshotDidChange = {

@@ -125,20 +125,6 @@ extension CarPlaySceneDelegate {
     return playables.filterCached(dependigOn: true)
   }
 
-  /// The same rule for a list that is not a container (a mix): in on-device mode only the
-  /// songs this phone owns; in Server Mode only cached items while offline.
-  func onPhonePlayables(_ list: [AbstractPlayable]) -> [AbstractPlayable] {
-    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else {
-      return list.filterCached(dependigOn: isOfflineMode)
-    }
-    let owned = DeviceOwnershipManager(context: appDelegate.storage.main.context)
-      .fetchAllSubsonicTrackIds()
-    return list.filter { playable in
-      guard let song = playable.asSong else { return true }
-      return owned.contains(song.id)
-    }
-  }
-
   var carPlayBrowseSectionBudget: Int { carPlayLimits.sections }
 
   // MARK: - Browse tabs (cassette, BUG-337)
@@ -669,9 +655,10 @@ extension CarPlaySceneDelegate {
 
   /// phone-taste: the artist page's header picture. Their own photo keeps the circle (tested
   /// with `hasOwnPhotoOnDisk`, never "has any image": a shared artwork row can carry someone
-  /// else's face). Without one, the first of their albums with a cover, square, as in the car
-  /// mock: their own albums first, a compilation they appear on only when they have none;
-  /// with neither, the initial in a circle as before. `albums` is already on-phone only.
+  /// else's face). Without one, the record that lights their page on the phone, square, as
+  /// in the car mock (`Artist.leadAlbum`: their newest own album with a cover, a compilation
+  /// they appear on only when they have no record of their own); with no cover for it, the
+  /// initial in a circle as before. `albums` is already on-phone only.
   private func artistHeaderImage(_ artist: Artist, albums: [Album]) -> UIImage {
     let preference = getPreference(activeAccountInfo).artworkDisplayPreference
     if artist.hasOwnPhotoOnDisk,
@@ -682,16 +669,15 @@ extension CarPlaySceneDelegate {
        ) {
       return style.artwork(photo, kind: .artist, name: artist.name, circle: true)
     }
-    let ownFirst = albums.filter { $0.artist?.id == artist.id }
-      + albums.filter { $0.artist?.id != artist.id }
-    for album in ownFirst {
-      if let cover = LibraryEntityImage.coverImage(
-        libraryEntity: album,
+    if let lead = artist.leadAlbum(among: albums, hasCover: {
+      $0.imagePath(setting: preference) != nil
+    }),
+      let cover = LibraryEntityImage.coverImage(
+        libraryEntity: lead,
         artworkDisplayPreference: preference,
         useCache: false
       ) {
-        return style.artwork(cover, kind: .album, name: album.name, circle: false)
-      }
+      return style.artwork(cover, kind: .album, name: lead.name, circle: false)
     }
     return style.artwork(nil, kind: .artist, name: artist.name, circle: true)
   }
@@ -916,13 +902,14 @@ extension CarPlaySceneDelegate {
   /// detail). Shared by the Playlists tab and the Home shelf list (cassette, BUG-338).
   func createPlaylistRow(_ playlist: Playlist) -> CPListItem {
     // cassette (Wave 2b): playlists used to render blank in CarPlay (image: nil).
-    // Resolve the LOCAL cover (a bundled preset, or a materialized pick), else a
-    // generated playlist placeholder, so every playlist shows art in the car.
+    // Resolve the LOCAL cover (a bundled preset, or a materialized pick), else its derived
+    // preset while a pick has not downloaded (phone-taste: the shared fallback), so every
+    // playlist shows its own art in the car.
     let item = CPListItem(
       text: playlist.name,
       detailText: playlist.subtitle,
       image: style.artwork(
-        CassetteCloudPlaylistBridge.localCoverImage(for: playlist.id),
+        CassetteCloudPlaylistBridge.displayCoverImage(for: playlist.id),
         kind: .playlist,
         name: playlist.name
       ),

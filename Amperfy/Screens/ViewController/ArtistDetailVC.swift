@@ -635,38 +635,26 @@ class ArtistDetailVC: MultiSourceTableViewController {
 
   // MARK: - Records (phone-taste)
 
-  /// Whether `album` is credited to this artist: its album artist is this artist, or one
-  /// with the same name (the phone can hold one artist under several identities).
-  private func isCredited(_ album: Album) -> Bool {
-    guard let credited = album.artist else { return false }
-    if credited.id == artist.id { return true }
-    let name = ListeningShelves.normalizedArtistName(credited.name)
-    return !name.isEmpty && name == ListeningShelves.normalizedArtistName(artist.name)
-  }
-
   /// The album cover file on disk, if there is one.
   private func coverPath(of album: Album) -> String? {
     let setting = appDelegate.storage.settings.accounts.getSetting(account.info).read
     return album.imagePath(setting: setting.artworkDisplayPreference)
   }
 
-  /// Every album the FRC holds, newest first, year 0 last, then by name. The shared fetch
-  /// request (oldest first) is left as it is.
+  /// Every album the FRC holds, newest first, year 0 last, then by name (`Artist.newestFirst`,
+  /// the order Search and CarPlay use too). The shared fetch request (oldest first) is left
+  /// as it is.
   private func allArtistAlbums() -> [Album] {
     let count = albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0
     let albums = (0 ..< count).compactMap { albumsFetchedResultsController.getWrappedEntity(at: $0) }
-    return albums.sorted { lhs, rhs in
-      let ly = lhs.year > 0 ? lhs.year : Int.min
-      let ry = rhs.year > 0 ? rhs.year : Int.min
-      if ly != ry { return ly > ry }
-      return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-    }
+    return Artist.newestFirst(albums)
   }
 
   /// Rebuilds the albums, the shelf, the lead record and the fan from the FRC.
   private func recomputeAlbumState() {
     artistAlbums = allArtistAlbums()
-    creditedAlbums = artistAlbums.filter(isCredited)
+    // Credited: the artist's own records (`Artist.isCredited`, shared with Search and CarPlay).
+    creditedAlbums = artistAlbums.filter { artist.isCredited($0) }
     // The mock's ALBUMS is the artist's own records; with none on the phone, what they
     // appear on (the same rule as the fan and the lead record).
     shelfAlbums = creditedAlbums.isEmpty ? artistAlbums : creditedAlbums
@@ -683,10 +671,10 @@ class ArtistDetailVC: MultiSourceTableViewController {
   /// The record that lights the page: the newest album credited to this artist that has a
   /// cover file, else the newest credited album (no glow, neutral colour), else the newest
   /// album they appear on. A compilation they are on never lights their page while a
-  /// record of their own is here.
+  /// record of their own is here. The same rule (`Artist.leadAlbum`) lights Search's card
+  /// for this artist and draws their CarPlay header.
   private func recomputeLeadAlbum() {
-    leadAlbum = creditedAlbums.first { coverPath(of: $0) != nil } ?? creditedAlbums
-      .first ?? artistAlbums.first
+    leadAlbum = artist.leadAlbum(among: artistAlbums) { coverPath(of: $0) != nil }
   }
 
   private func lightUpFromLeadAlbum() {

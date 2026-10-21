@@ -281,8 +281,9 @@ extension CarPlaySceneDelegate {
       } else if let playlist = item.playableContainable as? Playlist {
         // cassette (Wave 2b): a Playlist is NOT an AbstractLibraryEntity, so the
         // cast above missed and the Home tile fell to a placeholder. Resolve its
-        // LOCAL cover (bundled preset or materialized pick) so playlists show art.
-        image = CassetteCloudPlaylistBridge.localCoverImage(for: playlist.id)
+        // LOCAL cover (bundled preset or materialized pick) so playlists show art; a pick
+        // not downloaded yet shows the preset (phone-taste: the shared fallback).
+        image = CassetteCloudPlaylistBridge.displayCoverImage(for: playlist.id)
       }
       // cassette: artist tiles render as circles on CarPlay to match iOS (albums, playlists,
       // etc. stay square), real art and placeholder alike. A tile without art gets the
@@ -505,7 +506,7 @@ extension CarPlaySceneDelegate {
   /// The Lately mix Home built with the tile (songs on this phone matching recent listening),
   /// played at once.
   private func playLately(completion: @escaping () -> ()) {
-    let songs = onPhonePlayables(sharedHome?.latelyMix?.songs ?? [])
+    let songs = OneTapPlay.playables(sharedHome?.latelyMix?.songs ?? [])
     guard !songs.isEmpty else {
       presentCarAlert("Not enough music on this phone matches lately yet", completion: completion)
       return

@@ -163,7 +163,10 @@ extension PopupPlayerVC {
     ambientBackdropModel.isPlaying = player.isPlaying
 
     if hasCover, let artworkPath {
-      let coverID = artworkPath
+      // phone-taste: the glow's key is the foundation's cover key (the path plus the file's
+      // date), the one the record pages' glows use, so the blurred tiny is shared and a
+      // cover replaced at the same path redraws the glow too.
+      let coverID = CoverTint.cacheKey(forCoverPath: artworkPath)
       // cassette: decode the cover OFF the main thread as a capped-size
       // thumbnail (an oversized cover can't block popup-open or starve audio),
       // then feed image + coverID TOGETHER. AmbientCoverBackdrop's
@@ -173,22 +176,15 @@ extension PopupPlayerVC {
       // image arrived later, so the task ran with a nil image and the soft blur
       // never came back.) The downsample + blur still run off-main (Patch 114).
       Task { @MainActor [weak self] in
-        let (thumb, tintKey) = await Task.detached(priority: .utility) { () -> (UIImage?, String) in
-          // phone-taste: the colour cache key is the cover path plus the file's date. A
-          // re-downloaded or re-picked cover is written to the SAME path, so a path-only
-          // key would keep the old record's colour until the app restarts. The date is
-          // read before the decode, so a file swapped mid-read is re-read next time.
-          let modified = (try? FileManager.default.attributesOfItem(atPath: artworkPath))?[
-            .modificationDate
-          ] as? Date
-          let key = modified.map { "\(artworkPath)#\($0.timeIntervalSince1970)" } ?? artworkPath
-          let image = AmbientSourceDecoder.thumbnail(contentsOfFile: artworkPath, maxPixelSize: 600)
-          return (image, key)
+        let thumb = await Task.detached(priority: .utility) {
+          AmbientSourceDecoder.thumbnail(contentsOfFile: artworkPath, maxPixelSize: 600)
         }.value
         guard let thumb else { return }
-        // phone-taste: the record's colour, read from this same thumbnail off the main
-        // thread and cached by cover file, so a repeat refresh of one cover reads nothing.
-        let tint = await CoverTint.resolve(image: thumb, key: tintKey)
+        // phone-taste: the record's colour comes from the foundation, keyed and read the
+        // same way on every lit surface (CoverTint.cacheKey: the cover path plus the file's
+        // date, so a cover replaced at the same path is read again), so Now Playing and
+        // the album page agree on one colour per record.
+        let tint = await CoverTint.resolve(coverPath: artworkPath) ?? .neutral
         guard let self else { return }
         // Staleness guard: only apply if the live track's cover is still this
         // one (a newer track may have started while we decoded).

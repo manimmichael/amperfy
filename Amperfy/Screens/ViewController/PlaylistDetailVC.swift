@@ -378,16 +378,18 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
 
   /// Light the page from the playlist's own cover: the person's pick, else its preset.
   /// Never the playlist's imagePath or an album mosaic. A pick the hero is still
-  /// downloading is looked for again a few times.
+  /// downloading lights from the preset meanwhile (the shared fallback,
+  /// `displayCoverImage`) and is looked for again a few times.
   private func lightUpFromCover() {
     let id = playlist.id
     let url = CassetteCloudPlaylistBridge.storedCoverUrl(for: id)
-    let image = CassetteCloudPlaylistBridge.localCoverImage(for: id)
+    let isOwn = CassetteCloudPlaylistBridge.hasLocalCover(for: id)
+    let image = CassetteCloudPlaylistBridge.displayCoverImage(for: id)
     chrome.lightUp(
       image: image,
-      key: "playlist:\(id)|\(url ?? "preset")|\(image == nil ? "pending" : "ready")"
+      key: "playlist:\(id)|\(url ?? "preset")|\(isOwn ? "ready" : "pending")"
     )
-    if image == nil, url != nil, coverRetryCount < 3 {
+    if !isOwn, url != nil, coverRetryCount < 3 {
       coverRetryCount += 1
       DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
         self?.lightUpFromCover()
@@ -532,11 +534,15 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     -> UITableViewCell {
     let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
     if let song = playlistItem.playable.asSong {
+      // phone-taste: the page's 20pt gutter, the one the MORE LIKE shelf, the album page and
+      // Search's song rows share. The row height stays (the 52pt rows are the album page's
+      // alone).
       cell.display(
         playable: song,
         playContextCb: convertCellViewToPlayContext,
         rootView: self,
-        cassetteIsOwned: cassetteOwnedTrackIds.contains(song.id)
+        cassetteIsOwned: cassetteOwnedTrackIds.contains(song.id),
+        options: PlayableCellOptions(horizontalMargin: CassetteHeading.sideInset)
       )
     }
     return cell

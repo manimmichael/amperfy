@@ -43,11 +43,11 @@ import SwiftUI
 
     private var lead: DeviceAlbum? { model.newOnMac.first }
     private var fan: [DeviceAlbum] { Array(model.newOnMac.prefix(3)) }
-    /// The record's colour: read from the cover, seeded by the catalog colour, else the
-    /// neutral (never orange).
-    private var tint: CoverTint { leadTint ?? model.leadSeed ?? .neutral }
+    /// The record's colour: the neutral (never orange) until the lead cover is read, as on
+    /// every other lit page.
+    private var tint: CoverTint { leadTint ?? .neutral }
 
-    private var hubName: String { model.hubName ?? "Your Mac" }
+    private var hubName: String { model.hubName ?? CassetteSyncStatus.fallbackHubName }
 
     var body: some View {
       ScrollView {

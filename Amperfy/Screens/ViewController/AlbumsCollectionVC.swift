@@ -362,9 +362,11 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
     containableAtIndexPathCallback = { [weak self] indexPath in
       self?.albumsDataSource?.getAlbum(at: indexPath)
     }
+    // phone-taste: the long-press Play queues what the play disc would, only the album's
+    // songs on this phone (OneTapPlay), never its whole server track list.
     playContextAtIndexPathCallback = { [weak self] indexPath in
       guard let album = self?.albumsDataSource?.getAlbum(at: indexPath) else { return nil }
-      return PlayContext(containable: album)
+      return PlayContext(containable: album, index: 0, playables: OneTapPlay.playables(of: album))
     }
     snapshotDidChange = { [weak self] in
       guard let self else { return }

@@ -191,7 +191,8 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
     playContextAtIndexPathCallback = { indexPath in
       let entity = self.artistAt(indexPath: indexPath)
       guard let entity else { return nil }
-      return PlayContext(containable: entity)
+      // phone-taste: only the artist's songs on this phone (OneTapPlay).
+      return PlayContext(containable: entity, index: 0, playables: OneTapPlay.playables(of: entity))
     }
     swipeCallback = { indexPath, completionHandler in
       let artist = self.artistAt(indexPath: indexPath)
@@ -212,7 +213,8 @@ class ArtistsVC: SingleSnapshotFetchedResultsTableViewController<ArtistMO> {
             isBackground: true
           )
         }
-        completionHandler(SwipeActionContext(containable: artist))
+        // phone-taste: the swipe queues and plays only what is on this phone.
+        completionHandler(SwipeActionContext(containable: OnPhoneContainable(artist)))
       }
     }
     snapshotDidChange = {

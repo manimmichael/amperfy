@@ -81,7 +81,8 @@ class GenresVC: SingleFetchedResultsTableViewController<GenreMO> {
     }
     playContextAtIndexPathCallback = { indexPath in
       let entity = self.fetchedResultsController.getWrappedEntity(at: indexPath)
-      return PlayContext(containable: entity)
+      // phone-taste: only the genre's songs on this phone (OneTapPlay).
+      return PlayContext(containable: entity, index: 0, playables: OneTapPlay.playables(of: entity))
     }
     swipeCallback = { indexPath, completionHandler in
       let genre = self.fetchedResultsController.getWrappedEntity(at: indexPath)
@@ -101,7 +102,8 @@ class GenresVC: SingleFetchedResultsTableViewController<GenreMO> {
             isBackground: true
           )
         }
-        completionHandler(SwipeActionContext(containable: genre))
+        // phone-taste: the swipe queues and plays only what is on this phone.
+        completionHandler(SwipeActionContext(containable: OnPhoneContainable(genre)))
       }
     }
     resultUpdateHandler?.changesDidEnd = {

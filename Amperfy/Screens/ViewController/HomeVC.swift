@@ -279,7 +279,9 @@ final class HomeVC: UICollectionViewController {
   /// Show/hide the hub status line to match `CassetteSyncStatus` and inset the content
   /// below it while it is up. Resume stays: a single line does not cover it.
   private func updateSyncBannerPresentation(animated: Bool) {
-    let hubName = CassetteSyncStatus.hubName(
+    // The same name the avatar menu, Settings and the Mac page show (an IP pairing falls back
+    // to the hostname the hub reported, then to "your Mac").
+    let hubName = CassetteSyncStatus.displayHubName(
       serverUrl: appDelegate.storage.settings.accounts.activeSetting.read.loginCredentials?.serverUrl
     )
     let line = CassetteSyncStatus.statusLine(hubName: hubName)

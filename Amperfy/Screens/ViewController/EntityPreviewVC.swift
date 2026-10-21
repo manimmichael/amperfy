@@ -37,15 +37,18 @@ class EntityPreviewActionBuilder {
   private var playerIndexCb: GetPlayerIndexCallback?
   private var appDelegate: AppDelegate
 
+  /// What the menu's Play, Shuffle, queue and Add to Playlist actions act on. Music is only
+  /// what this phone can play (OneTapPlay's rule: in on-device mode the songs on this phone,
+  /// cached or not), so a long-press on any surface never queues a song that is not here.
+  /// Read when an action is chosen, not when the menu is built.
   private var entityPlayables: [AbstractPlayable] {
-    let playables = entityContainer.playables
-      .filterCached(dependigOn: appDelegate.storage.settings.user.isOfflineMode)
     switch entityContainer.playContextType {
     case .music:
-      return playables
+      return OneTapPlay.playables(of: entityContainer)
         .filter { $0.asSong?.isAvailableToUser() ?? $0.asRadio?.isAvailableToUser() ?? false }
     case .podcast:
-      return playables
+      return entityContainer.playables
+        .filterCached(dependigOn: appDelegate.storage.settings.user.isOfflineMode)
     }
   }
 

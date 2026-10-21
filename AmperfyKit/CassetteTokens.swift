@@ -232,7 +232,8 @@ public struct CoverTint: Sendable, Hashable {
   // concurrency for the shared static (the AmbientBackdropCache pattern).
   nonisolated(unsafe) private static let cache = NSCache<NSString, CoverTintBox>()
 
-  /// The tint already read for `key` (a cover path, or a playlist's cover key), if any.
+  /// The tint already read for `key` (a `cacheKey(forCoverPath:)`, or a playlist's cover
+  /// key), if any. For a cover file, `cached(coverPath:)` builds the key.
   public static func cached(key: String) -> CoverTint? {
     cache.object(forKey: key as NSString)?.value
   }
@@ -248,12 +249,33 @@ public struct CoverTint: Sendable, Hashable {
     return tint
   }
 
-  /// The tint for a cover on disk, keyed by its path: decoded small (the thumb when there
-  /// is one) off the main thread. nil when the file is missing or cannot be decoded, so the
-  /// caller keeps `neutral`.
+  /// The one cache key for a cover on disk: its path plus the modification date of the file
+  /// the colour is read from (the small-surface thumb when there is one, else the full
+  /// cover). A cover re-downloaded or re-picked at the SAME path gets a new key, so every lit
+  /// surface (Now Playing, the record pages, the Resume and Search cards, the Mac page, the
+  /// glows) moves to its new colour together instead of keeping the old one until restart.
+  public static func cacheKey(forCoverPath coverPath: String) -> String {
+    let source = CoverImageStore.preferredSourcePath(forFullPath: coverPath, smallSurface: true)
+    guard let modified = (try? FileManager.default.attributesOfItem(atPath: source))?[
+      .modificationDate
+    ] as? Date else { return coverPath }
+    return "\(coverPath)#\(modified.timeIntervalSince1970)"
+  }
+
+  /// The tint already read for the cover at `coverPath`, under `cacheKey(forCoverPath:)`.
+  public static func cached(coverPath: String) -> CoverTint? {
+    guard !coverPath.isEmpty else { return nil }
+    return cached(key: cacheKey(forCoverPath: coverPath))
+  }
+
+  /// The tint for a cover on disk, under `cacheKey(forCoverPath:)`: always read from the
+  /// same small decode (the thumb when there is one), off the main thread, so one record
+  /// has one colour on every surface. nil when the file is missing or cannot be decoded, so
+  /// the caller keeps `neutral`.
   public static func resolve(coverPath: String) async -> CoverTint? {
     guard !coverPath.isEmpty else { return nil }
-    if let hit = cached(key: coverPath) { return hit }
+    let key = cacheKey(forCoverPath: coverPath)
+    if let hit = cached(key: key) { return hit }
     let tint = await Task.detached(priority: .utility) { () -> CoverTint? in
       let source = CoverImageStore.preferredSourcePath(forFullPath: coverPath, smallSurface: true)
       guard let image = CoverImageStore.downsampledImage(atPath: source, maxPixel: 64)
@@ -261,7 +283,7 @@ public struct CoverTint: Sendable, Hashable {
       return extract(from: image)
     }.value
     if let tint {
-      cache.setObject(CoverTintBox(tint), forKey: coverPath as NSString)
+      cache.setObject(CoverTintBox(tint), forKey: key as NSString)
     }
     return tint
   }

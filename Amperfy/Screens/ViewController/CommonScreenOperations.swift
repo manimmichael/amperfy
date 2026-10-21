@@ -401,16 +401,22 @@ enum OneTapPlay {
   /// keeps only the songs on this phone (other playables pass); Server Mode keeps
   /// everything, or only cached items while offline.
   static func playables(of containable: PlayableContainable) -> [AbstractPlayable] {
-    let all = containable.playables
+    playables(containable.playables)
+  }
+
+  /// The same rule for a list that is not a container (a mix, the Lately songs, the whole
+  /// library), in list order. The one copy of it: CarPlay, the mood doors and Search's
+  /// Shuffle all call this.
+  static func playables(_ list: [AbstractPlayable]) -> [AbstractPlayable] {
     if CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
       let owned = DeviceOwnershipManager(context: delegate.storage.main.context)
         .fetchAllSubsonicTrackIds()
-      return all.filter { playable in
+      return list.filter { playable in
         guard let song = playable.asSong else { return true }
         return owned.contains(song.id)
       }
     }
-    return all.filterCached(dependigOn: delegate.storage.settings.user.isOfflineMode)
+    return list.filterCached(dependigOn: delegate.storage.settings.user.isOfflineMode)
   }
 
   /// Plays `containable` now: an album from the top, an artist shuffled, a playlist (and

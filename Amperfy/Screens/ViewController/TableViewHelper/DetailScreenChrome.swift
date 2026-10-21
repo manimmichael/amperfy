@@ -83,20 +83,24 @@ final class DetailCoverLighter: NSObject {
     appDelegate.notificationHandler.remove(self, name: .downloadFinishedSuccess, object: nil)
   }
 
-  /// Light from a cover file on disk, keyed by `key` (the path). No file: no glow and the
-  /// neutral colour, never the generated placeholder.
-  func lightUp(coverPath: String?, key: String) {
+  /// Light from a cover file on disk. A file is keyed by the foundation
+  /// (`CoverTint.cacheKey`: its path plus the file's date), so a cover replaced at the same
+  /// path lights the page again when its download lands; `key` names the no-file state. No
+  /// file: no glow and the neutral colour, never the generated placeholder.
+  func lightUp(coverPath: String?, key fallbackKey: String) {
+    let coverPath = coverPath.flatMap { $0.isEmpty ? nil : $0 }
+    let key = coverPath.map { CoverTint.cacheKey(forCoverPath: $0) } ?? fallbackKey
     guard key != self.key else { return }
     self.key = key
     let token = UUID()
     self.token = token
-    guard let coverPath, !coverPath.isEmpty else {
+    guard let coverPath else {
       land(.neutral, glow: nil, key: key)
       return
     }
     // A page opened before: both are cached, so it lights in the same frame.
-    if let cachedTint = CoverTint.cached(key: coverPath),
-       let cachedGlow = AmbientBackdropCache.cachedTiny(for: coverPath) {
+    if let cachedTint = CoverTint.cached(key: key),
+       let cachedGlow = AmbientBackdropCache.cachedTiny(for: key) {
       land(cachedTint, glow: cachedGlow, key: key)
       return
     }
@@ -230,8 +234,9 @@ final class DetailScreenChrome {
 
   // MARK: Lighting
 
-  /// Light the page from a cover file on disk (keyed by its path). No file: no glow, the
-  /// neutral colour. An unchanged key does nothing.
+  /// Light the page from a cover file on disk (keyed by `CoverTint.cacheKey`, its path plus
+  /// the file's date; `key` names the no-file state). No file: no glow, the neutral colour.
+  /// An unchanged key does nothing.
   func lightUp(coverPath: String?, key: String) {
     lighter.lightUp(coverPath: coverPath, key: key)
   }

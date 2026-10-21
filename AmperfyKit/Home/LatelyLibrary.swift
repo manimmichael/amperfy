@@ -289,7 +289,11 @@ public enum LatelyLibrary {
     return RawIndex(rows: rows)
   }
 
-  /// The index in `context` (the main one): wrappers over faults by object id, no fetch.
+  /// The index in `context` (the main one): wrappers over faults by object id. Rows that no
+  /// longer exist (a regroup purge can delete a song or album between the background read
+  /// and this landing) are left out, so Home, CarPlay and the MORE LIKE shelves never hold
+  /// a dead fault for the five minutes the index is cached. One id-only fetch per entity
+  /// checks them all, instead of a store round trip per row on the main thread.
   private static func materialize(_ raw: RawIndex, context: NSManagedObjectContext) -> MoodIndex? {
     var songsByID = [String: Song]()
     var songCandidates = [ListeningShelves.SongCandidate]()
@@ -298,15 +302,25 @@ public enum LatelyLibrary {
     var artistByAlbum = [String: String]()
     var artistNameByAlbum = [String: String]()
     var seenSongs = Set<String>()
+    let liveSongs = liveObjectIDs(raw.rows.map(\.songObjectID), entityName: "Song", context: context)
+    let liveAlbums = liveObjectIDs(
+      raw.rows.compactMap(\.albumObjectID),
+      entityName: "Album",
+      context: context
+    )
     for row in raw.rows {
       guard seenSongs.insert(row.songID).inserted,
-            let songMO = context.object(with: row.songObjectID) as? SongMO
+            liveSongs?.contains(row.songObjectID) ?? true,
+            let songMO = context.object(with: row.songObjectID) as? SongMO,
+            !songMO.isDeleted
       else { continue }
       songsByID[row.songID] = Song(managedObject: songMO)
       songCandidates.append(.init(songID: row.songID, albumID: row.albumID, tags: row.tags))
       guard !row.albumID.isEmpty, let albumObjectID = row.albumObjectID else { continue }
       if albumsByID[row.albumID] == nil,
-         let albumMO = context.object(with: albumObjectID) as? AlbumMO {
+         liveAlbums?.contains(albumObjectID) ?? true,
+         let albumMO = context.object(with: albumObjectID) as? AlbumMO,
+         !albumMO.isDeleted {
         albumsByID[row.albumID] = Album(managedObject: albumMO)
       }
       songTagsByAlbum[row.albumID, default: []].append(row.tags)
@@ -330,5 +344,29 @@ public enum LatelyLibrary {
       songsByID: songsByID,
       artistNameByAlbumID: artistNameByAlbum
     )
+  }
+
+  /// Which of `ids` still have a row in `context` (pending deletes count as gone), read with
+  /// id-only fetches of at most 500 ids each (well under SQLite's bound-variable limit). nil
+  /// when a fetch fails, and the caller then keeps every id.
+  private static func liveObjectIDs(
+    _ ids: [NSManagedObjectID],
+    entityName: String,
+    context: NSManagedObjectContext
+  )
+    -> Set<NSManagedObjectID>? {
+    let unique = Array(Set(ids))
+    var live = Set<NSManagedObjectID>()
+    var start = 0
+    while start < unique.count {
+      let chunk = Array(unique[start ..< min(start + 500, unique.count)])
+      start += 500
+      let request = NSFetchRequest<NSManagedObjectID>(entityName: entityName)
+      request.predicate = NSPredicate(format: "self IN %@", chunk)
+      request.resultType = .managedObjectIDResultType
+      guard let found = try? context.fetch(request) else { return nil }
+      live.formUnion(found)
+    }
+    return live
   }
 }

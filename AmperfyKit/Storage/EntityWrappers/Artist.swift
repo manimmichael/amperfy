@@ -125,6 +125,16 @@ public class Artist: AbstractLibraryEntity {
     .artist
   }
 
+  /// phone-taste: an artist's picture is their OWN photo or nothing. Every surface that
+  /// draws an artist through `LibraryEntityImage` (Home's artist circles, the Resume card,
+  /// Library and genre rows, CarPlay tiles and rows) reads this, so a shared Artwork row
+  /// that carries someone else's face never shows; with no photo of their own the surface
+  /// draws the generated artist placeholder.
+  override public func imagePath(setting: ArtworkDisplayPreference) -> String? {
+    guard hasOwnPhotoOnDisk else { return nil }
+    return super.imagePath(setting: setting)
+  }
+
   /// True when this artist has its OWN photo on disk: an artwork row that belongs to this
   /// artist alone, is keyed to this artist (`(id, "artist")`), is a real custom image, and
   /// has its file present. The one test every surface uses before showing an artist's
@@ -139,6 +149,38 @@ public class Artist: AbstractLibraryEntity {
           let path = artwork.imagePath
     else { return false }
     return FileManager.default.fileExists(atPath: path)
+  }
+
+  // MARK: The artist's lead record (phone-taste)
+
+  /// Whether `album` is this artist's own record: its album artist is this artist, or one
+  /// with the same name (the phone can hold one artist under several identities). The one
+  /// test the artist page, Search and CarPlay share.
+  public func isCredited(_ album: Album) -> Bool {
+    guard let credited = album.artist else { return false }
+    if credited.id == id { return true }
+    let creditedName = ListeningShelves.normalizedArtistName(credited.name)
+    return !creditedName.isEmpty && creditedName == ListeningShelves.normalizedArtistName(name)
+  }
+
+  /// `albums` newest first: by year (no year last), then by name.
+  public static func newestFirst(_ albums: [Album]) -> [Album] {
+    albums.sorted { lhs, rhs in
+      let ly = lhs.year > 0 ? lhs.year : Int.min
+      let ry = rhs.year > 0 ? rhs.year : Int.min
+      if ly != ry { return ly > ry }
+      return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+    }
+  }
+
+  /// The record that stands for this artist among `albums` (what the surface has on the
+  /// phone): the newest credited album with a cover, else the newest credited album, else
+  /// the newest album they appear on. A compilation never stands for them while a record of
+  /// their own is here. `hasCover` says whether an album's cover file is on disk.
+  public func leadAlbum(among albums: [Album], hasCover: (Album) -> Bool) -> Album? {
+    let ordered = Self.newestFirst(albums)
+    let credited = ordered.filter { isCredited($0) }
+    return credited.first(where: hasCover) ?? credited.first ?? ordered.first
   }
 }
 

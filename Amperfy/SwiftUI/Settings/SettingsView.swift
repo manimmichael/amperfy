@@ -398,7 +398,7 @@ struct SettingsView: View {
     var model: DevicePagesModel
 
     private var name: String {
-      model.hubName ?? "Your Mac"
+      model.hubName ?? CassetteSyncStatus.fallbackHubName
     }
 
     /// "3 of 12 albums" while albums arrive, "12 albums waiting" while the Mac is out of
