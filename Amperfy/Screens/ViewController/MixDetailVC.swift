@@ -117,13 +117,13 @@ final class MixDetailVC: MultiSourceTableViewController {
     chrome.scrollViewDidScroll()
   }
 
+  // No super in these two: unlike the album and playlist pages' parent, nothing above this
+  // class implements them, and UIKit's table controller doesn't either, so the call crashes.
   override func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-    super.scrollViewDidEndDecelerating(scrollView)
     chrome.scrollDidSettle()
   }
 
   override func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-    super.scrollViewDidEndDragging(scrollView, willDecelerate: decelerate)
     if !decelerate {
       chrome.scrollDidSettle()
     }
