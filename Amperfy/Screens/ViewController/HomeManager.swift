@@ -355,6 +355,14 @@ class HomeManager: NSObject {
       name: .cassetteMoodIndexReady,
       object: nil
     )
+    // cassette 2026-10-21: a station saved or unsaved (here, on the dial, or on the web)
+    // moves to the front of the Radio row.
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleRadioSavedChanged),
+      name: RadioSaved.didChange,
+      object: nil
+    )
   }
 
   deinit {
@@ -439,6 +447,8 @@ class HomeManager: NSObject {
       print("Cassette recency: updateFromRemote SKIPPED — app is in offline mode")
       return
     }
+    // cassette 2026-10-21: the saved stations from the cloud (a change reorders the Radio row).
+    Task { @MainActor in await RadioSaved.shared.refresh() }
     Task { @MainActor in
       do {
         try await AutoDownloadLibrarySyncer(
@@ -1510,8 +1520,8 @@ class HomeManager: NSObject {
   /// present); we just rank by `container.lastTimePlayed`. Backfill (fill-to-N) is
   /// unchanged so the shelf never renders empty — an artist that only appears via
   /// alphabetical backfill is there by library membership, not "surfaced" by a play.
-  // cassette 2026-10-13: the Radio shelf. The stations the hub holds, ranked by
-  // what this person tunes to (play count + recency on the station itself),
+  // cassette 2026-10-13: the Radio shelf. The stations the hub holds, the saved ones
+  // first (2026-10-21), the rest ranked by what this person tunes to (play count + recency on the station itself),
   // then by how well a station's genres match the genres they OWN, then live
   // stations for breadth, capped per network. No network, no model; the
   // registry rides inside the app (RadiosVC.swift). Batched like the rest.
@@ -1537,7 +1547,13 @@ class HomeManager: NSObject {
       let weight = pow(0.5, max(0, now.timeIntervalSince(date)) / 86400 / 10)
       recentGenres[RadioShelf.normalize(name), default: 0] += weight
     }
-    let ranked = RadioShelf.rank(radios: radios, libraryGenres: genreWeight, recentGenres: recentGenres, now: now)
+    let ranked = RadioShelf.rank(
+      radios: radios,
+      libraryGenres: genreWeight,
+      recentGenres: recentGenres,
+      savedSlugs: RadioSaved.shared.slugs,
+      now: now
+    )
     data[.radios] = ranked.prefix(Self.shelfCarouselCap).map {
       HomeItem(section: .radios, stableID: "radio:\($0.id)", playableContainable: $0)
     }
@@ -1916,6 +1932,11 @@ class HomeManager: NSObject {
   @objc
   private func handleMoodIndexReady() {
     moodIndexJustLanded = true
+    scheduleRecompute()
+  }
+
+  @objc
+  private func handleRadioSavedChanged() {
     scheduleRecompute()
   }
 }

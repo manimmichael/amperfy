@@ -1339,6 +1339,33 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     _ = try await perform(request)
   }
 
+  // MARK: Saved radio stations
+
+  /// cassette 2026-10-21: the account's saved stations (radio registry slugs), latest save
+  /// first: the same list the web's /radio shows under "Your stations". nil when the
+  /// server did not say the list is the account's (a deploy of the route from before the
+  /// phone read it, which answers every bearer with an empty list); the caller then keeps
+  /// its own copy rather than wiping it.
+  public func getSavedRadioStations() async throws -> [String]? {
+    struct Response: Decodable {
+      let saved: [String]
+      let signedIn: Bool?
+    }
+    let data = try await get(path: "/api/radio/saved")
+    let response = try JSONDecoder().decode(Response.self, from: data)
+    return response.signedIn == true ? response.saved : nil
+  }
+
+  /// Save or unsave a station through the web's own follow edge (POST / DELETE
+  /// /api/follows, type `radio_station`), so a save on the phone is the web's save.
+  public func setRadioStationSaved(slug: String, saved: Bool) async throws {
+    _ = try await send(
+      method: saved ? "POST" : "DELETE",
+      path: "/api/follows",
+      json: ["type": "radio_station", "id": slug, "source": "ios"]
+    )
+  }
+
   /// GET /api/sync/plays?since=<iso> — cloud play history, newest first, plays
   /// strictly newer than `since` (server default page size when `since == nil`).
   /// Strictly READ-ONLY. Used by `CloudPlayReconciler` to fold in plays made on

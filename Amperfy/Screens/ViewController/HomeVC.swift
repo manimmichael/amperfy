@@ -558,12 +558,14 @@ final class HomeVC: UICollectionViewController {
         return cell
       }
       if let radio = item.playableContainable as? Radio {
-        // A station has no play disc: the tile itself tunes in (didSelectItemAt).
+        // cassette 2026-10-21: the tile opens the station's page (didSelectItemAt); the
+        // disc tunes in, with the shelf as the context, like the record tiles.
         let cell = collectionView.dequeueReusableCell(
           withReuseIdentifier: RadioShelfCell.typeName,
           for: indexPath
         ) as! RadioShelfCell
         cell.display(radio: radio, info: RadioCatalog.shared.station(forStreamUrl: radio.url))
+        cell.onPlayTapped = { [weak self] in self?.tuneIn(radio) }
         return cell
       }
       if let artist = item.playableContainable as? Artist {
@@ -935,16 +937,17 @@ final class HomeVC: UICollectionViewController {
       )
       navigationController?.navigationBar.prefersLargeTitles = false
     } else if let radio = playableContainer as? Radio {
-      // cassette 2026-10-13: a station has no detail page; the tap tunes in,
-      // with the whole shelf as the context so Next / Previous move along it.
-      let shelf = dataSource.snapshot().itemIdentifiers(inSection: .radios)
-        .compactMap { $0.playableContainable as? Radio }
-      let index = shelf.firstIndex(where: { $0.id == radio.id }) ?? 0
-      appDelegate.player.play(context: PlayContext(
-        name: HomeSection.radios.title,
-        index: index,
-        playables: shelf.isEmpty ? [radio] : shelf
-      ))
+      // cassette 2026-10-21: a station opens its page; one the registry does not know
+      // has none, so its tap still tunes in.
+      if let info = RadioCatalog.shared.station(forStreamUrl: radio.url) {
+        navigationController?.pushViewController(
+          RadioStationVC(account: account, station: info),
+          animated: true
+        )
+        navigationController?.navigationBar.prefersLargeTitles = false
+      } else {
+        tuneIn(radio)
+      }
     } else if let genre = playableContainer as? Genre {
       navigationController?.pushViewController(
         AppStoryboard.Main.segueToGenreDetail(account: account, genre: genre),
@@ -956,6 +959,18 @@ final class HomeVC: UICollectionViewController {
 }
 
 extension HomeVC {
+  /// Tune in with the whole Radio shelf as the context, so Next / Previous move along it.
+  fileprivate func tuneIn(_ radio: Radio) {
+    let shelf = dataSource.snapshot().itemIdentifiers(inSection: .radios)
+      .compactMap { $0.playableContainable as? Radio }
+    let index = shelf.firstIndex(where: { $0.id == radio.id }) ?? 0
+    appDelegate.player.play(context: PlayContext(
+      name: HomeSection.radios.title,
+      index: index,
+      playables: shelf.isEmpty ? [radio] : shelf
+    ))
+  }
+
   override func collectionView(
     _ collectionView: UICollectionView,
     contextMenuConfigurationForItemAt indexPath: IndexPath,
