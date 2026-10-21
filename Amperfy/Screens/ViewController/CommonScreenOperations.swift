@@ -241,7 +241,12 @@ extension UIViewController {
     }()
 
     let button = UIButton(type: .custom)
-    button.frame = CGRect(x: 0, y: 0, width: size, height: size)
+    button.translatesAutoresizingMaskIntoConstraints = false
+    // Pinned explicitly: iOS 26's glass toolbar lays out custom bar-button
+    // views by intrinsic content size, and setImage() below can otherwise
+    // re-inflate this chip to whatever the loaded image's raw size is.
+    button.widthAnchor.constraint(equalToConstant: size).isActive = true
+    button.heightAnchor.constraint(equalToConstant: size).isActive = true
     button.layer.cornerRadius = size / 2
     button.clipsToBounds = true
     button.setImage(Self.cassetteAccountAvatarImage(size: size), for: .normal)
@@ -261,7 +266,7 @@ extension UIViewController {
         guard let (data, _) = try? await URLSession.shared.data(from: url),
               let photo = UIImage(data: data) else { return }
         await MainActor.run {
-          button?.setImage(photo, for: .normal)
+          button?.setImage(Self.fittedAvatarPhoto(photo, size: size), for: .normal)
         }
       }
     }
@@ -285,7 +290,9 @@ extension UIViewController {
           Task { [weak button] in
             guard let (data, _) = try? await URLSession.shared.data(from: url),
                   let photo = UIImage(data: data) else { return }
-            await MainActor.run { button?.setImage(photo, for: .normal) }
+            await MainActor.run {
+              button?.setImage(Self.fittedAvatarPhoto(photo, size: size), for: .normal)
+            }
           }
         }
       }
@@ -327,6 +334,26 @@ extension UIViewController {
     return silhouetteAvatar(size: size)
   }
 
+  /// Crop-to-fill and rasterize a downloaded photo at the chip's exact point
+  /// size. Avatar stickers are baked at a fixed 256x256px with no scale hint,
+  /// so a raw `UIImage(data:)` reads as a 256-*point* image and inflates the
+  /// button's intrinsic content size well past the intended 40/50pt chip —
+  /// this is what balloons the nav chip under iOS 26's glass toolbar (BUG-178).
+  private static func fittedAvatarPhoto(_ source: UIImage, size: CGFloat) -> UIImage {
+    let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+    return renderer.image { _ in
+      let sourceSize = source.size
+      guard sourceSize.width > 0, sourceSize.height > 0 else {
+        source.draw(in: CGRect(x: 0, y: 0, width: size, height: size))
+        return
+      }
+      let scale = max(size / sourceSize.width, size / sourceSize.height)
+      let drawSize = CGSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
+      let origin = CGPoint(x: (size - drawSize.width) / 2, y: (size - drawSize.height) / 2)
+      source.draw(in: CGRect(origin: origin, size: drawSize))
+    }
+  }
+
   private static func silhouetteAvatar(size: CGFloat) -> UIImage {
     UIImage.userCircle(withConfiguration: UIImage.SymbolConfiguration(
       pointSize: size * 0.6,
@@ -343,7 +370,8 @@ extension UIViewController {
     text: String? = nil,
     textScale: CGFloat = 0.38,
     textColor: UIColor = .white
-  ) -> UIImage {
+  )
+    -> UIImage {
     let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
     return renderer.image { ctx in
       let rect = CGRect(x: 0, y: 0, width: size, height: size)
