@@ -55,7 +55,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     playContext: { [weak self] in self?.albumPlayContext() }
   )
   private var hideUniformArtistSubtitle = false
-  /// phone-taste: the footer under the songs (the on-phone line, then MORE BY).
+  /// phone-taste: the footer under the songs (the on-phone line, then MORE BY, then MORE
+  /// LIKE).
   private var recordFooter: DetailRecordFooter?
   /// What the footer was last built from, so an appearance that changes nothing keeps it
   /// (and the MORE BY shelf keeps its scroll position on the way back from a tile).
@@ -63,6 +64,10 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   /// MORE BY: the artist's own other records on the phone. Worked out once when the page
   /// loads and again after the album syncs, never on every appearance.
   private var moreByAlbumsCache: [Album] = []
+  /// MORE LIKE <album>: other artists' records on the phone whose songs carry the same
+  /// moods (founder, 2026-10-21: "why not show Albums like Father of the Bride?"). Empty
+  /// until the mood index is ready; it never builds on the main thread here.
+  private var moreLikeAlbumsCache: [Album] = []
   /// The album rows' height: one 48pt line plus 2pt top and bottom (was 76).
   private static let rowHeight: CGFloat = 52
   private static let rowVerticalMargin: CGFloat = (rowHeight - 48) / 2
@@ -162,6 +167,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     singleFetchedResultsController?.delegate = self
     singleFetchedResultsController?.fetch()
     recomputeMoreBy()
+    recomputeMoreLike()
 
     // Cassette: pop this view if a background regroup deletes the AlbumMO it is
     // showing (re-key or purge). Registered once per instance; removed in deinit.
@@ -254,6 +260,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     refreshAlbumMetadataLine()
     chrome.setTitle(album.name)
     navigationController?.navigationBar.prefersLargeTitles = false
+    observeMoodsWhileVisible()
   }
 
   override func viewDidLayoutSubviews() {
@@ -269,6 +276,9 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   override func viewDidDisappear(_ animated: Bool) {
     super.viewDidDisappear(animated)
     chrome.viewDidDisappear()
+    let center = NotificationCenter.default
+    center.removeObserver(self, name: .cassetteMoodIndexReady, object: nil)
+    center.removeObserver(self, name: .cassetteLibraryMoodsChanged, object: nil)
   }
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -335,6 +345,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       self.detailOperationsView?.refresh()
       self.lightUpFromCover()
       self.recomputeMoreBy()
+      self.recomputeMoreLike()
       self.rebuildFooter()
     }
   }
@@ -383,9 +394,12 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     let onPhone = fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0
     let total = max(album.songCount, fetchedResultsController.totalSongCount)
     let shelf = moreByShelf()
+    let likeShelf = moreLikeShelf()
     let signature = [
       "\(width)", "\(onPhone)", "\(total)", shelf?.answer ?? "",
       (shelf?.albums ?? []).map(\.id).joined(separator: ","),
+      likeShelf?.answer ?? "",
+      (likeShelf?.albums ?? []).map(\.id).joined(separator: ","),
     ].joined(separator: "|")
     guard signature != recordFooterSignature else { return }
     recordFooterSignature = signature
@@ -393,7 +407,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       width: width,
       onPhone: onPhone,
       total: total,
-      shelves: shelf.map { [$0] } ?? [],
+      shelves: [shelf, likeShelf].compactMap { $0 },
       answerColor: chrome.tint.text
     )
     recordFooter = footer
@@ -406,6 +420,82 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       return
     }
     moreByAlbumsCache = moreByAlbums(artist: artist)
+  }
+
+  // MARK: - MORE LIKE (founder, 2026-10-21)
+
+  /// Listen for the mood index while the page is on screen (removed in viewDidDisappear;
+  /// removed first here so a cancelled swipe-back, which appears again without having
+  /// disappeared, never registers twice).
+  private func observeMoodsWhileVisible() {
+    let center = NotificationCenter.default
+    for name in [Notification.Name.cassetteMoodIndexReady, .cassetteLibraryMoodsChanged] {
+      center.removeObserver(self, name: name, object: nil)
+      center.addObserver(self, selector: #selector(moodIndexChanged), name: name, object: nil)
+    }
+  }
+
+  @objc
+  private func moodIndexChanged() {
+    let before = moreLikeAlbumsCache.map(\.id)
+    recomputeMoreLike()
+    guard moreLikeAlbumsCache.map(\.id) != before else { return }
+    rebuildFooter()
+  }
+
+  /// Records on the phone whose songs' moods match this album's, best first: one per
+  /// artist, never this album's artist (MORE BY covers them) nor Various Artists, at most
+  /// eight. The same scoring the playlist page's MORE LIKE uses, matched a little tighter
+  /// because one record's moods are narrower than a playlist's.
+  private func recomputeMoreLike() {
+    guard !album.managedObject.isDeleted,
+          let index = LatelyLibrary.moodIndexIfReady(storage: appDelegate.storage, account: account),
+          let own = index.albumCandidates.first(where: { $0.albumID == album.id })
+    else {
+      moreLikeAlbumsCache = []
+      return
+    }
+    var profile = ListeningShelves.TagVector()
+    for tags in own.songTags { ListeningShelves.add(tags, into: &profile) }
+    let nameOf: (String) -> String = { id in
+      ListeningShelves.normalizedArtistName(index.artistNameByAlbumID[id] ?? "")
+    }
+    let pageArtist = ListeningShelves.normalizedArtistName(album.artist?.name ?? nameOf(album.id))
+    var excluding: Set<String> = [album.id]
+    for candidate in index.albumCandidates {
+      let name = nameOf(candidate.albumID)
+      if name.isEmpty || name == pageArtist || name == "various artists" {
+        excluding.insert(candidate.albumID)
+      }
+    }
+    let ids = ListeningShelves.moreLike(
+      profile: profile,
+      albums: index.albumCandidates,
+      excluding: excluding,
+      minMatch: 0.75,
+      perArtist: 1,
+      limit: 8,
+      artistKey: { nameOf($0.albumID) }
+    )
+    moreLikeAlbumsCache = ids.compactMap { index.albumsByID[$0] }
+  }
+
+  private func moreLikeShelf() -> DetailShelfBlock? {
+    let albums = moreLikeAlbumsCache
+    guard !albums.isEmpty else { return nil }
+    return DetailShelfBlock(
+      shout: "More like",
+      answer: album.name,
+      albums: albums,
+      onSelect: { [weak self] album in
+        guard let self else { return }
+        navigationController?.pushViewController(
+          AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
+          animated: true
+        )
+      },
+      onPlay: { album in OneTapPlay.play(album) }
+    )
   }
 
   private func moreByShelf() -> DetailShelfBlock? {
