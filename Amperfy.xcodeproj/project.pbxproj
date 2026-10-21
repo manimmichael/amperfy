@@ -14,6 +14,8 @@
 		4C0D5E24B171CC2050300153 /* LibraryContainerVC.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEA2E44A101191222044217C /* LibraryContainerVC.swift */; };
 		4C44F47330378D70006EED5B /* HomeShelfEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C44F47230378D70006EED5B /* HomeShelfEngine.swift */; };
 		C0FFEE01CA5E77E000000014 /* ListeningShelves.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E000000013 /* ListeningShelves.swift */; };
+		C0FFEE01CA5E77E000000018 /* LibraryMoods.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E000000017 /* LibraryMoods.swift */; };
+		C0FFEE01CA5E77E000000016 /* LatelyLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E000000015 /* LatelyLibrary.swift */; };
 		5005938928E2D4EF008C8DF6 /* CommonCollectionSectionHeader.xib in Resources */ = {isa = PBXBuildFile; fileRef = 5005938828E2D4EF008C8DF6 /* CommonCollectionSectionHeader.xib */; };
 		5005938B28E2D4FB008C8DF6 /* CommonCollectionSectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5005938A28E2D4FB008C8DF6 /* CommonCollectionSectionHeader.swift */; };
 		5005939128E42F66008C8DF6 /* BasicCollectionCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5005939028E42F66008C8DF6 /* BasicCollectionCell.swift */; };
@@ -647,6 +649,8 @@
 		43FBE27E250D4DFD00D5F9B3 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		4C44F47230378D70006EED5B /* HomeShelfEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HomeShelfEngine.swift; path = AmperfyKit/Home/HomeShelfEngine.swift; sourceTree = "<group>"; };
 		C0FFEE01CA5E77E000000013 /* ListeningShelves.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ListeningShelves.swift; path = AmperfyKit/Home/ListeningShelves.swift; sourceTree = "<group>"; };
+		C0FFEE01CA5E77E000000017 /* LibraryMoods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LibraryMoods.swift; path = AmperfyKit/Cassette/LibraryMoods.swift; sourceTree = "<group>"; };
+		C0FFEE01CA5E77E000000015 /* LatelyLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LatelyLibrary.swift; path = AmperfyKit/Home/LatelyLibrary.swift; sourceTree = "<group>"; };
 		4D4E80DE1B5D5CCA34E33817 /* MixtapePreviewSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MixtapePreviewSheet.swift; sourceTree = "<group>"; };
 		5002565625E69DC700674CE1 /* SpinnerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpinnerViewController.swift; sourceTree = "<group>"; };
 		5003D8F62678DD39006946BF /* SsAlbumParserPreCreatedArtistsTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SsAlbumParserPreCreatedArtistsTest.swift; sourceTree = "<group>"; };
@@ -1552,6 +1556,8 @@
 			children = (
 				4C44F47230378D70006EED5B /* HomeShelfEngine.swift */,
 				C0FFEE01CA5E77E000000013 /* ListeningShelves.swift */,
+				C0FFEE01CA5E77E000000017 /* LibraryMoods.swift */,
+				C0FFEE01CA5E77E000000015 /* LatelyLibrary.swift */,
 				508385E621C5965B00C4BB32 /* Amperfy */,
 				50C9D606284FA847007F18D0 /* AmperfyKit */,
 				50C9D614284FA847007F18D0 /* AmperfyKitTests */,
@@ -3040,6 +3046,8 @@
 				50C9D697284FAA6C007F18D0 /* PlaylistMO+CoreDataProperties.swift in Sources */,
 				4C44F47330378D70006EED5B /* HomeShelfEngine.swift in Sources */,
 				C0FFEE01CA5E77E000000014 /* ListeningShelves.swift in Sources */,
+				C0FFEE01CA5E77E000000018 /* LibraryMoods.swift in Sources */,
+				C0FFEE01CA5E77E000000016 /* LatelyLibrary.swift in Sources */,
 				50C9D6D9284FAB88007F18D0 /* EmbeddedArtworkExtractor.swift in Sources */,
 				CA55F011000000170000CAFE /* CassetteFont.swift in Sources */,
 				C0FFEE01CA5E77E000000004 /* CassetteTokens.swift in Sources */,

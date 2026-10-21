@@ -69,6 +69,9 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   // ListeningShelves.swift). Appended (ordinals 17, 18) per the append-only rule.
   case onRepeat
   case aroundNow
+  // cassette 2026-10-20: albums on the phone matching the mood of recent listening.
+  // Ordinal 19. Takes the Albums row's place on Home when it has anything to show.
+  case moreLikeLately
 
   // cassette redesign (Surface 4): Resume leads the Home IA again — a
   // single full-width card sourced from the lastPlayedDate FRCs. The four
@@ -85,6 +88,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     // cassette: "Albums" is now the from-your-collection shelf (`.forgottenAlbums`,
     // retitled). The old played->newest "Albums" row (`.recentlyAdded`) is retired
     // from Home — `Recent` covers recently-played albums.
+    .moreLikeLately,
     .forgottenAlbums,
     .recentlyPlayedArtists,
   ]
@@ -124,6 +128,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .moodDoors: return "Mood" // accessibility fallback only — MoodDoorsHeaderView owns the visible header
     case .onRepeat: return "On Repeat"
     case .aroundNow: return ListeningShelves.aroundNowTitle(now: Date())
+    case .moreLikeLately: return "More Like Lately"
     }
   }
 
@@ -152,6 +157,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .moodDoors: return false
     case .onRepeat: return false
     case .aroundNow: return false
+    case .moreLikeLately: return false
     }
   }
 }

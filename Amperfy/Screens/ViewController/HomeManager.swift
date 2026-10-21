@@ -445,6 +445,11 @@ class HomeManager: NSObject {
     if buildsForgottenShelf {
       updateAlbumsViaEngine(shelfInput)
     }
+    // cassette 2026-10-20: More Like Lately takes the Albums row's place when it has
+    // something; Albums stays as the fallback until mood tags arrive.
+    if !(data[.moreLikeLately] ?? []).isEmpty {
+      data[.forgottenAlbums] = []
+    }
   }
 
   // MARK: - Play scoring (Home Shelves v1 foundation)
@@ -683,6 +688,21 @@ class HomeManager: NSObject {
     }
     data[.onRepeat] = items(ListeningShelves.onRepeat(plays, now: now), .onRepeat)
     data[.aroundNow] = items(ListeningShelves.aroundNow(plays, now: now), .aroundNow)
+
+    // More Like Lately: needs the cached mood tags (LibraryMoods); empty without them.
+    if let lately = LatelyLibrary.snapshot(storage: storage, account: account, now: now) {
+      let ids = ListeningShelves.moreLikeLately(
+        lately.albumCandidates,
+        profile: lately.profile,
+        playedRecently: lately.albumsPlayedRecently
+      )
+      data[.moreLikeLately] = ids.compactMap { lately.albumsByID[$0] }
+        .filter { isOnPhone($0) }
+        .prefix(Self.shelfCarouselCap)
+        .map { HomeItem(section: .moreLikeLately, stableID: Self.stableID(for: $0), playableContainable: $0) }
+    } else {
+      data[.moreLikeLately] = []
+    }
   }
 
   /// Two months of plays is about a thousand entries for a heavy listener; the cap only

@@ -752,6 +752,22 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     _ = try await send(method: "PUT", path: "/api/sync/intents/\(id)", json: body)
   }
 
+  /// The mood, energy and valence tags of the songs in this library, keyed by
+  /// cassette_local_id (GET /api/sync/library-moods). Untagged songs are absent.
+  public func getLibraryMoods() async throws -> [String: LibraryMoodTags] {
+    let data = try await get(path: "/api/sync/library-moods")
+    let response = try JSONDecoder().decode(LibraryMoodsResponse.self, from: data)
+    var byLocalID = [String: LibraryMoodTags]()
+    for track in response.tracks {
+      byLocalID[track.cassetteLocalId] = LibraryMoodTags(
+        moods: track.moods,
+        energy: track.energy,
+        valence: track.valence
+      )
+    }
+    return byLocalID
+  }
+
   /// Keep the albums holding these songs off this phone (the phone just removed them).
   /// The server resolves the albums from the hub's library index and stops sending
   /// them here until they are sent back from the device page in Cassette Player.

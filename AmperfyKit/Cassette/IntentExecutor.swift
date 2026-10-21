@@ -172,6 +172,8 @@ public final class IntentExecutor {
     // Albums removed on this phone: tell the cloud to keep them off it before this
     // pass reports inventory, or the reconcile that report triggers re-adds them.
     await PhoneRemoval.sendPending()
+    // Mood tags for More Like Lately and the Lately mix; refreshes at most twice a day.
+    await LibraryMoods.shared.refreshIfDue()
 
     // One-time: clear artwork state poisoned by the retired synthetic paths, so the
     // backfills below can actually heal those albums instead of skipping them as

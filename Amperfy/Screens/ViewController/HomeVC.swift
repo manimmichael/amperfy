@@ -638,7 +638,9 @@ final class HomeVC: UICollectionViewController {
         // cassette (BUG-348): the Mood shelf renders only for accounts in the
         // Mixtape beta. The door API answers 404 otherwise, so an opted-out
         // account must never see tiles that can only fail.
-        guard CassetteBetaAccess.isBetaTester else { continue }
+        // cassette 2026-10-20: also shown without the beta when the phone has mood tags,
+        // for the Lately tile alone (MoodDoorRow).
+        guard CassetteBetaAccess.isBetaTester || LibraryMoods.shared.hasTags else { continue }
         snapshot.appendSections([section])
         continue
       }
