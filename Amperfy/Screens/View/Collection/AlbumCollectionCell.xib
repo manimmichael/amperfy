@@ -65,7 +65,7 @@
                                     </label>
                                 </subviews>
                                 <constraints>
-                                    <constraint firstAttribute="height" constant="41" id="RXp-z1-4PU">
+                                    <constraint firstAttribute="height" priority="999" constant="41" id="RXp-z1-4PU">
                                         <variation key="widthClass=regular" constant="42"/>
                                     </constraint>
                                 </constraints>

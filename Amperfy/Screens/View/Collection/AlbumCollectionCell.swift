@@ -51,7 +51,9 @@ class AlbumCollectionCell: BasicCollectionCell {
   /// The Library grid's smaller tile (the mock's `.gridItem`): a 15pt title and the 13pt
   /// mono artist, 2pt apart, under a cover pinned to the top with a small gap. Set only by
   /// AlbumsCollectionVC before `display`; Home shelves and carousels keep the regular tile.
-  /// Reset in `prepareForReuse`.
+  /// The flag is cleared in `prepareForReuse`; the constraints follow it on the next bind
+  /// (`apply` runs `applyCassetteType`, which runs `applyDensity`), so a grid tile that is
+  /// reused as a grid tile never passes through the regular values.
   var isCompact = false
 
   /// The mock's 5pt cover margin plus its 2pt row gap, less the 1pt taller ascender box a
@@ -81,8 +83,10 @@ class AlbumCollectionCell: BasicCollectionCell {
   private var artworkTopConstraint: NSLayoutConstraint?
 
   private var container: PlayableContainable?
-  private var rootView: UICollectionViewController?
-  private var rootFlowLayout: UICollectionViewDelegateFlowLayout?
+  /// Weak: the host owns the collection view that owns this cell, so a strong pointer
+  /// back kept the host (and every cell) alive after it left the screen.
+  private weak var rootView: UICollectionViewController?
+  private weak var rootFlowLayout: UICollectionViewDelegateFlowLayout?
   private var itemWidth: CGFloat?
 
   /// Single type path for album cards. IB size-class font variations used to
@@ -260,9 +264,9 @@ class AlbumCollectionCell: BasicCollectionCell {
     playOverlay?.isHidden = true
     subtitleOverride = nil
     clearsBackground = false
-    // phone-taste: back to the regular tile until a host asks for compact again.
+    // phone-taste: back to the regular tile until a host asks for compact again. Only the
+    // flag: the next bind puts the matching type and heights on (see `isCompact`).
     isCompact = false
-    applyCassetteType()
   }
 
   override func layoutSubviews() {

@@ -140,7 +140,9 @@ class AlbumsCommonVCInteractions {
   private var appDelegate: AppDelegate = (UIApplication.shared.delegate as! AppDelegate)
   private var isSetNavbarButton = true
 
-  public var rootVC: UIViewController?
+  /// Weak: the screen that shows these albums owns this object. A strong pointer back
+  /// kept every album grid alive after it left the screen.
+  public weak var rootVC: UIViewController?
   public var fetchedResultsController: AlbumFetchedResultsController!
   public var optionsButton: UIBarButtonItem = .createOptionsBarButton()
   public var displayFilter: DisplayCategoryFilter = .all

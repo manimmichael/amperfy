@@ -26,7 +26,10 @@ import UIKit
 // MARK: - AlbumsCollectionDiffableDataSource
 
 class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSource {
-  var vc: AlbumsCollectionVC
+  /// Weak: the grid owns this data source, and a strong pointer back kept every grid alive
+  /// after it left the screen.
+  weak var vc: AlbumsCollectionVC?
+  private var common: AlbumsCommonVCInteractions? { vc?.common }
 
   /// phone-taste: the letter of each section while the grid files albums by letter ("#"
   /// first, then the letters that have albums). Set with each snapshot, before it is
@@ -83,38 +86,48 @@ class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSourc
         for: indexPath
       ) as! CommonCollectionSectionHeader
     // cassette Polish 2 (B2): no Play/Shuffle header on the Albums grid listing.
-    configure(header: sectionHeader, section: indexPath.section)
+    configure(header: sectionHeader, section: indexPath.section, in: collectionView)
     return sectionHeader
   }
 
   /// Fills a section header: its letter (or sort title) and, above the first one, the
-  /// count line. Also used to refresh headers already on screen when the albums change.
-  func configure(header: CommonCollectionSectionHeader, section: Int) {
-    header.display(title: headerTitle(for: section), count: countLine(for: section))
+  /// count line, both starting at the grid's own left inset. Also used to refresh headers
+  /// already on screen when the albums change.
+  func configure(
+    header: CommonCollectionSectionHeader,
+    section: Int,
+    in collectionView: UICollectionView
+  ) {
+    header.display(
+      title: headerTitle(for: section),
+      count: countLine(for: section),
+      leadingInset: AlbumsCollectionVC.sideInset(collectionView)
+    )
   }
 
   /// The mono count line over the first section ("139 albums"): the All filter only, and
   /// none for an empty grid.
   func countLine(for section: Int) -> String? {
-    guard section == 0, vc.displayFilter == .all, itemCount > 0 else { return nil }
+    guard section == 0, vc?.displayFilter == .all, itemCount > 0 else { return nil }
     return itemCount == 1 ? "1 album" : "\(itemCount) albums"
   }
 
   /// Whether a section header carries a title. Cheap, for header sizing.
   func showsHeaderTitle(in section: Int) -> Bool {
-    if vc.common.isLetterResectioned { return section < letters.count }
+    guard let common else { return false }
+    if common.isLetterResectioned { return section < letters.count }
     // cassette: adaptive grouping. When flattened, show no section title.
-    guard vc.common.isGroupedInAlphabeticSections else { return false }
-    switch vc.common.sortType {
+    guard common.isGroupedInAlphabeticSections else { return false }
+    switch common.sortType {
     case .artist, .name, .rating, .year: return true
     case .duration, .newest, .recent: return false
     }
   }
 
   func headerTitle(for section: Int) -> String? {
-    guard showsHeaderTitle(in: section) else { return nil }
-    if vc.common.isLetterResectioned { return letters[section] }
-    switch vc.common.sortType {
+    guard showsHeaderTitle(in: section), let common else { return nil }
+    if common.isLetterResectioned { return letters[section] }
+    switch common.sortType {
     case .artist, .name:
       return sectionTitleToIndexTitle(sectionName: sectionTitle(for: section))
     case .rating, .year:
@@ -128,11 +141,12 @@ class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSourc
   /// least two letters, or a grouped Rating / Artist / Year / Duration sort. Never for a
   /// flat grid, where it would be one lone letter.
   var isIndexShown: Bool {
-    guard !vc.isIndexTitelsHidden else { return false }
-    if vc.common.isLetterResectioned { return letters.count >= 2 }
-    switch vc.common.sortType {
+    guard let vc, !vc.isIndexTitelsHidden else { return false }
+    let common = vc.common
+    if common.isLetterResectioned { return letters.count >= 2 }
+    switch common.sortType {
     case .artist, .duration, .name, .rating, .year:
-      return vc.common.isGroupedInAlphabeticSections
+      return common.isGroupedInAlphabeticSections
     case .newest, .recent:
       return false
     }
@@ -141,7 +155,7 @@ class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSourc
   override func indexTitles(for collectionView: UICollectionView) -> [String]? {
     guard isIndexShown else { return nil }
     // phone-taste: the whole alphabet, steady, whatever letters the library has.
-    if vc.common.isLetterResectioned { return String.libraryLetters }
+    if common?.isLetterResectioned == true { return String.libraryLetters }
     let sectionCount = numberOfSections(in: collectionView)
     var indexTitles = [String]()
     for i in 0 ..< sectionCount {
@@ -157,7 +171,7 @@ class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSourc
     at index: Int
   )
     -> IndexPath {
-    guard vc.common.isLetterResectioned, !letters.isEmpty else {
+    guard common?.isLetterResectioned == true, !letters.isEmpty else {
       return super.collectionView(collectionView, indexPathForIndexTitle: title, at: index)
     }
     // A letter with no albums jumps to the next letter that has some, else the last one.
@@ -169,8 +183,9 @@ class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSourc
   }
 
   func sectionTitleToIndexTitle(sectionName: String) -> String {
+    guard let sortType = common?.sortType else { return "" }
     var indexTitle = ""
-    switch vc.common.sortType {
+    switch sortType {
     case .name:
       indexTitle = sectionName.prefix(1).uppercased()
       if let _ = Int(indexTitle) {
@@ -194,7 +209,8 @@ class AlbumsCollectionDiffableDataSource: BasicUICollectionViewDiffableDataSourc
   }
 
   func sectionTitle(for section: Int) -> String {
-    switch vc.common.sortType {
+    guard let sortType = common?.sortType else { return "" }
+    switch sortType {
     case .name:
       guard let album = getFirstAlbum(in: section) else { return "" }
       return album.name
@@ -233,6 +249,11 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
   private var previousSize: CGSize = .zero
   /// Whether the index showed for the last applied snapshot, to reload when it comes or goes.
   private var wasIndexShown: Bool?
+  /// Music arrived on or left the phone while the grid was off screen (or it was taken
+  /// off screen): make the fetch again when it next appears.
+  private var needsOwnedScopeRefresh = false
+  /// The grid let go of its fetch when it was taken off screen (see didMove(toParent:)).
+  private var isDetachedFromFetch = false
 
   public var displayFilter: DisplayCategoryFilter {
     set { common.displayFilter = newValue }
@@ -256,7 +277,9 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
     let source = AlbumsCollectionDiffableDataSource(
       vc: self,
       collectionView: collectionView
-    ) { collectionView, indexPath, objectID -> UICollectionViewCell? in
+    ) { [weak self] collectionView, indexPath, objectID -> UICollectionViewCell? in
+      // The grid owns the collection view, so it is always here while cells are asked for.
+      guard let self else { return nil }
       guard let object = try? self.appDelegate.storage.main.context.existingObject(with: objectID),
             let albumMO = object as? AlbumMO
       else {
@@ -276,27 +299,32 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
 
     appDelegate.userStatistics.visited(.albums)
 
+    // phone-taste: every callback holds the grid weakly, so a grid that has left the
+    // screen can be freed (see didMove(toParent:)).
     common.rootVC = self
-    common.isIndexTitelsHiddenCB = {
+    common.isIndexTitelsHiddenCB = { [weak self] in
+      guard let self else { return }
       self.isIndexTitelsHidden = self.common.isIndexTitelsHidden
     }
-    common.reloadListViewCB = {
-      self.collectionView.reloadData()
+    common.reloadListViewCB = { [weak self] in
+      self?.collectionView.reloadData()
     }
-    common.updateSearchResultsCB = {
+    common.updateSearchResultsCB = { [weak self] in
+      guard let self else { return }
       self.updateSearchResults(for: self.searchController)
     }
-    common.endRefreshCB = {
-      self.refreshControl?.endRefreshing()
+    common.endRefreshCB = { [weak self] in
+      self?.refreshControl?.endRefreshing()
     }
-    common.updateFetchDataSourceCB = {
+    common.updateFetchDataSourceCB = { [weak self] in
+      guard let self else { return }
       self.common.fetchedResultsController.delegate = self
     }
     // phone-taste: file a grouped Name sort into the mock's letters ("The Bends" under B),
     // computed here from the titles in memory. Set before the first fetch.
     common.isLetterResectioningEnabled = true
-    snapshotTransform = { snapshot, context in
-      self.librarySnapshot(from: snapshot, context: context)
+    snapshotTransform = { [weak self] snapshot, context in
+      self?.librarySnapshot(from: snapshot, context: context) ?? snapshot
     }
     // The index down the right edge reads in ink2, never the accent.
     collectionView.tintColor = .cassette(.textSecondary)
@@ -331,14 +359,15 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
     )
     collectionView.refreshControl = refreshControl
 
-    containableAtIndexPathCallback = { indexPath in
-      self.albumsDataSource?.getAlbum(at: indexPath)
+    containableAtIndexPathCallback = { [weak self] indexPath in
+      self?.albumsDataSource?.getAlbum(at: indexPath)
     }
-    playContextAtIndexPathCallback = { indexPath in
-      guard let album = self.albumsDataSource?.getAlbum(at: indexPath) else { return nil }
+    playContextAtIndexPathCallback = { [weak self] indexPath in
+      guard let album = self?.albumsDataSource?.getAlbum(at: indexPath) else { return nil }
       return PlayContext(containable: album)
     }
-    snapshotDidChange = {
+    snapshotDidChange = { [weak self] in
+      guard let self else { return }
       self.common.updateContentUnavailable()
       self.refreshVisibleSectionHeaders()
       self.reloadIfIndexVisibilityChanged()
@@ -357,10 +386,41 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
 
   @objc
   private func onPhoneLibraryChanged() {
+    // Only a grid on screen fetches again straight away. One off screen (another tab,
+    // under a pushed page, or closed) waits until it next appears, so a transfer never
+    // makes hidden grids redo their whole fetch for every song that lands.
+    guard viewIfLoaded?.window != nil else {
+      needsOwnedScopeRefresh = true
+      return
+    }
+    refreshOwnedScope()
+  }
+
+  private func refreshOwnedScope() {
+    needsOwnedScopeRefresh = false
+    isDetachedFromFetch = false // the new fetch takes the grid as its delegate
     // The grid diffs from the old albums to the new ones and keeps its place. Only a flip
     // between grouped and flat changes header sizes, which needs a reload.
     if common.refreshOwnedScope() {
       collectionView.reloadData()
+    }
+  }
+
+  override func didMove(toParent parent: UIViewController?) {
+    super.didMove(toParent: parent)
+    if parent == nil {
+      // Taken off screen for good (a category or style switch, or popped). The fetch holds
+      // its delegate strongly, which kept every closed grid alive and still working on
+      // each library change. Let go of it so the grid can be freed. Should the grid be
+      // shown again, it makes the fetch afresh when it appears.
+      common.fetchedResultsController?.delegate = nil
+      isDetachedFromFetch = true
+      needsOwnedScopeRefresh = true
+    } else if isDetachedFromFetch {
+      // Moved to a new parent instead (a split view collapsing on iPad or Mac): listen to
+      // the fetch again straight away, in case no appearance follows.
+      isDetachedFromFetch = false
+      common.fetchedResultsController?.delegate = self
     }
   }
 
@@ -434,7 +494,7 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
         forElementKind: kind,
         at: indexPath
       ) as? CommonCollectionSectionHeader else { continue }
-      albumsDataSource.configure(header: header, section: indexPath.section)
+      albumsDataSource.configure(header: header, section: indexPath.section, in: collectionView)
     }
   }
 
@@ -454,6 +514,7 @@ class AlbumsCollectionVC: SingleSnapshotFetchedResultsCollectionViewController<A
 
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
+    if needsOwnedScopeRefresh { refreshOwnedScope() }
     extendSafeAreaToAccountForMiniPlayer()
     common.updateRightBarButtonItems()
     common.updateFromRemote()
@@ -534,9 +595,17 @@ extension AlbumsCollectionVC: UICollectionViewDelegateFlowLayout {
   /// shows (it sits in that gutter), else 20.
   static let phoneSideInset: CGFloat = 20
   static let phoneIndexedTrailingInset: CGFloat = 34
+  /// iPad and Mac keep their left inset.
+  static let regularSideInset: CGFloat = 16
 
   static func isPhoneGrid(_ collectionView: UICollectionView) -> Bool {
     collectionView.traitCollection.userInterfaceIdiom == .phone
+  }
+
+  /// The grid's left inset, which the section headers share so the letters and the count
+  /// line sit over the first column: 20 on the phone, 16 on iPad and Mac.
+  static func sideInset(_ collectionView: UICollectionView) -> CGFloat {
+    isPhoneGrid(collectionView) ? phoneSideInset : regularSideInset
   }
 
   private func lineSpacing(_ collectionView: UICollectionView) -> CGFloat {
@@ -598,15 +667,16 @@ extension AlbumsCollectionVC: UICollectionViewDelegateFlowLayout {
     insetForSectionAt section: Int
   )
     -> UIEdgeInsets {
-    if Self.isPhoneGrid(self.collectionView) {
+    let left = Self.sideInset(collectionView)
+    if Self.isPhoneGrid(collectionView) {
       // The header above each section carries the spacing. A section without one (the
       // Duration sort, Newest, Recent) keeps a row gap above it.
       let top = headerHeight(for: section) > 0 ? 0 : Self.phoneLineSpacing
       let trailing = (albumsDataSource?.isIndexShown ?? false) ?
         Self.phoneIndexedTrailingInset : Self.phoneSideInset
-      return UIEdgeInsets(top: top, left: Self.phoneSideInset, bottom: 0, right: trailing)
+      return UIEdgeInsets(top: top, left: left, bottom: 0, right: trailing)
     } else {
-      return UIEdgeInsets(top: 8, left: 16, bottom: 8, right: 32)
+      return UIEdgeInsets(top: 8, left: left, bottom: 8, right: 32)
     }
   }
 

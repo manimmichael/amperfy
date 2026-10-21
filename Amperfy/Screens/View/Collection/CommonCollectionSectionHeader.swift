@@ -30,8 +30,6 @@ class CommonCollectionSectionHeader: UICollectionReusableView {
   static let countBlockHeight: CGFloat = countTopSpacing + countLineHeight
   /// Under a count line with no letter below it (a flat grid): one row gap.
   static let countOnlyBottomSpacing: CGFloat = 14.0
-  /// Both lines start where the tiles do.
-  static let leadingInset: CGFloat = 20.0
 
   private static let titleTopSpacing: CGFloat = 18
   private static let titleLineHeight: CGFloat = 22
@@ -65,16 +63,22 @@ class CommonCollectionSectionHeader: UICollectionReusableView {
   /// The mono count line ("139 ALBUMS"), added in code above the letter.
   private let countLabel = UILabel()
   private var titleBaselineConstraint: NSLayoutConstraint?
+  /// Both lines start where the tiles do: the grid passes its own left inset (20 on the
+  /// phone, 16 on iPad and Mac), and the same gap is kept clear on the trailing side.
+  private var leadingConstraints = [NSLayoutConstraint]()
+  private var trailingConstraints = [NSLayoutConstraint]()
 
   private var detailHeader: LibraryElementDetailTableHeaderView?
 
   override func awakeFromNib() {
     super.awakeFromNib()
-    layOutLines()
+    MainActor.assumeIsolated {
+      layOutLines()
+    }
   }
 
   /// The XIB pins the letter to the bottom of a fixed 30pt box, 8pt inside the margin. Pin
-  /// both lines here instead, by baseline, 20 in from the leading edge.
+  /// both lines here instead, by baseline, at the grid's left inset (set in `display`).
   private func layOutLines() {
     guard let label = titleLabel else { return }
     let xibContainer = label.superview
@@ -97,18 +101,17 @@ class CommonCollectionSectionHeader: UICollectionReusableView {
       constant: Self.titleBaseline(belowCount: false)
     )
     titleBaselineConstraint = titleBaseline
+    leadingConstraints = [
+      label.leadingAnchor.constraint(equalTo: leadingAnchor),
+      countLabel.leadingAnchor.constraint(equalTo: leadingAnchor),
+    ]
+    trailingConstraints = [
+      label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+      countLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+    ]
+    NSLayoutConstraint.activate(leadingConstraints + trailingConstraints)
     NSLayoutConstraint.activate([
-      label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.leadingInset),
-      label.trailingAnchor.constraint(
-        lessThanOrEqualTo: trailingAnchor,
-        constant: -Self.leadingInset
-      ),
       titleBaseline,
-      countLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.leadingInset),
-      countLabel.trailingAnchor.constraint(
-        lessThanOrEqualTo: trailingAnchor,
-        constant: -Self.leadingInset
-      ),
       countLabel.firstBaselineAnchor.constraint(
         equalTo: topAnchor,
         constant: Self.baseline(
@@ -128,7 +131,15 @@ class CommonCollectionSectionHeader: UICollectionReusableView {
     )
   }
 
-  func display(title: String?, count: String? = nil) {
+  /// `leadingInset` is the grid's left section inset, so the letter and the count line
+  /// line up with the first column of tiles on every device.
+  func display(title: String?, count: String? = nil, leadingInset: CGFloat) {
+    for constraint in leadingConstraints where constraint.constant != leadingInset {
+      constraint.constant = leadingInset
+    }
+    for constraint in trailingConstraints where constraint.constant != -leadingInset {
+      constraint.constant = -leadingInset
+    }
     // phone-taste: the letter in Barlow ExtraBold 22, ink2, in capitals (the mock's
     // `.letter`). The Rating / Year / Artist sorts set their titles in the same face.
     titleLabel.text = title?.uppercased()
