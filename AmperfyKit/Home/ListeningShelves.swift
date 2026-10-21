@@ -612,7 +612,7 @@ public enum ListeningShelves {
 // MARK: - Made for you (founder, 2026-10-21)
 
 /// The playlists Home makes for you, beside Lately: one for this part of the day, the
-/// favourites you have not played in a while, and the mood mixes (Road Trip, Get Pumped,
+/// favourites you have not played in a while, and the mood mixes (Get Pumped,
 /// Focus, Wind Down, Late Night, Feel Good). All of them are built on the phone, from songs
 /// on the phone, by the same tag maths as Lately; none calls the server. The mood mixes
 /// replace the server's mood doors on the phone, whose mixes drifted (the founder's road
@@ -736,28 +736,10 @@ extension ListeningShelves {
     static let minFit = 0.28
   }
 
-  /// The six mood mixes, keyed and coloured like the mood doors. Their moods are the
+  /// The five mood mixes, keyed and coloured like the mood doors. Their moods are the
   /// catalog's song taxonomy (taxonomy.ts MOODS); energy is low / medium / high and valence
   /// dark / bittersweet / bright, read per song.
   public static let moodMixes: [MoodMix] = [
-    MoodMix(
-      key: "road-trip",
-      title: "Road Trip",
-      hexColor: "#D4A020",
-      energies: ["medium", "high"],
-      valences: ["bright", "bittersweet"],
-      moods: [
-        "hopeful": 1, "nostalgic": 1, "euphoric": 1, "triumphant": 1, "energetic": 0.9,
-        "uplifting": 1, "joyful": 1, "playful": 0.8, "confident": 0.7, "defiant": 0.5,
-        "romantic": 0.4, "wistful": 0.4,
-      ],
-      avoid: ["somber", "mournful", "despairing", "eerie", "lonely"],
-      scenarios: ["road_trip", "driving_at_night", "summer_anthem", "nostalgia_throwback"],
-      sounds: [
-        "indie rock", "folk rock", "americana", "country rock", "alternative rock", "power pop",
-        "pop rock", "classic rock", "soft rock", "britpop",
-      ]
-    ),
     MoodMix(
       key: "get-pumped",
       title: "Get Pumped",
@@ -841,24 +823,33 @@ extension ListeningShelves {
         "art rock", "electropop", "synthwave", "gothic rock", "slowcore",
       ]
     ),
+    // Road Trip folded in (founder, 2026-10-21): on the founder's library the two kept most
+    // of their songs in common even with their own purposes and sounds, so they are one
+    // playlist that takes both: bright or bittersweet, party and singalong songs as well as
+    // driving and summer ones, pop as well as guitar rock.
     MoodMix(
       key: "feel-good",
       title: "Feel Good",
       hexColor: "#D64B8C",
       energies: ["medium", "high"],
-      valences: ["bright"],
+      valences: ["bright", "bittersweet"],
       moods: [
         "playful": 1, "hopeful": 1, "joyful": 1, "euphoric": 1, "uplifting": 1,
-        "romantic": 0.6, "confident": 0.6, "triumphant": 0.6, "energetic": 0.5,
+        "triumphant": 0.8, "energetic": 0.8, "nostalgic": 0.7, "romantic": 0.6,
+        "confident": 0.6, "defiant": 0.4, "wistful": 0.3,
       ],
-      avoid: ["somber", "melancholic", "mournful", "despairing", "brooding", "haunting", "eerie"],
+      avoid: [
+        "somber", "melancholic", "mournful", "despairing", "brooding", "haunting", "eerie",
+        "lonely",
+      ],
       scenarios: [
         "party", "singalong_karaoke", "celebration", "getting_ready", "summer_anthem", "new_love",
-        "first_dance", "pregame",
+        "first_dance", "pregame", "road_trip", "driving_at_night", "nostalgia_throwback",
       ],
       sounds: [
         "indie pop", "dance-pop", "funk", "disco", "power pop", "synth-pop", "electropop",
-        "britpop", "neo-soul", "soul", "bedroom pop",
+        "britpop", "neo-soul", "soul", "bedroom pop", "indie rock", "folk rock", "americana",
+        "country rock", "alternative rock", "pop rock", "classic rock", "soft rock",
       ]
     ),
   ]
@@ -867,10 +858,10 @@ extension ListeningShelves {
   /// night, the lively ones first by day.
   public static func moodMixOrder(for daypart: Daypart) -> [String] {
     switch daypart {
-    case .morning: return ["focus", "get-pumped", "feel-good", "road-trip", "wind-down", "late-night"]
-    case .afternoon: return ["focus", "road-trip", "feel-good", "get-pumped", "wind-down", "late-night"]
-    case .evening: return ["feel-good", "road-trip", "wind-down", "late-night", "get-pumped", "focus"]
-    case .late: return ["late-night", "wind-down", "focus", "feel-good", "road-trip", "get-pumped"]
+    case .morning: return ["focus", "get-pumped", "feel-good", "wind-down", "late-night"]
+    case .afternoon: return ["focus", "feel-good", "get-pumped", "wind-down", "late-night"]
+    case .evening: return ["feel-good", "wind-down", "late-night", "get-pumped", "focus"]
+    case .late: return ["late-night", "wind-down", "focus", "feel-good", "get-pumped"]
     }
   }
 
