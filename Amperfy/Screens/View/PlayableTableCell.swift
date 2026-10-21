@@ -62,6 +62,12 @@ struct PlayableCellOptions: Equatable {
   var hidesDuration = false
   /// A clear row, for lists drawn over a lit page.
   var clearsBackground = false
+  /// A rank in the number slot, beside a smaller (44pt) cover moved past it: the artist
+  /// page's MOST PLAYED. The playing waveform replaces the cover, never the rank. nil is
+  /// today's row.
+  var rank: Int? = nil
+  /// The rank's colour; nil is `.textTertiary`. Lit pages pass `CoverTint.text`.
+  var rankColor: UIColor? = nil
 
   static let standard = PlayableCellOptions()
 }
@@ -223,6 +229,29 @@ class PlayableTableCell: BasicTableCell {
     }
   }
 
+  // MARK: Rank rows (phone-taste MOST PLAYED)
+
+  /// The rank's 18pt box (the xib's track-number width), the gap after it, and the cover.
+  private static let rankBoxWidth: CGFloat = 18
+  private static let rankGap: CGFloat = 12
+  private static let rankArtworkSide: CGFloat = 44
+  /// The xib's artwork width (PdF-S9-lw7) and the favourite slot it is pinned after
+  /// (Coh-TC-C5u, Eo4-gu-hwz).
+  private static let standardArtworkSide: CGFloat = 48
+  private static let favoriteSlotWidth: CGFloat = 16
+  private var isRankLayoutApplied = false
+
+  /// The artwork's leading constraint (xib Coh-TC-C5u: artwork.leading == favourite
+  /// slot.trailing). The xib gives it no outlet, so it is found once at runtime.
+  private lazy var artworkLeadingConstraint: NSLayoutConstraint? = contentView.constraints.first {
+    ($0.firstItem as? UIView) === entityImage && $0.firstAttribute == .leading
+  }
+
+  /// The artwork's 48pt width (xib PdF-S9-lw7), found once at runtime.
+  private lazy var artworkWidthConstraint: NSLayoutConstraint? = entityImage.constraints.first {
+    ($0.firstItem as? UIView) === entityImage && $0.firstAttribute == .width && $0.secondItem == nil
+  }
+
   private var style = PlayableTableCellStyle.none
   private var playerIndexCb: GetPlayerIndexFromTableCellCallback?
   private var playContextCb: GetPlayContextFromTableCellCallback?
@@ -338,6 +367,8 @@ class PlayableTableCell: BasicTableCell {
     options = .standard
     trackNumberLabel.textColor = UIColor.cassette(.textTertiary)
     applyBackground()
+    // And today's geometry, so another list never inherits a rank row's layout.
+    restoreStandardLayoutIfNeeded()
   }
 
   #if targetEnvironment(macCatalyst) // ok
@@ -411,11 +442,50 @@ class PlayableTableCell: BasicTableCell {
     contentView.backgroundColor = background
   }
 
-  /// Recolour the track number in place, e.g. when a page's cover tint arrives after the
-  /// rows were bound. nil restores `.textTertiary`.
+  /// Recolour the track number (or the rank) in place, e.g. when a page's cover tint
+  /// arrives after the rows were bound. nil restores `.textTertiary`.
   func setTrackNumberColor(_ color: UIColor?) {
     options.trackNumberColor = color
+    if options.rank != nil {
+      options.rankColor = color
+    }
     trackNumberLabel.textColor = color ?? UIColor.cassette(.textTertiary)
+  }
+
+  /// A rank row: the rank in the number slot (18pt box at the margin), the cover 12pt past
+  /// it at 44pt, the title 12pt past the cover. Runs after `configureStyle`, which hides
+  /// the number in the artwork style. Without a rank it puts today's geometry back.
+  private func applyRankLayout() {
+    guard let rank = options.rank else {
+      restoreStandardLayoutIfNeeded()
+      return
+    }
+    isRankLayoutApplied = true
+    trackNumberLabel.text = "\(rank)"
+    trackNumberLabel.isHidden = false
+    trackNumberLabel.textColor = options.rankColor ?? UIColor.cassette(.textTertiary)
+    let artworkX = Self.rankBoxWidth + Self.rankGap
+    artworkLeadingConstraint?.constant = artworkX - Self.favoriteSlotWidth
+    artworkWidthConstraint?.constant = Self.rankArtworkSide
+    // titleContainerLeadingConstraint is measured from leftMargin and the title's inner
+    // stack adds 4pt before the text.
+    titleContainerLeadingConstraint.constant = artworkX + Self.rankArtworkSide + Self.rankGap - 4
+  }
+
+  /// Undo `applyRankLayout`: the artwork back after the favourite slot at 48pt, and the
+  /// style re-applied on the next bind (which also resets the title's inset).
+  private func restoreStandardLayoutIfNeeded() {
+    guard isRankLayoutApplied else { return }
+    isRankLayoutApplied = false
+    artworkLeadingConstraint?.constant = 0
+    artworkWidthConstraint?.constant = Self.standardArtworkSide
+    style = .none
+    if let playable {
+      configureStyle(
+        playable: playable,
+        newStyle: isDislayAlbumTrackNumberStyle ? .trackNumber : .artwork
+      )
+    }
   }
 
   private func configureStyle(playable: AbstractPlayable, newStyle: PlayableTableCellStyle) {
@@ -623,6 +693,13 @@ class PlayableTableCell: BasicTableCell {
       playable: playable,
       newStyle: isDislayAlbumTrackNumberStyle ? .trackNumber : .artwork
     )
+    // The number is stamped on every bind: configureStyle only runs on a style change, so
+    // a reused album row kept the number of the song it showed before (upstream re-set it
+    // from the PlayIndicator callbacks that Patch 054 removed).
+    if isDislayAlbumTrackNumberStyle {
+      configureTrackNumberLabel()
+    }
+    applyRankLayout()
     entityImage.display(
       theme: appDelegate.storage.settings.accounts.getSetting(playable.account?.info).read
         .themePreference,
