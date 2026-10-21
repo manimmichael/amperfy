@@ -128,6 +128,8 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   )
   /// phone-taste: the footer under the songs (the on-phone line, then MORE LIKE).
   private var recordFooter: DetailRecordFooter?
+  /// What the footer was last built from (see rebuildFooter).
+  private var recordFooterSignature: String?
   /// MORE LIKE <playlist>: albums on the phone, not in the playlist, whose moods match it.
   private var moreLikeAlbums: [Album] = []
   /// Looks for a picked cover the hero is still downloading (bounded).
@@ -218,24 +220,12 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     refreshPlaylistMetadataLine()
     chrome.install(header: detailOperationsView, title: playlist.name)
     // phone-taste: lit by the playlist's own cover (the person's pick, else its preset;
-    // never album art). The MORE LIKE answer follows the cover's colour when it lands.
-    chrome.observeArtworkDownloads(account: account)
-    chrome.relight = { [weak self] in self?.lightUpFromCover() }
+    // never album art). The MORE LIKE answer follows the cover's colour when it lands. The
+    // artwork downloader never fetches a pick, so the page does not listen to it; a pick
+    // still arriving is looked for again from lightUpFromCover.
     chrome.onTintChanged = { [weak self] tint in
       self?.recordFooter?.setAnswerColor(tint.text)
     }
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(moodIndexChanged),
-      name: .cassetteMoodIndexReady,
-      object: nil
-    )
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(moodIndexChanged),
-      name: .cassetteLibraryMoodsChanged,
-      object: nil
-    )
 
     snapshotDidChange = { [weak self] in
       self?.refreshPlaylistMetadataLine()
@@ -276,6 +266,14 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     chrome.viewWillDisappear(isMovingFromParent: isMovingFromParent)
   }
 
+  override func viewDidDisappear(_ animated: Bool) {
+    super.viewDidDisappear(animated)
+    chrome.viewDidDisappear()
+    // A page nobody can see has no shelf to update; it recomputes on its next appearance.
+    NotificationCenter.default.removeObserver(self, name: .cassetteMoodIndexReady, object: nil)
+    NotificationCenter.default.removeObserver(self, name: .cassetteLibraryMoodsChanged, object: nil)
+  }
+
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
     chrome.scrollViewDidScroll()
   }
@@ -308,6 +306,7 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
     chrome.viewIsAppearing()
+    observeMoodsWhileVisible()
     coverRetryCount = 0
     lightUpFromCover()
     // cassette (UX review 2026-10-20): "8 of 12 songs on this phone" under the list, then
@@ -398,6 +397,17 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
 
   // MARK: - MORE LIKE (phone-taste)
 
+  /// Listen for the mood index while the page is on screen (removed in viewDidDisappear;
+  /// removed first here so a cancelled swipe-back, which appears again without having
+  /// disappeared, never registers twice).
+  private func observeMoodsWhileVisible() {
+    let center = NotificationCenter.default
+    for name in [Notification.Name.cassetteMoodIndexReady, .cassetteLibraryMoodsChanged] {
+      center.removeObserver(self, name: name, object: nil)
+      center.addObserver(self, selector: #selector(moodIndexChanged), name: name, object: nil)
+    }
+  }
+
   @objc
   private func moodIndexChanged() {
     let before = moreLikeAlbums.map(\.id)
@@ -435,7 +445,8 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     moreLikeAlbums = ids.compactMap { index.albumsByID[$0] }
   }
 
-  /// The footer: the on-phone line, then MORE LIKE <playlist>.
+  /// The footer: the on-phone line, then MORE LIKE <playlist>. Rebuilt only when what it
+  /// shows changed, so the shelf keeps its scroll position on the way back from a tile.
   private func rebuildFooter() {
     let shelf = DetailShelfBlock(
       shout: "More like",
@@ -450,10 +461,19 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       },
       onPlay: { album in OneTapPlay.play(album) }
     )
+    let width = tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width
+    let onPhone = fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0
+    let total = max(playlist.songCount, fetchedResultsController.totalItemCount)
+    let signature = [
+      "\(width)", "\(onPhone)", "\(total)", playlist.name,
+      moreLikeAlbums.map(\.id).joined(separator: ","),
+    ].joined(separator: "|")
+    guard signature != recordFooterSignature else { return }
+    recordFooterSignature = signature
     let footer = DetailScreenChrome.makeRecordFooter(
-      width: tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width,
-      onPhone: fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0,
-      total: max(playlist.songCount, fetchedResultsController.totalItemCount),
+      width: width,
+      onPhone: onPhone,
+      total: total,
       shelves: [shelf],
       answerColor: chrome.tint.text
     )

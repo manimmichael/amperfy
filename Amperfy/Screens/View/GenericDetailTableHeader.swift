@@ -121,6 +121,18 @@ private final class DetailArtistPhotoView: UIView {
     }
   }
 
+  /// Show `image`, cross-fading it in when it arrives after the hero is already laid out
+  /// (the photo's geometry is in place from the first pass; only the picture is late).
+  func show(_ image: UIImage?, fading: Bool) {
+    if fading, window != nil {
+      let fadeIn = CATransition()
+      fadeIn.type = .fade
+      fadeIn.duration = 0.25
+      layer.add(fadeIn, forKey: "contents")
+    }
+    self.image = image
+  }
+
   override init(frame: CGRect) {
     super.init(frame: frame)
     isUserInteractionEnabled = false
@@ -352,14 +364,29 @@ class GenericDetailTableHeader: UIView {
   /// The fan of the artist's newest covers (artist hero, no photo).
   private let fanView = DetailCoverFanView()
   private var fanConstraints: [NSLayoutConstraint] = []
+  /// Artist hero with a photo: the hidden circle keeps only a horizontal position, so
+  /// nothing asks the hidden artwork block for a height (the stack holds it at zero).
+  private var photoConstraints: [NSLayoutConstraint] = []
 
   /// The record colour this page is lit with; nil until a host lights it (unlit pages,
   /// Genre/Podcast/Playlist edit, never are). Until then a lit style reads `.neutral`.
   private(set) var coverTint: CoverTint?
 
-  /// The decoded artist photo and the file it came from.
-  private var artistPhoto: UIImage?
-  private var artistPhotoPath: String?
+  /// Whether the artist's own photo is on the phone. Set synchronously from the file, so
+  /// the hero opens in the photo's geometry; the picture fades in when it is decoded.
+  private var hasArtistPhoto = false
+  /// The photo file (and its modification date) shown or being decoded, and one that would
+  /// not decode, so it is not tried again on every appearance.
+  private var artistPhotoKey: String?
+  private var unreadableArtistPhotoKey: String?
+  /// Recently decoded artist photos by file and modification date, so opening an artist
+  /// again shows the photo in the first frame. A few full-width photos at most.
+  @MainActor
+  private static let artistPhotoCache: NSCache<NSString, UIImage> = {
+    let cache = NSCache<NSString, UIImage>()
+    cache.countLimit = 3
+    return cache
+  }()
   /// The artist's newest credited records, for the fan when there is no photo.
   private var fanAlbums: [Album] = []
 
@@ -442,7 +469,7 @@ class GenericDetailTableHeader: UIView {
     case .room:
       return .room
     case .artistHero:
-      if artistPhoto != nil { return .artistPhoto }
+      if hasArtistPhoto { return .artistPhoto }
       if !fanAlbums.isEmpty { return .artistFan }
       return .artistCircle
     }
@@ -617,6 +644,9 @@ class GenericDetailTableHeader: UIView {
       fanView.trailingAnchor.constraint(equalTo: artworkWrap.trailingAnchor),
       fanView.heightAnchor.constraint(equalToConstant: DetailCoverFanView.height),
     ]
+    photoConstraints = [
+      entityImage.centerXAnchor.constraint(equalTo: artworkWrap.centerXAnchor),
+    ]
   }
 
   // cassette redesign (Surface 1) + Patch 104 (Root 3): the artist photo is
@@ -646,11 +676,17 @@ class GenericDetailTableHeader: UIView {
   private func applyLayout() {
     let compact = isCompactWidth
     let layout = heroLayout
-    NSLayoutConstraint.deactivate(regularConstraints + compactConstraints + fanConstraints)
+    NSLayoutConstraint.deactivate(
+      regularConstraints + compactConstraints + fanConstraints + photoConstraints
+    )
     if !compact {
       NSLayoutConstraint.activate(regularConstraints)
     } else if layout == .artistFan {
       NSLayoutConstraint.activate(fanConstraints)
+    } else if layout == .artistPhoto {
+      // The artwork block is hidden in the stack (height 0). Pinning the 200pt circle's
+      // bottom to it, as compactConstraints do, would fight that on every layout pass.
+      NSLayoutConstraint.activate(photoConstraints)
     } else {
       NSLayoutConstraint.activate(compactConstraints)
     }
@@ -1100,37 +1136,62 @@ class GenericDetailTableHeader: UIView {
   /// surface uses, `Artist.hasOwnPhotoOnDisk`; a shared artwork row can carry someone
   /// else's face). Call again when an artwork download finishes: a photo that lands
   /// replaces the fan.
+  ///
+  /// The layout is chosen here, synchronously, from the file: the header measures in the
+  /// photo's geometry from its first pass instead of opening as the fan and re-laying out
+  /// when the decode lands. The picture comes from the cache at once on a second open, and
+  /// otherwise fades in when it is decoded off the main thread.
   func refreshArtistPhoto() {
     guard config?.heroStyle == .artistHero, let artist = config?.entityContainer as? Artist
     else { return }
     guard artist.hasOwnPhotoOnDisk, let path = artist.artwork?.imagePath else {
-      guard artistPhoto != nil || artistPhotoPath != nil else { return }
-      artistPhotoPath = nil
-      artistPhoto = nil
-      artistPhotoView?.image = nil
-      applyLayout()
-      refresh()
+      clearArtistPhoto()
       return
     }
-    guard path != artistPhotoPath else { return }
-    artistPhotoPath = path
+    let modified = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate]
+      as? Date
+    let key = "\(path)|\(modified?.timeIntervalSince1970 ?? 0)"
+    guard key != artistPhotoKey else { return }
+    guard key != unreadableArtistPhotoKey else {
+      clearArtistPhoto()
+      return
+    }
+    artistPhotoKey = key
+    installArtistPhotoIfNeeded()
+    let cached = Self.artistPhotoCache.object(forKey: key as NSString)
+    artistPhotoView?.show(cached, fading: false)
+    if !hasArtistPhoto {
+      hasArtistPhoto = true
+      applyLayout()
+      refresh()
+    }
+    guard cached == nil else { return }
     // About 3x the width of a phone, decoded off the main thread.
     let maxPixel = Int((max(bounds.width, 430) * 3).rounded())
     Task { @MainActor [weak self] in
       let decoded = await Task.detached(priority: .userInitiated) {
         AmbientSourceDecoder.thumbnail(contentsOfFile: path, maxPixelSize: maxPixel)
       }.value
-      guard let self, artistPhotoPath == path else { return }
+      guard let self, artistPhotoKey == key else { return }
       guard let decoded else {
-        artistPhotoPath = nil
+        // Unreadable: back to the fan (or the circle), and not tried again for this file.
+        unreadableArtistPhotoKey = key
+        clearArtistPhoto()
         return
       }
-      installArtistPhotoIfNeeded()
-      artistPhotoView?.image = decoded
-      artistPhoto = decoded
-      applyLayout()
-      refresh()
+      Self.artistPhotoCache.setObject(decoded, forKey: key as NSString)
+      artistPhotoView?.show(decoded, fading: true)
     }
+  }
+
+  /// Back to the fan (or the circle): no photo on the phone, or one that would not decode.
+  private func clearArtistPhoto() {
+    guard hasArtistPhoto || artistPhotoKey != nil else { return }
+    artistPhotoKey = nil
+    hasArtistPhoto = false
+    artistPhotoView?.show(nil, fading: false)
+    applyLayout()
+    refresh()
   }
 
   private func installArtistPhotoIfNeeded() {

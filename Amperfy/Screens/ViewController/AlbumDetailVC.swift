@@ -57,6 +57,12 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   private var hideUniformArtistSubtitle = false
   /// phone-taste: the footer under the songs (the on-phone line, then MORE BY).
   private var recordFooter: DetailRecordFooter?
+  /// What the footer was last built from, so an appearance that changes nothing keeps it
+  /// (and the MORE BY shelf keeps its scroll position on the way back from a tile).
+  private var recordFooterSignature: String?
+  /// MORE BY: the artist's own other records on the phone. Worked out once when the page
+  /// loads and again after the album syncs, never on every appearance.
+  private var moreByAlbumsCache: [Album] = []
   /// The album rows' height: one 48pt line plus 2pt top and bottom (was 76).
   private static let rowHeight: CGFloat = 52
   private static let rowVerticalMargin: CGFloat = (rowHeight - 48) / 2
@@ -155,6 +161,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     singleFetchedResultsController = fetchedResultsController
     singleFetchedResultsController?.delegate = self
     singleFetchedResultsController?.fetch()
+    recomputeMoreBy()
 
     // Cassette: pop this view if a background regroup deletes the AlbumMO it is
     // showing (re-key or purge). Registered once per instance; removed in deinit.
@@ -209,8 +216,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     // phone-taste: the page is lit by its own cover. Track numbers and the MORE BY answer
     // follow the cover's colour when it lands; a cover that downloads later relights.
     chrome.tintsTrackNumbers = true
-    chrome.observeArtworkDownloads(account: account)
     chrome.relight = { [weak self] in self?.lightUpFromCover() }
+    chrome.observeArtworkDownloads(account: account)
     chrome.onTintChanged = { [weak self] tint in
       self?.recordFooter?.setAnswerColor(tint.text)
     }
@@ -257,6 +264,11 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
     chrome.viewWillDisappear(isMovingFromParent: isMovingFromParent)
+  }
+
+  override func viewDidDisappear(_ animated: Bool) {
+    super.viewDidDisappear(animated)
+    chrome.viewDidDisappear()
   }
 
   override func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -322,6 +334,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       self.refreshAlbumMetadataLine()
       self.detailOperationsView?.refresh()
       self.lightUpFromCover()
+      self.recomputeMoreBy()
       self.rebuildFooter()
     }
   }
@@ -351,29 +364,53 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   /// Light the page from the album's cover file. With no file there is no glow (never the
   /// generated placeholder) and the colour stays neutral.
   private func lightUpFromCover() {
+    // A regroup can purge this album while a sync is in flight; the deletion observer pops
+    // the page, and nothing reads the dead object meanwhile.
+    guard !album.managedObject.isDeleted else { return }
     let setting = appDelegate.storage.settings.accounts.getSetting(account.info).read
     let path = album.imagePath(setting: setting.artworkDisplayPreference)
+    // Only this album's own cover landing can change the light.
+    chrome.watchedArtworkIDs = Set([album.artwork?.uniqueID].compactMap { $0 })
     chrome.lightUp(coverPath: path, key: path ?? "album-no-cover:\(album.id)")
   }
 
   // MARK: - MORE BY (phone-taste)
 
-  /// The footer: the on-phone line, then MORE BY and the artist's other records.
+  /// The footer: the on-phone line, then MORE BY and the artist's other records. Rebuilt
+  /// only when what it shows changed.
   private func rebuildFooter() {
+    let width = tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width
+    let onPhone = fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0
+    let total = max(album.songCount, fetchedResultsController.totalSongCount)
+    let shelf = moreByShelf()
+    let signature = [
+      "\(width)", "\(onPhone)", "\(total)", shelf?.answer ?? "",
+      (shelf?.albums ?? []).map(\.id).joined(separator: ","),
+    ].joined(separator: "|")
+    guard signature != recordFooterSignature else { return }
+    recordFooterSignature = signature
     let footer = DetailScreenChrome.makeRecordFooter(
-      width: tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width,
-      onPhone: fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0,
-      total: max(album.songCount, fetchedResultsController.totalSongCount),
-      shelves: moreByShelf().map { [$0] } ?? [],
+      width: width,
+      onPhone: onPhone,
+      total: total,
+      shelves: shelf.map { [$0] } ?? [],
       answerColor: chrome.tint.text
     )
     recordFooter = footer
     tableView.tableFooterView = footer
   }
 
+  private func recomputeMoreBy() {
+    guard !album.managedObject.isDeleted, let artist = album.artist else {
+      moreByAlbumsCache = []
+      return
+    }
+    moreByAlbumsCache = moreByAlbums(artist: artist)
+  }
+
   private func moreByShelf() -> DetailShelfBlock? {
     guard let artist = album.artist else { return nil }
-    let albums = moreByAlbums(artist: artist)
+    let albums = moreByAlbumsCache
     guard !albums.isEmpty else { return nil }
     return DetailShelfBlock(
       shout: "More by",
@@ -393,20 +430,37 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   /// The artist's own other records on the phone, newest first (year 0 last): albums
   /// credited to them, so features and compilations stay out, and never this one. Empty
   /// for Various Artists.
+  ///
+  /// One fetch scoped to this artist (the same set the artist page's album list holds).
+  /// "On the phone" is checked against the owned track ids this page already loaded, not
+  /// the album-list ownership predicate, which walks every owned song on the main thread.
   private func moreByAlbums(artist: Artist) -> [Album] {
     let pageName = ListeningShelves.normalizedArtistName(artist.name)
     guard !pageName.isEmpty, pageName != "various artists" else { return [] }
     let library = appDelegate.storage.main.library
-    let richest = library.richestSameIdArtist(for: artist, account: account)
-    // On the phone this lists only albums that are on it (the ownership predicate).
-    let controller = ArtistAlbumsItemsFetchedResultsController(
-      for: richest,
-      coreDataCompanion: appDelegate.storage.main,
-      isGroupedInAlphabeticSections: false
-    )
-    controller.fetch()
-    let candidates = (controller.fetchResultsController.fetchedObjects ?? [])
-      .compactMap { ($0 as? AlbumMO).map(Album.init(managedObject:)) }
+    let artistID = library.richestSameIdArtist(for: artist, account: account).managedObject.objectID
+    var predicates = [
+      NSPredicate(
+        format: "remoteStatus == %i OR SUBQUERY(songs, $song, $song.relFilePath != nil).@count > 0",
+        RemoteStatus.available.rawValue
+      ),
+      NSPredicate(
+        format: "artist == %@ OR SUBQUERY(songs, $song, $song.artist == %@).@count > 0",
+        artistID,
+        artistID
+      ),
+    ]
+    if CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
+      predicates.append(NSPredicate(
+        format: "SUBQUERY(songs, $song, $song.id IN %@).@count > 0",
+        cassetteOwnedTrackIds
+      ))
+    }
+    let request: NSFetchRequest<AlbumMO> = AlbumMO.fetchRequest()
+    request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+    request.relationshipKeyPathsForPrefetching = ["artwork", "artist"]
+    let candidates = ((try? appDelegate.storage.main.context.fetch(request)) ?? [])
+      .map(Album.init(managedObject:))
     return candidates
       .filter { candidate in
         guard candidate.id != album.id, let credited = candidate.artist else { return false }

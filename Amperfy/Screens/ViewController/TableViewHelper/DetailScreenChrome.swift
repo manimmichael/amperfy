@@ -40,26 +40,33 @@ import UIKit
 /// Lights a record page with its own record (phone-taste): reads the cover's colour
 /// (`CoverTint`) and a small decode for the glow, off the main thread, and hands both to
 /// `apply`. Keyed, so asking again with an unchanged key does nothing; a newer request
-/// drops an older one still in flight. When an artwork download finishes for the
-/// observed account it calls `relight`, so a cover that arrives late still lights the page.
-/// DetailScreenChrome owns one for the album and playlist pages; the artist page, which
-/// has no chrome, owns its own.
+/// drops an older one still in flight. While the page is on screen, a finished artwork
+/// download that is one of `watchedArtworkIDs` calls `relight`, so a cover that arrives
+/// late still lights the page. DetailScreenChrome owns one for the album page; the artist
+/// page, which has no chrome, owns its own.
 @MainActor
 final class DetailCoverLighter: NSObject {
   /// The record's colour; `.neutral` until a cover is read (never brand orange).
   private(set) var tint: CoverTint = .neutral
   /// Called with the tint, the glow's small source image (nil: no glow) and its key.
   var apply: ((CoverTint, UIImage?, String) -> ())?
-  /// Asked again when an artwork download finishes: the host lights up from its current
-  /// cover (a no-op while the key is unchanged).
+  /// Asked again when one of `watchedArtworkIDs` finishes downloading: the host lights up
+  /// from its current cover (a no-op while the key is unchanged).
   var relight: (() -> ())?
+  /// The artwork rows (`Artwork.uniqueID`) whose download can change this page's light:
+  /// the record's own cover, or for an artist their records' covers and their photo. Every
+  /// other download is ignored, so an artwork backfill of thousands of covers costs a set
+  /// lookup each, not a relight.
+  var watchedArtworkIDs: Set<String> = []
 
   private var key: String?
   private var token = UUID()
   private var isObservingDownloads = false
 
-  /// Re-check the cover whenever an artwork download for `account` finishes.
-  func observeArtworkDownloads(account: Account?) {
+  /// Start listening for `account`'s artwork downloads. Call from viewIsAppearing and stop
+  /// in viewDidDisappear: record pages stay alive in the navigation stack (and past a pop),
+  /// and a page nobody can see has no light to update.
+  func startObservingArtworkDownloads(account: Account?) {
     guard !isObservingDownloads, let info = account?.info else { return }
     isObservingDownloads = true
     appDelegate.notificationHandler.register(
@@ -68,6 +75,12 @@ final class DetailCoverLighter: NSObject {
       name: .downloadFinishedSuccess,
       object: appDelegate.getMeta(info).artworkDownloadManager
     )
+  }
+
+  func stopObservingArtworkDownloads() {
+    guard isObservingDownloads else { return }
+    isObservingDownloads = false
+    appDelegate.notificationHandler.remove(self, name: .downloadFinishedSuccess, object: nil)
   }
 
   /// Light from a cover file on disk, keyed by `key` (the path). No file: no glow and the
@@ -126,6 +139,9 @@ final class DetailCoverLighter: NSObject {
 
   @objc
   private func artworkDownloadFinished(notification: Notification) {
+    guard let download = DownloadNotification.fromNotification(notification),
+          watchedArtworkIDs.contains(download.id)
+    else { return }
     relight?()
   }
 }
@@ -161,12 +177,22 @@ final class DetailScreenChrome {
   var tint: CoverTint { lighter.tint }
   /// Called after a tint lands, so hosts can recolour their own headings.
   var onTintChanged: ((CoverTint) -> ())?
-  /// Called when an artwork download finishes: the host lights up again from its current
-  /// cover, so a cover that arrives late still lights the page.
+  /// Called when one of `watchedArtworkIDs` finishes downloading while the page is on
+  /// screen: the host lights up again from its current cover, so a cover that arrives late
+  /// still lights the page.
   var relight: (() -> ())? {
     get { lighter.relight }
     set { lighter.relight = newValue }
   }
+
+  /// The artwork rows whose download can change the light (the record's own cover).
+  var watchedArtworkIDs: Set<String> {
+    get { lighter.watchedArtworkIDs }
+    set { lighter.watchedArtworkIDs = newValue }
+  }
+
+  /// The account whose artwork downloads `relight` the page; nil: none do.
+  private var artworkAccount: Account?
 
   /// When true (the album page) a landed tint recolours the visible rows' track numbers in
   /// place. Rows bound later read `tint` themselves.
@@ -215,9 +241,13 @@ final class DetailScreenChrome {
     lighter.lightUp(image: image, key: key)
   }
 
-  /// Call `relight` whenever an artwork download for `account` finishes.
+  /// Call `relight` when one of `watchedArtworkIDs` finishes downloading for `account`. It
+  /// listens only while the page is on screen (`viewIsAppearing` to `viewDidDisappear`).
   func observeArtworkDownloads(account: Account) {
-    lighter.observeArtworkDownloads(account: account)
+    artworkAccount = account
+    if host?.viewIfLoaded?.window != nil {
+      lighter.startObservingArtworkDownloads(account: account)
+    }
   }
 
   private func landLight(tint: CoverTint, glow: UIImage?, key: String) {
@@ -291,6 +321,13 @@ final class DetailScreenChrome {
   func viewIsAppearing() {
     // Restores the right alpha when popping back to a scrolled screen.
     updateCollapse()
+    lighter.startObservingArtworkDownloads(account: artworkAccount)
+  }
+
+  /// A hidden or popped page stops listening for downloads; it lights up from its current
+  /// cover again on its next appearance.
+  func viewDidDisappear() {
+    lighter.stopObservingArtworkDownloads()
   }
 
   func viewDidLayoutSubviews() {

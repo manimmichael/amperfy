@@ -64,18 +64,33 @@ class ArtistDetailVC: MultiSourceTableViewController {
   private var mostPlayedRankGeneration = 0
 
   /// cassette: the MOST PLAYED order is SNAPSHOTTED for the presentation so a live
-  /// play-count bump never reorders rows under the user. Cloud rank is awaited before the
-  /// first paint (empty until then) so a local/hub tally never flashes then re-ranks.
-  /// Re-ranks on the next appearance only.
+  /// play-count bump never reorders rows under the user. Re-ranks on each appearance only.
+  ///
+  /// phone-taste: MOST PLAYED now leads the page, so it never sits empty while the cloud
+  /// rank is in flight (ALBUMS and MORE LIKE would paint first and then be pushed down by
+  /// up to six rows when it landed). The first paint is this session's last cloud order
+  /// for the artist, else this phone's own played songs; a re-rank keeps the rows on
+  /// screen and swaps them only when the ranked set differs.
   private var frozenMostPlayedSongs: [Song] = []
+  private var hasSeededMostPlayed = false
+  /// The last cloud MOST PLAYED order per artist id (song ids) this session, so an artist
+  /// opened again paints its ranked rows at once.
+  @MainActor
+  private static var rememberedMostPlayed: [String: [String]] = [:]
 
   // MARK: phone-taste state
 
   /// Reads the lead record's colour and glow. The artist page has no DetailScreenChrome,
   /// so it owns its lighter and lights its own header.
   private let lighter = DetailCoverLighter()
-  /// Every album of the artist on the shelf, newest first (year 0 last, then by name).
+  /// Every album the albums list holds, newest first (year 0 last, then by name): the
+  /// artist's own records and the ones they only appear on.
   private var artistAlbums: [Album] = []
+  /// The artist's own records (credited to them), newest first.
+  private var creditedAlbums: [Album] = []
+  /// What the ALBUMS shelf, the meta count, the fan and the lead record describe: the
+  /// artist's own records, or what they appear on when nothing on the phone is theirs.
+  private var shelfAlbums: [Album] = []
   /// The record that lights the page: the artist's own newest album with a cover file.
   private var leadAlbum: Album?
   /// The artist's own newest records for the hero fan.
@@ -90,39 +105,89 @@ class ArtistDetailVC: MultiSourceTableViewController {
     return frozenMostPlayedSongs[row]
   }
 
-  /// Hold MOST PLAYED empty, then paint once from cloud (or local fallback).
-  private func freezeMostPlayedOrder() {
-    let count = songsFetchedResultsController?.sections?[0].numberOfObjects ?? 0
-    let local = (0 ..< count).compactMap {
+  /// Every song the songs list holds, most played first.
+  private func listedSongs() -> [Song] {
+    let count = songsFetchedResultsController?.sections?.first?.numberOfObjects ?? 0
+    return (0 ..< count).compactMap {
       songsFetchedResultsController?.getWrappedEntity(at: IndexPath(row: $0, section: 0))
     }
-    // Hold until ranked: mirrors web holding songs for the ranked fresh payload.
-    frozenMostPlayedSongs = []
-    if isViewLoaded, tableView.numberOfSections > BodySection.mostPlayed.rawValue {
-      tableView.reloadSections(IndexSet(integer: BodySection.mostPlayed.rawValue), with: .none)
+  }
+
+  /// The first paint of MOST PLAYED, set in viewDidLoad before the table first loads, so
+  /// the page opens with its rows in place.
+  private func seedMostPlayedIfNeeded(_ local: [Song]) {
+    guard !hasSeededMostPlayed else { return }
+    hasSeededMostPlayed = true
+    frozenMostPlayedSongs = rememberedMostPlayedSongs(in: local) ?? localPlayedSongs(local)
+    if isViewLoaded, tableView.window != nil {
+      tableView.reloadData()
     }
-    guard !local.isEmpty else { return }
+  }
+
+  /// Re-rank MOST PLAYED from the cloud (or local fallback) and swap the rows only if the
+  /// ranked set differs. The rows already shown stay while it is in flight.
+  private func freezeMostPlayedOrder() {
+    let local = listedSongs()
+    seedMostPlayedIfNeeded(local)
+    guard !local.isEmpty else {
+      applyMostPlayed([])
+      return
+    }
     mostPlayedRankGeneration &+= 1
     let generation = mostPlayedRankGeneration
+    let artistID = artist.id
     Task { @MainActor [weak self] in
       guard let self else { return }
       let ranked = await self.rankMostPlayedCloudOrLocal(local)
       guard generation == self.mostPlayedRankGeneration else { return }
-      self.frozenMostPlayedSongs = ranked
-      if self.isViewLoaded, self.tableView.numberOfSections > BodySection.mostPlayed.rawValue {
-        self.tableView.reloadSections(
-          IndexSet(integer: BodySection.mostPlayed.rawValue),
-          with: .none
-        )
-      }
+      Self.rememberedMostPlayed[artistID] = ranked.map(\.id)
+      self.applyMostPlayed(ranked)
     }
+  }
+
+  /// This phone's own played songs, most played first (the songs list sorts by play count).
+  private func localPlayedSongs(_ songs: [Song]) -> [Song] {
+    Array(songs.filter { $0.playCount > 0 }.prefix(Self.mostPlayedLimit))
+  }
+
+  /// This session's last ranked order for the artist, kept to the songs still listed.
+  private func rememberedMostPlayedSongs(in songs: [Song]) -> [Song]? {
+    guard let ids = Self.rememberedMostPlayed[artist.id] else { return nil }
+    let byID = Dictionary(songs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    let remembered = ids.compactMap { byID[$0] }
+    return remembered.isEmpty ? nil : remembered
+  }
+
+  /// Swap MOST PLAYED to `songs` when they differ from what is shown. MOST PLAYED sits
+  /// above the shelves, so when it changes height while the reader is below it, the
+  /// scroll position moves with it and what they are looking at stays put.
+  private func applyMostPlayed(_ songs: [Song]) {
+    guard songs != frozenMostPlayedSongs else { return }
+    let section = BodySection.mostPlayed.rawValue
+    guard isViewLoaded, tableView.numberOfSections > section else {
+      // Not loaded yet: the first load reads it.
+      frozenMostPlayedSongs = songs
+      return
+    }
+    let before = tableView.rect(forSection: section)
+    frozenMostPlayedSongs = songs
+    UIView.performWithoutAnimation {
+      tableView.reloadSections(IndexSet(integer: section), with: .none)
+    }
+    guard tableView.window != nil else { return }
+    let readerTop = tableView.contentOffset.y + view.safeAreaInsets.top
+    guard readerTop >= before.maxY else { return }
+    tableView.layoutIfNeeded()
+    let delta = tableView.rect(forSection: section).height - before.height
+    guard delta != 0 else { return }
+    tableView.contentOffset.y += delta
   }
 
   /// Cloud union counts via popular-rank, played songs only; if none of the cloud's have a
   /// play (or the phone is unpaired / offline), this phone's own plays. Song.playCount
   /// counts every time a song is put into the player, skips included.
   private func rankMostPlayedCloudOrLocal(_ songs: [Song]) async -> [Song] {
-    let localPlayed = Array(songs.filter { $0.playCount > 0 }.prefix(Self.mostPlayedLimit))
+    let localPlayed = localPlayedSongs(songs)
     guard CassetteSyncAPI.bearerToken != nil else { return localPlayed }
     var byLocalId: [String: Song] = [:]
     var inputs: [(cassetteLocalId: String, title: String)] = []
@@ -216,6 +281,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
     albumsFetchedResultsController.fetch()
     songsFetchedResultsController.fetch()
     recomputeAlbumState()
+    seedMostPlayedIfNeeded(listedSongs())
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.register(nibName: PlayableTableCell.typeName)
     // Patch 110 (3b): the artist's albums render as a horizontal carousel
@@ -306,25 +372,15 @@ class ArtistDetailVC: MultiSourceTableViewController {
     lighter.apply = { [weak self] tint, glow, key in
       self?.landLight(tint: tint, glow: glow, key: key)
     }
+    // Only a download in lighter.watchedArtworkIDs (their records' covers, their photo)
+    // calls this, and only while the page is on screen (viewIsAppearing to
+    // viewDidDisappear).
     lighter.relight = { [weak self] in
       guard let self else { return }
       recomputeLeadAlbum()
       lightUpFromLeadAlbum()
       detailOperationsView?.refreshArtistPhoto()
     }
-    lighter.observeArtworkDownloads(account: account)
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(moodIndexChanged),
-      name: .cassetteMoodIndexReady,
-      object: nil
-    )
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(moodIndexChanged),
-      name: .cassetteLibraryMoodsChanged,
-      object: nil
-    )
 
     containableAtIndexPathCallback = { indexPath in
       switch BodySection(rawValue: indexPath.section) {
@@ -365,8 +421,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = false
-    // Rank MOST PLAYED from the cloud play store (hold until ranked so local
-    // counts never flash then re-order). Re-ranks on the next appearance.
+    // Re-rank MOST PLAYED from the cloud play store. The rows already shown stay until
+    // the rank lands, and change only if it differs.
     freezeMostPlayedOrder()
   }
 
@@ -442,6 +498,9 @@ class ArtistDetailVC: MultiSourceTableViewController {
     updateStickyHeaderAlpha()
     albumsFetchedResultsController?.delegate = self
     songsFetchedResultsController?.delegate = self
+    observeWhileVisible()
+    // A cover or a photo may have landed while the page was hidden.
+    recomputeLeadAlbum()
     lightUpFromLeadAlbum()
     detailOperationsView?.refreshArtistPhoto()
     refreshMoreLike()
@@ -491,7 +550,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
   /// only appear on), and the songs FRC's count (on the phone, the songs on the phone).
   /// Artist.albumCount / songCount count every hub record, on the phone or not.
   private func ownCounts() -> (albums: Int, songs: Int) {
-    let albums = artistAlbums.filter(isCredited).count
+    let albums = creditedAlbums.count
     let songs = songsFetchedResultsController?.sections?.first?.numberOfObjects ?? 0
     return (albums, songs)
   }
@@ -518,6 +577,27 @@ class ArtistDetailVC: MultiSourceTableViewController {
     }
     albumsFetchedResultsController?.delegate = nil
     songsFetchedResultsController?.delegate = nil
+  }
+
+  override func viewDidDisappear(_ animated: Bool) {
+    super.viewDidDisappear(animated)
+    // A page nobody can see has no light or shelf to update; it catches up on its next
+    // appearance. (Record pages stay alive in the stack, and past a pop.)
+    lighter.stopObservingArtworkDownloads()
+    NotificationCenter.default.removeObserver(self, name: .cassetteMoodIndexReady, object: nil)
+    NotificationCenter.default.removeObserver(self, name: .cassetteLibraryMoodsChanged, object: nil)
+  }
+
+  /// Listen for artwork downloads and the mood index while the page is on screen. Removed
+  /// first, so a cancelled swipe-back (which appears again without having disappeared)
+  /// never registers twice.
+  private func observeWhileVisible() {
+    lighter.startObservingArtworkDownloads(account: account)
+    let center = NotificationCenter.default
+    for name in [Notification.Name.cassetteMoodIndexReady, .cassetteLibraryMoodsChanged] {
+      center.removeObserver(self, name: name, object: nil)
+      center.addObserver(self, selector: #selector(moodIndexChanged), name: name, object: nil)
+    }
   }
 
   override func viewDidAppear(_ animated: Bool) {
@@ -583,13 +663,21 @@ class ArtistDetailVC: MultiSourceTableViewController {
     }
   }
 
-  /// Rebuilds the albums, the lead record and the fan from the FRC.
+  /// Rebuilds the albums, the shelf, the lead record and the fan from the FRC.
   private func recomputeAlbumState() {
     artistAlbums = allArtistAlbums()
+    creditedAlbums = artistAlbums.filter(isCredited)
+    // The mock's ALBUMS is the artist's own records; with none on the phone, what they
+    // appear on (the same rule as the fan and the lead record).
+    shelfAlbums = creditedAlbums.isEmpty ? artistAlbums : creditedAlbums
     recomputeLeadAlbum()
-    let credited = artistAlbums.filter(isCredited)
-    // The artist's own newest three; with none credited, the newest they appear on.
-    fanAlbums = Array((credited.isEmpty ? artistAlbums : credited).prefix(3))
+    fanAlbums = Array(shelfAlbums.prefix(3))
+    // The downloads that can change the light: a cover for one of these records (a newer
+    // one landing becomes the lead) or the artist's own photo.
+    lighter.watchedArtworkIDs = Set(
+      (creditedAlbums.isEmpty ? Array(artistAlbums.prefix(1)) : creditedAlbums)
+        .compactMap { $0.artwork?.uniqueID } + [artist.artwork?.uniqueID].compactMap { $0 }
+    )
   }
 
   /// The record that lights the page: the newest album credited to this artist that has a
@@ -597,8 +685,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
   /// album they appear on. A compilation they are on never lights their page while a
   /// record of their own is here.
   private func recomputeLeadAlbum() {
-    let credited = artistAlbums.filter(isCredited)
-    leadAlbum = credited.first { coverPath(of: $0) != nil } ?? credited.first ?? artistAlbums.first
+    leadAlbum = creditedAlbums.first { coverPath(of: $0) != nil } ?? creditedAlbums
+      .first ?? artistAlbums.first
   }
 
   private func lightUpFromLeadAlbum() {
@@ -695,7 +783,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
         answerColor: lighter.tint.text
       )
     case .albums:
-      guard !artistAlbums.isEmpty else { return nil }
+      guard !shelfAlbums.isEmpty else { return nil }
       return CassetteHeading.makeTableHeaderView(
         shout: "Albums",
         answer: nil,
@@ -721,7 +809,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
       return frozenMostPlayedSongs.count
     case .albums:
       // Patch 110 (3b): a single row hosting the horizontal album carousel.
-      return artistAlbums.isEmpty ? 0 : 1
+      return shelfAlbums.isEmpty ? 0 : 1
     case .moreLike:
       return moreLikeAlbums.isEmpty ? 0 : 1
     default:
@@ -780,7 +868,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
         for: indexPath
       ) as! AlbumCarouselTableCell
       cell.configure(
-        albums: artistAlbums,
+        albums: shelfAlbums,
         onSelect: { [weak self] album in self?.pushAlbum(album) },
         onPlay: { album in OneTapPlay.play(album) },
         style: Self.shelfStyle,
@@ -813,7 +901,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
     case .mostPlayed:
       return frozenMostPlayedSongs.isEmpty ? 0 : CassetteHeading.tableHeaderHeight
     case .albums:
-      return artistAlbums.isEmpty ? 0 : CassetteHeading.tableHeaderHeight
+      return shelfAlbums.isEmpty ? 0 : CassetteHeading.tableHeaderHeight
     case .moreLike:
       return moreLikeAlbums.isEmpty ? 0 : CassetteHeading.tableHeaderHeight
     default:
