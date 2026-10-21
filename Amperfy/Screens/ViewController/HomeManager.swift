@@ -243,8 +243,6 @@ class HomeManager: NSObject {
     /// for Get Pumped the one its songs call for. Set when the mixes are built; nil for the
     /// other playlists.
     var coverVariant: String? = nil
-    /// Late Night's guest on its cover: the artist with the most songs in it.
-    var coverGuest: String? = nil
 
     var id: String {
       switch kind {
@@ -1400,14 +1398,10 @@ class HomeManager: NSObject {
         songsByID: index.songsByID,
         isOnPhone: isOnPhone
       ) {
-        // Its cover: the day's turn, except Get Pumped's (by how heavy its songs are) and
-        // Late Night's guest (the artist it plays most).
+        // Its cover: the day's turn, except Get Pumped's (by how heavy its songs are).
         mix.coverVariant = mood.key == "get-pumped"
           ? ListeningShelves.getPumpedCoverVariant(mix.songs.compactMap { mixSongByID[$0.id] })
           : ListeningShelves.dailyCoverVariant(key: mood.key, on: now)
-        if mood.key == "late-night" {
-          mix.coverGuest = ListeningShelves.headlineArtist(mix.songs.map { $0.asSong?.artist?.name ?? "" })
-        }
         mixes.append(mix)
         taken.formUnion(mix.songs.map(\.id))
       }
@@ -1445,7 +1439,7 @@ class HomeManager: NSObject {
   private func setOtherMixes(_ mixes: [MadeForYouMix]) {
     func signature(_ list: [MadeForYouMix]) -> [String] {
       list.map { mix in
-        ([mix.id, mix.title, mix.coverVariant ?? "", mix.coverGuest ?? ""] + mix.songs.map(\.id)
+        ([mix.id, mix.title, mix.coverVariant ?? ""] + mix.songs.map(\.id)
           + mix.leadAlbums.map(\.id)).joined(separator: ",")
       }
     }
@@ -1484,8 +1478,7 @@ class HomeManager: NSObject {
         subtitle: mix.subtitle,
         songs: songs,
         leadAlbums: leadAlbums(for: songs),
-        coverVariant: mix.coverVariant,
-        coverGuest: mix.coverGuest
+        coverVariant: mix.coverVariant
       )
     }
     setOtherMixes(kept)

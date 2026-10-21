@@ -925,28 +925,6 @@ extension ListeningShelves {
     return lowered.split(whereSeparator: { $0 == " " || $0 == "-" }).contains("emo")
   }
 
-  /// Late Night's guest: the artist with the most songs in the mix, whoever appears first on
-  /// a tie, as `names` (one per song, in mix order) spell it. Nil when no song has one.
-  public static func headlineArtist(_ names: [String]) -> String? {
-    var counts = [String: Int]()
-    var first = [String: Int]()
-    var shown = [String: String]()
-    for (position, name) in names.enumerated() {
-      let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-      let key = normalizedArtistName(trimmed)
-      guard !key.isEmpty else { continue }
-      counts[key, default: 0] += 1
-      if first[key] == nil {
-        first[key] = position
-        shown[key] = trimmed
-      }
-    }
-    let best = counts.max { a, b in
-      a.value != b.value ? a.value < b.value : first[a.key, default: 0] > first[b.key, default: 0]
-    }
-    return best.flatMap { shown[$0.key] }
-  }
-
   /// Each song's one mood playlist: of the mixes it may join, the one it fits best relative
   /// to how well that mix's songs fit in general (its median), so a playlist with a generous
   /// pool does not take every shared song. Ties go to the mix listed first in `moodMixes`.

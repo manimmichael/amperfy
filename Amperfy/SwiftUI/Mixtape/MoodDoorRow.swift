@@ -280,25 +280,11 @@ enum MixCoverCache {
   private static var inFlight = [String: Task<UIImage?, Never>]()
   private static var failures = [String: (count: Int, at: Date)]()
 
-  /// What a query value may hold unescaped: the query set without `+`, `&`, `=` and `#`,
-  /// so "Florence + the Machine" arrives with its plus, not a space.
-  private static let queryValue: CharacterSet = {
-    var allowed = CharacterSet.urlQueryAllowed
-    allowed.remove(charactersIn: "+&=#")
-    return allowed
-  }()
-
   /// A mood mix's cover address, or nil for the other playlists (or a mix built before it
   /// had a cover version).
   static func address(for mix: HomeManager.MadeForYouMix) -> URL? {
     guard case let .mood(key, _) = mix.kind, let variant = mix.coverVariant else { return nil }
-    var query = ["variant=\(variant)"]
-    if let guest = mix.coverGuest,
-       let encoded = guest.addingPercentEncoding(withAllowedCharacters: queryValue) {
-      query.append("guest=\(encoded)")
-    }
-    query.append("s=\(pixelSize)")
-    return URL(string: "\(base)/api/covers/mix/\(key)?\(query.joined(separator: "&"))")
+    return URL(string: "\(base)/api/covers/mix/\(key)?variant=\(variant)&s=\(pixelSize)")
   }
 
   /// The cover already decoded in memory.
