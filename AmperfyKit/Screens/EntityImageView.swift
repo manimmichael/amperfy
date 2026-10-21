@@ -52,6 +52,24 @@ open class EntityImageView: UIView {
   private var view: UIView!
   /// Cancels stale cloud-cover loads when a cell is reused.
   private var remoteCoverLoadID = UUID()
+  /// phone-taste: a playlist's own cover (the person's pick or its preset) draws here,
+  /// never through `singleImage`. A reused cell's LibraryEntityImage can still have a
+  /// cover decode running for the album it showed last; when that decode lands it
+  /// repaints the generated placeholder, because handing it a bitmap cleared its
+  /// entity. On `singleImage` that greyed the playlist's cover (the D03 clobber, on a
+  /// recycled cell). Here `singleImage` is hidden while the cover shows, so a late
+  /// repaint lands on a view nobody sees. Pinned to `singleImage`'s edges, with its
+  /// corner radius, so it sits exactly where the single cover always sat.
+  private let playlistCoverView: UIImageView = {
+    let imageView = UIImageView()
+    imageView.translatesAutoresizingMaskIntoConstraints = false
+    imageView.contentMode = .scaleAspectFill
+    imageView.isUserInteractionEnabled = false
+    imageView.layer.cornerRadius = RoundedImage.cornerRadius
+    imageView.layer.masksToBounds = true
+    imageView.isHidden = true
+    return imageView
+  }()
 
   private var quadImages: [LibraryEntityImage] {
     [
@@ -108,6 +126,14 @@ open class EntityImageView: UIView {
     quadImages[1].layer.maskedCorners = [.layerMaxXMinYCorner]
     quadImages[2].layer.maskedCorners = [.layerMinXMaxYCorner]
     quadImages[3].layer.maskedCorners = [.layerMaxXMaxYCorner]
+    // Last subview, so it sits above the single cover and the quad stack.
+    self.view.addSubview(playlistCoverView)
+    NSLayoutConstraint.activate([
+      playlistCoverView.leadingAnchor.constraint(equalTo: singleImage.leadingAnchor),
+      playlistCoverView.trailingAnchor.constraint(equalTo: singleImage.trailingAnchor),
+      playlistCoverView.topAnchor.constraint(equalTo: singleImage.topAnchor),
+      playlistCoverView.bottomAnchor.constraint(equalTo: singleImage.bottomAnchor),
+    ])
   }
 
   public func display(
@@ -125,6 +151,7 @@ open class EntityImageView: UIView {
       // placeholder OVER the cover (the clobber that greyed a playlist whose cover was
       // set on the web). Set up a clean single-image placeholder, then load the cover.
       if case .circle = shape { applyShape() } else { shape = .rounded(cornerRadius) }
+      hidePlaylistCover()
       quadImages.forEach { $0.isHidden = true }
       singleImage.isHidden = false
       singleImage.display(artworkType: .playlist)
@@ -197,9 +224,9 @@ open class EntityImageView: UIView {
 
   @MainActor
   private func fallBackToPreset(theme: ThemePreference, container: PlayableContainable, loadID: UUID) {
-    // Only if no newer display started (a real cover landing must win). Safe here:
-    // this runs AFTER the remote load has FAILED, so there is no async cover decode
-    // racing to repaint over the fallback.
+    // Only if no newer display started (a real cover landing must win). The preset
+    // draws in playlistCoverView, so a cover decode still running on singleImage
+    // cannot repaint over it.
     guard remoteCoverLoadID == loadID else { return }
     // phone-taste: a playlist whose picked cover cannot load shows its derived preset,
     // never an album-art mosaic. Only an id-less playlist (the queue) keeps the song art.
@@ -214,8 +241,15 @@ open class EntityImageView: UIView {
   private func applyRemoteCover(_ image: UIImage, loadID: UUID) {
     guard remoteCoverLoadID == loadID else { return }
     quadImages.forEach { $0.isHidden = true }
-    singleImage.isHidden = false
-    singleImage.display(image: image)
+    // Hidden, not repainted: a decode still in flight on singleImage lands unseen.
+    singleImage.isHidden = true
+    playlistCoverView.image = image
+    playlistCoverView.isHidden = false
+  }
+
+  private func hidePlaylistCover() {
+    playlistCoverView.isHidden = true
+    playlistCoverView.image = nil
   }
 
   public func configureStyling(
@@ -224,6 +258,9 @@ open class EntityImageView: UIView {
     imageTintColor: UIColor,
     backgroundColor: UIColor
   ) {
+    // The icon draws in singleImage, which a playlist cover leaves hidden.
+    hidePlaylistCover()
+    singleImage.isHidden = false
     singleImage.tintColor = imageTintColor
     view.backgroundColor = backgroundColor
     view.layoutMargins = UIEdgeInsets(
@@ -263,6 +300,7 @@ open class EntityImageView: UIView {
     } else {
       shape = .rounded(cornerRadius)
     }
+    hidePlaylistCover()
     quadImages.forEach { $0.isHidden = true }
     singleImage.isHidden = false
 
