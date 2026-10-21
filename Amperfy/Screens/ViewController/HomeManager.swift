@@ -168,22 +168,63 @@ class HomeManager: NSObject {
   // rebuild is one diff/animation instead of 4-6 overlapping animated applies.
   private var isBatchingSnapshot = false
 
-  /// phone-taste: the Lately tile's mix, built once per LatelyLibrary snapshot so the
-  /// tile's picture always shows records the tap will play.
+  /// phone-taste: the Lately tile's mix, built once and kept, so the tile's picture always
+  /// shows records the tap will play.
   struct LatelyMix {
     /// The songs a tap plays, in order (on this phone, matching lately).
     let songs: [AbstractPlayable]
     /// Up to four of the mix's albums for the tile's picture, in mix order, those with a
     /// cover on disk first.
     let leadAlbums: [Album]
-    /// The `LatelyLibrary.generation` it was built from.
+    /// Changes whenever `songs` or `leadAlbums` change, and only then, so Home redraws the
+    /// Mood row only when there is something new to draw.
     let generation: Int
   }
 
   /// The current Lately mix, or nil when there is no lately profile (no mood tags or no
-  /// recent listening). It changes only when the snapshot rebuilds (five minutes, or new
-  /// tags), never on a play or pause.
+  /// recent listening). It is drawn again only when what it is drawn from changes (new
+  /// mood tags, a new lately profile from the cloud, or more tagged music on the phone),
+  /// never on a play, a pause or a cache expiry. Songs that leave the phone drop out of it
+  /// on the next recompute.
   private(set) var latelyMix: LatelyMix?
+  /// What `latelyMix` was drawn from (see `LatelyMixKey`).
+  private var latelyMixKey: LatelyMixKey?
+  private var latelyMixGeneration = 0
+  /// Set when `LatelyLibrary` posts `.cassetteMoodIndexReady`: the cached mood index was
+  /// just rebuilt, so a nil index on the next recompute really means "nothing tagged here".
+  private var moodIndexJustLanded = false
+
+  /// The inputs a Lately mix is drawn from. Deliberately not the local lately profile
+  /// (it shifts on every play) and not the time: those would reshuffle the tile under the
+  /// person's finger.
+  private struct LatelyMixKey: Equatable {
+    let tagCount: Int
+    let sharedProfile: ListeningShelves.TagVector
+    /// Tagged songs on the phone.
+    let candidateCount: Int
+
+    /// Whether a mix drawn from `self` should be drawn again for `new`: new tags, a new
+    /// cloud profile, or more tagged music on the phone. Fewer songs does not reshuffle;
+    /// the songs that left just drop out of the mix.
+    func isOutdated(by new: LatelyMixKey) -> Bool {
+      tagCount != new.tagCount || sharedProfile != new.sharedProfile
+        || new.candidateCount > candidateCount
+    }
+  }
+
+  /// More Like Lately's ranking and what it was ranked from (see updateLatelyShelves).
+  private var moreLikeCache: (key: LatelyMixKey, at: Date, ids: [String])?
+  private static let moreLikeLifetime: TimeInterval = 5 * 60
+
+  /// phone-taste: the Resume card's second line, for the record now on the card.
+  struct ResumeLine {
+    /// `stableID(for:)` of the record it belongs to.
+    let stableID: String
+    let text: String?
+  }
+
+  /// Built once per recompute (not per apply), so redrawing the card is free.
+  private(set) var resumeLine: ResumeLine?
 
   init(
     account: Account,
@@ -226,6 +267,14 @@ class HomeManager: NSObject {
       self,
       selector: #selector(handlePlayerChanged),
       name: .playerStop,
+      object: nil
+    )
+    // phone-taste: the mood index Home reads through `LatelyLibrary.moodIndexIfReady` is
+    // built off the main thread; rebuild the rows once it lands.
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleMoodIndexReady),
+      name: .cassetteMoodIndexReady,
       object: nil
     )
   }
@@ -410,6 +459,14 @@ class HomeManager: NSObject {
   /// a library change triggers, deferred while Home is off screen.
   func refreshListeningShelves() {
     scheduleRecompute()
+  }
+
+  /// Drop LatelyLibrary's cached mood index (new tags, or music came or went). The next
+  /// recompute starts a rebuild off the main thread and keeps the current More Like and
+  /// Lately rows, minus anything no longer on the phone, until it lands.
+  func invalidateMoodIndex() {
+    LatelyLibrary.invalidate()
+    moodIndexJustLanded = false
   }
 
   /// Flushed by the host (phone Home) when it becomes visible again: runs one
@@ -651,9 +708,14 @@ class HomeManager: NSObject {
         stableID: Self.stableID(for: resumeContainer),
         playableContainable: resumeContainer
       )]
+      resumeLine = ResumeLine(
+        stableID: Self.stableID(for: resumeContainer),
+        text: resumeLineText(for: resumeContainer, isOnPhone: isOnPhone)
+      )
       merged.remove(at: resumeIndex)
     } else {
       data[.resume] = []
+      resumeLine = nil
     }
 
     data[.recent] = merged.prefix(Self.shelfCarouselCap).map {
@@ -662,23 +724,124 @@ class HomeManager: NSObject {
     notifySnapshot()
   }
 
+  // MARK: - Resume line
+
+  /// The Resume card's second line answers "where was I" with a song: the song playing
+  /// now when it belongs to the card's record; else the record's most recently played
+  /// song that the card's play disc can actually play (on this phone, or cached while
+  /// offline in Server Mode; plays from other devices count, via CloudPlayReconciler);
+  /// else the record's own subtitle. Two bounded fetches, never a walk of the record.
+  private func resumeLineText(
+    for container: PlayableContainable,
+    isOnPhone: OnPhoneCheck
+  )
+    -> String? {
+    if let song = player.currentMusicItem?.asSong, Self.song(song, belongsTo: container) {
+      return song.title
+    }
+    return latestPlayableSongTitle(in: container, isOnPhone: isOnPhone) ?? container.subtitle
+  }
+
+  /// Whether `song` belongs to `container`: the same album, a song by the artist (its own
+  /// artist or its album's), or a song in the playlist. A playlist is asked with a count
+  /// fetch, not by walking its items.
+  static func song(_ song: Song, belongsTo container: PlayableContainable) -> Bool {
+    if let album = container as? Album {
+      return !album.id.isEmpty && song.album?.id == album.id
+    }
+    if let artist = container as? Artist {
+      guard !artist.id.isEmpty else { return false }
+      return song.artist?.id == artist.id || song.album?.artist?.id == artist.id
+    }
+    if let playlist = container as? Playlist {
+      guard let context = playlist.managedObject.managedObjectContext else { return false }
+      let request: NSFetchRequest<PlaylistItemMO> = PlaylistItemMO.fetchRequest()
+      request.predicate = NSPredicate(
+        format: "playlist == %@ AND playable == %@",
+        playlist.managedObject,
+        song.managedObject
+      )
+      request.fetchLimit = 1
+      return ((try? context.count(for: request)) ?? 0) > 0
+    }
+    return false
+  }
+
+  /// How many of the record's most recently played songs to look through for one the
+  /// disc can play. Enough for an album; for a big artist or playlist whose recent plays
+  /// are all elsewhere, the line falls back to the record's subtitle.
+  private static let resumeLineCandidateLimit = 25
+
+  /// The title of the record's most recently played song among those the play disc plays
+  /// (`OneTapPlay.playables`: an album's or an artist's own songs, a playlist's songs),
+  /// keeping only songs on the phone (or cached while offline in Server Mode).
+  private func latestPlayableSongTitle(
+    in container: PlayableContainable,
+    isOnPhone: OnPhoneCheck
+  )
+    -> String? {
+    let scope: NSPredicate
+    if let album = container as? Album {
+      scope = NSPredicate(format: "album == %@", album.managedObject)
+    } else if let artist = container as? Artist {
+      scope = NSPredicate(format: "artist == %@", artist.managedObject)
+    } else if let playlist = container as? Playlist {
+      scope = NSPredicate(format: "ANY playlistItems.playlist == %@", playlist.managedObject)
+    } else {
+      return nil
+    }
+    var predicates = [scope, NSPredicate(format: "lastPlayedDate != nil")]
+    if isOnPhone.owned == nil, isOfflineMode {
+      predicates.append(NSPredicate(format: "relFilePath != nil"))
+    }
+    let request: NSFetchRequest<SongMO> = SongMO.fetchRequest()
+    request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+    request.sortDescriptors = [NSSortDescriptor(key: "lastPlayedDate", ascending: false)]
+    request.fetchLimit = Self.resumeLineCandidateLimit
+    let candidates = (try? storage.main.context.fetch(request)) ?? []
+    for songMO in candidates {
+      let song = Song(managedObject: songMO)
+      if isOnPhone.contains(song) { return song.title }
+    }
+    return nil
+  }
+
   /// cassette (BUG-436): whether a Home item has anything on this phone. Albums and
   /// artists by their owned-id sets, playlists by holding at least one song that is
   /// here (a partly synced playlist stays, and lists only its songs on the phone).
   /// The id sets are resolved once per call, not per item. Always true in Server Mode.
-  private func makeOnPhoneCheck() -> (PlayableContainable) -> Bool {
-    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return { _ in true } }
+  private func makeOnPhoneCheck() -> OnPhoneCheck {
+    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else {
+      return OnPhoneCheck(owned: nil)
+    }
     let ownership = DeviceOwnershipManager(context: storage.main.context)
-    let ownedAlbumIds = ownership.fetchOwnedAlbumIds()
-    let ownedArtistIds = ownership.fetchOwnedArtistIds()
-    let ownedTrackIds = ownership.fetchAllSubsonicTrackIds()
-    return { container in
-      if let album = container as? Album { return ownedAlbumIds.contains(album.id) }
-      if let artist = container as? Artist { return ownedArtistIds.contains(artist.id) }
+    return OnPhoneCheck(owned: (
+      albumIds: ownership.fetchOwnedAlbumIds(),
+      artistIds: ownership.fetchOwnedArtistIds(),
+      trackIds: ownership.fetchAllSubsonicTrackIds()
+    ))
+  }
+
+  /// The owned-id sets for one pass, callable on a Home item (`isOnPhone(album)`) and on a
+  /// song. `owned` nil is Server Mode, where everything counts.
+  private struct OnPhoneCheck {
+    let owned: (albumIds: Set<String>, artistIds: Set<String>, trackIds: Set<String>)?
+
+    func callAsFunction(_ container: PlayableContainable) -> Bool {
+      guard let owned else { return true }
+      if let album = container as? Album { return owned.albumIds.contains(album.id) }
+      if let artist = container as? Artist { return owned.artistIds.contains(artist.id) }
       if let playlist = container as? Playlist {
-        return playlist.managedObject.items.contains { ownedTrackIds.contains($0.playable.id) }
+        return playlist.managedObject.items.contains { owned.trackIds.contains($0.playable.id) }
       }
       return true
+    }
+
+    /// A song is on the phone when its id is in the ownership set; anything that is not a
+    /// song passes.
+    func contains(_ playable: AbstractPlayable) -> Bool {
+      guard let owned, let song = playable.asSong else { return true }
+      return owned.trackIds.contains(song.id)
     }
   }
 
@@ -694,14 +857,25 @@ class HomeManager: NSObject {
       since: since,
       fetchLimit: Self.listeningPlayFetchLimit
     )
+    // The same newest-first fetch also feeds the lately pass: its last 30 days are what
+    // LatelyLibrary's own 30-day fetch would return.
+    let latelySince = now.addingTimeInterval(-Double(Self.latelyWindowDays) * 86400)
+    let mixSince = now.addingTimeInterval(-Double(Self.mixRecentlyPlayedDays) * 86400)
     var albumsByID = [String: Album]()
     var plays = [ListeningPlay]()
+    var lately = LatelyPlays()
     for entry in entries {
-      guard let date = entry.date,
-            let album = entry.playable?.asSong?.album,
-            !album.id.isEmpty else { continue }
-      albumsByID[album.id] = album
-      plays.append(ListeningPlay(date: date, albumID: album.id))
+      guard let date = entry.date, let song = entry.playable?.asSong else { continue }
+      let album = song.album
+      let albumID = album?.id ?? ""
+      if date >= latelySince {
+        lately.songPlays.append((date, song.id))
+        if !albumID.isEmpty { lately.albums.insert(albumID) }
+        if date >= mixSince { lately.songsJustPlayed.insert(song.id) }
+      }
+      guard let album, !albumID.isEmpty else { continue }
+      albumsByID[albumID] = album
+      plays.append(ListeningPlay(date: date, albumID: albumID))
     }
     let isOnPhone = makeOnPhoneCheck()
     func items(_ ids: [String], _ section: HomeSection) -> [HomeItem] {
@@ -712,35 +886,166 @@ class HomeManager: NSObject {
     }
     data[.onRepeat] = items(ListeningShelves.onRepeat(plays, now: now), .onRepeat)
     data[.aroundNow] = items(ListeningShelves.aroundNow(plays, now: now), .aroundNow)
+    updateLatelyShelves(lately, now: now, isOnPhone: isOnPhone)
+  }
 
-    // More Like Lately: needs the cached mood tags (LibraryMoods); empty without them.
-    if let lately = LatelyLibrary.snapshot(storage: storage, account: account, now: now) {
-      let ids = ListeningShelves.moreLikeLately(
-        lately.albumCandidates,
-        profile: lately.profile,
-        playedRecently: lately.albumsPlayedRecently
-      )
-      data[.moreLikeLately] = ids.compactMap { lately.albumsByID[$0] }
-        .filter { isOnPhone($0) }
-        .prefix(Self.shelfCarouselCap)
-        .map { HomeItem(section: .moreLikeLately, stableID: Self.stableID(for: $0), playableContainable: $0) }
-      // The Lately mix follows the snapshot, not every recompute.
-      if latelyMix == nil || latelyMix?.generation != LatelyLibrary.generation {
-        let songs: [AbstractPlayable] = LatelyLibrary.makeLatelyMix(
-          snapshot: lately,
-          count: Self.latelyMixLength
+  /// The last 30 days of plays as the lately pass needs them.
+  private struct LatelyPlays {
+    var songPlays = [(date: Date, songID: String)]()
+    /// Albums with a play in the window (kept out of More Like Lately).
+    var albums = Set<String>()
+    /// Songs played in the last three days (kept out of the mix).
+    var songsJustPlayed = Set<String>()
+  }
+
+  /// More Like Lately and the Lately mix, from the cached mood tags (LibraryMoods) and the
+  /// phone's mood index. The index is read through `LatelyLibrary.moodIndexIfReady`, which
+  /// never builds it on the main thread: on a miss it builds in the background and posts
+  /// `.cassetteMoodIndexReady` (see `handleMoodIndexReady`), and Home keeps what it showed,
+  /// minus anything that has left the phone, until then. Never `LatelyLibrary.snapshot`:
+  /// on a cache miss that builds the index right here, on the main thread.
+  private func updateLatelyShelves(_ lately: LatelyPlays, now: Date, isOnPhone: OnPhoneCheck) {
+    let tags = LibraryMoods.shared.byLocalID
+    let justLanded = moodIndexJustLanded
+    moodIndexJustLanded = false
+    guard let index = LatelyLibrary.moodIndexIfReady(storage: storage, account: account, now: now)
+    else {
+      if tags.isEmpty || justLanded {
+        // No tags yet, or nothing tagged is on this phone: no More Like and no mix.
+        moreLikeCache = nil
+        data[.moreLikeLately] = []
+        setLatelyMix(nil, key: nil)
+      } else {
+        // The index is still building (first open, or music came or went).
+        data[.moreLikeLately] = (data[.moreLikeLately] ?? [])
+          .filter { isOnPhone($0.playableContainable) }
+        keepLatelyMix(isOnPhone: isOnPhone)
+      }
+      return
+    }
+
+    let sharedProfile = LibraryMoods.shared.sharedProfile
+    let key = LatelyMixKey(
+      tagCount: tags.count,
+      sharedProfile: sharedProfile,
+      candidateCount: index.songCandidates.count
+    )
+    // The cloud's lately profile (every device's plays) when the phone has it, else one
+    // built from this phone's own plays, as LatelyLibrary.snapshot builds it. Built only
+    // when something below needs it.
+    var builtProfile: ListeningShelves.TagVector?
+    func profile() -> ListeningShelves.TagVector {
+      if let builtProfile { return builtProfile }
+      var result = sharedProfile
+      if result.isEmpty {
+        var tagsBySongID = [String: ListeningShelves.TagVector](
+          minimumCapacity: index.songCandidates.count
         )
-        latelyMix = LatelyMix(
-          songs: songs,
-          leadAlbums: leadAlbums(for: songs),
-          generation: LatelyLibrary.generation
+        for candidate in index.songCandidates {
+          tagsBySongID[candidate.songID] = candidate.tags
+        }
+        result = ListeningShelves.latelyProfile(
+          plays: lately.songPlays,
+          tagsForSong: { tagsBySongID[$0] },
+          now: now
         )
       }
-    } else {
-      data[.moreLikeLately] = []
-      latelyMix = nil
+      builtProfile = result
+      return result
     }
+
+    // More Like keeps its ranking for a few minutes, as the lately snapshot did, so a play
+    // or a pause does not reshuffle the row.
+    let moreLikeIDs: [String]
+    if let cached = moreLikeCache, cached.key == key,
+       now.timeIntervalSince(cached.at) < Self.moreLikeLifetime {
+      moreLikeIDs = cached.ids
+    } else {
+      guard !profile().isEmpty else {
+        // Nothing recent to build a profile from.
+        moreLikeCache = nil
+        data[.moreLikeLately] = []
+        setLatelyMix(nil, key: nil)
+        return
+      }
+      moreLikeIDs = ListeningShelves.moreLikeLately(
+        index.albumCandidates,
+        profile: profile(),
+        playedRecently: lately.albums
+      )
+      moreLikeCache = (key, now, moreLikeIDs)
+    }
+    data[.moreLikeLately] = moreLikeIDs
+      .compactMap { index.albumsByID[$0] }
+      .filter { isOnPhone($0) }
+      .prefix(Self.shelfCarouselCap)
+      .map { album in
+        HomeItem(
+          section: .moreLikeLately,
+          stableID: Self.stableID(for: album),
+          playableContainable: album
+        )
+      }
+
+    // The mix is drawn again only when what it is drawn from changed (see LatelyMixKey);
+    // otherwise it stays, minus songs that have left the phone.
+    if latelyMix != nil, let drawnFrom = latelyMixKey, !drawnFrom.isOutdated(by: key) {
+      latelyMixKey = key
+      keepLatelyMix(isOnPhone: isOnPhone)
+      return
+    }
+    guard !profile().isEmpty else {
+      setLatelyMix(nil, key: nil)
+      return
+    }
+    var rng = SystemRandomNumberGenerator()
+    let songs: [AbstractPlayable] = ListeningShelves.latelyMix(
+      index.songCandidates,
+      profile: profile(),
+      playedRecently: lately.songsJustPlayed,
+      count: Self.latelyMixLength,
+      using: &rng
+    )
+    .compactMap { index.songsByID[$0] }
+    .filter { isOnPhone.contains($0) }
+    setLatelyMix(songs, key: key)
   }
+
+  /// Replace the Lately mix (`songs` nil: no mix) and remember what it was drawn from.
+  private func setLatelyMix(_ songs: [AbstractPlayable]?, key: LatelyMixKey?) {
+    latelyMixKey = key
+    guard let songs else {
+      latelyMix = nil
+      return
+    }
+    publishLatelyMix(songs)
+  }
+
+  /// Keep the current mix, dropping songs that are no longer on the phone.
+  private func keepLatelyMix(isOnPhone: OnPhoneCheck) {
+    guard let current = latelyMix, isOnPhone.owned != nil else { return }
+    let kept = current.songs.filter { isOnPhone.contains($0) }
+    guard kept.count != current.songs.count else { return }
+    publishLatelyMix(kept)
+  }
+
+  /// Store `songs` as the mix with its lead albums. The generation moves only when the
+  /// songs or the lead albums actually differ from what is there.
+  private func publishLatelyMix(_ songs: [AbstractPlayable]) {
+    let lead = leadAlbums(for: songs)
+    if let current = latelyMix,
+       current.songs.map(\.id) == songs.map(\.id),
+       current.leadAlbums.map(\.id) == lead.map(\.id) {
+      return
+    }
+    latelyMixGeneration += 1
+    latelyMix = LatelyMix(songs: songs, leadAlbums: lead, generation: latelyMixGeneration)
+  }
+
+  /// ListeningShelves' lately window and the mix's "played just now" window. They are
+  /// internal to AmperfyKit, so Home mirrors them; keep the two in step.
+  private static let latelyWindowDays = 30
+  private static let mixRecentlyPlayedDays = 3
 
   private static let latelyMixLength = 40
   private static let latelyLeadAlbumCount = 4
@@ -1213,6 +1518,14 @@ class HomeManager: NSObject {
     Task { @MainActor in
       self.scheduleRecompute()
     }
+  }
+
+  /// The mood index finished building off the main thread (posted on the main actor).
+  /// Recompute so More Like and the Lately mix read it; deferred while Home is off screen.
+  @objc
+  private func handleMoodIndexReady() {
+    moodIndexJustLanded = true
+    scheduleRecompute()
   }
 }
 

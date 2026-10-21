@@ -17,7 +17,7 @@
 //  (a MOOD shout, the shelf's 20pt gutter and 12pt gap, 150pt square tiles), and the
 //  Lately tile shows the records it will play: a 2x2 of covers from HomeManager's Lately
 //  mix, with the one-tap play disc. The row never builds the mix itself; it draws and
-//  plays the one HomeManager built (`latelyMix`).
+//  plays the one HomeManager keeps (`latelyMix`), re-checked against the phone at the tap.
 //
 
 import AmperfyKit
@@ -87,11 +87,29 @@ struct MoodDoorRow: View {
     }
   }
 
-  /// Plays exactly the mix the tile shows: songs on this phone, matching lately.
+  /// Plays the mix the tile shows: songs matching lately, checked against the phone at the
+  /// tap (HomeManager keeps the mix between recomputes, and music can leave the phone in
+  /// between), by the same rule as OneTapPlay.
   private func play(_ mix: HomeManager.LatelyMix) {
-    guard !mix.songs.isEmpty else { return }
-    appDelegate.player.play(context: PlayContext(name: "Lately", playables: mix.songs))
+    let songs = playableNow(mix.songs)
+    guard !songs.isEmpty else { return }
+    appDelegate.player.play(context: PlayContext(name: "Lately", playables: songs))
     Haptics.light.vibrate(isHapticsEnabled: appDelegate.storage.settings.user.isHapticsEnabled)
+  }
+
+  /// `songs` that this phone can play now: in on-device mode only songs in the
+  /// DeviceOwnership set (one fetch per tap); in Server Mode everything, or only cached
+  /// songs while offline. The same rule as `OneTapPlay.playables(of:)`.
+  private func playableNow(_ songs: [AbstractPlayable]) -> [AbstractPlayable] {
+    if CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
+      let owned = DeviceOwnershipManager(context: appDelegate.storage.main.context)
+        .fetchAllSubsonicTrackIds()
+      return songs.filter { playable in
+        guard let song = playable.asSong else { return true }
+        return owned.contains(song.id)
+      }
+    }
+    return songs.filterCached(dependigOn: appDelegate.storage.settings.user.isOfflineMode)
   }
 
   private func generate(door: MoodDoor) {

@@ -248,6 +248,10 @@ final class HomeVC: UICollectionViewController {
 
   @objc
   private func cassetteLibraryFilterChanged() {
+    // Music arrived or left (or Server Mode flipped): the mood index behind MORE LIKE and
+    // the Lately tile is out of date. HomeManager rebuilds it off the main thread and
+    // meanwhile drops anything that has left the phone.
+    sharedHome.invalidateMoodIndex()
     sharedHome.createFetchController()
     applySnapshot(animated: false)
   }
@@ -257,12 +261,13 @@ final class HomeVC: UICollectionViewController {
     applySnapshot(animated: false)
   }
 
-  /// New mood tags or a new lately profile: drop the cached lately snapshot and rebuild
-  /// the rows. HomeManager defers the rebuild while Home is off screen (isHostVisible);
-  /// the apply that follows redraws the Mood row when the Lately mix changed.
+  /// New mood tags or a new lately profile: drop the cached mood index and rebuild the
+  /// rows. HomeManager defers the rebuild while Home is off screen (isHostVisible), reads
+  /// the index without blocking (it is rebuilt off the main thread), and the apply that
+  /// follows redraws the Mood row when the Lately mix changed.
   @objc
   private func cassetteLibraryMoodsChanged() {
-    LatelyLibrary.invalidate()
+    sharedHome.invalidateMoodIndex()
     sharedHome.refreshListeningShelves()
   }
 
@@ -514,7 +519,10 @@ final class HomeVC: UICollectionViewController {
           for: indexPath
         ) as! ResumeCardCell
         let containable = item.playableContainable
-        cell.display(container: containable, resumeLine: resumeLine(for: containable))
+        // HomeManager works the line out once per recompute, so redrawing the card on
+        // every apply costs nothing.
+        let line = sharedHome.resumeLine.flatMap { $0.stableID == item.stableID ? $0.text : nil }
+        cell.display(container: containable, resumeLine: line ?? containable.subtitle)
         // Reflect an in-flight pull-to-refresh: the card shows "Checking for
         // updates" in place instead of a height-changing pull spinner.
         cell.setChecking(isCheckingForUpdates)
@@ -599,8 +607,8 @@ final class HomeVC: UICollectionViewController {
           withReuseIdentifier: MoodDoorsHeaderView.reuseID,
           for: indexPath
         ) as? MoodDoorsHeaderView, let self else { return nil }
-        // phone-taste: the Lately tile shows and plays the mix HomeManager already
-        // built, so opening Home never builds it on the main thread.
+        // phone-taste: the Lately tile shows and plays the mix HomeManager keeps. The row
+        // never builds a mix or a mood index itself.
         moodHeader.configure(parentViewController: self, latelyMix: sharedHome.latelyMix)
         return moodHeader
       }
@@ -654,51 +662,13 @@ final class HomeVC: UICollectionViewController {
   // MARK: - Resume
 
   /// The player's current song when it belongs to `container`: the same album, a song in
-  /// the playlist, or a song by the artist (its own artist or its album's).
+  /// the playlist, or a song by the artist (its own artist or its album's). Asked once,
+  /// when the Resume disc is tapped. The card's second line comes from HomeManager.
   private func currentSong(in container: PlayableContainable) -> Song? {
     guard let song = appDelegate.player.currentMusicItem?.asSong,
-          Self.song(song, belongsTo: container)
+          HomeManager.song(song, belongsTo: container)
     else { return nil }
     return song
-  }
-
-  private static func song(_ song: Song, belongsTo container: PlayableContainable) -> Bool {
-    if let album = container as? Album {
-      return !album.id.isEmpty && song.album?.id == album.id
-    }
-    if let artist = container as? Artist {
-      guard !artist.id.isEmpty else { return false }
-      return song.artist?.id == artist.id || song.album?.artist?.id == artist.id
-    }
-    if let playlist = container as? Playlist {
-      return playlist.managedObject.items.contains { $0.playable.id == song.id }
-    }
-    return false
-  }
-
-  /// The Resume card's second line answers "where was I" with a song: the song playing
-  /// now when it belongs to the card's record, else the record's most recently played
-  /// song (other devices' plays included, via CloudPlayReconciler), else the record's
-  /// own subtitle.
-  private func resumeLine(for container: PlayableContainable) -> String? {
-    if let song = currentSong(in: container) { return song.title }
-    let songs: [AbstractPlayable]
-    if let album = container as? Album {
-      songs = album.songs
-    } else if let playlist = container as? Playlist {
-      songs = playlist.playables
-    } else if let artist = container as? Artist {
-      songs = artist.songs
-    } else {
-      songs = []
-    }
-    var latest: (date: Date, title: String)?
-    for song in songs {
-      guard let date = song.lastTimePlayed else { continue }
-      if let current = latest, current.date >= date { continue }
-      latest = (date, song.title)
-    }
-    return latest?.title ?? container.subtitle
   }
 
   /// cassette Patch 042: returns the handler that fires when the
@@ -751,10 +721,10 @@ final class HomeVC: UICollectionViewController {
         // Mixtape beta. The door API answers 404 otherwise, so an opted-out
         // account must never see tiles that can only fail.
         // phone-taste: without the beta the row shows only when there is a Lately mix
-        // to play (never an empty Mood row). This reads the mix HomeManager already
-        // built; never call LatelyLibrary.snapshot here, because on a cache miss it walks
-        // the whole library on the main thread and this also runs from the sync banner
-        // and beta paths.
+        // to play (never an empty Mood row). This reads the mix HomeManager keeps (built
+        // from the mood index LatelyLibrary builds off the main thread). Never call
+        // LatelyLibrary.snapshot here: on a cache miss it builds the index on the main
+        // thread, and this also runs from the sync banner and beta paths.
         let hasLatelyMix = !(sharedHome.latelyMix?.songs.isEmpty ?? true)
         guard CassetteBetaAccess.isBetaTester || hasLatelyMix else { continue }
         snapshot.appendSections([section])
@@ -771,15 +741,18 @@ final class HomeVC: UICollectionViewController {
     }
     let current = dataSource.snapshot()
     // phone-taste: redraw the Resume card on every apply, so its song line follows the
-    // track (a new track inside the same album keeps the item's identity). Only items
-    // already on screen are reconfigured; a new one is configured as it is inserted.
+    // track (a new track inside the same album keeps the item's identity). The line is
+    // read from HomeManager, so this is cheap. Only items already on screen are
+    // reconfigured; a new one is configured as it is inserted.
     if snapshot.sectionIdentifiers.contains(.resume) {
       let shown = snapshot.itemIdentifiers(inSection: .resume)
         .filter { current.indexOfItem($0) != nil }
       if !shown.isEmpty { snapshot.reconfigureItems(shown) }
     }
     // phone-taste: the Mood row is SwiftUI hosted in a header, so it only picks up a new
-    // Lately mix when the header is rebuilt. Reload the section when the mix changed.
+    // Lately mix when the header is rebuilt. Reload the section when the mix changed; its
+    // generation moves only when its songs or its covers do, so a play, a pause or a cache
+    // expiry never snaps the row back to its start.
     let latelyGeneration = sharedHome.latelyMix?.generation
     if latelyGeneration != appliedLatelyGeneration,
        snapshot.sectionIdentifiers.contains(.moodDoors),
@@ -1112,8 +1085,23 @@ final class SectionHeaderView: UICollectionReusableView {
       chevronImageView.isHidden = !isTappable
       tapButton.isUserInteractionEnabled = isTappable
       tapButton.accessibilityTraits = isTappable ? .button : []
+      // A hidden chevron gives its room back to the title (see setupSubviews).
+      if isTappable {
+        titleFitsRow.isActive = false
+        chevronFitsRow.isActive = true
+      } else {
+        chevronFitsRow.isActive = false
+        titleFitsRow.isActive = true
+      }
     }
   }
+
+  /// The row's trailing limit, on the chevron when there is one, else on the title. Only
+  /// one is active: a hidden chevron still sits in Auto Layout, and pinning it would take
+  /// 20pt from every chevron-less title (ON REPEAT, the time row, MORE LIKE, RECENT),
+  /// enough to cut the answer off the longer time-of-day titles.
+  private var chevronFitsRow: NSLayoutConstraint!
+  private var titleFitsRow: NSLayoutConstraint!
 
   /// phone-taste: the row title in two voices, the SHOUT and its answer ("ON REPEAT
   /// lately"). `answer` nil draws the shout alone.
@@ -1165,7 +1153,8 @@ final class SectionHeaderView: UICollectionReusableView {
     // it reads "tap into this shelf"; in Library the same glyph (rotated to
     // chevron.down) reads "dropdown". The trailing region is intentionally
     // empty space. phone-taste: the title gives way first (its compression
-    // resistance is low), so a long answer truncates before the chevron moves.
+    // resistance is low), so a long answer truncates before the chevron moves. A
+    // row without a chevron lets the title run to the gutter instead.
     // The bottom pin sits just under required so the self-sizing pass, not the
     // estimated height, sets the header's height.
     let bottom = titleLabel.bottomAnchor.constraint(
@@ -1173,6 +1162,14 @@ final class SectionHeaderView: UICollectionReusableView {
       constant: -CassetteHeading.bottomSpacing
     )
     bottom.priority = UILayoutPriority(999)
+    chevronFitsRow = chevronImageView.trailingAnchor.constraint(
+      lessThanOrEqualTo: trailingAnchor,
+      constant: -CassetteHeading.sideInset
+    )
+    titleFitsRow = titleLabel.trailingAnchor.constraint(
+      lessThanOrEqualTo: trailingAnchor,
+      constant: -CassetteHeading.sideInset
+    )
     NSLayoutConstraint.activate([
       titleLabel.leadingAnchor.constraint(
         equalTo: leadingAnchor,
@@ -1185,10 +1182,8 @@ final class SectionHeaderView: UICollectionReusableView {
         equalTo: titleLabel.trailingAnchor,
         constant: 6
       ),
-      chevronImageView.trailingAnchor.constraint(
-        lessThanOrEqualTo: trailingAnchor,
-        constant: -CassetteHeading.sideInset
-      ),
+      // No chevron until a tapHandler arrives, so the title holds the trailing limit.
+      titleFitsRow,
       chevronImageView.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
       chevronImageView.widthAnchor.constraint(equalToConstant: 14),
       chevronImageView.heightAnchor.constraint(equalToConstant: 18),
