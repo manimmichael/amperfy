@@ -545,6 +545,9 @@
 		CA1120AC0BABE0000000BEEF /* AmbientCoverBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA1120AC0BABE0000000FEED /* AmbientCoverBackdrop.swift */; };
 		CA55D1A6000000110000CAFE /* MarkDiagnosticMomentIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55D1A6000000010000CAFE /* MarkDiagnosticMomentIntent.swift */; };
 		CA55D1A6000000120000CAFE /* DiagnosticsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55D1A6000000020000CAFE /* DiagnosticsSettingsView.swift */; };
+		CA55E0F1000000110000CAFE /* MacDeviceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0F1000000010000CAFE /* MacDeviceView.swift */; };
+		CA55E0F1000000120000CAFE /* ThisPhoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0F1000000020000CAFE /* ThisPhoneView.swift */; };
+		CA55E0F1000000130000CAFE /* DevicePagesModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0F1000000030000CAFE /* DevicePagesModel.swift */; };
 		CA55E0E0000000110000CAFE /* DeviceOwnershipMO+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E0000000010000CAFE /* DeviceOwnershipMO+CoreDataClass.swift */; };
 		CA55E0E0000000120000CAFE /* DeviceOwnershipMO+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E0000000020000CAFE /* DeviceOwnershipMO+CoreDataProperties.swift */; };
 		CA55E0E0000000130000CAFE /* HomeShelfEventMO+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E0000000030000CAFE /* HomeShelfEventMO+CoreDataClass.swift */; };
@@ -1215,6 +1218,9 @@
 		CA1120AC0BABE0000000FEED /* AmbientCoverBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbientCoverBackdrop.swift; sourceTree = "<group>"; };
 		CA55D1A6000000010000CAFE /* MarkDiagnosticMomentIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkDiagnosticMomentIntent.swift; sourceTree = "<group>"; };
 		CA55D1A6000000020000CAFE /* DiagnosticsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsSettingsView.swift; sourceTree = "<group>"; };
+		CA55E0F1000000010000CAFE /* MacDeviceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDeviceView.swift; sourceTree = "<group>"; };
+		CA55E0F1000000020000CAFE /* ThisPhoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThisPhoneView.swift; sourceTree = "<group>"; };
+		CA55E0F1000000030000CAFE /* DevicePagesModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePagesModel.swift; sourceTree = "<group>"; };
 		CA55E0E0000000010000CAFE /* DeviceOwnershipMO+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DeviceOwnershipMO+CoreDataClass.swift"; sourceTree = "<group>"; };
 		CA55E0E0000000020000CAFE /* DeviceOwnershipMO+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DeviceOwnershipMO+CoreDataProperties.swift"; sourceTree = "<group>"; };
 		CA55E0E0000000030000CAFE /* HomeShelfEventMO+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HomeShelfEventMO+CoreDataClass.swift"; sourceTree = "<group>"; };
@@ -1530,6 +1536,9 @@
 				504B441828D6F0920033982C /* LicenseSettingsView.swift */,
 				504B441C28D7A6330033982C /* XCallbackURLsSetttingsView.swift */,
 				CA55D1A6000000020000CAFE /* DiagnosticsSettingsView.swift */,
+				CA55E0F1000000010000CAFE /* MacDeviceView.swift */,
+				CA55E0F1000000020000CAFE /* ThisPhoneView.swift */,
+				CA55E0F1000000030000CAFE /* DevicePagesModel.swift */,
 				502041962E2A37D6003CE29A /* Player */,
 				50CFB59828D5006100A47D44 /* Artwork */,
 				50CFB59528D4848300A47D44 /* Swipe */,
@@ -2627,6 +2636,9 @@
 				507414992EFFC62E007AEC5D /* PlayPausePlaybackIntent.swift in Sources */,
 				CA55D1A6000000110000CAFE /* MarkDiagnosticMomentIntent.swift in Sources */,
 				CA55D1A6000000120000CAFE /* DiagnosticsSettingsView.swift in Sources */,
+				CA55E0F1000000110000CAFE /* MacDeviceView.swift in Sources */,
+				CA55E0F1000000120000CAFE /* ThisPhoneView.swift in Sources */,
+				CA55E0F1000000130000CAFE /* DevicePagesModel.swift in Sources */,
 				50B136FE2EFC36D500738475 /* RepeatTypeAppEnum.swift in Sources */,
 				50B136FF2EFC36D500738475 /* SearchAndPlayIntent.swift in Sources */,
 				50B137002EFC36D500738475 /* ShuffleTypeAppEnum.swift in Sources */,
