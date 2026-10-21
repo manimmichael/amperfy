@@ -526,7 +526,9 @@ extension CarPlaySceneDelegate {
 
     // Shuffle only when there is something to shuffle: an offline playlist with nothing on
     // the phone used to offer a Shuffle that opened an empty Now Playing (CPS-11).
-    let shufflePlayables = playlist.playables.filterCached(dependigOn: isOfflineMode)
+    // phone-taste: only the playlist's songs on this phone, the same set its rows list, so a
+    // partly synced playlist never shuffles in songs that are not here.
+    let shufflePlayables = onPhonePlayables(of: playlist, onlyCached: isOfflineMode)
     if !shufflePlayables.isEmpty {
       items.append(createPlayShuffledListItem(playContext: PlayContext(
         containable: playlist,
@@ -606,11 +608,9 @@ extension CarPlaySceneDelegate {
       sections.append(CPListSection(items: rows, header: "Most Played", sectionIndexTitle: nil))
     }
 
-    let artistAlbums = appDelegate.storage.main.library.getAlbums(
-      for: activeAccount,
-      whichContainsSongsWithArtist: artist,
-      onlyCached: onlyCached || isOfflineMode
-    )
+    // phone-taste: one list feeds the Albums row, its pushed list, the "N albums" count and
+    // the header's fallback cover, so all four agree and none reaches past the phone.
+    let artistAlbums = onPhoneAlbums(of: artist, account: activeAccount, onlyCached: onlyCached)
     if !artistAlbums.isEmpty {
       sections.append(CPListSection(
         items: [makeAlbumCoverRow(artistAlbums, onlyCached: onlyCached)],
@@ -646,10 +646,32 @@ extension CarPlaySceneDelegate {
 
   static let artistTopSongCount = 5
 
+  /// phone-taste: the artist's albums as the phone's own artist page lists them (their albums
+  /// and the albums they appear on). In on-device mode, only albums with a song on this phone
+  /// (the DeviceOwnership album set): an album removed from the phone keeps its library row
+  /// but loses its ownership, and the download-cache test would drop synced albums, so it is
+  /// not applied there. In Server Mode the old rule stays: cached albums only while offline.
+  private func onPhoneAlbums(of artist: Artist, account: Account, onlyCached: Bool) -> [Album] {
+    let library = appDelegate.storage.main.library
+    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else {
+      return library.getAlbums(
+        for: account,
+        whichContainsSongsWithArtist: artist,
+        onlyCached: onlyCached || isOfflineMode
+      )
+    }
+    let owned = DeviceOwnershipManager(context: appDelegate.storage.main.context)
+      .fetchOwnedAlbumIds()
+    guard !owned.isEmpty else { return [] }
+    return library.getAlbums(for: account, whichContainsSongsWithArtist: artist, onlyCached: false)
+      .filter { owned.contains($0.id) }
+  }
+
   /// phone-taste: the artist page's header picture. Their own photo keeps the circle (tested
   /// with `hasOwnPhotoOnDisk`, never "has any image": a shared artwork row can carry someone
   /// else's face). Without one, the first of their albums with a cover, square, as in the car
-  /// mock; with neither, the initial in a circle as before.
+  /// mock: their own albums first, a compilation they appear on only when they have none;
+  /// with neither, the initial in a circle as before. `albums` is already on-phone only.
   private func artistHeaderImage(_ artist: Artist, albums: [Album]) -> UIImage {
     let preference = getPreference(activeAccountInfo).artworkDisplayPreference
     if artist.hasOwnPhotoOnDisk,
@@ -660,7 +682,9 @@ extension CarPlaySceneDelegate {
        ) {
       return style.artwork(photo, kind: .artist, name: artist.name, circle: true)
     }
-    for album in albums {
+    let ownFirst = albums.filter { $0.artist?.id == artist.id }
+      + albums.filter { $0.artist?.id != artist.id }
+    for album in ownFirst {
       if let cover = LibraryEntityImage.coverImage(
         libraryEntity: album,
         artworkDisplayPreference: preference,
@@ -927,10 +951,10 @@ extension CarPlaySceneDelegate {
       playlistDetailFetchController?.delegate = nil
       playlistDetailFetchController = nil
       playlistDetailSection = nil
-      appDelegate.player.play(context: PlayContext(
-        containable: playlist,
-        playables: playlist.playables.filterCached(dependigOn: isOfflineMode)
-      ))
+      // phone-taste: only the songs on this phone; none, and nothing plays.
+      let playables = onPhonePlayables(of: playlist, onlyCached: isOfflineMode)
+      guard !playables.isEmpty else { completion(); return }
+      appDelegate.player.play(context: PlayContext(containable: playlist, playables: playables))
       displayNowPlaying { completion() }
       return
     }
