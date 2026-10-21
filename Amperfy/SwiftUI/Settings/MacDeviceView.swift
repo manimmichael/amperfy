@@ -37,6 +37,9 @@ import SwiftUI
     /// The lead cover, small, for the glow.
     @State
     private var leadImage: UIImage?
+    /// The payloads are heavy server reads: once per page open.
+    @State
+    private var didOpen = false
 
     private var lead: DeviceAlbum? { model.newOnMac.first }
     private var fan: [DeviceAlbum] { Array(model.newOnMac.prefix(3)) }
@@ -49,8 +52,14 @@ import SwiftUI
     var body: some View {
       ScrollView {
         ZStack(alignment: .top) {
-          CoverGlowLayer(image: leadImage, key: lead?.coverPath ?? "", recipe: .page)
-            .frame(height: 700)
+          // Keyed on the decoded image being in hand: the layer reads its image when its
+          // key changes, so a key set before the decode would leave the page unlit.
+          CoverGlowLayer(
+            image: leadImage,
+            key: leadImage == nil ? "" : (lead?.coverPath ?? ""),
+            recipe: .page
+          )
+          .frame(height: 700)
           VStack(alignment: .leading, spacing: 0) {
             hero
             card
@@ -63,13 +72,17 @@ import SwiftUI
       .toolbarBackground(.hidden, for: .navigationBar)
       .navigationTitle("")
       .navigationBarTitleDisplayMode(.inline)
-      .task { await model.macPageOpened() }
+      .onAppear {
+        guard !didOpen else { return }
+        didOpen = true
+        model.macPageOpened()
+      }
       .task(id: lead?.coverPath) { await loadLead() }
     }
 
     private func loadLead() async {
+      leadImage = nil
       guard let path = lead?.coverPath else {
-        leadImage = nil
         leadTint = nil
         return
       }

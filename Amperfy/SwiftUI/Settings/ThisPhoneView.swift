@@ -41,6 +41,10 @@ import SwiftUI
     /// The album whose Remove is waiting for the confirm.
     @State
     private var pendingRemoval: DeviceOwnershipManager.OnPhoneAlbum?
+    /// The device payload is a heavy server read: once per page open, not again on the way
+    /// back from Download quality.
+    @State
+    private var didOpen = false
 
     private var albums: [DeviceOwnershipManager.OnPhoneAlbum] {
       (model.phone?.albums ?? []).sorted { $0.bytes > $1.bytes }
@@ -121,8 +125,10 @@ import SwiftUI
       .onAppear {
         downloadQuality = DevicePagesModel.downloadQualityLabel(storage: appDelegate.storage)
         freeSpace = Self.freeSpace()
+        guard !didOpen else { return }
+        didOpen = true
+        model.phonePageOpened()
       }
-      .task { await model.phonePageOpened() }
     }
 
     private var removalTitle: String {

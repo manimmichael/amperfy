@@ -162,19 +162,19 @@ import UIKit
     }
 
     /// The Mac page opened: fresh Mac and device payloads (the device one for the Syncs row
-    /// and the kept-off count in the coverage line).
-    func macPageOpened() async {
+    /// and the kept-off count in the coverage line). The fetches belong to the model, not
+    /// the page, so leaving the page does not cancel them halfway.
+    func macPageOpened() {
       if phone == nil { reloadPhone() }
       recomputeMacState()
-      async let macDone: Void = refreshMac(force: false)
-      async let deviceDone: Void = refreshDevice()
-      _ = await (macDone, deviceDone)
+      Task { await refreshMac(force: false) }
+      Task { await refreshDevice() }
     }
 
     /// The This Phone page opened: a fresh device payload for KEPT OFF.
-    func phonePageOpened() async {
+    func phonePageOpened() {
       reloadPhone()
-      await refreshDevice()
+      Task { await refreshDevice() }
     }
 
     // MARK: The phone
