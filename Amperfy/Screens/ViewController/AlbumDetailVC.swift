@@ -55,6 +55,13 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     playContext: { [weak self] in self?.albumPlayContext() }
   )
   private var hideUniformArtistSubtitle = false
+  /// phone-taste: the footer under the songs (the on-phone line, then MORE BY).
+  private var recordFooter: DetailRecordFooter?
+  /// The album rows' height: one 48pt line plus 2pt top and bottom (was 76).
+  private static let rowHeight: CGFloat = 52
+  private static let rowVerticalMargin: CGFloat = (rowHeight - 48) / 2
+  /// The page gutter the rows, disc labels and shelf share.
+  private static let gutter: CGFloat = 20
   // Cassette fork — Layer 3 Phase 3.2 (library filtering). Owned track ids used
   // to dim non-owned rows in Server Mode. On the phone the list itself holds only
   // songs that are on it (AlbumSongsFetchedResultsController, UX review 2026-10-20).
@@ -162,9 +169,10 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     // Library / Songs / Playlists category lists keep search; the
     // detail view presents a fixed track list instead.
     tableView.register(nibName: PlayableTableCell.typeName)
-    tableView.rowHeight = PlayableTableCell.rowHeight
+    // phone-taste: tighter one-line rows (the mock's density).
+    tableView.rowHeight = Self.rowHeight
     // Catalyst also need an estimate to calculate the correct height before scrolling
-    tableView.estimatedRowHeight = PlayableTableCell.rowHeight
+    tableView.estimatedRowHeight = Self.rowHeight
     tableView.sectionFooterHeight = 0.0
     tableView.estimatedSectionFooterHeight = 0.0
     tableView.sectionHeaderHeight = 0.0
@@ -191,12 +199,21 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       rootView: self,
       tableView: tableView,
       playShuffleInfoConfig: playShuffleInfoConfig,
-      extendsUnderNavigationBar: chrome.extendsUnderNavigationBar
+      extendsUnderNavigationBar: chrome.extendsUnderNavigationBar,
+      heroStyle: .room
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
     refreshAlbumMetadataLine()
     chrome.install(header: detailOperationsView, title: album.name)
+    // phone-taste: the page is lit by its own cover. Track numbers and the MORE BY answer
+    // follow the cover's colour when it lands; a cover that downloads later relights.
+    chrome.tintsTrackNumbers = true
+    chrome.observeArtworkDownloads(account: account)
+    chrome.relight = { [weak self] in self?.lightUpFromCover() }
+    chrome.onTintChanged = { [weak self] tint in
+      self?.recordFooter?.setAnswerColor(tint.text)
+    }
     updateHideUniformArtistSubtitle()
     snapshotDidChange = { [weak self] in
       self?.updateHideUniformArtistSubtitle()
@@ -281,11 +298,10 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
     chrome.viewIsAppearing()
-    // cassette (UX review 2026-10-20): "8 of 12 songs on this phone" under the list.
-    tableView.tableFooterView = DetailScreenChrome.onPhoneFooter(
-      onPhone: fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0,
-      total: max(album.songCount, fetchedResultsController.totalSongCount)
-    )
+    lightUpFromCover()
+    // cassette (UX review 2026-10-20): "8 of 12 songs on this phone" under the list, then
+    // MORE BY (phone-taste).
+    rebuildFooter()
 
     Task { @MainActor in
       do {
@@ -305,14 +321,104 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       }
       self.refreshAlbumMetadataLine()
       self.detailOperationsView?.refresh()
+      self.lightUpFromCover()
+      self.rebuildFooter()
     }
   }
 
+  /// phone-taste: "1997 · 12 songs · 53 min" (the header sets it in tracked capitals). The
+  /// year is album.year, which the cloud regroup fills from the same catalog/override path
+  /// as the web rail (not track-tag averages). The songs and minutes count what is listed,
+  /// which on the phone is what is on the phone; the footer says what is not.
   private func refreshAlbumMetadataLine() {
-    // Year only, directly under the artist. Source of truth is album.year,
-    // which the cloud regroup fills from the same catalog/override path as
-    // the web rail — not track-tag averages.
-    detailOperationsView?.metadataOverride = album.year > 0 ? "\(album.year)" : ""
+    var parts: [String] = []
+    if album.year > 0 {
+      parts.append("\(album.year)")
+    }
+    let songs = (fetchedResultsController?.fetchResultsController.fetchedObjects ?? [])
+      .compactMap { ($0 as? SongMO).map(Song.init(managedObject:)) }
+    if !songs.isEmpty {
+      parts.append("\(songs.count) song\(songs.count == 1 ? "" : "s")")
+    }
+    let seconds = songs.reduce(0) { $0 + $1.duration }
+    let minutes = Int((Double(seconds) / 60).rounded())
+    if minutes > 0 {
+      parts.append("\(minutes) min")
+    }
+    detailOperationsView?.metadataOverride = parts.joined(separator: " \(CommonString.oneMiddleDot) ")
+  }
+
+  /// Light the page from the album's cover file. With no file there is no glow (never the
+  /// generated placeholder) and the colour stays neutral.
+  private func lightUpFromCover() {
+    let setting = appDelegate.storage.settings.accounts.getSetting(account.info).read
+    let path = album.imagePath(setting: setting.artworkDisplayPreference)
+    chrome.lightUp(coverPath: path, key: path ?? "album-no-cover:\(album.id)")
+  }
+
+  // MARK: - MORE BY (phone-taste)
+
+  /// The footer: the on-phone line, then MORE BY and the artist's other records.
+  private func rebuildFooter() {
+    let footer = DetailScreenChrome.makeRecordFooter(
+      width: tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width,
+      onPhone: fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0,
+      total: max(album.songCount, fetchedResultsController.totalSongCount),
+      shelves: moreByShelf().map { [$0] } ?? [],
+      answerColor: chrome.tint.text
+    )
+    recordFooter = footer
+    tableView.tableFooterView = footer
+  }
+
+  private func moreByShelf() -> DetailShelfBlock? {
+    guard let artist = album.artist else { return nil }
+    let albums = moreByAlbums(artist: artist)
+    guard !albums.isEmpty else { return nil }
+    return DetailShelfBlock(
+      shout: "More by",
+      answer: artist.name,
+      albums: albums,
+      onSelect: { [weak self] album in
+        guard let self else { return }
+        navigationController?.pushViewController(
+          AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
+          animated: true
+        )
+      },
+      onPlay: { album in OneTapPlay.play(album) }
+    )
+  }
+
+  /// The artist's own other records on the phone, newest first (year 0 last): albums
+  /// credited to them, so features and compilations stay out, and never this one. Empty
+  /// for Various Artists.
+  private func moreByAlbums(artist: Artist) -> [Album] {
+    let pageName = ListeningShelves.normalizedArtistName(artist.name)
+    guard !pageName.isEmpty, pageName != "various artists" else { return [] }
+    let library = appDelegate.storage.main.library
+    let richest = library.richestSameIdArtist(for: artist, account: account)
+    // On the phone this lists only albums that are on it (the ownership predicate).
+    let controller = ArtistAlbumsItemsFetchedResultsController(
+      for: richest,
+      coreDataCompanion: appDelegate.storage.main,
+      isGroupedInAlphabeticSections: false
+    )
+    controller.fetch()
+    let candidates = (controller.fetchResultsController.fetchedObjects ?? [])
+      .compactMap { ($0 as? AlbumMO).map(Album.init(managedObject:)) }
+    return candidates
+      .filter { candidate in
+        guard candidate.id != album.id, let credited = candidate.artist else { return false }
+        return credited.id == artist.id
+          || ListeningShelves.normalizedArtistName(credited.name) == pageName
+      }
+      .sorted { lhs, rhs in
+        let ly = lhs.year > 0 ? lhs.year : Int.min
+        let ry = rhs.year > 0 ? rhs.year : Int.min
+        if ly != ry { return ly > ry }
+        return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+      }
   }
 
   override func viewDidAppear(_ animated: Bool) {
@@ -352,7 +458,13 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
       rootView: self,
       isDislayAlbumTrackNumberStyle: true,
       contextArtistName: album.artist?.name,
-      cassetteIsOwned: cassetteOwnedTrackIds.contains(song.id)
+      cassetteIsOwned: cassetteOwnedTrackIds.contains(song.id),
+      // phone-taste: track numbers in the cover's colour, 52pt rows at a 20pt inset.
+      options: PlayableCellOptions(
+        trackNumberColor: chrome.tint.text,
+        horizontalMargin: Self.gutter,
+        verticalMargin: Self.rowVerticalMargin
+      )
     )
     return cell
   }
@@ -375,7 +487,7 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     heightForHeaderInSection section: Int
   )
     -> CGFloat {
-    isMultiDisc ? 34.0 : 0.0
+    isMultiDisc ? 35.0 : 0.0
   }
 
   override func tableView(
@@ -391,24 +503,23 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     return makeDiscHeaderView(disc: discValue)
   }
 
-  /// Patch 111 (1/2): a quiet "Disc N" label only — no hairline/divider. Leads
-  /// at the shared content margin (16pt) so it lines up with the track rows.
-  /// 12pt caption role (the readable floor — not microscopic).
+  /// Patch 111 (1/2): a quiet disc label only, no hairline or divider. phone-taste: "DISC N"
+  /// in the tracked mono kicker (13pt, the mono floor), at the rows' 20pt gutter, 2pt off
+  /// the bottom of a 35pt header (the mock's 18 above).
   private func makeDiscHeaderView(disc: String) -> UIView {
     let container = UIView()
     container.backgroundColor = .clear
     let label = UILabel()
-    label.text = "Disc \(disc)"
-    label.font = UIFont.cassette(.caption)
-    label.textColor = UIColor.cassette(.textSecondary)
+    label.attributedText = NSAttributedString.cassette(
+      "Disc \(disc)",
+      .kicker,
+      color: .cassette(.textSecondary)
+    )
     label.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(label)
     NSLayoutConstraint.activate([
-      label.leadingAnchor.constraint(
-        equalTo: container.leadingAnchor,
-        constant: UIView.defaultMarginCellX
-      ),
-      label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+      label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Self.gutter),
+      label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -2),
     ])
     return container
   }
