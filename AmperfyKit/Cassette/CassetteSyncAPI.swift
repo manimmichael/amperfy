@@ -54,6 +54,11 @@ extension Notification.Name {
   /// The nav-bar account chip re-renders in place, so a change made on desktop
   /// shows up here without a relaunch or a navigation.
   public static let cassetteAccountAvatarChanged = Notification.Name("CassetteAccountAvatarChanged")
+
+  /// Posted (main thread) when a fresh GET /api/player/devices/mac lands: the hub's
+  /// heartbeat, its totals and its newest albums. The Mac's state word reads the heartbeat,
+  /// so anything showing it re-reads on this as well as on `.cassetteSyncActiveChanged`.
+  public static let cassetteMacSummaryChanged = Notification.Name("CassetteMacSummaryChanged")
 }
 
 // MARK: - CassetteSyncStatus
@@ -118,11 +123,118 @@ public enum CassetteSyncStatus {
     return "Syncing from \(hub)"
   }
 
+  // MARK: The Mac in one word (phone-taste)
+
+  /// The Mac's state, in the one word the Settings head, the avatar menu and the Mac page
+  /// all show.
+  public enum MacState: Sendable, Equatable {
+    case inSync
+    case syncing
+    case outOfReach
+    case notPaired
+
+    public var word: String {
+      switch self {
+      case .inSync: return "in sync"
+      case .syncing: return "syncing"
+      case .outOfReach: return "out of reach"
+      case .notPaired: return "not paired"
+      }
+    }
+  }
+
+  /// The hub heartbeats every few minutes while it runs; older than this, it is out of reach.
+  public static let heartbeatWindow: TimeInterval = 15 * 60
+  /// A cached heartbeat older than this says nothing about now, so it is not used.
+  private static let heartbeatTrust: TimeInterval = 30 * 60
+
+  /// The Mac's state, checked in order: not paired; the phone cannot sync at all (no token
+  /// or no network); albums waiting and the hub did not answer; albums arriving; the hub's
+  /// own heartbeat (GET /api/player/devices/mac, cached) older than 15 minutes; else in sync.
+  /// `canSync` is "a bearer token is present and the network is up".
+  public static func macState(isPaired: Bool, canSync: Bool, now: Date = Date()) -> MacState {
+    guard isPaired else { return .notPaired }
+    guard canSync else { return .outOfReach }
+    if pendingAlbums > 0, !isHubReachable { return .outOfReach }
+    if isActive || pendingAlbums > 0 { return .syncing }
+    if let fetchedAt = CassetteSyncAPI.cachedMacSummaryFetchedAt,
+       now.timeIntervalSince(fetchedAt) < heartbeatTrust,
+       let summary = CassetteSyncAPI.cachedMacSummary {
+      guard let mac = summary.mac else { return .outOfReach }
+      guard let seen = mac.lastSeenDate, now.timeIntervalSince(seen) < heartbeatWindow else {
+        return .outOfReach
+      }
+    }
+    return .inSync
+  }
+
+  /// The avatar menu's line under the person's name: "Michaels MacBook Pro · in sync", or
+  /// "Not paired to a computer".
+  public static func menuLine(hubName: String?, state: MacState) -> String {
+    if state == .notPaired { return "Not paired to a computer" }
+    return "\(hubName ?? "Your computer") · \(state.word)"
+  }
+
+  /// The hub's name for display: from the paired LAN address, else from the hostname the
+  /// hub last reported to the cloud (a bare IP in the address carries no name).
+  public static func displayHubName(serverUrl: String?) -> String? {
+    hubName(serverUrl: serverUrl) ?? hubName(host: CassetteSyncAPI.cachedMacSummary?.mac?.lanHostname)
+  }
+
+  /// Whether the hub's name reads as a laptop ("MacBook", "laptop", "notebook").
+  public static func isLaptop(hubName: String?) -> Bool {
+    guard let hubName else { return false }
+    let lower = hubName.lowercased()
+    return ["macbook", "laptop", "notebook"].contains { lower.contains($0) }
+  }
+
+  private static var macRefreshTask: Task<CassetteMacSummary?, Never>?
+  private static var lastMacAttemptAt: Date?
+
+  /// The Mac summary, refreshed from the cloud when the cached copy is older than `maxAge`.
+  /// One request at a time, and (unless `force`, after Resync Library) at most one attempt a
+  /// minute, so the poll, Settings and the Mac page share it. Never throws: on a failure the
+  /// cached copy (or nil) comes back. Posts `.cassetteMacSummaryChanged` when a fresh copy
+  /// lands.
+  @discardableResult
+  public static func refreshMacSummary(
+    maxAge: TimeInterval,
+    force: Bool = false
+  ) async
+    -> CassetteMacSummary? {
+    if let fetchedAt = CassetteSyncAPI.cachedMacSummaryFetchedAt,
+       Date().timeIntervalSince(fetchedAt) < maxAge {
+      return CassetteSyncAPI.cachedMacSummary
+    }
+    let cached = CassetteSyncAPI.cachedMacSummary
+    if let macRefreshTask { return await macRefreshTask.value ?? cached }
+    guard CassetteSyncAPI.bearerToken != nil else { return cached }
+    if !force, let lastMacAttemptAt, Date().timeIntervalSince(lastMacAttemptAt) < 60 {
+      return cached
+    }
+    lastMacAttemptAt = Date()
+    let task = Task<CassetteMacSummary?, Never> {
+      try? await CassetteSyncAPI.shared.getMacSummary()
+    }
+    macRefreshTask = task
+    let fresh = await task.value
+    macRefreshTask = nil
+    guard let fresh else { return cached }
+    NotificationCenter.default.post(name: .cassetteMacSummaryChanged, object: nil)
+    return fresh
+  }
+
   /// A human name for the paired hub from its LAN address (`http://<host>:<port>`): a
   /// Bonjour host like "Michaels-MacBook-Pro.local" reads "Michaels MacBook Pro"; a bare IP
   /// carries no name and returns nil.
   public static func hubName(serverUrl: String?) -> String? {
-    guard let serverUrl, let host = URL(string: serverUrl)?.host, !host.isEmpty else { return nil }
+    guard let serverUrl, let host = URL(string: serverUrl)?.host else { return nil }
+    return hubName(host: host)
+  }
+
+  /// `hubName(serverUrl:)` for a bare hostname ("Michaels-MacBook-Pro.local").
+  public static func hubName(host: String?) -> String? {
+    guard let host, !host.isEmpty else { return nil }
     let isIPv4 = host.split(separator: ".").count == 4
       && host.allSatisfy { $0.isNumber || $0 == "." }
     if isIPv4 || host.contains(":") { return nil }
@@ -453,6 +565,102 @@ public struct CassetteAccount: Sendable, Decodable {
   }
 }
 
+// MARK: - Device pages (phone-taste)
+
+/// Reads the ISO-8601 strings the web sends for dates ("2026-10-21T03:12:44.123Z"), with or
+/// without fractional seconds. A formatter per call: a handful of dates per page open.
+enum CassetteISODate {
+  static func parse(_ string: String?) -> Date? {
+    guard let string, !string.isEmpty else { return nil }
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = fractional.date(from: string) { return date }
+    let plain = ISO8601DateFormatter()
+    plain.formatOptions = [.withInternetDateTime]
+    return plain.date(from: string)
+  }
+}
+
+/// GET /api/player/devices/mac: the paired hub's heartbeat and last full sync, its library
+/// totals, and its newest albums. `mac` is nil when no hub is registered.
+public struct CassetteMacSummary: Sendable, Decodable {
+  public struct Mac: Sendable, Decodable {
+    public let lastSeenAt: String?
+    public let lanHostname: String?
+    public let lastSyncAt: String?
+
+    public var lastSeenDate: Date? { CassetteISODate.parse(lastSeenAt) }
+    public var lastSyncDate: Date? { CassetteISODate.parse(lastSyncAt) }
+  }
+
+  /// One of the hub's newest albums. `groupKey` is the web's key, never a phone album id;
+  /// `localCoverTrackId` (a hub track id, which the phone stores as the song id) is the
+  /// exact bridge to a local album.
+  public struct RecentItem: Sendable, Decodable, Identifiable {
+    public var id: String { groupKey }
+    public let groupKey: String
+    public let albumName: String
+    public let artistName: String
+    public let coverRawUrl: String?
+    public let coverOverrideUrl: String?
+    public let localCoverTrackId: String?
+    /// "#RRGGBB" from the catalog, when the album is matched.
+    public let dominantColor: String?
+  }
+
+  public let mac: Mac?
+  public let tracks: Int
+  public let albums: Int
+  public let recentItems: [RecentItem]
+
+  enum CodingKeys: String, CodingKey {
+    case mac, tracks, albums, recentItems
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    self.mac = try c.decodeIfPresent(Mac.self, forKey: .mac)
+    self.tracks = try c.decodeIfPresent(Int.self, forKey: .tracks) ?? 0
+    self.albums = try c.decodeIfPresent(Int.self, forKey: .albums) ?? 0
+    self.recentItems = try c.decodeIfPresent([RecentItem].self, forKey: .recentItems) ?? []
+  }
+}
+
+/// GET /api/player/devices/{this phone}: only what the This Phone page uses. The payload
+/// carries much more (the whole library card set); the rest is left undecoded.
+public struct CassetteDeviceSummary: Sendable, Decodable {
+  /// An album removed from this phone and kept off it until it is put back.
+  public struct KeptOffAlbum: Sendable, Decodable, Identifiable {
+    public var id: String { groupKey }
+    public let groupKey: String
+    public let albumName: String
+    public let artistName: String
+    public let coverArtSmallUrl: String?
+    public let coverArtUrl: String?
+    public let coverOverrideUrl: String?
+    public let localCoverTrackId: String?
+    /// The exclusion marks to clear (DELETE /api/sync/marks/exclude) to put it back.
+    public let excludeTargetIds: [String]
+  }
+
+  /// "everything" or "selective" (account-wide, users.sync_scope).
+  public let scope: String
+  /// "lossless" | "high" | "efficient".
+  public let downloadQualityTier: String?
+  public let keptOffAlbums: [KeptOffAlbum]
+
+  enum CodingKeys: String, CodingKey {
+    case scope, downloadQualityTier, keptOffAlbums
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    self.scope = try c.decodeIfPresent(String.self, forKey: .scope) ?? "everything"
+    self.downloadQualityTier = try c.decodeIfPresent(String.self, forKey: .downloadQualityTier)
+    self.keptOffAlbums = try c.decodeIfPresent([KeptOffAlbum].self, forKey: .keptOffAlbums) ?? []
+  }
+}
+
 // MARK: - CassetteSyncAPI
 
 public final class CassetteSyncAPI: @unchecked Sendable {
@@ -523,6 +731,31 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   /// Default disc id when there is no photo (`silhouette` when unset).
   public static var accountAvatarPreset: String {
     UserDefaults.standard.string(forKey: accountAvatarPresetKey) ?? "silhouette"
+  }
+
+  /// The account's download quality tier ("lossless" | "high" | "efficient"), the value the
+  /// download URL builder follows; nil until the first account fetch.
+  public static var downloadQualityTier: String? {
+    let value = UserDefaults.standard.string(forKey: downloadQualityKey)
+    return (value?.isEmpty == false) ? value : nil
+  }
+
+  // MARK: Mac summary cache (phone-taste)
+
+  nonisolated private static let macSummaryKey = "cassette.macSummary"
+  nonisolated private static let macSummaryFetchedAtKey = "cassette.macSummaryFetchedAt"
+
+  /// The last Mac summary the cloud returned (raw JSON in UserDefaults), so the Mac page and
+  /// the state word have something the moment they open. nil before the first fetch.
+  public static var cachedMacSummary: CassetteMacSummary? {
+    guard let data = UserDefaults.standard.data(forKey: macSummaryKey) else { return nil }
+    return try? JSONDecoder().decode(CassetteMacSummary.self, from: data)
+  }
+
+  /// When `cachedMacSummary` was fetched.
+  public static var cachedMacSummaryFetchedAt: Date? {
+    let t = UserDefaults.standard.double(forKey: macSummaryFetchedAtKey)
+    return t > 0 ? Date(timeIntervalSince1970: t) : nil
   }
 
   /// Store the fetched account so the menu can render it without a network
@@ -785,6 +1018,48 @@ public final class CassetteSyncAPI: @unchecked Sendable {
       method: "POST",
       path: "/api/sync/marks/exclude",
       json: ["device_id": Self.deviceId, "cassette_local_ids": cassetteLocalIds]
+    )
+  }
+
+  // MARK: Device pages (phone-taste)
+
+  /// The paired hub, as the web's Mac page reads it: heartbeat, last full sync, totals and
+  /// newest albums. The payload is cached (see `cachedMacSummary`). A heavy server read
+  /// (it builds the library card set), so it runs once per page open and on a slow
+  /// throttle from the poll (`CassetteSyncStatus.refreshMacSummary`), never every poll.
+  public func getMacSummary() async throws -> CassetteMacSummary {
+    let data = try await get(path: "/api/player/devices/mac", timeout: 45)
+    let summary = try JSONDecoder().decode(CassetteMacSummary.self, from: data)
+    let defaults = UserDefaults.standard
+    defaults.set(data, forKey: Self.macSummaryKey)
+    defaults.set(Date().timeIntervalSince1970, forKey: Self.macSummaryFetchedAtKey)
+    return summary
+  }
+
+  /// This phone, as the web's device page reads it: the sync scope, the download quality
+  /// and the albums kept off it. nil when the cloud does not know this phone yet (404).
+  /// Never cached: Put back acts on these ids, so they must be fresh.
+  public func getThisDeviceSummary() async throws -> CassetteDeviceSummary? {
+    var unreserved = CharacterSet.alphanumerics
+    unreserved.insert(charactersIn: "-._~")
+    let encoded = Self.deviceId
+      .addingPercentEncoding(withAllowedCharacters: unreserved) ?? Self.deviceId
+    do {
+      let data = try await get(path: "/api/player/devices/\(encoded)", timeout: 45)
+      return try JSONDecoder().decode(CassetteDeviceSummary.self, from: data)
+    } catch CassetteSyncError.http(404) {
+      return nil
+    }
+  }
+
+  /// Put albums back on this phone: clear their exclusion marks. The next inventory report
+  /// lets the cloud queue them again.
+  public func putBack(targetIds: [String]) async throws {
+    guard !targetIds.isEmpty else { return }
+    _ = try await send(
+      method: "DELETE",
+      path: "/api/sync/marks/exclude",
+      json: ["device_id": Self.deviceId, "target_ids": targetIds]
     )
   }
 
@@ -1142,12 +1417,12 @@ public final class CassetteSyncAPI: @unchecked Sendable {
 
   // MARK: HTTP plumbing
 
-  private func get(path: String) async throws -> Data {
+  private func get(path: String, timeout: TimeInterval = 20) async throws -> Data {
     guard let token = Self.bearerToken else { throw CassetteSyncError.notAuthenticated }
     guard let url = URL(string: Self.apiBase + path) else { throw CassetteSyncError.badURL }
     var request = URLRequest(url: url)
     request.httpMethod = "GET"
-    request.timeoutInterval = 20
+    request.timeoutInterval = timeout
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Accept")
     applyDeviceHeaders(&request)

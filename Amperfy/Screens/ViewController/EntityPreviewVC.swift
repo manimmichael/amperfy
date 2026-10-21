@@ -787,7 +787,7 @@ class EntityPreviewActionBuilder {
     UIAction(title: "Remove from This Phone", image: .trash, attributes: .destructive) { _ in
       let alert = UIAlertController(
         title: "Remove \u{201C}\(album.name)\u{201D} from this phone?",
-        message: "It stays on your computer and in your library. To put it back on this phone, send it back from this phone's page in Cassette Player.",
+        message: "It stays on your Mac.",
         preferredStyle: .alert
       )
       alert.addAction(UIAlertAction(title: "Remove", style: .destructive) { _ in

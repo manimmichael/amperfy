@@ -118,6 +118,7 @@ extension UIViewController {
         #else
           let nav = AppStoryboard.Main.segueToSettings()
           nav.modalPresentationStyle = .formSheet
+          nav.sheetPresentationController?.prefersGrabberVisible = true
           self.present(nav, animated: true)
         #endif
       }
@@ -305,7 +306,7 @@ extension UIViewController {
 
   /// Render the cached account avatar (preset or silhouette). Photo is loaded
   /// separately once the URL resolves.
-  private static func cassetteAccountAvatarImage(size: CGFloat) -> UIImage {
+  static func cassetteAccountAvatarImage(size: CGFloat) -> UIImage {
     if CassetteSyncAPI.accountImage != nil {
       // Placeholder while the photo fetch lands — same silhouette as before.
       return silhouetteAvatar(size: size)

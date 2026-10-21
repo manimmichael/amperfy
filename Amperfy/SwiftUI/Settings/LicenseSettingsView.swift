@@ -541,6 +541,10 @@ struct AboutSettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding([.leading, .trailing, .top, .bottom], 16)
       }
+      // Phone-taste: the same page and bar as every other settings screen (SettingsList).
+      .background(Color.cassette(.surfaceSunken))
+      .toolbarBackground(Color.cassette(.surfaceSunken), for: .navigationBar)
+      .toolbarBackground(.visible, for: .navigationBar)
     }
     .navigationTitle("About")
     .navigationBarTitleDisplayMode(.inline)

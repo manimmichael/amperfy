@@ -52,6 +52,8 @@ public enum CassetteIcon: CaseIterable, Sendable {
   case adjust, sparkles, download, cancelDownload, lyrics, waveform
   // Transport (always symbols)
   case play, pause, stop, next, previous, shuffle, repeatAll, repeatOne, repeatOff
+  // Devices: the Mac and this phone in Settings (SF symbols; no Lucide asset yet)
+  case laptop, desktop, iphone, ipad
 
   /// The Lucide asset in the kit catalog, when Cassette draws this concept itself.
   public var lucideAsset: String? {
@@ -130,6 +132,10 @@ public enum CassetteIcon: CaseIterable, Sendable {
     case .repeatAll: return "repeat"
     case .repeatOne: return "repeat.1"
     case .repeatOff: return "repeat.badge.xmark"
+    case .laptop: return "laptopcomputer"
+    case .desktop: return "desktopcomputer"
+    case .iphone: return "iphone"
+    case .ipad: return "ipad"
     }
   }
 

@@ -25,10 +25,11 @@ import SwiftUI
 // MARK: - PlaybackSettingsView
 
 // cassette §G/§E: this is the "Playback" screen (file name kept as
-// PlayerSettingsView.swift to avoid .pbxproj churn — rename deferred). It hosts
-// the Equalizer entry (tucked here rather than as a top-level peer) plus the few
+// PlayerSettingsView.swift to avoid .pbxproj churn — rename deferred): the few
 // playback prefs a normal listener would plausibly change. ReplayGain, Manual
 // Playback, and Song Playback Resume were culled (§B/§D).
+// Phone-taste: on iOS it is "Download quality", reached from the Settings root and from
+// This Phone; the Equalizer moved up to its own root row.
 struct PlaybackSettingsView: View {
   @EnvironmentObject
   private var settings: Settings
@@ -46,6 +47,14 @@ struct PlaybackSettingsView: View {
   // row is hidden. Reads the same flag the library filter uses.
   private var isServerModeOn: Bool {
     CassetteLibraryFilterProvider.shared.currentFilter == .everything
+  }
+
+  private static var title: String {
+    #if targetEnvironment(macCatalyst)
+      return "Playback"
+    #else
+      return "Download quality"
+    #endif
   }
 
   private func downloadQualityLabel(_ pref: CacheTranscodingFormatPreference) -> String {
@@ -68,12 +77,6 @@ struct PlaybackSettingsView: View {
   var body: some View {
     ZStack {
       SettingsList {
-        SettingsSection {
-          NavigationLink(destination: EqualizerSettingsView()) {
-            Text("Equalizer")
-          }
-        }
-
         SettingsSection(
           content: {
             SettingsRow(title: "Download quality") {
@@ -114,11 +117,18 @@ struct PlaybackSettingsView: View {
         #endif
       }
     }
-    .navigationTitle("Playback")
+    .navigationTitle(Self.title)
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       appDelegate.userStatistics.visited(.settingsPlayer)
-      downloadQuality = appDelegate.storage.settings.user.cacheTranscodingFormatPreference
+      // The account tier first: it is what the downloads follow (the download URL builder
+      // reads it before the local choice), so the picker never shows Lossless while the
+      // phone downloads MP3.
+      if let tier = CassetteSyncAPI.downloadQualityTier {
+        downloadQuality = tier == "lossless" ? .raw : .mp3
+      } else {
+        downloadQuality = appDelegate.storage.settings.user.cacheTranscodingFormatPreference
+      }
     }
   }
 }

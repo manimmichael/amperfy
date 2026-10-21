@@ -274,7 +274,7 @@ struct EqualizerPanelView: View {
     } label: {
       HStack(spacing: 8) {
         Image(systemName: bypassed ? "speaker.wave.2" : "speaker.wave.2.fill")
-        Text(bypassed ? "Bypassed — hearing it flat" : "Bypass to compare")
+        Text(bypassed ? "Bypassed, hearing it flat" : "Bypass to compare")
       }
       .font(.subheadline.weight(.medium))
       .padding(.horizontal, 18)

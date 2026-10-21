@@ -71,7 +71,7 @@ enum NavigationTarget: String, CaseIterable, @MainActor Identifiable {
     case .equalizer: "Equalizer"
     case .appIcon: "App Icon"
     case .storage: "Storage"
-    case .support: "Support"
+    case .support: "Report a problem"
     case .about: "About"
     case .advanced: "Advanced"
     #if DEBUG

@@ -58,8 +58,9 @@ class SettingsHostVC: UIViewController {
           .environment(\.managedObjectContext, appDelegate.storage.main.context)
       )
     } else {
+      // Phone-taste: the sheet's own Done button closes it.
       settingsRootView = AnyView(
-        SettingsView()
+        SettingsView(onDone: { [weak self] in self?.dismiss(animated: true) })
           .environmentObject(settings)
           .environment(\.managedObjectContext, appDelegate.storage.main.context)
       )
@@ -72,10 +73,11 @@ class SettingsHostVC: UIViewController {
     // a .clear host view, UIKit navigation push/pop transitions reveal the black
     // window underneath — the "flash to black" on open and the transient
     // obscured rectangle when entering a sub-menu. An opaque bg removes it.
-    view.backgroundColor = UIColor.cassette(.surfaceBase)
+    // Phone-taste: bg4, the settings sheet's page colour.
+    view.backgroundColor = UIColor.cassette(.surfaceSunken)
     hostingVC.view.frame = view.bounds
     hostingVC.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    hostingVC.view.backgroundColor = UIColor.cassette(.surfaceBase)
+    hostingVC.view.backgroundColor = UIColor.cassette(.surfaceSunken)
 
     hostingVC.willMove(toParent: self)
     addChild(hostingVC)

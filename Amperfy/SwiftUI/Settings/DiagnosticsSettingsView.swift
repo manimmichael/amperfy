@@ -46,7 +46,7 @@ struct DiagnosticsSettingsView: View {
       List {
         Section(
           footer: Text(
-            "An always-on, in-memory trace of playback, CarPlay and server activity. Flag a moment to bookmark it, then export the full trace — including any recent crash reports — to share it, or send it straight to Cassette support."
+            "An always-on, in-memory trace of playback, CarPlay and server activity. Flag a moment to bookmark it, then export the full trace, including any recent crash reports, to share it or send it straight to Cassette support."
           )
         ) {
           Button {
@@ -70,7 +70,7 @@ struct DiagnosticsSettingsView: View {
             case .succeeded:
               Label("Sent to Cassette support", systemImage: "checkmark.circle")
             case .failed:
-              Label("Send failed — tap to retry", systemImage: "exclamationmark.circle")
+              Label("Couldn't send, tap to retry", systemImage: "exclamationmark.circle")
             }
           }
           .disabled(uploadState == .uploading)
@@ -78,7 +78,7 @@ struct DiagnosticsSettingsView: View {
 
         Section(
           footer: Text(
-            "When on, crash and hang reports upload automatically to help fix problems. They're anonymous — no account, name or email. Turn this off to keep everything on this device."
+            "When on, crash and hang reports upload automatically to help fix problems. They're anonymous: no account, name or email. Turn this off to keep everything on this device."
           )
         ) {
           Toggle("Automatically send crash reports", isOn: $autoUploadEnabled)
@@ -188,15 +188,15 @@ struct DiagnosticsSettingsView: View {
 
   private func verdict(for c: DeviceOwnershipManager.SyncSelfCheck) -> String {
     if c.invisibleButOnDisk > 0 {
-      return "\(c.invisibleButOnDisk) owned tracks are on disk but have no library record — the missing-SongMO gap. A library re-sync should reveal them."
+      return "\(c.invisibleButOnDisk) owned tracks are on disk but have no library record (the missing-SongMO gap). A library re-sync should reveal them."
     }
     if c.filesMissing > 0 {
-      return "\(c.filesMissing) owned tracks have no file on disk — a transfer stranding."
+      return "\(c.filesMissing) owned tracks have no file on disk, a transfer stranding."
     }
     if c.serverModeOn {
-      return "Server Mode is ON — the library shows the full catalog, not just owned tracks."
+      return "Server Mode is ON. The library shows the full catalog, not just owned tracks."
     }
-    return "Everything owned is renderable — no visibility gap on this device."
+    return "Everything owned is renderable. No visibility gap on this device."
   }
 
   /// Upload the full diagnostics export to the spine as a user-consented

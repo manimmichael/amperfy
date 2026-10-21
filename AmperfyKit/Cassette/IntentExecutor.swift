@@ -224,6 +224,9 @@ public final class IntentExecutor {
     // short throttle (not once-per-launch): the payload is tiny and these are
     // things a person expects to sync promptly. Best-effort, off the critical path.
     await refreshAccountIfDue()
+    // The hub's own heartbeat, for "in sync / out of reach" (Settings, the avatar menu):
+    // a heavy server read, so at most every 10 minutes, and never in the pass's way.
+    Task { _ = await CassetteSyncStatus.refreshMacSummary(maxAge: 600) }
     for intent in intents {
       await executeIntent(intent)
     }
@@ -312,6 +315,13 @@ public final class IntentExecutor {
     _ = await CassetteSyncAPI.shared.convergeOnPlayer(serverUrl: serverUrl)
     // Force a fresh full-inventory report (bypass the throttle) so the cloud
     // reconcile runs against current truth, then apply what it queued.
+    lastFullInventoryReportAt = nil
+    await handlePendingIntents()
+  }
+
+  /// Report this phone's full inventory now (throttle bypassed) and run a pass, without
+  /// asking the Mac to rescan. After Put back, so the cloud queues the album again.
+  public func reportInventoryNow() async {
     lastFullInventoryReportAt = nil
     await handlePendingIntents()
   }

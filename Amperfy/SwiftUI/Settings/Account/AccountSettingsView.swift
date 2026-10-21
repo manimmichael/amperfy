@@ -118,25 +118,28 @@ struct AccountSettingsView: View {
             }
           }
 
-          SettingsSection {
-            if !isCassetteAccount(activeAccountInfo) {
+          // Phone-taste: a Cassette account resyncs from the YOUR MAC group on the Settings
+          // root (the Mac rescans, the music keeps playing). This full re-read, which stops
+          // playback and rebuilds the app, stays only for generic Subsonic accounts.
+          if !isCassetteAccount(activeAccountInfo) {
+            SettingsSection {
               SettingsButtonRow(title: "Update Password") {
                 withPopupAnimation { isPwUpdateDialogVisible = true }
               }
-            }
-            SettingsButtonRow(title: "Resync Library") {
-              isShowResyncLibraryAlert = true
-            }.alert(isPresented: $isShowResyncLibraryAlert) {
-              Alert(
-                title: Text("Resync Library"),
-                message: Text(
-                  "This reads your library again from Cassette Player on your computer. The music on this phone stays.\n\nResync now?"
-                ),
-                primaryButton: .destructive(Text("Resync")) {
-                  resyncLibrary(accountInfo: activeAccountInfo)
-                },
-                secondaryButton: .cancel()
-              )
+              SettingsButtonRow(title: "Resync Library") {
+                isShowResyncLibraryAlert = true
+              }.alert(isPresented: $isShowResyncLibraryAlert) {
+                Alert(
+                  title: Text("Resync Library"),
+                  message: Text(
+                    "This reads your library again from Cassette Player on your computer. The music on this phone stays.\n\nResync now?"
+                  ),
+                  primaryButton: .destructive(Text("Resync")) {
+                    resyncLibrary(accountInfo: activeAccountInfo)
+                  },
+                  secondaryButton: .cancel()
+                )
+              }
             }
           }
 

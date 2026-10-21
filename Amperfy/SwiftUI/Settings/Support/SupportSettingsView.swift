@@ -79,9 +79,9 @@ struct SupportSettingsView: View {
             case .sending:
               Label("Sending…", systemImage: "paperplane")
             case .succeeded:
-              Label("Sent — thank you", systemImage: "checkmark.circle")
+              Label("Sent. Thank you", systemImage: "checkmark.circle")
             case .failed:
-              Label("Send failed — tap to retry", systemImage: "exclamationmark.circle")
+              Label("Couldn't send, tap to retry", systemImage: "exclamationmark.circle")
             }
           }
           .disabled(!canSend)
@@ -90,7 +90,7 @@ struct SupportSettingsView: View {
       )
       // cassette §G: Event Log moved to the Advanced screen.
     }
-    .navigationTitle("Support")
+    .navigationTitle("Report a problem")
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       appDelegate.userStatistics.visited(.settingsSupport)
