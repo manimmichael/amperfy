@@ -74,6 +74,8 @@ extension CarPlaySceneDelegate {
 
   /// The Lately tile needs four covers for its picture (the mock shows it at four or more).
   private static let latelyCoverCount = 4
+  /// A mood mix's drawn cover is decoded this large for the car (its biggest slot at 3x).
+  private static let drawnCoverPixels = 480
 
   /// The items a CarPlay Home row shows. Recent carries the Resume item first.
   private func carPlayItems(_ section: HomeSection) -> [HomeItem]? {
@@ -381,6 +383,10 @@ extension CarPlaySceneDelegate {
     }
     for mix in sharedHome?.otherMixes ?? [] {
       parts.append("\(mix.id)=\(mix.title):" + mix.leadAlbums.map(\.id).joined(separator: ","))
+      // A mood mix's drawn cover, and whether it has landed (the tile swaps it in).
+      if let address = MixCoverCache.address(for: mix) {
+        parts.append("\(address.absoluteString)=\(MixCoverCache.isOnDisk(address))")
+      }
     }
     return parts.joined(separator: "|")
   }
@@ -405,9 +411,10 @@ extension CarPlaySceneDelegate {
 
   /// The Lately tile when the mix has songs and four of its lead albums have a cover on disk
   /// (decoded here, once per signature), then Home's other made-for-you playlists: a mood
-  /// mix as its colour and name, the others as their records with the name across them
-  /// (shown only with four covers on disk, like Lately). The server's mood doors are no
-  /// longer offered (founder, 2026-10-21): the phone's mood mixes replace them, with no beta.
+  /// mix as its drawn cover once that is on disk (its colour and name until then), the others
+  /// as their records with the name across them (shown only with four covers on disk, like
+  /// Lately). The server's mood doors are no longer offered (founder, 2026-10-21): the
+  /// phone's mood mixes replace them, with no beta.
   private func rebuildMoodTiles() {
     var tiles = [CarMoodTile]()
     var coversByTile = [String: [UIImage]]()
@@ -429,6 +436,11 @@ extension CarPlaySceneDelegate {
     for mix in sharedHome?.otherMixes ?? [] {
       if case let .mood(_, hexColor) = mix.kind {
         tiles.append(.mix(id: mix.id, title: mix.title, hexColor: hexColor))
+        // Its drawn cover when it is on disk (never fetched here); its colour and name until then.
+        if let address = MixCoverCache.address(for: mix),
+           let cover = MixCoverCache.diskImage(address, maxPixelSize: Self.drawnCoverPixels) {
+          coversByTile[mix.id] = [cover]
+        }
       } else if let covers = fourCovers(mix.leadAlbums) {
         tiles.append(.mix(id: mix.id, title: mix.title, hexColor: nil))
         coversByTile[mix.id] = covers
@@ -439,7 +451,8 @@ extension CarPlaySceneDelegate {
   }
 
   /// A tile's picture and title. Lately and the other record playlists: their records in a
-  /// square with the name across them. A mood mix (or a door): its colour and its name.
+  /// square with the name across them. A mood mix: its drawn cover, else (or a door) its
+  /// colour and its name.
   private func moodArt(_ tile: CarMoodTile, slot: CarPlayStyle.Slot) -> (image: UIImage, title: String) {
     switch tile {
     case .lately:
@@ -449,6 +462,9 @@ extension CarPlaySceneDelegate {
       return (style.wordArt(word: label, color: color, slot: slot), label)
     case let .mix(id, title, hexColor):
       if let hexColor {
+        if let cover = session.moodCovers[id]?.first {
+          return (style.drawnCover(cover, slot: slot), title)
+        }
         let color = UIColor(cassetteHexString: hexColor) ?? UIColor.cassette(.surfaceElevated)
         return (style.wordArt(word: title, color: color, slot: slot), title)
       }

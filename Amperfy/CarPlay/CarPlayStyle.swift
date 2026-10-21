@@ -199,6 +199,12 @@ struct CarPlayStyle {
     }
   }
 
+  /// A mood mix's drawn cover (cassette.digital draws it, its name already on it), sized to
+  /// the slot at the car's scale.
+  func drawnCover(_ image: UIImage, slot: Slot = .shelf) -> UIImage {
+    wrap(fitted(image, into: slotSize(slot), circle: false))
+  }
+
   /// A mix: four of its records aspect-filled into quadrants on the elevated surface, a scrim
   /// that darkens the bottom, then its name. Fewer than four covers leave the rest empty.
   func mosaicArt(covers: [UIImage], word: String, slot: Slot = .shelf) -> UIImage {

@@ -204,8 +204,10 @@ final class MixDetailVC: MultiSourceTableViewController {
 
   /// Lit by the playlist's first record with a cover on disk; a mood mix by its own art.
   private func lightUp() {
-    if case let .mood(key, _) = mix.kind {
-      lighter.lightUp(image: hero.moodArtImage, key: "made-for-you-art:\(key)")
+    if case .mood = mix.kind {
+      // Lit by its drawn cover once that lands (the mood's own art until then).
+      hero.onMoodArtChange = { [weak self] in self?.lightUp() }
+      lighter.lightUp(image: hero.moodArtImage, key: hero.moodArtKey)
     } else {
       let path = MoodDoorRow.coverPaths(of: mix).first
       lighter.lightUp(coverPath: path, key: path ?? "made-for-you:\(mix.id)")
@@ -272,9 +274,13 @@ final class MixHeroView: UIView {
   var onPlay: (() -> ())?
   var onShuffle: (() -> ())?
 
-  /// The mood mix's picture, rendered once (nil for the other playlists), which also
-  /// lights the page.
+  /// The mood mix's picture (nil for the other playlists), which also lights the page: its
+  /// drawn cover (`MixCoverCache`), or the mood's own art until that lands.
   private(set) var moodArtImage: UIImage?
+  /// What `moodArtImage` is, for the page's light: the cover's address, or the mood's art.
+  private(set) var moodArtKey = ""
+  /// Called when the drawn cover replaces the mood's art.
+  var onMoodArtChange: (() -> ())?
 
   private let mix: HomeManager.MadeForYouMix
   private let glowClip = UIView()
@@ -431,17 +437,37 @@ final class MixHeroView: UIView {
 
   private func buildArt() {
     if case let .mood(key, hexColor) = mix.kind {
-      let renderer = ImageRenderer(
-        content: MoodMixArt(key: key, hexColor: hexColor)
-          .frame(width: Self.artSide, height: Self.artSide)
-      )
-      renderer.scale = 3
-      moodArtImage = renderer.uiImage
+      // The drawn cover when it is already here, else the mood's own art, crossfading to
+      // the cover when it lands.
+      let address = MixCoverCache.address(for: mix)
+      if let address, let cover = MixCoverCache.cached(address) {
+        moodArtImage = cover
+        moodArtKey = "made-for-you-cover:\(address.absoluteString)"
+      } else {
+        let renderer = ImageRenderer(
+          content: MoodMixArt(key: key, hexColor: hexColor)
+            .frame(width: Self.artSide, height: Self.artSide)
+        )
+        renderer.scale = 3
+        moodArtImage = renderer.uiImage
+        moodArtKey = "made-for-you-art:\(key)"
+      }
       let view = UIImageView(image: moodArtImage)
       view.contentMode = .scaleAspectFill
       view.clipsToBounds = true
       art.addSubview(view)
       coverViews = [view]
+      if let address, MixCoverCache.cached(address) == nil {
+        Task { [weak self, weak view] in
+          guard let cover = await MixCoverCache.load(address), let self, let view else { return }
+          UIView.transition(with: view, duration: 0.3, options: .transitionCrossDissolve) {
+            view.image = cover
+          }
+          moodArtImage = cover
+          moodArtKey = "made-for-you-cover:\(address.absoluteString)"
+          onMoodArtChange?()
+        }
+      }
       return
     }
     let paths = MoodDoorRow.coverPaths(of: mix)

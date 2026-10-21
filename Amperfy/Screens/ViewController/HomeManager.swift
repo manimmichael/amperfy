@@ -239,6 +239,12 @@ class HomeManager: NSObject {
     let songs: [AbstractPlayable]
     /// Up to four of the mix's albums for its picture, those with a cover on disk first.
     let leadAlbums: [Album]
+    /// A mood mix's cover version (`ListeningShelves.moodCoverVariants`): the day's turn, or
+    /// for Get Pumped the one its songs call for. Set when the mixes are built; nil for the
+    /// other playlists.
+    var coverVariant: String? = nil
+    /// Late Night's guest on its cover: the artist with the most songs in it.
+    var coverGuest: String? = nil
 
     var id: String {
       switch kind {
@@ -1376,6 +1382,7 @@ class HomeManager: NSObject {
     // one it fits best (its home), so the six stay apart whatever the time of day.
     let favored = Set(lately.songPlays.map(\.songID))
     let homes = ListeningShelves.moodHomes(mixSongs)
+    let mixSongByID = Dictionary(mixSongs.map { ($0.songID, $0) }, uniquingKeysWith: { first, _ in first })
     for moodKey in ListeningShelves.moodMixOrder(for: daypart) {
       guard let mood = ListeningShelves.moodMixes.first(where: { $0.key == moodKey }) else { continue }
       var moodRNG = ListeningShelves.DailyGenerator(day: now, key: "mood|\(mood.key)", calendar: calendar)
@@ -1386,13 +1393,21 @@ class HomeManager: NSObject {
         excluding: taken,
         using: &moodRNG
       )
-      if let mix = makeMix(
+      if var mix = makeMix(
         .mood(key: mood.key, hexColor: mood.hexColor),
         title: mood.title,
         ids: ids,
         songsByID: index.songsByID,
         isOnPhone: isOnPhone
       ) {
+        // Its cover: the day's turn, except Get Pumped's (by how heavy its songs are) and
+        // Late Night's guest (the artist it plays most).
+        mix.coverVariant = mood.key == "get-pumped"
+          ? ListeningShelves.getPumpedCoverVariant(mix.songs.compactMap { mixSongByID[$0.id] })
+          : ListeningShelves.dailyCoverVariant(key: mood.key, on: now)
+        if mood.key == "late-night" {
+          mix.coverGuest = ListeningShelves.headlineArtist(mix.songs.map { $0.asSong?.artist?.name ?? "" })
+        }
         mixes.append(mix)
         taken.formUnion(mix.songs.map(\.id))
       }
@@ -1430,12 +1445,25 @@ class HomeManager: NSObject {
   private func setOtherMixes(_ mixes: [MadeForYouMix]) {
     func signature(_ list: [MadeForYouMix]) -> [String] {
       list.map { mix in
-        ([mix.id, mix.title] + mix.songs.map(\.id) + mix.leadAlbums.map(\.id)).joined(separator: ",")
+        ([mix.id, mix.title, mix.coverVariant ?? "", mix.coverGuest ?? ""] + mix.songs.map(\.id)
+          + mix.leadAlbums.map(\.id)).joined(separator: ",")
       }
     }
+    defer { fetchMoodCovers() }
     guard signature(mixes) != signature(otherMixes) else { return }
     otherMixes = mixes
     otherMixesGeneration += 1
+  }
+
+  /// Fetches the mood mixes' drawn covers this process has not got yet (`MixCoverCache`
+  /// skips what is on disk and backs off after a failure), so Home, the mix pages and
+  /// CarPlay have them even if Home was never on screen. Each one that lands redraws the
+  /// host once: CarPlay swaps it in; Home's tiles fade it in themselves.
+  private func fetchMoodCovers() {
+    let addresses = otherMixes.compactMap { MixCoverCache.address(for: $0) }
+    MixCoverCache.prefetch(addresses) { [weak self] in
+      self?.notifySnapshot()
+    }
   }
 
   /// Keep the made-for-you playlists, dropping songs that are no longer on the phone (a
@@ -1449,12 +1477,15 @@ class HomeManager: NSObject {
       }
       guard songs.count >= ListeningShelves.madeMixMinSongs else { return nil }
       guard songs.count != mix.songs.count else { return mix }
+      // The cover stays as it was drawn: a song leaving the phone never swaps it mid-day.
       return MadeForYouMix(
         kind: mix.kind,
         title: mix.title,
         subtitle: mix.subtitle,
         songs: songs,
-        leadAlbums: leadAlbums(for: songs)
+        leadAlbums: leadAlbums(for: songs),
+        coverVariant: mix.coverVariant,
+        coverGuest: mix.coverGuest
       )
     }
     setOtherMixes(kept)

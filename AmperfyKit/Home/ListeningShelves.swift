@@ -865,6 +865,88 @@ extension ListeningShelves {
     }
   }
 
+  // MARK: Covers (founder, 2026-10-21)
+
+  /// The versions of each mood mix's drawn cover (cassette.digital's /api/covers/mix), in the
+  /// order the daily pick walks them. Road Trip only shows on the web.
+  public static let moodCoverVariants: [String: [String]] = [
+    "get-pumped": ["chrome", "aerobics"],
+    "focus": ["head", "script"],
+    "wind-down": ["window"],
+    "late-night": ["show", "broadcast"],
+    "feel-good": ["memphis", "smear"],
+    "road-trip": ["red-rock", "teal-sky", "cloud"],
+  ]
+
+  /// The version of a mood mix's cover for `date`: one a day in turn, the same for everyone
+  /// on a given day, turning over at the listener's own midnight. Get Pumped picks by its
+  /// songs instead (`getPumpedCoverVariant`).
+  public static func dailyCoverVariant(key: String, on date: Date, timeZone: TimeZone = .current) -> String? {
+    guard let variants = moodCoverVariants[key], !variants.isEmpty else { return nil }
+    let localMillis = (date.timeIntervalSince1970 + Double(timeZone.secondsFromGMT(for: date))) * 1000
+    let day = Int((localMillis / 86_400_000).rounded(.down))
+    return variants[((day % variants.count) + variants.count) % variants.count]
+  }
+
+  /// Subgenre words that make a song heavy for Get Pumped's cover.
+  static let heavySoundWords = [
+    "metal", "punk", "hardcore", "deathcore", "grunge", "screamo", "thrash", "doom", "sludge",
+    "stoner", "hard rock", "garage rock", "noise rock",
+  ]
+  /// Moods that make a song with no subgenres heavy.
+  static let heavyMoods: Set<String> = ["aggressive", "intense", "rebellious"]
+
+  /// Get Pumped's cover from its songs: chrome when at least 40% of the songs that say
+  /// anything are heavy (by their subgenres, else their moods), the aerobics one when the mix
+  /// is more fun than heavy. A mix none of whose songs say anything gets chrome.
+  public static func getPumpedCoverVariant(_ songs: [MixSong]) -> String {
+    var heavy = 0
+    var counted = 0
+    for song in songs {
+      let sounds = song.sounds
+      if !sounds.isEmpty {
+        counted += 1
+        if sounds.contains(where: isHeavySound) { heavy += 1 }
+        continue
+      }
+      let moods = song.moods
+      guard !moods.isEmpty else { continue }
+      counted += 1
+      if !moods.isDisjoint(with: heavyMoods) { heavy += 1 }
+    }
+    guard counted > 0 else { return "chrome" }
+    return Double(heavy) / Double(counted) >= 0.4 ? "chrome" : "aerobics"
+  }
+
+  /// A subgenre that reads as heavy: one of `heavySoundWords` inside it, or the word emo.
+  static func isHeavySound(_ sound: String) -> Bool {
+    let lowered = sound.lowercased()
+    if heavySoundWords.contains(where: { lowered.contains($0) }) { return true }
+    return lowered.split(whereSeparator: { $0 == " " || $0 == "-" }).contains("emo")
+  }
+
+  /// Late Night's guest: the artist with the most songs in the mix, whoever appears first on
+  /// a tie, as `names` (one per song, in mix order) spell it. Nil when no song has one.
+  public static func headlineArtist(_ names: [String]) -> String? {
+    var counts = [String: Int]()
+    var first = [String: Int]()
+    var shown = [String: String]()
+    for (position, name) in names.enumerated() {
+      let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+      let key = normalizedArtistName(trimmed)
+      guard !key.isEmpty else { continue }
+      counts[key, default: 0] += 1
+      if first[key] == nil {
+        first[key] = position
+        shown[key] = trimmed
+      }
+    }
+    let best = counts.max { a, b in
+      a.value != b.value ? a.value < b.value : first[a.key, default: 0] > first[b.key, default: 0]
+    }
+    return best.flatMap { shown[$0.key] }
+  }
+
   /// Each song's one mood playlist: of the mixes it may join, the one it fits best relative
   /// to how well that mix's songs fit in general (its median), so a playlist with a generous
   /// pool does not take every shared song. Ties go to the mix listed first in `moodMixes`.
