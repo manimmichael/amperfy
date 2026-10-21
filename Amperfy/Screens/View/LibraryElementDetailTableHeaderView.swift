@@ -38,8 +38,8 @@ struct PlayShuffleInfoConfiguration {
   var isEmbeddedInOtherView: Bool = false
   /// cassette polish Part 4 / Polish 2 (D1): when true (set only by the Album /
   /// Artist / Playlist detail headers), the compact-width layout swaps the
-  /// side-by-side bordered pair for a single action bar:
-  /// `[repeat]  [PLAY][shuffle]`. List headers leave this false.
+  /// side-by-side bordered pair for two equal pills: `[PLAY] [SHUFFLE]`
+  /// (phone-taste). List headers leave this false.
   var usesProminentPlayButton: Bool = false
   /// cassette Polish 2 (D1): the album/artist this header represents. Injected by
   /// GenericDetailTableHeader from its own DetailHeaderConfiguration; the header
@@ -62,11 +62,13 @@ class LibraryElementDetailTableHeaderView: UIView {
   weak var infoLabel: UILabel!
 
   static let frameHeight: CGFloat = 40.0 + margin.top + margin.bottom
-  /// cassette Polish 2 (D1): the prominent layout is now a single 56pt-tall
-  /// action bar (was a 120pt stacked Play + bordered Shuffle), so the detail
-  /// header grows by only ~16pt over the bordered baseline.
+  /// The disc size `makeDetailPlayCTA` was built around (the Resume card still uses it).
   static let prominentPlayDiameter: CGFloat = 56.0
-  static let prominentFrameHeight: CGFloat = prominentPlayDiameter + margin.top + margin.bottom
+  /// phone-taste: the Play and Shuffle pills are 48pt tall (the mock's `.playPill`).
+  static let pillHeight: CGFloat = 48
+  /// The compact action bar's height: one row of pills.
+  static let prominentBarHeight: CGFloat = pillHeight
+  static let prominentFrameHeight: CGFloat = prominentBarHeight + margin.top + margin.bottom
   static let margin = UIView.defaultMarginMiddleElement
 
   private var config: PlayShuffleInfoConfiguration?
@@ -74,9 +76,6 @@ class LibraryElementDetailTableHeaderView: UIView {
   private var prominentContainer: UIView?
   private var prominentPlayButton: UIButton?
   private var prominentShuffleButton: UIButton?
-  // cassette: the leading action-bar slot was a favorite heart; it is now a
-  // repeat toggle (favorites feature removed). Mirrors the trailing shuffle.
-  private var prominentRepeatButton: UIButton?
 
   required init?(coder aDecoder: NSCoder) {
     super.init(coder: aDecoder)
@@ -153,36 +152,10 @@ class LibraryElementDetailTableHeaderView: UIView {
     playShuffledButton.isHidden = showProminent || config.isShuffleHidden
 
     if showProminent {
+      // A hidden Shuffle lets Play fill the row (the stack view drops hidden views).
       prominentShuffleButton?.isHidden = config.isShuffleHidden
-      // Repeat is a global player toggle — always available, never gated on
-      // the entity (unlike the favorite heart it replaced).
-      refreshProminentRepeatIcon()
     }
     refreshPlayButtonState()
-  }
-
-  // cassette: leading action-bar slot repeat toggle. Orange is reserved for
-  // live state — repeat All / One paint orange (repeat is "on"); Off is quiet
-  // ink2. Glyph mirrors the mini/popup players (repeat / repeat.1).
-  private func refreshProminentRepeatIcon() {
-    guard let repeatBtn = prominentRepeatButton, let player = config?.player else { return }
-    let mode = player.repeatMode
-    var repeatConfig = repeatBtn.configuration ?? UIButton.Configuration.cassetteBare()
-    switch mode {
-    case .off:
-      repeatConfig.image = .repeatMenu
-      repeatConfig.baseForegroundColor = UIColor.cassette(.textSecondary)
-      repeatBtn.accessibilityLabel = "Repeat off"
-    case .all:
-      repeatConfig.image = .repeatAll
-      repeatConfig.baseForegroundColor = UIColor.cassette(.accentProgress)
-      repeatBtn.accessibilityLabel = "Repeat all"
-    case .single:
-      repeatConfig.image = .repeatOne
-      repeatConfig.baseForegroundColor = UIColor.cassette(.accentProgress)
-      repeatBtn.accessibilityLabel = "Repeat one"
-    }
-    repeatBtn.configuration = repeatConfig
   }
 
   @IBAction
@@ -249,15 +222,19 @@ class LibraryElementDetailTableHeaderView: UIView {
     refreshPlayButtonState()
   }
 
-  /// Swap the Play/Pause glyph + title on both the prominent CTA and the
+  /// Swap the Play/Pause glyph + title on both the Play pill and the
   /// bordered button to match live state.
   func refreshPlayButtonState() {
     let isPausable = isThisContextCurrent && (config?.player.isPlaying ?? false)
-    let symbolName = (isPausable ? CassetteIcon.pause : CassetteIcon.play).symbolName
+    let icon = isPausable ? CassetteIcon.pause : CassetteIcon.play
+    let symbolName = icon.symbolName
     let label = isPausable ? "Pause" : "Play"
 
-    prominentPlayButton?.configuration?.image = UIImage(systemName: symbolName)
-    prominentPlayButton?.accessibilityLabel = label
+    if let pill = prominentPlayButton {
+      pill.configuration?.image = icon.symbolImage
+      pill.configuration?.attributedTitle = Self.pillTitle(label, color: .cassette(.textOnFill))
+      pill.accessibilityLabel = label
+    }
 
     if playAllButton != nil {
       playAllButton.configuration?.image = UIImage(systemName: symbolName)
@@ -355,79 +332,81 @@ class LibraryElementDetailTableHeaderView: UIView {
     button.isHidden = isHidden
   }
 
-  // cassette redesign (Surface 1): the action bar is a balanced three-slot
-  // row toggled visible only for compact width in refresh():
-  //   [heart]  ...  [PLAY 56]  ...  [shuffle]
-  // - PLAY is a native UIButton.Configuration CTA (cream fill by default,
-  //   Liquid Glass variant available — see DetailPlayCTAStyle).
-  // - Heart (leading) and shuffle (trailing) are plain icon buttons that
-  //   mirror each other so the play disc sits visually centered.
-  // - Overflow no longer lives here: it is a navigation-bar item (native
-  //   glass on iOS 26), wired by the detail view controllers.
+  // phone-taste: the compact action bar is two equal 48pt pills, toggled visible only
+  // for compact width in refresh():
+  //   [ > PLAY ] [ SHUFFLE ]
+  // - Play is the cream pill (ink fill, dark label); Shuffle is the outlined ghost pill.
+  // - Repeat is no longer here; it lives on Now Playing and the queue.
+  // - Overflow is a navigation-bar item, wired by the detail view controllers.
   private func setupProminentLayoutIfNeeded() {
     guard config?.usesProminentPlayButton == true, prominentContainer == nil else { return }
 
-    let container = UIView()
-    container.translatesAutoresizingMaskIntoConstraints = false
-    addSubview(container)
-
-    let play = Self.makeDetailPlayCTA(diameter: Self.prominentPlayDiameter)
+    let play = Self.makePlayPill()
     play.addTarget(self, action: #selector(prominentPlayPressed), for: .touchUpInside)
 
-    let shuffle = Self.makePlainActionButton(systemImage: CassetteIcon.shuffle.symbolName)
-    shuffle.accessibilityLabel = "Shuffle"
+    let shuffle = Self.makeShufflePill()
     shuffle.addTarget(self, action: #selector(prominentShufflePressed), for: .touchUpInside)
 
-    let repeatBtn = Self.makePlainActionButton(systemImage: CassetteIcon.repeatAll.symbolName)
-    repeatBtn.accessibilityLabel = "Repeat"
-    repeatBtn.addTarget(self, action: #selector(prominentRepeatPressed), for: .touchUpInside)
-
-    container.addSubview(repeatBtn)
-    container.addSubview(play)
-    container.addSubview(shuffle)
-    // cassette Patch 104: the leading (repeat) and trailing (shuffle) buttons
-    // sit on the quarter points — centered between the central play button and
-    // each screen edge (centerX multipliers 0.5 / 1.5) — not flush to the edges.
-    let repeatQuarterPoint = NSLayoutConstraint(
-      item: repeatBtn,
-      attribute: .centerX,
-      relatedBy: .equal,
-      toItem: container,
-      attribute: .centerX,
-      multiplier: 0.5,
-      constant: 0
-    )
-    let shuffleQuarterPoint = NSLayoutConstraint(
-      item: shuffle,
-      attribute: .centerX,
-      relatedBy: .equal,
-      toItem: container,
-      attribute: .centerX,
-      multiplier: 1.5,
-      constant: 0
-    )
+    let row = UIStackView(arrangedSubviews: [play, shuffle])
+    row.axis = .horizontal
+    row.distribution = .fillEqually
+    row.alignment = .fill
+    row.spacing = 10
+    row.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(row)
     NSLayoutConstraint.activate([
-      container.topAnchor.constraint(equalTo: topAnchor),
-      container.bottomAnchor.constraint(equalTo: bottomAnchor),
-      container.leadingAnchor.constraint(equalTo: leadingAnchor),
-      container.trailingAnchor.constraint(equalTo: trailingAnchor),
-
-      repeatQuarterPoint,
-      repeatBtn.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-
-      play.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-      play.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-      play.widthAnchor.constraint(equalToConstant: Self.prominentPlayDiameter),
-      play.heightAnchor.constraint(equalToConstant: Self.prominentPlayDiameter),
-
-      shuffleQuarterPoint,
-      shuffle.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+      row.topAnchor.constraint(equalTo: topAnchor),
+      row.bottomAnchor.constraint(equalTo: bottomAnchor),
+      row.leadingAnchor.constraint(equalTo: leadingAnchor),
+      row.trailingAnchor.constraint(equalTo: trailingAnchor),
     ])
 
-    prominentContainer = container
+    prominentContainer = row
     prominentPlayButton = play
     prominentShuffleButton = shuffle
-    prominentRepeatButton = repeatBtn
+  }
+
+  /// A pill label in the `.pill` role (Barlow Bold 16, tracked, capitals).
+  private static func pillTitle(_ text: String, color: UIColor) -> AttributedString {
+    AttributedString(NSAttributedString.cassette(text, .pill, color: color))
+  }
+
+  /// The cream PLAY pill (the mock's `.playPill`): ink fill, dark label and glyph, 16pt
+  /// icon with an 8pt gap, fully round ends.
+  static func makePlayPill() -> UIButton {
+    var config = UIButton.Configuration.filled()
+    config.baseBackgroundColor = UIColor.cassette(.fillSelected)
+    config.baseForegroundColor = UIColor.cassette(.textOnFill)
+    config.cornerStyle = .capsule
+    config.image = CassetteIcon.play.symbolImage
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 16)
+    config.imagePlacement = .leading
+    config.imagePadding = 8
+    config.attributedTitle = pillTitle("Play", color: .cassette(.textOnFill))
+    let button = UIButton(configuration: config)
+    button.translatesAutoresizingMaskIntoConstraints = false
+    button.accessibilityLabel = "Play"
+    return button
+  }
+
+  /// The outlined SHUFFLE pill (the mock's `.ghostPill`): clear, a 1.5pt ink ring at 35%,
+  /// ink label and glyph.
+  static func makeShufflePill() -> UIButton {
+    var config = UIButton.Configuration.plain()
+    config.background.backgroundColor = .clear
+    config.background.strokeColor = UIColor.cassette(.textPrimary).withAlphaComponent(0.35)
+    config.background.strokeWidth = 1.5
+    config.cornerStyle = .capsule
+    config.baseForegroundColor = UIColor.cassette(.textPrimary)
+    config.image = CassetteIcon.shuffle.symbolImage
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 16)
+    config.imagePlacement = .leading
+    config.imagePadding = 8
+    config.attributedTitle = pillTitle("Shuffle", color: .cassette(.textPrimary))
+    let button = UIButton(configuration: config)
+    button.translatesAutoresizingMaskIntoConstraints = false
+    button.accessibilityLabel = "Shuffle"
+    return button
   }
 
   /// cassette redesign (Surface 1): visual style of the prominent detail
@@ -446,7 +425,7 @@ class LibraryElementDetailTableHeaderView: UIView {
   /// (hand-drawn CAShapeLayer rim/inner-shadow disc) with a stock
   /// UIButton.Configuration so pressed states, pointer effects, and — in the
   /// glass variant — Liquid Glass all come from the system.
-  static func makeDetailPlayCTA(diameter: CGFloat) -> UIButton {
+  static func makeDetailPlayCTA(diameter: CGFloat, glyphScale: CGFloat = 0.35) -> UIButton {
     var config: UIButton.Configuration
     switch detailPlayCTAStyle {
     case .creamFill:
@@ -460,32 +439,12 @@ class LibraryElementDetailTableHeaderView: UIView {
     config.cornerStyle = .capsule
     config.image = CassetteIcon.play.symbolImage
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-      pointSize: (diameter * 0.35).rounded(),
+      pointSize: (diameter * glyphScale).rounded(),
       weight: .medium
     )
     let button = UIButton(configuration: config)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.accessibilityLabel = "Play"
-    return button
-  }
-
-  // cassette redesign (Surface 1): plain quiet icon button, 22pt symbol,
-  // 44pt hit target via symmetric insets. ink2 baseline — orange is reserved
-  // for live state (the favorited heart overrides via its own refresh).
-  // Patch 104 (Root 1): cassetteBare() + UIButton(configuration:) opts out
-  // of the iOS 26 default glass capsule that outlined the heart/shuffle.
-  private static func makePlainActionButton(systemImage: String) -> UIButton {
-    var config = UIButton.Configuration.cassetteBare()
-    config.image = UIImage(systemName: systemImage)
-    config.baseForegroundColor = UIColor.cassette(.textSecondary)
-    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-      pointSize: 22,
-      weight: .regular
-    )
-    config.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11)
-    let button = UIButton(configuration: config)
-    button.tintColor = UIColor.cassette(.textSecondary)
-    button.translatesAutoresizingMaskIntoConstraints = false
     return button
   }
 
@@ -499,14 +458,6 @@ class LibraryElementDetailTableHeaderView: UIView {
   private func prominentShufflePressed() {
     Haptics.light.vibrate(isHapticsEnabled: appDelegate.storage.settings.user.isHapticsEnabled)
     shuffle()
-  }
-
-  @objc
-  private func prominentRepeatPressed() {
-    guard let player = config?.player else { return }
-    Haptics.light.vibrate(isHapticsEnabled: appDelegate.storage.settings.user.isHapticsEnabled)
-    player.setRepeatMode(player.repeatMode.nextMode)
-    refreshProminentRepeatIcon()
   }
 
   func activate() {

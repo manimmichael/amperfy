@@ -124,6 +124,22 @@ public class Artist: AbstractLibraryEntity {
   override public func getDefaultArtworkType() -> ArtworkType {
     .artist
   }
+
+  /// True when this artist has its OWN photo on disk: an artwork row that belongs to this
+  /// artist alone, is keyed to this artist (`(id, "artist")`), is a real custom image, and
+  /// has its file present. The one test every surface uses before showing an artist's
+  /// face (phone-taste). Never test `coverImage != nil` instead: a shared Artwork row can
+  /// carry someone else's face. Mirrors IntentExecutor.onDeviceArtistPhotoMissing.
+  public var hasOwnPhotoOnDisk: Bool {
+    guard !id.isEmpty,
+          let artwork,
+          (artwork.managedObject.owners?.count ?? 0) <= 1,
+          artwork.remoteInfo == ArtworkRemoteInfo(id: id, type: "artist"),
+          artwork.status == .CustomImage,
+          let path = artwork.imagePath
+    else { return false }
+    return FileManager.default.fileExists(atPath: path)
+  }
 }
 
 // MARK: PlayableContainable

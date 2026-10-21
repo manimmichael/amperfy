@@ -27,6 +27,12 @@
 
 import Foundation
 
+extension Notification.Name {
+  /// Posted on the main actor when a refresh changed the mood tags or the shared lately
+  /// profile, so rows built from them (Home's mood rows, MORE LIKE) can rebuild.
+  public static let cassetteLibraryMoodsChanged = Notification.Name("cassette.libraryMoodsChanged")
+}
+
 public struct LibraryMoodTags: Codable, Sendable, Equatable {
   public let moods: [String]
   public let energy: String?
@@ -81,7 +87,14 @@ public final class LibraryMoods {
   public func refreshIfDue(force: Bool = false) async {
     let last = UserDefaults.standard.object(forKey: Self.lastFetchKey) as? Date ?? .distantPast
     guard force || Date().timeIntervalSince(last) > Self.refreshInterval else { return }
+    var changed = false
+    defer {
+      if changed {
+        NotificationCenter.default.post(name: .cassetteLibraryMoodsChanged, object: nil)
+      }
+    }
     if let profile = try? await CassetteSyncAPI.shared.getLatelyProfile() {
+      if profile != sharedProfile { changed = true }
       sharedProfile = profile
       if let data = try? JSONEncoder().encode(profile) {
         try? FileManager.default.createDirectory(
@@ -96,6 +109,7 @@ public final class LibraryMoods {
       UserDefaults.standard.set(Date(), forKey: Self.lastFetchKey)
       guard fresh != byLocalID else { return }
       byLocalID = fresh
+      changed = true
       if let data = try? JSONEncoder().encode(fresh) {
         try? FileManager.default.createDirectory(
           at: Self.fileURL.deletingLastPathComponent(),

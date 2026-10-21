@@ -66,9 +66,10 @@ class AlbumCollectionCell: BasicCollectionCell {
 
   // cassette Patch 043: play overlay split. Tap on the artwork
   // body still navigates (handled by the collection view's
-  // didSelectItemAt); tap on this 40pt circular orange button fires
-  // the closure so HomeVC can start playback for the container.
-  private static let playOverlayDiameter: CGFloat = 40.0
+  // didSelectItemAt); tap on the play disc fires the closure so the host
+  // can start playback for the container.
+  /// phone-taste: the mock's `.tilePlay`, a 34pt cream disc (was a 40pt glass button).
+  static let playOverlayDiameter: CGFloat = 34
   private var playOverlay: UIButton?
 
   /// cassette Patch 043: HomeVC sets this in its cellProvider so
@@ -76,8 +77,21 @@ class AlbumCollectionCell: BasicCollectionCell {
   /// Cleared in `prepareForReuse` so the closure doesn't outlive
   /// the bound container.
   var onPlayTapped: (() -> ())?
-  /// cassette Patch 069: only the Recent shelf resume card shows the overlay.
-  var showsPlayOverlay = false
+  /// Shows the one-tap play disc on the cover. Opt-in per surface ("every cover plays in
+  /// one tap" on Home and the table-page shelves; the Library grid stays clean). Works
+  /// whether it is set before or after `display`.
+  var showsPlayOverlay = false {
+    didSet {
+      if showsPlayOverlay { setupPlayOverlayIfNeeded() }
+      playOverlay?.isHidden = !showsPlayOverlay
+    }
+  }
+
+  /// Replaces the container's own subtitle line when set (e.g. a year on an artist's
+  /// album shelf). Set before `display`.
+  var subtitleOverride: String?
+  /// A clear card, for shelves drawn over a lit page. Set before `display`.
+  var clearsBackground = false
 
   func display(
     container: PlayableContainable,
@@ -130,10 +144,10 @@ class AlbumCollectionCell: BasicCollectionCell {
     self.container = container
     self.rootView = rootView
     titleLabel.text = container.name
-    subtitleLabel.text = container.subtitle
+    subtitleLabel.text = subtitleOverride ?? container.subtitle
     // Barlow title + mono artist (legible at the 13pt floor).
     applyCassetteType()
-    contentView.backgroundColor = UIColor.cassette(.surfaceBase)
+    contentView.backgroundColor = clearsBackground ? .clear : UIColor.cassette(.surfaceBase)
     // cassette: album covers get a minimal 3pt corner (.verySmall), matching the
     // album detail hero, so bordered / edge-to-edge cover art keeps crisp corners
     // instead of having its edge shaved by the rounding. (Was .big = 15pt.)
@@ -149,7 +163,7 @@ class AlbumCollectionCell: BasicCollectionCell {
     entityImage.layer.borderWidth = 1.0 / max(traitCollection.displayScale, 1.0)
     entityImage.layer.borderColor = UIColor.cassette(.textPrimary)
       .withAlphaComponent(0.08).cgColor
-    setupPlayOverlayIfNeeded()
+    if showsPlayOverlay { setupPlayOverlayIfNeeded() }
     playOverlay?.isHidden = !showsPlayOverlay
     updateArtworkImageConstraint(indexPath: initialIndexPath)
     layoutIfNeeded()
@@ -160,6 +174,8 @@ class AlbumCollectionCell: BasicCollectionCell {
     onPlayTapped = nil
     showsPlayOverlay = false
     playOverlay?.isHidden = true
+    subtitleOverride = nil
+    clearsBackground = false
   }
 
   override func layoutSubviews() {
@@ -172,21 +188,11 @@ class AlbumCollectionCell: BasicCollectionCell {
     super.layoutSubviews()
   }
 
-  /// cassette redesign (Surface 3/4): lazily install a 40pt circular Liquid
-  /// Glass `play.fill` button anchored 8pt inside the artwork's bottom-right
-  /// corner. The bg3 disc + manual CALayer drop shadow are retired — the
-  /// overlay sits directly on artwork, which is exactly where system glass
-  /// earns its keep (this overlay only shows on the Home Resume card, so it
-  /// is the Resume play affordance). Idempotent — safe to call from every
-  /// `apply(...)`.
+  /// Lazily install the play disc 8pt inside the artwork's bottom-right corner (the
+  /// mock's `.tilePlay`: right 8, bottom 8). Idempotent.
   private func setupPlayOverlayIfNeeded() {
-    guard playOverlay == nil else {
-      playOverlay?.isHidden = !showsPlayOverlay
-      return
-    }
-    let button = UIButton(configuration: Self.makeGlassPlayOverlayConfiguration())
-    button.translatesAutoresizingMaskIntoConstraints = false
-    button.accessibilityLabel = "Play"
+    guard playOverlay == nil else { return }
+    let button = Self.makePlayOverlayButton()
     button.isHidden = !showsPlayOverlay
     button.addAction(UIAction { [weak self] _ in self?.onPlayTapped?() }, for: .touchUpInside)
     contentView.addSubview(button)
@@ -199,15 +205,31 @@ class AlbumCollectionCell: BasicCollectionCell {
     playOverlay = button
   }
 
-  /// Shared Liquid Glass overlay-play configuration for cards (album +
-  /// artist circle). Matches the footer's system-glass material.
-  static func makeGlassPlayOverlayConfiguration() -> UIButton.Configuration {
-    var config = UIButton.Configuration.glass()
-    config.baseForegroundColor = UIColor.cassette(.textPrimary)
+  /// The one-tap play disc for covers (album tiles, artist circles; the mock's
+  /// `.tilePlay`): a cream disc with a bold filled play glyph nudged 2pt for optical
+  /// centring and a soft shadow. Draws at `playOverlayDiameter`; touches land on a 44pt
+  /// circle around it. A UIButton cancels on pan, so scrolling a shelf never plays.
+  /// The SwiftUI twin is `CassettePlayDisc`.
+  static func makePlayOverlayButton() -> UIButton {
+    var config = UIButton.Configuration.filled()
+    config.baseBackgroundColor = UIColor.cassette(.fillSelected)
+    config.baseForegroundColor = UIColor.cassette(.textOnFill)
     config.cornerStyle = .capsule
     config.image = CassetteIcon.play.symbolImage
-      .withConfiguration(UIImage.SymbolConfiguration(pointSize: 16, weight: .bold))
-    return config
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+      pointSize: 15,
+      weight: .bold
+    )
+    config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 0)
+    let button = CassettePlayOverlayButton(configuration: config)
+    button.translatesAutoresizingMaskIntoConstraints = false
+    button.accessibilityLabel = "Play"
+    button.clipsToBounds = false
+    button.layer.shadowColor = UIColor.black.cgColor
+    button.layer.shadowOpacity = 0.45
+    button.layer.shadowRadius = 6
+    button.layer.shadowOffset = CGSize(width: 0, height: 4)
+    return button
   }
 
   func updateArtworkImageConstraint(indexPath: IndexPath) {
@@ -222,5 +244,24 @@ class AlbumCollectionCell: BasicCollectionCell {
     } else if let itemWidth {
       artworkImageWidthConstraint.constant = itemWidth
     }
+  }
+}
+
+// MARK: - CassettePlayOverlayButton
+
+/// The play disc's hit area grows to 44pt around its smaller drawn circle.
+private final class CassettePlayOverlayButton: UIButton {
+  private static let minimumHitSide: CGFloat = 44
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    // A shadow path keeps the soft shadow cheap in a scrolling shelf.
+    layer.shadowPath = UIBezierPath(ovalIn: bounds).cgPath
+  }
+
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    let dx = min(0, (bounds.width - Self.minimumHitSide) / 2)
+    let dy = min(0, (bounds.height - Self.minimumHitSide) / 2)
+    return bounds.insetBy(dx: dx, dy: dy).contains(point)
   }
 }

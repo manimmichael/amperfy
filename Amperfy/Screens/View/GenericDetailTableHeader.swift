@@ -277,7 +277,7 @@ class GenericDetailTableHeader: UIView {
     artworkWidthConstraint = entityImage.widthAnchor
       .constraint(equalToConstant: Self.artworkSide)
     playSlotHeightConstraint = playSlot.heightAnchor.constraint(
-      equalToConstant: LibraryElementDetailTableHeaderView.prominentPlayDiameter
+      equalToConstant: LibraryElementDetailTableHeaderView.prominentBarHeight
     )
 
     // The horizontal stack-to-margins pins are dropped just below required so
@@ -353,7 +353,7 @@ class GenericDetailTableHeader: UIView {
       : Self.artworkSide
     let isProminent = config?.playShuffleInfoConfig?.usesProminentPlayButton ?? false
     playSlotHeightConstraint.constant = (compact && isProminent)
-      ? LibraryElementDetailTableHeaderView.prominentPlayDiameter
+      ? LibraryElementDetailTableHeaderView.prominentBarHeight
       : 40.0
   }
 

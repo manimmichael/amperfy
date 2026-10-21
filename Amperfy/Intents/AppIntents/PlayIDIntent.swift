@@ -43,6 +43,13 @@ struct PlayPlayableContainableResultView: View {
   var playableContainable: PlayableContainable
 
   func getImage() -> Image? {
+    // phone-taste: a playlist shows its own cover, the person's pick, else its preset
+    // (never album art).
+    if let playlist = playableContainable as? Playlist,
+       let cover = CassetteCloudPlaylistBridge.localCoverImage(for: playlist.id)
+       ?? CassetteCloudPlaylistBridge.derivedPresetCoverImage(forPlaylistId: playlist.id) {
+      return Image(uiImage: cover)
+    }
     let account = playableContainable.account
     let theme = appDelegate.storage.settings.accounts.getSetting(account?.info).read.themePreference
     let artworkCollection = playableContainable.getArtworkCollection(theme: theme)

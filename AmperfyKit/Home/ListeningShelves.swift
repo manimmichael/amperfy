@@ -80,7 +80,8 @@ public enum ListeningShelves {
       case .morning: return "Mornings"
       case .afternoon: return "Afternoons"
       case .evening: return "Evenings"
-      case .late: return "Late Nights"
+      // phone-taste: the row reads "Weekday Nights" (CarPlay's row title follows).
+      case .late: return "Nights"
       }
     }
   }
@@ -179,11 +180,11 @@ public enum ListeningShelves {
     return v
   }
 
-  static func add(_ v: TagVector, into acc: inout TagVector, weight: Double = 1) {
+  public static func add(_ v: TagVector, into acc: inout TagVector, weight: Double = 1) {
     for (k, x) in v { acc[k, default: 0] += x * weight }
   }
 
-  static func cosine(_ a: TagVector, _ b: TagVector) -> Double {
+  public static func cosine(_ a: TagVector, _ b: TagVector) -> Double {
     var dot = 0.0
     for (k, x) in a { dot += x * (b[k] ?? 0) }
     let na = a.values.reduce(0) { $0 + $1 * $1 }.squareRoot()
@@ -255,6 +256,96 @@ public enum ListeningShelves {
         return perArtist[item.1]! <= moreLikeLatelyPerArtist
       }
       .map(\.0)
+  }
+
+  // MARK: More like (artist and playlist pages)
+
+  /// An artist name for matching: trimmed, lowercased, accents folded ("Björk" and
+  /// "bjork " are one artist).
+  public static func normalizedArtistName(_ s: String) -> String {
+    s.trimmingCharacters(in: .whitespacesAndNewlines)
+      .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+      .lowercased()
+  }
+
+  /// MORE LIKE on an artist page: other artists on the phone whose music carries the same
+  /// moods, one album each. Artists are grouped by normalised NAME (the phone can hold one
+  /// artist under several ids). Each artist's tags are the sum over all their songs; each
+  /// is shown by their album with the most tag weight; they rank by how closely their
+  /// tags match the page artist's (cosine, `minMatch` or better), best first, ties by name.
+  /// The page artist and "Various Artists" are left out. Returns album ids.
+  public static func moreLikeArtist(
+    pageArtistName: String,
+    albums: [AlbumCandidate],
+    artistNameByAlbum: [String: String],
+    minMatch: Double = 0.75,
+    limit: Int = 8
+  )
+    -> [String] {
+    let page = normalizedArtistName(pageArtistName)
+    guard !page.isEmpty else { return [] }
+    var vectorByArtist = [String: TagVector]()
+    var tileByArtist = [String: (albumID: String, weight: Double)]()
+    for album in albums where !album.songTags.isEmpty {
+      guard let rawName = artistNameByAlbum[album.albumID] else { continue }
+      let name = normalizedArtistName(rawName)
+      guard !name.isEmpty else { continue }
+      var albumVector = TagVector()
+      for tags in album.songTags { add(tags, into: &albumVector) }
+      add(albumVector, into: &vectorByArtist[name, default: TagVector()])
+      let weight = albumVector.values.reduce(0, +)
+      if let tile = tileByArtist[name],
+         tile.weight > weight || (tile.weight == weight && tile.albumID < album.albumID) {
+        continue
+      }
+      tileByArtist[name] = (album.albumID, weight)
+    }
+    guard let pageVector = vectorByArtist[page], !pageVector.isEmpty else { return [] }
+    let excluded: Set<String> = [page, "various artists"]
+    let scored: [(name: String, albumID: String, match: Double)] = vectorByArtist.compactMap { name, vector in
+      guard !excluded.contains(name), let tile = tileByArtist[name] else { return nil }
+      let match = cosine(vector, pageVector)
+      return match >= minMatch ? (name, tile.albumID, match) : nil
+    }
+    return scored
+      .sorted { $0.match != $1.match ? $0.match > $1.match : $0.name < $1.name }
+      .prefix(limit)
+      .map(\.albumID)
+  }
+
+  /// MORE LIKE for any tag profile (a playlist's songs, say): albums on the phone whose
+  /// combined song tags match `profile` (`minMatch` or better), best first (ties by id),
+  /// at most `perArtist` per artist, leaving out `excluding`. The same scoring as
+  /// `moreLikeLately`, with no played-recently filter. Returns album ids.
+  public static func moreLike(
+    profile: TagVector,
+    albums: [AlbumCandidate],
+    excluding: Set<String>,
+    minMatch: Double = 0.7,
+    perArtist: Int = 1,
+    limit: Int = 8,
+    artistKey: (AlbumCandidate) -> String = { $0.artistID }
+  )
+    -> [String] {
+    guard !profile.isEmpty else { return [] }
+    let scored: [(album: AlbumCandidate, match: Double)] = albums.compactMap { album in
+      guard !excluding.contains(album.albumID), !album.songTags.isEmpty else { return nil }
+      var vector = TagVector()
+      for tags in album.songTags { add(tags, into: &vector) }
+      let match = cosine(vector, profile)
+      return match >= minMatch ? (album, match) : nil
+    }
+    var countByArtist = [String: Int]()
+    var picked = [String]()
+    for item in scored.sorted(by: {
+      $0.match != $1.match ? $0.match > $1.match : $0.album.albumID < $1.album.albumID
+    }) {
+      guard picked.count < limit else { break }
+      let key = artistKey(item.album)
+      countByArtist[key, default: 0] += 1
+      if countByArtist[key]! <= perArtist { picked.append(item.album.albumID) }
+    }
+    return picked
   }
 
   public struct SongCandidate {

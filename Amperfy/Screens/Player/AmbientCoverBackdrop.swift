@@ -67,6 +67,11 @@ enum AmbientBackdropCache {
   /// time the player opened — a one-time spike that starved the audio render
   /// thread (the "first-open glitch"). Doing the decode + downsample + blur on
   /// a detached task and caching the result makes opening the player cheap.
+  /// The tiny already made for `key`, if any (no decode, no blur).
+  static func cachedTiny(for key: String) -> UIImage? {
+    cache.object(forKey: key as NSString)
+  }
+
   static func tiny(for key: String, image: UIImage) async -> UIImage {
     if let hit = cache.object(forKey: key as NSString) { return hit }
     let small = await Task.detached(priority: .utility) {
@@ -192,6 +197,309 @@ struct AmbientCoverBackdrop: View {
     .task(id: model.coverID) {
       guard let image = model.image else { tiny = nil; return }
       tiny = await AmbientBackdropCache.tiny(for: model.coverID, image: image)
+    }
+  }
+}
+
+// MARK: - CoverGlowRecipe
+
+/// Where and how strongly a record's glow sits behind a surface (phone-taste mocks: the
+/// `.ambient` layer and each surface's `::after` scrim in phone.module.css). The glow is
+/// the same tiny pre-blurred cover Now Playing uses (`AmbientBackdropCache`): never
+/// blurred at render time (Patch 114), and no saturation boost; the app's recipe is
+/// canonical.
+struct CoverGlowRecipe {
+  /// One scrim stop: a colour role at an alpha, at a location from 0 to 1.
+  typealias Stop = (role: CassetteColorRole, alpha: CGFloat, location: CGFloat)
+
+  enum Scrim {
+    case none
+    /// Top to bottom over the host's bounds.
+    case vertical([Stop])
+    /// Leading to trailing over the host's bounds.
+    case horizontal([Stop])
+  }
+
+  /// The glow square's side is the host's width times this, centred horizontally.
+  var sizeFactor: CGFloat
+  /// The glow's top is the host's height times this, plus `topOffset`.
+  var topFactor: CGFloat
+  var topOffset: CGFloat
+  /// The glow's opacity.
+  var alpha: CGFloat
+  /// The warm scrim laid over the glow.
+  var scrim: Scrim
+
+  /// Album, artist and playlist pages (`.albumPage::after`): the glow rises above the hero
+  /// and the scrim reaches the solid page at the host's bottom edge.
+  static let page = CoverGlowRecipe(
+    sizeFactor: 1.4,
+    topFactor: 0,
+    topOffset: -160,
+    alpha: 0.55,
+    scrim: .vertical([
+      (.surfaceSunken, 0.2, 0),
+      (.surfaceBase, 0.55, 0.45),
+      (.surfaceBase, 1.0, 1.0),
+    ])
+  )
+
+  /// The Home Resume card (`.resume .ambient`, `.resume::after`).
+  static let resumeCard = CoverGlowRecipe(
+    sizeFactor: 1.2,
+    topFactor: -1.2,
+    topOffset: 0,
+    alpha: 0.75,
+    scrim: .horizontal([
+      (.surfaceBase, 0.25, 0),
+      (.surfaceBase, 0.7, 0.7),
+    ])
+  )
+
+  /// The Search top result (`.topResult .ambient`, `.topResult::after`).
+  static let topResult = CoverGlowRecipe(
+    sizeFactor: 1.2,
+    topFactor: -0.8,
+    topOffset: 0,
+    alpha: 0.8,
+    scrim: .horizontal([
+      (.surfaceBase, 0.2, 0),
+      (.surfaceBase, 0.7, 0.75),
+    ])
+  )
+
+  /// A Search genre tile (`.genreGlow`: inset -40% each side, centred).
+  static let genreTile = CoverGlowRecipe(
+    sizeFactor: 1.8,
+    topFactor: -0.4,
+    topOffset: 0,
+    alpha: 0.55,
+    scrim: .none
+  )
+
+  /// The glow square inside a host of `size`.
+  func glowFrame(in size: CGSize) -> CGRect {
+    let side = size.width * sizeFactor
+    return CGRect(
+      x: (size.width - side) / 2,
+      y: size.height * topFactor + topOffset,
+      width: side,
+      height: side
+    )
+  }
+
+  /// The scrim's gradient, or nil for `.none`.
+  var gradient: (stops: [Stop], horizontal: Bool)? {
+    switch scrim {
+    case .none: return nil
+    case let .vertical(stops): return (stops, false)
+    case let .horizontal(stops): return (stops, true)
+    }
+  }
+}
+
+// MARK: - CoverGlowView
+
+/// A record's glow behind a UIKit surface (a detail hero, the Resume card, a search
+/// result, a genre tile): the AmbientCoverBackdrop recipe without the full-screen player
+/// wiring, so it can sit inside a cell. Hosts place it behind their content; it never
+/// takes touches and never clips (the glow rises past the host's top).
+@MainActor
+final class CoverGlowView: UIView {
+  let recipe: CoverGlowRecipe
+
+  private let glowImageView: UIImageView = {
+    let view = UIImageView()
+    view.contentMode = .scaleAspectFill
+    view.clipsToBounds = true
+    view.alpha = 0
+    return view
+  }()
+
+  private let scrimLayer = CAGradientLayer()
+  /// The key of the cover being shown (or loading). A newer `show` or `clear` replaces
+  /// the token, so a late load for a reused cell is dropped.
+  private var currentKey: String?
+  private var loadToken = UUID()
+
+  init(recipe: CoverGlowRecipe) {
+    self.recipe = recipe
+    super.init(frame: .zero)
+    isUserInteractionEnabled = false
+    clipsToBounds = false
+    backgroundColor = .clear
+    addSubview(glowImageView)
+    if recipe.gradient != nil {
+      layer.addSublayer(scrimLayer)
+      applyScrimColors()
+    }
+    registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _: UITraitCollection) in
+      self.applyScrimColors()
+    }
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    glowImageView.frame = recipe.glowFrame(in: bounds.size)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    scrimLayer.frame = bounds
+    CATransaction.commit()
+  }
+
+  /// Glow from an image already in hand, cached under `key`. nil clears.
+  func show(image: UIImage?, key: String) {
+    guard let image else { clear(); return }
+    guard begin(key: key) else { return }
+    let token = loadToken
+    if let hit = AmbientBackdropCache.cachedTiny(for: key) {
+      apply(hit)
+      return
+    }
+    Task { [weak self] in
+      let tiny = await AmbientBackdropCache.tiny(for: key, image: image)
+      guard let self, self.loadToken == token else { return }
+      self.apply(tiny)
+    }
+  }
+
+  /// Glow from a cover on disk, keyed by its path (so Now Playing's cached tiny is
+  /// reused). A missing or unreadable file clears.
+  func show(coverPath: String?) {
+    guard let coverPath, !coverPath.isEmpty else { clear(); return }
+    guard begin(key: coverPath) else { return }
+    let token = loadToken
+    if let hit = AmbientBackdropCache.cachedTiny(for: coverPath) {
+      apply(hit)
+      return
+    }
+    Task { [weak self] in
+      let decoded = await Task.detached(priority: .utility) {
+        AmbientSourceDecoder.thumbnail(contentsOfFile: coverPath, maxPixelSize: 64)
+      }.value
+      guard let self, self.loadToken == token else { return }
+      guard let decoded else {
+        self.clear()
+        return
+      }
+      let tiny = await AmbientBackdropCache.tiny(for: coverPath, image: decoded)
+      guard self.loadToken == token else { return }
+      self.apply(tiny)
+    }
+  }
+
+  /// No glow. Drops any load in flight.
+  func clear() {
+    currentKey = nil
+    loadToken = UUID()
+    glowImageView.layer.removeAllAnimations()
+    glowImageView.alpha = 0
+    glowImageView.image = nil
+  }
+
+  /// Starts showing `key`. False when that cover is already up (nothing to do). A
+  /// different cover is taken down at once, so a reused cell never shows the last one.
+  private func begin(key: String) -> Bool {
+    if key == currentKey, glowImageView.image != nil { return false }
+    if key != currentKey {
+      glowImageView.layer.removeAllAnimations()
+      glowImageView.alpha = 0
+      glowImageView.image = nil
+    }
+    currentKey = key
+    loadToken = UUID()
+    return true
+  }
+
+  private func apply(_ tiny: UIImage) {
+    glowImageView.image = tiny
+    let duration = UIAccessibility.isReduceMotionEnabled ? 0.3 : 0.6
+    UIView.animate(
+      withDuration: duration,
+      delay: 0,
+      options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
+    ) {
+      self.glowImageView.alpha = self.recipe.alpha
+    }
+  }
+
+  private func applyScrimColors() {
+    guard let gradient = recipe.gradient else { return }
+    scrimLayer.colors = gradient.stops.map {
+      UIColor.cassette($0.role).withAlphaComponent($0.alpha).cgColor
+    }
+    scrimLayer.locations = gradient.stops.map { NSNumber(value: Double($0.location)) }
+    scrimLayer.startPoint = gradient.horizontal ? CGPoint(x: 0, y: 0.5) : CGPoint(x: 0.5, y: 0)
+    scrimLayer.endPoint = gradient.horizontal ? CGPoint(x: 1, y: 0.5) : CGPoint(x: 0.5, y: 1)
+  }
+}
+
+// MARK: - CoverGlowLayer
+
+/// The SwiftUI twin of `CoverGlowView`, for SwiftUI pages (the Mac page): the same tiny
+/// cover and scrim with the same geometry. Place it behind the content (a ZStack's first
+/// layer, or `.background`).
+struct CoverGlowLayer: View {
+  let image: UIImage?
+  let key: String
+  let recipe: CoverGlowRecipe
+
+  @Environment(\.accessibilityReduceMotion)
+  private var reduceMotion
+  @State
+  private var tiny: UIImage?
+
+  init(image: UIImage?, key: String, recipe: CoverGlowRecipe) {
+    self.image = image
+    self.key = key
+    self.recipe = recipe
+  }
+
+  var body: some View {
+    GeometryReader { geo in
+      let frame = recipe.glowFrame(in: geo.size)
+      ZStack(alignment: .topLeading) {
+        if let tiny {
+          Image(uiImage: tiny)
+            .resizable()
+            .scaledToFill()
+            .frame(width: frame.width, height: frame.height)
+            .clipped()
+            .opacity(recipe.alpha)
+            .position(x: frame.midX, y: frame.midY)
+            .transition(.opacity)
+        }
+        if let gradient = recipe.gradient {
+          LinearGradient(
+            stops: gradient.stops.map {
+              Gradient.Stop(
+                color: Color.cassette($0.role).opacity($0.alpha),
+                location: $0.location
+              )
+            },
+            startPoint: gradient.horizontal ? .leading : .top,
+            endPoint: gradient.horizontal ? .trailing : .bottom
+          )
+          .frame(width: geo.size.width, height: geo.size.height)
+        }
+      }
+    }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+    .task(id: key) {
+      guard let image else {
+        tiny = nil
+        return
+      }
+      let loaded = await AmbientBackdropCache.tiny(for: key, image: image)
+      withAnimation(.easeInOut(duration: reduceMotion ? 0.3 : 0.6)) {
+        tiny = loaded
+      }
     }
   }
 }

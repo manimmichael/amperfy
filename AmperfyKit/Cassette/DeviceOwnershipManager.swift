@@ -350,6 +350,9 @@ public final class DeviceOwnershipManager {
     public let artist: String
     public let tracks: Int
     public let bytes: Int64
+    /// When the album's newest song landed on this phone (the latest download time of its
+    /// owned tracks); `.distantPast` when none is recorded.
+    public let arrivedAt: Date
   }
 
   /// What the hub has synced to this phone: total size and track count, and the albums,
@@ -361,12 +364,18 @@ public final class DeviceOwnershipManager {
       let request: NSFetchRequest<DeviceOwnershipMO> = DeviceOwnershipMO.fetchRequest()
       guard let rows = try? context.fetch(request) else { return }
       var bytesByTrack: [String: Int64] = [:]
+      var arrivedByTrack: [String: Date] = [:]
       for row in rows {
         result.bytes += row.fileSizeBytes
         result.tracks += 1
-        if let sid = row.subsonicTrackId, !sid.isEmpty { bytesByTrack[sid] = row.fileSizeBytes }
+        if let sid = row.subsonicTrackId, !sid.isEmpty {
+          bytesByTrack[sid] = row.fileSizeBytes
+          let downloadedAt: Date? = row.downloadedAt
+          if let downloadedAt { arrivedByTrack[sid] = downloadedAt }
+        }
       }
-      var albums: [String: (name: String, artist: String, tracks: Int, bytes: Int64)] = [:]
+      var albums: [String: (name: String, artist: String, tracks: Int, bytes: Int64, arrivedAt: Date)] =
+        [:]
       for song in ownedSongsInternal() {
         guard let album = song.album, !album.id.isEmpty else { continue }
         let albumId = album.id
@@ -375,10 +384,12 @@ public final class DeviceOwnershipManager {
           album.name ?? "Unknown album",
           album.artist?.name ?? song.artist?.name ?? "",
           0,
-          0
+          0,
+          Date.distantPast
         )
         entry.tracks += 1
         entry.bytes += bytes
+        entry.arrivedAt = max(entry.arrivedAt, arrivedByTrack[song.id] ?? .distantPast)
         albums[albumId] = entry
       }
       result.albums = albums.map {
@@ -387,9 +398,86 @@ public final class DeviceOwnershipManager {
           name: $0.value.name,
           artist: $0.value.artist,
           tracks: $0.value.tracks,
-          bytes: $0.value.bytes
+          bytes: $0.value.bytes,
+          arrivedAt: $0.value.arrivedAt
         )
       }.sorted { $0.bytes > $1.bytes }
+    }
+    return result
+  }
+
+  // MARK: - Genres on this phone (Search start page)
+
+  /// One genre's worth of albums on this phone, for a Search genre tile.
+  public struct OnPhoneGenre: Sendable, Identifiable {
+    public var id: String { name }
+    public let name: String
+    /// Albums on this phone filed under this genre: the albums the on-phone genre page
+    /// lists (owned albums whose album genre is this one).
+    public let albumCount: Int
+    /// The Genre to open (`segueToGenreDetail`); resolve it in the main context.
+    public let genreObjectID: NSManagedObjectID?
+    /// Albums to take the tile's cover from, the most complete on the phone first (ties
+    /// by name). The caller picks the first with a cover on disk.
+    public let sampleAlbumObjectIDs: [NSManagedObjectID]
+  }
+
+  /// The genres of the music on this phone, by album count (ties by name), with sample
+  /// albums for a cover. Read-only. Meant for a background context:
+  /// `storage.async.performAndGet { DeviceOwnershipManager(context: $0.context).onPhoneGenreSummary() }`.
+  ///
+  /// Uses the same predicates as the screens a tile leads to, so a count never disagrees
+  /// with the page: a genre has a tile only when the owned Genres list shows it (an owned
+  /// song's genre, as `fetchOwnedGenreIds`), and it counts the owned albums whose album
+  /// genre is that genre (the genre page's albums: album genre == genre, owned only). A
+  /// genre with no such album has no tile.
+  public func onPhoneGenreSummary(limit: Int = 6, samplesPerGenre: Int = 3) -> [OnPhoneGenre] {
+    var result: [OnPhoneGenre] = []
+    context.performAndWait {
+      let songs = ownedSongsInternal()
+      // Genres the owned Genres list shows, by name (first Genre object seen per name).
+      var genreObjectByName: [String: NSManagedObjectID] = [:]
+      for song in songs {
+        guard let genre = song.genre, let name = genre.name, !name.isEmpty else { continue }
+        if genreObjectByName[name] == nil { genreObjectByName[name] = genre.objectID }
+      }
+      guard !genreObjectByName.isEmpty else { return }
+
+      // Owned albums, with how many of their songs are here and their own genre.
+      var ownedSongsByAlbum: [NSManagedObjectID: Int] = [:]
+      var albumByObjectID: [NSManagedObjectID: AlbumMO] = [:]
+      for song in songs {
+        guard let album = song.album, !album.id.isEmpty else { continue }
+        ownedSongsByAlbum[album.objectID, default: 0] += 1
+        albumByObjectID[album.objectID] = album
+      }
+      var albumsByGenre: [String: [AlbumMO]] = [:]
+      for album in albumByObjectID.values {
+        guard let name = album.genre?.name, genreObjectByName[name] != nil else { continue }
+        albumsByGenre[name, default: []].append(album)
+      }
+
+      result = albumsByGenre
+        .map { name, albums -> OnPhoneGenre in
+          let samples = albums
+            .sorted { lhs, rhs in
+              let lc = ownedSongsByAlbum[lhs.objectID] ?? 0
+              let rc = ownedSongsByAlbum[rhs.objectID] ?? 0
+              if lc != rc { return lc > rc }
+              return (lhs.name ?? "") < (rhs.name ?? "")
+            }
+            .prefix(samplesPerGenre)
+            .map(\.objectID)
+          return OnPhoneGenre(
+            name: name,
+            albumCount: albums.count,
+            genreObjectID: genreObjectByName[name],
+            sampleAlbumObjectIDs: Array(samples)
+          )
+        }
+        .sorted { $0.albumCount != $1.albumCount ? $0.albumCount > $1.albumCount : $0.name < $1.name }
+        .prefix(limit)
+        .map { $0 }
     }
     return result
   }
@@ -483,6 +571,7 @@ public final class DeviceOwnershipManager {
       #keyPath(SongMO.album),
       #keyPath(SongMO.artist),
       #keyPath(SongMO.genre),
+      "album.genre",
     ]
     request.returnsObjectsAsFaults = false
     return (try? context.fetch(request)) ?? []

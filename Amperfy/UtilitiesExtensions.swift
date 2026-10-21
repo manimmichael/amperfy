@@ -172,6 +172,21 @@ extension UIButton.Configuration {
     return config
   }
 
+  /// phone-taste: a quiet player toggle, a bare 20pt glyph in ink2 that lights in
+  /// `onColor` when on (no filled square). `player(isSelected:)` stays as it is, so
+  /// repeat and the queue toggle keep their look until a surface opts in.
+  static func playerQuietToggle(isOn: Bool, onColor: UIColor) -> UIButton.Configuration {
+    var config = UIButton.Configuration.cassetteBare()
+    config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20)
+    config.baseForegroundColor = isOn ? onColor : UIColor.cassette(.textSecondary)
+    return config
+  }
+
+  /// Shuffle on the player: orange when on (live state, `.accentProgress`), quiet when off.
+  static func playerShuffle(isOn: Bool) -> UIButton.Configuration {
+    playerQuietToggle(isOn: isOn, onColor: UIColor.cassette(.accentProgress))
+  }
+
   static func playerRound() -> UIButton.Configuration {
     var config = UIButton.Configuration.gray()
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .medium)

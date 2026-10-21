@@ -391,3 +391,53 @@ extension UIViewController {
     }
   }
 }
+
+// MARK: - OneTapPlay
+
+/// One tap on a cover plays it at once (phone-taste: "every cover plays in one tap").
+/// The one shared way to start a record from a tile, a shelf, the Resume card's fallback
+/// or a search result, so no surface queues music that is not on the phone.
+///
+/// "On this phone" means the DeviceOwnership set (what the hub synced here), NOT Amperfy's
+/// `isCached` download cache: owned songs play from CassetteMusic and need not be cached.
+@MainActor
+enum OneTapPlay {
+  /// `appDelegate` is an instance property on NSObject/View, so a static context asks the
+  /// application for it.
+  private static var delegate: AppDelegate {
+    UIApplication.shared.delegate as! AppDelegate
+  }
+
+  /// What this phone can play now from `containable`, in container order. On-device mode
+  /// keeps only the songs on this phone (other playables pass); Server Mode keeps
+  /// everything, or only cached items while offline.
+  static func playables(of containable: PlayableContainable) -> [AbstractPlayable] {
+    let all = containable.playables
+    if CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
+      let owned = DeviceOwnershipManager(context: delegate.storage.main.context)
+        .fetchAllSubsonicTrackIds()
+      return all.filter { playable in
+        guard let song = playable.asSong else { return true }
+        return owned.contains(song.id)
+      }
+    }
+    return all.filterCached(dependigOn: delegate.storage.settings.user.isOfflineMode)
+  }
+
+  /// Plays `containable` now: an album from the top, an artist shuffled, a playlist (and
+  /// anything else) in order. Does nothing and returns false when nothing of it is on the
+  /// phone. A light haptic marks the start.
+  @discardableResult
+  static func play(_ containable: PlayableContainable) -> Bool {
+    let list = playables(of: containable)
+    guard !list.isEmpty else { return false }
+    let context = PlayContext(containable: containable, index: 0, playables: list)
+    if containable is Artist {
+      delegate.player.playShuffled(context: context)
+    } else {
+      delegate.player.play(context: context)
+    }
+    Haptics.light.vibrate(isHapticsEnabled: delegate.storage.settings.user.isHapticsEnabled)
+    return true
+  }
+}

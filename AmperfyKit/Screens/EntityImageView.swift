@@ -131,6 +131,17 @@ open class EntityImageView: UIView {
       loadRemoteCover(url, playlistId: playlist.id, urlKey: urlString, theme: theme, container: container)
       return
     }
+    // phone-taste: a playlist with no cover of its own gets its derived preset, the same
+    // one the web picks. A playlist never draws an album-art mosaic (founder rule). Only
+    // the player queue (an empty id) keeps the song art.
+    if let playlist = container as? Playlist,
+       let preset = CassetteCloudPlaylistBridge.derivedPresetCoverImage(forPlaylistId: playlist.id) {
+      if case .circle = shape { applyShape() } else { shape = .rounded(cornerRadius) }
+      let loadID = UUID()
+      remoteCoverLoadID = loadID
+      applyRemoteCover(preset, loadID: loadID)
+      return
+    }
     remoteCoverLoadID = UUID()
     display(
       theme: theme,
@@ -163,11 +174,11 @@ open class EntityImageView: UIView {
       do {
         let (data, response) = try await URLSession.shared.data(from: url)
         if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
-          await self?.fallBackToSongMosaic(theme: theme, container: container, loadID: loadID)
+          await self?.fallBackToPreset(theme: theme, container: container, loadID: loadID)
           return
         }
         guard let image = UIImage(data: data) else {
-          await self?.fallBackToSongMosaic(theme: theme, container: container, loadID: loadID)
+          await self?.fallBackToPreset(theme: theme, container: container, loadID: loadID)
           return
         }
         // Persist so the next cold/offline launch reads local (best-effort, off-main).
@@ -176,20 +187,27 @@ open class EntityImageView: UIView {
           self?.applyRemoteCover(image, loadID: loadID)
         }
       } catch {
-        // Offline / unreachable: fall through to the song mosaic instead of leaving
-        // the generic playlist glyph (a picked cover that hasn't materialized yet
-        // otherwise reads as art-less until the network returns).
-        await self?.fallBackToSongMosaic(theme: theme, container: container, loadID: loadID)
+        // Offline / unreachable: fall through to the playlist's preset instead of
+        // leaving the generic playlist glyph (a picked cover that hasn't materialized
+        // yet otherwise reads as art-less until the network returns).
+        await self?.fallBackToPreset(theme: theme, container: container, loadID: loadID)
       }
     }
   }
 
   @MainActor
-  private func fallBackToSongMosaic(theme: ThemePreference, container: PlayableContainable, loadID: UUID) {
-    // Only if no newer display started (a real cover landing must win). Safe here —
-    // unlike the D03 clobber, this runs AFTER the remote load has FAILED, so there is
-    // no async cover decode racing to repaint over the mosaic.
+  private func fallBackToPreset(theme: ThemePreference, container: PlayableContainable, loadID: UUID) {
+    // Only if no newer display started (a real cover landing must win). Safe here:
+    // this runs AFTER the remote load has FAILED, so there is no async cover decode
+    // racing to repaint over the fallback.
     guard remoteCoverLoadID == loadID else { return }
+    // phone-taste: a playlist whose picked cover cannot load shows its derived preset,
+    // never an album-art mosaic. Only an id-less playlist (the queue) keeps the song art.
+    if let playlist = container as? Playlist,
+       let preset = CassetteCloudPlaylistBridge.derivedPresetCoverImage(forPlaylistId: playlist.id) {
+      applyRemoteCover(preset, loadID: loadID)
+      return
+    }
     display(theme: theme, collection: container.getArtworkCollection(theme: theme))
   }
 

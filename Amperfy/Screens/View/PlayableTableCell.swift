@@ -42,6 +42,30 @@ enum PlayableTableCellStyle {
   case artwork
 }
 
+// MARK: - PlayableCellOptions
+
+/// How one surface wants its song rows drawn, set per bind through
+/// `PlayableTableCell.display(..., options:)`. Every field defaults to today's row, so a
+/// call site that passes nothing is unchanged.
+struct PlayableCellOptions: Equatable {
+  /// The track number's colour; nil is `.textTertiary`. Lit pages pass `CoverTint.text`.
+  var trackNumberColor: UIColor? = nil
+  /// The row's side margins; nil is `UIView.defaultMarginCellX` (16).
+  var horizontalMargin: CGFloat? = nil
+  /// The row's top and bottom margins; nil is the track-list default (14). The row height
+  /// is the host's: 48 + 2 x margin.
+  var verticalMargin: CGFloat? = nil
+  /// Shown in the subtitle line, always visible; wins over the contextual artist line and
+  /// `hideArtistSubtitle`.
+  var subtitleOverride: String? = nil
+  /// Leaves the trailing duration out.
+  var hidesDuration = false
+  /// A clear row, for lists drawn over a lit page.
+  var clearsBackground = false
+
+  static let standard = PlayableCellOptions()
+}
+
 // MARK: - PlayableTableCell
 
 @MainActor
@@ -176,15 +200,27 @@ class PlayableTableCell: BasicTableCell {
   private static let touchAnimation = 0.4
 
   override var layoutMargins: UIEdgeInsets {
-    get {
-      UIEdgeInsets(
-        top: Self.trackListMarginY,
-        left: UIView.defaultMarginCellX,
-        bottom: Self.trackListMarginY,
-        right: UIView.defaultMarginCellX
-      )
-    }
+    get { margins(for: options) }
     set {}
+  }
+
+  private func margins(for options: PlayableCellOptions) -> UIEdgeInsets {
+    let x = options.horizontalMargin ?? UIView.defaultMarginCellX
+    let y = options.verticalMargin ?? Self.trackListMarginY
+    return UIEdgeInsets(top: y, left: x, bottom: y, right: x)
+  }
+
+  /// The surface's row options (see `PlayableCellOptions`). Set through `display(...)`;
+  /// reset to `.standard` on reuse.
+  private var options = PlayableCellOptions.standard {
+    didSet {
+      guard margins(for: options) != margins(for: oldValue) else { return }
+      // The getter above is what the row lays out with; pushing the value through
+      // UIView's setter tells UIKit the margins moved so the content view re-lays.
+      super.layoutMargins = margins(for: options)
+      setNeedsLayout()
+      contentView.setNeedsLayout()
+    }
   }
 
   private var style = PlayableTableCellStyle.none
@@ -262,12 +298,12 @@ class PlayableTableCell: BasicTableCell {
       // variations (a context-menu preview does); colours stay here because
       // applyCassetteOwnershipDimming() owns them after bind.
       applyCassetteType()
-      titleLabel.textColor = CassetteTheme.UIColors.ink
-      artistLabel.textColor = CassetteTheme.UIColors.ink2
-      durationLabel.textColor = CassetteTheme.UIColors.ink2
-      trackNumberLabel.textColor = CassetteTheme.UIColors.ink3
-      contentView.backgroundColor = CassetteTheme.UIColors.bg
-      backgroundColor = CassetteTheme.UIColors.bg
+      titleLabel.textColor = UIColor.cassette(.textPrimary)
+      artistLabel.textColor = UIColor.cassette(.textSecondary)
+      durationLabel.textColor = UIColor.cassette(.textSecondary)
+      trackNumberLabel.textColor = UIColor.cassette(.textTertiary)
+      contentView.backgroundColor = UIColor.cassette(.surfaceBase)
+      backgroundColor = UIColor.cassette(.surfaceBase)
       resetForReuse()
     }
   }
@@ -298,6 +334,10 @@ class PlayableTableCell: BasicTableCell {
     super.prepareForReuse()
     playingSymbolView.stopAnimating()
     resetForReuse()
+    // Back to today's row: margins, track-number ink and the page background.
+    options = .standard
+    trackNumberLabel.textColor = UIColor.cassette(.textTertiary)
+    applyBackground()
   }
 
   #if targetEnvironment(macCatalyst) // ok
@@ -336,8 +376,10 @@ class PlayableTableCell: BasicTableCell {
     contextArtistName: String? = nil,
     download: Download? = nil,
     isMarked: Bool = false,
-    cassetteIsOwned: Bool? = nil
+    cassetteIsOwned: Bool? = nil,
+    options: PlayableCellOptions = .standard
   ) {
+    self.options = options
     self.playable = playable
     self.displayMode = displayMode
     self.playContextCb = playContextCb
@@ -358,8 +400,22 @@ class PlayableTableCell: BasicTableCell {
     #else
       singleTapGestureRecognizer.isEnabled = (displayMode == .normal)
     #endif
-    backgroundColor = CassetteTheme.UIColors.bg
+    applyBackground()
     refresh()
+  }
+
+  /// The row's own background: the page, or clear over a lit page.
+  private func applyBackground() {
+    let background = options.clearsBackground ? UIColor.clear : UIColor.cassette(.surfaceBase)
+    backgroundColor = background
+    contentView.backgroundColor = background
+  }
+
+  /// Recolour the track number in place, e.g. when a page's cover tint arrives after the
+  /// rows were bound. nil restores `.textTertiary`.
+  func setTrackNumberColor(_ color: UIColor?) {
+    options.trackNumberColor = color
+    trackNumberLabel.textColor = color ?? UIColor.cassette(.textTertiary)
   }
 
   private func configureStyle(playable: AbstractPlayable, newStyle: PlayableTableCellStyle) {
@@ -543,7 +599,12 @@ class PlayableTableCell: BasicTableCell {
   func refresh() {
     guard let playable = playable else { return }
     titleLabel.text = playable.title
-    if let context = contextArtistName {
+    // Stamped on every refresh (it used to be set once, in awakeFromNib).
+    trackNumberLabel.textColor = options.trackNumberColor ?? UIColor.cassette(.textTertiary)
+    if let subtitleOverride = options.subtitleOverride {
+      artistLabel.text = subtitleOverride
+      artistLabel.isHidden = false
+    } else if let context = contextArtistName {
       if let sub = CassetteTrackSubtitle.contextual(
         trackArtist: playable.creatorName,
         contextArtist: context
@@ -575,31 +636,35 @@ class PlayableTableCell: BasicTableCell {
       // ink3 (unmarked). Removes the indirection through ThemePreference
       // and makes the contrast intent obvious at the call site.
       let img = UIImageView(image: isMarked ? .checkmark : .circle)
-      img.tintColor = isMarked ? CassetteTheme.UIColors.ink : CassetteTheme.UIColors.ink3
+      img.tintColor = isMarked ? UIColor.cassette(.textPrimary) : UIColor.cassette(.textTertiary)
       accessoryView = img
     } else if displayMode == .add {
       // cassette Patch 051 (Phase F): add-mode glyph uses ink (marked) /
       // ink3 (unmarked, the plus). See .selection rationale above.
       let img = UIImageView(image: isMarked ? .checkmark : .plusCircle)
-      img.tintColor = isMarked ? CassetteTheme.UIColors.ink : CassetteTheme.UIColors.ink3
+      img.tintColor = isMarked ? UIColor.cassette(.textPrimary) : UIColor.cassette(.textTertiary)
       accessoryView = img
     } else if displayMode == .reorder || playerIndexCb != nil {
       let img = UIImageView(image: .bars)
-      img.tintColor = CassetteTheme.UIColors.ink
+      // Queue rows: the grip is quieter than the row (phone-taste). Playlist edit mode
+      // (.reorder) keeps the full-ink grip.
+      img.tintColor = (playerIndexCb != nil && displayMode != .reorder)
+        ? UIColor.cassette(.textTertiary)
+        : UIColor.cassette(.textPrimary)
       accessoryView = img
     } else if let download = download {
       if download.error != nil {
         let img = UIImageView(image: .exclamation)
-        img.tintColor = CassetteTheme.UIColors.ink
+        img.tintColor = UIColor.cassette(.textPrimary)
         accessoryView = img
       } else if download.isFinishedSuccessfully {
         let img = UIImageView(image: .check)
-        img.tintColor = CassetteTheme.UIColors.ink
+        img.tintColor = UIColor.cassette(.textPrimary)
         accessoryView = img
       } else if download.isDownloading {
         let spinner = UIActivityIndicatorView(style: .medium)
         spinner.startAnimating()
-        spinner.tintColor = CassetteTheme.UIColors.ink
+        spinner.tintColor = UIColor.cassette(.textPrimary)
         accessoryView = spinner
       } else {
         accessoryView = nil
@@ -649,8 +714,9 @@ class PlayableTableCell: BasicTableCell {
     // configurable swipe actions instead.
     favoriteIconImage.isHidden = true
 
-    // Duration always stands in the trailing slot; overflow is long-press.
-    let isDurationVisible = !playable.isRadio
+    // Duration always stands in the trailing slot (unless the surface leaves it out);
+    // overflow is long-press.
+    let isDurationVisible = !playable.isRadio && !options.hidesDuration
     let cacheIconWidth = (traitCollection.horizontalSizeClass == .regular) ? 17.0 : 15.0
     let durationWidth = (
       traitCollection.horizontalSizeClass == .regular &&
@@ -746,16 +812,12 @@ class PlayableTableCell: BasicTableCell {
     }
   }
 
+  /// The quiet line (artist, length, cache icon) is ink2 everywhere, the queue included
+  /// (phone-taste: queue rows used to paint it full ink, as loud as the title).
   private func refreshSubtitleColor() {
-    if playerIndexCb != nil {
-      cacheIconImage.tintColor = CassetteTheme.UIColors.ink
-      artistLabel.textColor = CassetteTheme.UIColors.ink
-      durationLabel.textColor = CassetteTheme.UIColors.ink
-    } else {
-      cacheIconImage.tintColor = CassetteTheme.UIColors.ink2
-      artistLabel.textColor = CassetteTheme.UIColors.ink2
-      durationLabel.textColor = CassetteTheme.UIColors.ink2
-    }
+    cacheIconImage.tintColor = UIColor.cassette(.textSecondary)
+    artistLabel.textColor = UIColor.cassette(.textSecondary)
+    durationLabel.textColor = UIColor.cassette(.textSecondary)
   }
 
   func playThisSong() {

@@ -168,6 +168,23 @@ class HomeManager: NSObject {
   // rebuild is one diff/animation instead of 4-6 overlapping animated applies.
   private var isBatchingSnapshot = false
 
+  /// phone-taste: the Lately tile's mix, built once per LatelyLibrary snapshot so the
+  /// tile's picture always shows records the tap will play.
+  struct LatelyMix {
+    /// The songs a tap plays, in order (on this phone, matching lately).
+    let songs: [AbstractPlayable]
+    /// Up to four of the mix's albums for the tile's picture, in mix order, those with a
+    /// cover on disk first.
+    let leadAlbums: [Album]
+    /// The `LatelyLibrary.generation` it was built from.
+    let generation: Int
+  }
+
+  /// The current Lately mix, or nil when there is no lately profile (no mood tags or no
+  /// recent listening). It changes only when the snapshot rebuilds (five minutes, or new
+  /// tags), never on a play or pause.
+  private(set) var latelyMix: LatelyMix?
+
   init(
     account: Account,
     storage: PersistentStorage,
@@ -387,6 +404,12 @@ class HomeManager: NSObject {
     let work = DispatchWorkItem { [weak self] in self?.recomputeAllShelves() }
     pendingRecompute = work
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.recomputeDebounce, execute: work)
+  }
+
+  /// Rebuild the rows soon, e.g. after the mood tags change: the same debounced recompute
+  /// a library change triggers, deferred while Home is off screen.
+  func refreshListeningShelves() {
+    scheduleRecompute()
   }
 
   /// Flushed by the host (phone Home) when it becomes visible again: runs one
@@ -701,9 +724,48 @@ class HomeManager: NSObject {
         .filter { isOnPhone($0) }
         .prefix(Self.shelfCarouselCap)
         .map { HomeItem(section: .moreLikeLately, stableID: Self.stableID(for: $0), playableContainable: $0) }
+      // The Lately mix follows the snapshot, not every recompute.
+      if latelyMix == nil || latelyMix?.generation != LatelyLibrary.generation {
+        let songs: [AbstractPlayable] = LatelyLibrary.makeLatelyMix(
+          snapshot: lately,
+          count: Self.latelyMixLength
+        )
+        latelyMix = LatelyMix(
+          songs: songs,
+          leadAlbums: leadAlbums(for: songs),
+          generation: LatelyLibrary.generation
+        )
+      }
     } else {
       data[.moreLikeLately] = []
+      latelyMix = nil
     }
+  }
+
+  private static let latelyMixLength = 40
+  private static let latelyLeadAlbumCount = 4
+
+  /// The first four distinct albums of the mix, in mix order, preferring those whose cover
+  /// is on disk, then filling with any.
+  private func leadAlbums(for songs: [AbstractPlayable]) -> [Album] {
+    let setting = storage.settings.accounts.getSetting(account.info).read.artworkDisplayPreference
+    var seen = Set<String>()
+    var distinct = [Album]()
+    for song in songs {
+      guard let album = song.asSong?.album, !album.id.isEmpty, seen.insert(album.id).inserted
+      else { continue }
+      distinct.append(album)
+    }
+    let withCover = distinct.filter { album in
+      guard let path = album.imagePath(setting: setting) else { return false }
+      return FileManager.default.fileExists(atPath: path)
+    }
+    var lead = Array(withCover.prefix(Self.latelyLeadAlbumCount))
+    var leadIDs = Set(lead.map(\.id))
+    for album in distinct where lead.count < Self.latelyLeadAlbumCount {
+      if leadIDs.insert(album.id).inserted { lead.append(album) }
+    }
+    return lead
   }
 
   /// Two months of plays is about a thousand entries for a heavy listener; the cap only

@@ -75,6 +75,32 @@ public enum CassetteCloudPlaylistBridge {
     return "playlist-cover-\(urlString[slugRange].lowercased())"
   }
 
+  /// The deterministic preset for a playlist with no cover of its own: the same pick the
+  /// web makes (`stableIndex` in apps/cassette/src/lib/covers/playlist.ts, FNV-1a over the
+  /// id's UTF-16 units with a wrapping 32-bit multiply, i.e. charCodeAt + Math.imul), so
+  /// the phone shows the cover the web shows before the server's derived_cover_url arrives.
+  /// The id is NOT lowercased: the web hashes it as stored. nil for an empty id (the
+  /// player queue's playlist).
+  ///
+  /// Fixtures (the web's own function, run in node on 2026-10-21):
+  ///   "00000000-0000-0000-0000-000000000000" -> playlist-cover-preset-02
+  ///   "3f2b9c1e-8a4d-4e2f-9b7a-1c2d3e4f5a6b" -> playlist-cover-preset-08
+  nonisolated public static func derivedPresetAssetName(forPlaylistId playlistId: String) -> String? {
+    guard !playlistId.isEmpty else { return nil }
+    var h: UInt32 = 2_166_136_261
+    for unit in playlistId.utf16 {
+      h ^= UInt32(unit)
+      h = h &* 16_777_619
+    }
+    return String(format: "playlist-cover-preset-%02d", Int(h % 16) + 1)
+  }
+
+  /// The bundled image for `derivedPresetAssetName(forPlaylistId:)`.
+  nonisolated public static func derivedPresetCoverImage(forPlaylistId playlistId: String) -> UIImage? {
+    guard let name = derivedPresetAssetName(forPlaylistId: playlistId) else { return nil }
+    return UIImage(named: name, in: Bundle(for: EntityImageView.self), compatibleWith: nil)
+  }
+
   // MARK: - Local-first materialized pick covers (offline / cold launch)
 
   // A playlist's own cover comes from three places: a bundled abstract preset
@@ -137,8 +163,12 @@ public enum CassetteCloudPlaylistBridge {
   /// The playlist's cover as a LOCAL image — a bundled preset, or a materialized
   /// pick — or nil if a pick hasn't been materialized yet. Fully synchronous, for
   /// surfaces (CarPlay rows) that need an image up front rather than an async fetch.
+  /// phone-taste: a playlist with no stored cover gets its derived preset (the person's
+  /// pick, else the preset; never album art).
   nonisolated public static func localCoverImage(for playlistId: String) -> UIImage? {
-    guard let urlString = storedCoverUrl(for: playlistId) else { return nil }
+    guard let urlString = storedCoverUrl(for: playlistId) else {
+      return derivedPresetCoverImage(forPlaylistId: playlistId)
+    }
     if let bundled = bundledPresetCoverImage(forCoverUrl: urlString) { return bundled }
     return materializedCoverImage(for: playlistId, url: urlString)
   }
