@@ -184,6 +184,21 @@ struct CarPlayStyle {
     })
   }
 
+  /// The same word picture for the phone (founder, 2026-10-21: Home's radio tiles for a
+  /// station with no logo were two initials on a flat colour, "gross"): the station's colour
+  /// running into the sunken surface, its name in our type along the bottom, drawn square at
+  /// `side` points and `scale`.
+  static func phoneWordArt(word: String, color: UIColor, side: CGFloat, scale: CGFloat) -> UIImage {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = scale
+    format.opaque = true
+    let rect = CGRect(x: 0, y: 0, width: side, height: side)
+    return UIGraphicsImageRenderer(size: rect.size, format: format).image { renderer in
+      fillAngledGradient(renderer.cgContext, rect: rect, from: color, to: UIColor.cassette(.surfaceSunken))
+      drawMadeWord(word, side: side)
+    }
+  }
+
   /// A mix: four of its records aspect-filled into quadrants on the elevated surface, a scrim
   /// that darkens the bottom, then its name. Fewer than four covers leave the rest empty.
   func mosaicArt(covers: [UIImage], word: String, slot: Slot = .shelf) -> UIImage {

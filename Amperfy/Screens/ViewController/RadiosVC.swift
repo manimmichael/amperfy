@@ -767,6 +767,12 @@ enum RadioShelf {
 
 /// A station card for the Home carousel: the logo or the tile, the station's
 /// name, and the network line. Same width as the album cards beside it.
+///
+/// Founder, 2026-10-21: a station with no logo showed two initials on its colour mixed half
+/// into the chassis ("the radio covers look gross"). It now gets the car's word picture, its
+/// colour running into the dark with its name in our type (CarPlayStyle.phoneWordArt), and
+/// the card takes the album tiles' shape (their corner, no outline), so the row reads like
+/// the shelves around it.
 final class RadioShelfCell: UICollectionViewCell {
   // `typeName` comes from the kit's NSObject extension ("RadioShelfCell").
 
@@ -781,10 +787,8 @@ final class RadioShelfCell: UICollectionViewCell {
     super.init(frame: frame)
     art.contentMode = .scaleAspectFill
     art.clipsToBounds = true
-    art.layer.cornerRadius = CassetteTheme.Radius.md
+    art.layer.cornerRadius = CassetteRadius.artworkTile
     art.backgroundColor = CassetteTheme.UIColors.bg3
-    art.layer.borderWidth = 1
-    art.layer.borderColor = CassetteTheme.UIColors.ink4.cgColor
 
     initials.font = UIFont.cassette(.sectionTitle)
     initials.textColor = CassetteTheme.UIColors.ink
@@ -837,16 +841,27 @@ final class RadioShelfCell: UICollectionViewCell {
     nameLabel.text = name
     kickerLabel.text = info?.kicker ?? (radio.siteURL?.host ?? "")
     initials.text = RadioShelfCell.initials(of: name)
-    initials.isHidden = false
-    art.image = nil
+    // The word picture until (unless) the station's logo lands; the initials stay hidden.
+    initials.isHidden = true
     art.backgroundColor = RadioTile.fill(accent: info?.accent)
+    let side = bounds.width > 0 ? bounds.width : AlbumCarousel.mockItemWidth
+    let color = info.flatMap { UIColor(cassetteHexString: $0.accent) } ?? CassetteTheme.UIColors.bg3
+    art.image = CarPlayStyle.phoneWordArt(
+      word: name,
+      color: color,
+      side: side,
+      scale: traitCollection.displayScale > 0 ? traitCollection.displayScale : 3
+    )
     if let image = info?.image, !image.isEmpty {
       representedImage = image
+      if let cached = RadioArtLoader.shared.cachedImage(for: image) {
+        art.image = cached
+        return
+      }
       loadTask = Task { @MainActor [weak self] in
         let loaded = await RadioArtLoader.shared.image(for: image)
         guard let self, representedImage == image, let loaded else { return }
         art.image = loaded
-        initials.isHidden = true
       }
     }
   }
