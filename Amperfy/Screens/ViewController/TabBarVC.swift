@@ -447,6 +447,13 @@ extension TabBarVC: MainSceneHostingViewController {
   /// lands on the requested category in one tap.
   public func switchToLibrary(category: LibraryDisplayType) {
     guard let libraryGroup else { return }
+    // The Library screen is built on the tab's first visit and opens on the last category
+    // used, so a request made before that visit (Home's RADIO header, right after launch)
+    // was dropped and Library opened on, say, Albums. Store the category first: a screen
+    // built now opens on it, and one already built switches below.
+    appDelegate.storage.settings.accounts.updateSetting(account.info) { accountSettings in
+      accountSettings.lastLibraryCategory = category
+    }
     let nav = libraryGroup.managingNavigationController
     nav?.popToRootViewController(animated: false)
     if let container = nav?.viewControllers.first as? LibraryContainerVC {
