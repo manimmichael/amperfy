@@ -36,6 +36,20 @@
 
 import Foundation
 
+// MARK: - CassetteFeatureFlags
+
+/// Build-time capability gates for the Cassette fork. These are flipped in
+/// source, never from the server, so an already-installed build can't be
+/// toggled into an untested path by an account payload.
+public enum CassetteFeatureFlags {
+  /// Streaming (Server Mode playback of tracks that aren't downloaded yet) is
+  /// hidden and disabled app-wide until this is flipped `true`. While `false`,
+  /// `CassetteLibraryFilterProvider.currentFilter` stays `.onDeviceOnly`
+  /// regardless of the account's Server Mode value, which also hides the
+  /// "Keep songs you stream" settings row (it only shows in Server Mode).
+  public static let isStreamingEnabled = false
+}
+
 // MARK: - LibraryFilter
 
 /// Controls what tracks appear in library views based on ownership state.
@@ -69,6 +83,12 @@ public final class CassetteLibraryFilterProvider: LibraryFilterProvider, Sendabl
   public init() {}
 
   public var currentFilter: LibraryFilter {
+    // cassette: streaming is gated off in the shipped build. Until
+    // CassetteFeatureFlags.isStreamingEnabled is flipped true, the library is
+    // on-device-only no matter what the account's Server Mode value says, so no
+    // streaming path can be entered (this also hides the one Server-Mode-only
+    // settings row, since it reads this same filter).
+    guard CassetteFeatureFlags.isStreamingEnabled else { return .onDeviceOnly }
     let serverMode = UserDefaults.standard.bool(forKey: Self.serverModeDefaultsKey)
     return serverMode ? .everything : .onDeviceOnly
   }
