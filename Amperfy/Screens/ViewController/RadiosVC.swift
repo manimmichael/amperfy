@@ -1005,6 +1005,33 @@ enum RadioTile {
   }
 }
 
+/// cassette 2026-10-21: a station's own mark when it is in memory, else its word picture
+/// (its colour into the dark, its name in our type), for the player's glow and the station
+/// line over the song, with a key that names which one it is. `loadIfNeeded` runs once the
+/// mark has been fetched, so the caller can ask again.
+enum RadioMark {
+  @MainActor
+  static func image(
+    for radio: Radio,
+    side: CGFloat = 300,
+    loadIfNeeded: (() -> ())? = nil
+  )
+    -> (image: UIImage, key: String) {
+    let info = RadioCatalog.shared.station(forStreamUrl: radio.url)
+    if let src = info?.image, !src.isEmpty {
+      if let cached = RadioArtLoader.shared.cachedImage(for: src) { return (cached, "mark:\(src)") }
+      if let loadIfNeeded {
+        Task { @MainActor in
+          if await RadioArtLoader.shared.image(for: src) != nil { loadIfNeeded() }
+        }
+      }
+    }
+    let color = info.flatMap { UIColor(cassetteHexString: $0.accent) } ?? CassetteTheme.UIColors.bg3
+    let name = info?.name ?? radio.title
+    return (CarPlayStyle.phoneWordArt(word: name, color: color, side: side, scale: 2), "word:\(name):\(side)")
+  }
+}
+
 extension UIColor {
   /// "#rrggbb" → color; nil for anything else.
   convenience init?(cassetteHexString: String) {

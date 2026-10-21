@@ -432,6 +432,60 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
   /// every refresh, since it only skips a text it already shows.
   private lazy var mixedCaseTitle = UILabel()
 
+  // MARK: Station line
+
+  /// cassette 2026-10-21 (founder: "it's not uncommon for me to forget I'm on a radio
+  /// station"): on the radio, a small line over the song names the station, its mark and
+  /// its name in the kicker voice, so Next to another station never leaves you guessing.
+  /// First row of the title stack; hidden for everything that is not a station.
+  private let stationMark = UIImageView()
+  private let stationLabel = UILabel()
+  private lazy var stationRow: UIStackView = {
+    stationMark.contentMode = .scaleAspectFill
+    stationMark.clipsToBounds = true
+    stationMark.layer.cornerRadius = 4
+    stationMark.layer.cornerCurve = .continuous
+    stationMark.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      stationMark.widthAnchor.constraint(equalToConstant: 22),
+      stationMark.heightAnchor.constraint(equalToConstant: 22),
+    ])
+    stationLabel.numberOfLines = 1
+    stationLabel.lineBreakMode = .byTruncatingTail
+    stationLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let spacer = UIView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let row = UIStackView(arrangedSubviews: [stationMark, stationLabel, spacer])
+    row.axis = .horizontal
+    row.alignment = .center
+    row.spacing = 8
+    row.isAccessibilityElement = true
+    row.isHidden = true
+    return row
+  }()
+
+  private func refreshStationRow() {
+    guard let titleStack = albumContainerView.superview as? UIStackView else { return }
+    if stationRow.superview == nil {
+      titleStack.insertArrangedSubview(stationRow, at: 0)
+      titleStack.setCustomSpacing(10, after: stationRow)
+    }
+    guard let radio = appDelegate.player.currentlyPlaying?.asRadio else {
+      stationRow.isHidden = true
+      return
+    }
+    let info = RadioCatalog.shared.station(forStreamUrl: radio.url)
+    let name = info?.name ?? radio.title
+    let network = info?.sourceLabel
+    let line = [name, network == name ? nil : network].compactMap { $0 }.joined(separator: " · ")
+    stationLabel.attributedText = NSAttributedString.cassette(line, .kicker, color: .cassette(.textSecondary))
+    stationRow.accessibilityLabel = "Station: \(line)"
+    stationMark.image = RadioMark.image(for: radio, side: 44) { [weak self] in
+      self?.refreshStationRow()
+    }.image
+    stationRow.isHidden = false
+  }
+
   func refresh() {
     // cassette polish: the album outlets are intentionally NOT passed so the
     // hidden album row (see prepare()) is never re-shown by the shared refresh
@@ -445,6 +499,7 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     // still reads the title as written.
     titleLabel.text = mixedCaseTitle.text?.uppercased()
     titleLabel.accessibilityLabel = mixedCaseTitle.text
+    refreshStationRow()
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
     // cassette Patch 054 (Phase I): refreshRating call removed; popup
     // rating view deleted.

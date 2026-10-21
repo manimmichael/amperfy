@@ -239,9 +239,7 @@ class LibraryElementDetailTableHeaderView: UIView {
     let label = isPausable ? "Pause" : "Play"
 
     if let pill = prominentPlayButton {
-      pill.configuration?.image = icon.symbolImage
-      pill.configuration?.attributedTitle = Self.pillTitle(label, color: .cassette(.textOnFill))
-      pill.accessibilityLabel = label
+      Self.setPlayPill(pill, state: isPausable ? .pause : .play)
     }
 
     if playAllButton != nil {
@@ -377,6 +375,25 @@ class LibraryElementDetailTableHeaderView: UIView {
   /// A pill label in the `.pill` role (Barlow Bold 16, tracked, capitals).
   private static func pillTitle(_ text: String, color: UIColor) -> AttributedString {
     AttributedString(NSAttributedString.cassette(text, .pill, color: color))
+  }
+
+  /// What a PLAY pill says: Play, or (once the player is on that page's music) Pause, or
+  /// Stop for a live station, the way the player's own button reads.
+  enum PlayPillState {
+    case play, pause, stop
+  }
+
+  /// cassette 2026-10-21 (founder: "it has no idea it is playing that thing"): every hero's
+  /// PLAY pill, here and on the made-for-you and station pages, reads the same way.
+  static func setPlayPill(_ pill: UIButton, state: PlayPillState) {
+    let (icon, label): (CassetteIcon, String) = switch state {
+    case .play: (.play, "Play")
+    case .pause: (.pause, "Pause")
+    case .stop: (.stop, "Stop")
+    }
+    pill.configuration?.image = icon.symbolImage
+    pill.configuration?.attributedTitle = pillTitle(label, color: .cassette(.textOnFill))
+    pill.accessibilityLabel = label
   }
 
   /// The cream PLAY pill (the mock's `.playPill`): ink fill, dark label and glyph, 16pt

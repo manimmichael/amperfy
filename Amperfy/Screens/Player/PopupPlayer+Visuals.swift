@@ -174,6 +174,35 @@ extension PopupPlayerVC {
     let hasCover = artworkPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
     ambientBackdropModel.isPlaying = player.isPlaying
 
+    // cassette 2026-10-21: a station glows like a record. What the cloud says is on wears
+    // its picture (the record, else the show's), so the glow follows it; with nothing from
+    // the cloud and no logo on the hub, the station's own mark (or its word picture) glows
+    // instead of the generic placeholder.
+    if let radio = playable.asRadio {
+      let liveArt = player.currentRadioArtwork
+      if liveArt != nil || !hasCover {
+        let art: UIImage
+        let key: String
+        if let liveArt {
+          art = liveArt
+          key = "radio-live:\(player.currentRadioLive?.artworkURL ?? radio.id)"
+        } else {
+          let mark = RadioMark.image(for: radio) { [weak self] in self?.refreshBackgroundItemArtwork() }
+          art = mark.image
+          key = "radio-\(mark.key)"
+        }
+        guard ambientBackdropModel.coverID != key else { return }
+        Task { @MainActor [weak self] in
+          let tint = await CoverTint.resolve(image: art, key: key)
+          guard let self, player.currentlyPlaying?.id == radio.id else { return }
+          ambientBackdropModel.image = art
+          ambientBackdropModel.coverID = key
+          updateCoverTint(tint)
+        }
+        return
+      }
+    }
+
     if hasCover, let artworkPath {
       // phone-taste: the glow's key is the foundation's cover key (the path plus the file's
       // date), the one the record pages' glows use, so the blurred tiny is shared and a

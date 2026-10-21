@@ -189,6 +189,14 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
       name: RadioSaved.didChange,
       object: nil
     )
+    for name in [Notification.Name.playerPlay, .playerPause, .playerStop] {
+      appDelegate.notificationHandler.register(
+        self,
+        selector: #selector(Self.playerStateChanged),
+        name: name,
+        object: nil
+      )
+    }
 
     showSimilar(RadioCatalog.shared.similarSlugs(for: station).compactMap { RadioCatalog.shared.station(slug: $0) })
     loadArt()
@@ -198,6 +206,7 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
     applySaveState()
+    playerStateChanged()
     refreshLive()
     refreshTimer?.invalidate()
     refreshTimer = Timer.scheduledTimer(withTimeInterval: Self.refreshEvery, repeats: true) { [weak self] _ in
@@ -268,7 +277,15 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
       color: .cassette(.textSecondary)
     )
 
-    playPill.addAction(UIAction { [weak self] _ in self?.play() }, for: .primaryActionTriggered)
+    playPill.addAction(UIAction { [weak self] _ in
+      guard let self else { return }
+      // Stop (a live stream has no pause) once this station is on; Play otherwise.
+      if isThisStationPlaying {
+        appDelegate.player.pause()
+      } else {
+        play()
+      }
+    }, for: .primaryActionTriggered)
     playPill.isEnabled = radio != nil
     if radio == nil {
       // The hub does not hold this station yet, so there is nothing to tune to here.
@@ -352,6 +369,18 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
   @objc
   private func savedDidChange() {
     applySaveState()
+  }
+
+  private var isThisStationPlaying: Bool {
+    let player = appDelegate.player
+    guard let radio, player.isPlaying, let current = player.currentlyPlaying?.asRadio else { return false }
+    return current.id == radio.id
+  }
+
+  @objc
+  private func playerStateChanged() {
+    guard radio != nil else { return }
+    LibraryElementDetailTableHeaderView.setPlayPill(playPill, state: isThisStationPlaying ? .stop : .play)
   }
 
   /// `+ SAVE` / `✓ SAVED`, the one save mark.

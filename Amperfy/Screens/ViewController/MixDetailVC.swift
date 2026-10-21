@@ -63,13 +63,29 @@ final class MixDetailVC: MultiSourceTableViewController {
     // No row separators (the album page's clean block).
     tableView.separatorStyle = .none
 
-    hero.onPlay = { [weak self] in self?.play(shuffled: false) }
+    // Play pauses (and resumes) once the player is on this playlist.
+    hero.onPlay = { [weak self] in
+      guard let self else { return }
+      if isThisMixCurrent {
+        appDelegate.player.togglePlayPause()
+      } else {
+        play(shuffled: false)
+      }
+    }
     hero.onShuffle = { [weak self] in self?.play(shuffled: true) }
     tableView.tableHeaderView = hero
     chrome.install(header: nil, title: mix.title)
 
     lighter.apply = { [weak self] tint, glow, key in
       self?.hero.applyLight(tint: tint, glow: glow, key: key)
+    }
+    for name in [Notification.Name.playerPlay, .playerPause, .playerStop] {
+      appDelegate.notificationHandler.register(
+        self,
+        selector: #selector(Self.playerStateChanged),
+        name: name,
+        object: nil
+      )
     }
 
     containableAtIndexPathCallback = { [weak self] indexPath in
@@ -95,6 +111,20 @@ final class MixDetailVC: MultiSourceTableViewController {
     extendSafeAreaToAccountForMiniPlayer()
     chrome.viewIsAppearing()
     lightUp()
+    playerStateChanged()
+  }
+
+  /// The player is on this playlist: its context carries the playlist's title, and the
+  /// song is one of the page's (two mixes can share a title across days).
+  private var isThisMixCurrent: Bool {
+    let player = appDelegate.player
+    guard let current = player.currentlyPlaying, player.contextName == mix.title else { return false }
+    return songs.contains { $0.id == current.id }
+  }
+
+  @objc
+  private func playerStateChanged() {
+    hero.setPlayState(isThisMixCurrent && appDelegate.player.isPlaying ? .pause : .play)
   }
 
   override func viewDidLayoutSubviews() {
@@ -328,6 +358,10 @@ final class MixHeroView: UIView {
   @available(*, unavailable)
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
+  }
+
+  func setPlayState(_ state: LibraryElementDetailTableHeaderView.PlayPillState) {
+    LibraryElementDetailTableHeaderView.setPlayPill(playPill, state: state)
   }
 
   /// "30 songs · 1 hr 52 min"
