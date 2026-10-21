@@ -40,6 +40,7 @@ struct RadioStationPagePayload: Decodable {
   }
 
   struct Live: Decodable {
+    let match: RadioLiveMatch?
     let show: Show?
     let track: Track?
     let next: [Show]?
@@ -594,6 +595,23 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
         lines: 2
       ))
     }
+    if let match = live.match, let url = match.albumURL {
+      // The record we carry: the same "see it on Cassette" the web's page offers.
+      let see = UIButton(configuration: .plain())
+      see.configuration?.contentInsets = .zero
+      see.configuration?.attributedTitle = AttributedString(NSAttributedString.cassette(
+        "\(match.title) is on Cassette",
+        .metadata,
+        color: .cassette(.textPrimary)
+      ))
+      see.configuration?.image = CassetteIcon.openExternal.uiImage(size: .small)
+      see.configuration?.imagePlacement = .trailing
+      see.configuration?.imagePadding = 4
+      see.configuration?.baseForegroundColor = .cassette(.textPrimary)
+      see.contentHorizontalAlignment = .leading
+      see.addAction(UIAction { _ in UIApplication.shared.open(url) }, for: .primaryActionTriggered)
+      text.addArrangedSubview(see)
+    }
     if let next = live.next?.first {
       let at = Self.clock(next.starts).map { " at \($0)" } ?? ""
       let name = [next.name, next.host].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
@@ -613,7 +631,7 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
     picture.backgroundColor = .cassette(.surfaceElevated)
     picture.translatesAutoresizingMaskIntoConstraints = false
     picture.isHidden = true
-    if let src = live.track?.coverUrl ?? live.show?.image {
+    if let src = RadioLiveMatch.art(match: live.match, songCover: live.track?.coverUrl, showImage: live.show?.image) {
       Task { @MainActor [weak picture] in
         guard let image = await RadioArtLoader.shared.image(for: src) else { return }
         picture?.image = image

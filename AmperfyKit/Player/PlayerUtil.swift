@@ -86,8 +86,13 @@ public struct RadioLiveInfo: Equatable, Sendable {
   /// publishes its running order.
   public var next: String?
   public var nextStarts: Date?
-  /// The picture to wear, by URL: the song's cover, else the show's own.
+  /// The picture to wear, by URL: the record we carry, else the song's cover from the
+  /// station, else the show's own.
   public var artworkURL: String?
+  /// cassette 2026-10-21: the record on Cassette the song matched, when it did (its web
+  /// slug and title), so the player can offer to go and see it.
+  public var albumSlug: String?
+  public var albumTitle: String?
 
   public init(
     songTitle: String? = nil,
@@ -97,7 +102,9 @@ public struct RadioLiveInfo: Equatable, Sendable {
     until: Date? = nil,
     next: String? = nil,
     nextStarts: Date? = nil,
-    artworkURL: String? = nil
+    artworkURL: String? = nil,
+    albumSlug: String? = nil,
+    albumTitle: String? = nil
   ) {
     self.songTitle = songTitle
     self.songArtist = songArtist
@@ -107,6 +114,8 @@ public struct RadioLiveInfo: Equatable, Sendable {
     self.next = next
     self.nextStarts = nextStarts
     self.artworkURL = artworkURL
+    self.albumSlug = albumSlug
+    self.albumTitle = albumTitle
   }
 
   /// "Until 1:00 PM, then MARTELO" / "Until 1:00 PM · 3:00 PM: Drive Time" /

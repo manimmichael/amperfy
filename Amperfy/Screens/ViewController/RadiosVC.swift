@@ -387,6 +387,8 @@ final class RadioLiveFeed: MusicPlayable {
 
   /// The web route's shape (apps/cassette/src/lib/radio/types.ts), the parts we use.
   private struct Payload: Decodable {
+    let match: RadioLiveMatch?
+
     struct Show: Decodable {
       let name: String
       let host: String?
@@ -418,7 +420,9 @@ final class RadioLiveFeed: MusicPlayable {
         until: Self.date(show?.until),
         next: upNext?.name ?? nextSong.map { "\($0.title) · \($0.artist)" },
         nextStarts: Self.date(upNext?.starts),
-        artworkURL: track?.coverUrl ?? show?.image
+        artworkURL: RadioLiveMatch.art(match: match, songCover: track?.coverUrl, showImage: show?.image),
+        albumSlug: match?.albumSlug,
+        albumTitle: match?.title
       )
     }
 
@@ -441,6 +445,35 @@ final class RadioLiveFeed: MusicPlayable {
   func didShuffleChange() {}
   func didRepeatChange() {}
   func didPlaybackRateChange() {}
+}
+
+// MARK: - RadioLiveMatch
+
+/// cassette 2026-10-21: the record on Cassette a radio song matched (the web's `match`),
+/// and the one picture a "what's on" wears, in the web's order (lib/radio/live-art.ts):
+/// the record we carry, else the station's cover for the song, else the show's picture
+/// (the DJ, while they talk). Empty strings count as none (KEXP sends "" for no picture).
+struct RadioLiveMatch: Decodable, Sendable {
+  let albumSlug: String
+  let title: String
+  let artistName: String
+  let coverUrl: String?
+  /// Newer servers only; the large picture for the player.
+  let coverFullUrl: String?
+
+  /// The album's page on the web, where it can be bought.
+  var albumURL: URL? { Self.albumURL(slug: albumSlug) }
+
+  static func art(match: RadioLiveMatch?, songCover: String?, showImage: String?) -> String? {
+    [match?.coverFullUrl, match?.coverUrl, songCover, showImage]
+      .compactMap { $0 }
+      .first { !$0.isEmpty }
+  }
+
+  static func albumURL(slug: String) -> URL? {
+    let escaped = slug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? slug
+    return URL(string: "https://cassette.digital/album/\(escaped)")
+  }
 }
 
 // MARK: - RadioRow

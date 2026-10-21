@@ -105,6 +105,18 @@ extension PopupPlayerVC {
           }
           actions.insert(eqAction, at: 0)
         }
+        // cassette 2026-10-21: on the radio, when the song on air matched a record on
+        // Cassette, the first item goes to that record's page on the web (where it can be
+        // bought).
+        if currentlyPlaying.isRadio,
+           let live = rootView.appDelegate.player.currentRadioLive,
+           let slug = live.albumSlug,
+           let url = RadioLiveMatch.albumURL(slug: slug) {
+          let title = live.albumTitle.map { "See \($0) on Cassette" } ?? "See the Album on Cassette"
+          actions.insert(UIAction(title: title, image: CassetteIcon.album.uiImage) { _ in
+            UIApplication.shared.open(url)
+          }, at: 0)
+        }
         return actions
       }
       button.isEnabled = true
