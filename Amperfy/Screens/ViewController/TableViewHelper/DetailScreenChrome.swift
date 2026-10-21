@@ -35,16 +35,114 @@
 import AmperfyKit
 import UIKit
 
+// MARK: - DetailCoverLighter
+
+/// Lights a record page with its own record (phone-taste): reads the cover's colour
+/// (`CoverTint`) and a small decode for the glow, off the main thread, and hands both to
+/// `apply`. Keyed, so asking again with an unchanged key does nothing; a newer request
+/// drops an older one still in flight. When an artwork download finishes for the
+/// observed account it calls `relight`, so a cover that arrives late still lights the page.
+/// DetailScreenChrome owns one for the album and playlist pages; the artist page, which
+/// has no chrome, owns its own.
+@MainActor
+final class DetailCoverLighter: NSObject {
+  /// The record's colour; `.neutral` until a cover is read (never brand orange).
+  private(set) var tint: CoverTint = .neutral
+  /// Called with the tint, the glow's small source image (nil: no glow) and its key.
+  var apply: ((CoverTint, UIImage?, String) -> ())?
+  /// Asked again when an artwork download finishes: the host lights up from its current
+  /// cover (a no-op while the key is unchanged).
+  var relight: (() -> ())?
+
+  private var key: String?
+  private var token = UUID()
+  private var isObservingDownloads = false
+
+  /// Re-check the cover whenever an artwork download for `account` finishes.
+  func observeArtworkDownloads(account: Account?) {
+    guard !isObservingDownloads, let info = account?.info else { return }
+    isObservingDownloads = true
+    appDelegate.notificationHandler.register(
+      self,
+      selector: #selector(artworkDownloadFinished(notification:)),
+      name: .downloadFinishedSuccess,
+      object: appDelegate.getMeta(info).artworkDownloadManager
+    )
+  }
+
+  /// Light from a cover file on disk, keyed by `key` (the path). No file: no glow and the
+  /// neutral colour, never the generated placeholder.
+  func lightUp(coverPath: String?, key: String) {
+    guard key != self.key else { return }
+    self.key = key
+    let token = UUID()
+    self.token = token
+    guard let coverPath, !coverPath.isEmpty else {
+      land(.neutral, glow: nil, key: key)
+      return
+    }
+    // A page opened before: both are cached, so it lights in the same frame.
+    if let cachedTint = CoverTint.cached(key: coverPath),
+       let cachedGlow = AmbientBackdropCache.cachedTiny(for: coverPath) {
+      land(cachedTint, glow: cachedGlow, key: key)
+      return
+    }
+    Task { @MainActor [weak self] in
+      let tint = await CoverTint.resolve(coverPath: coverPath) ?? .neutral
+      let glow = await Task.detached(priority: .utility) {
+        AmbientSourceDecoder.thumbnail(contentsOfFile: coverPath, maxPixelSize: 64)
+      }.value
+      guard let self, self.token == token else { return }
+      land(tint, glow: glow, key: key)
+    }
+  }
+
+  /// Light from an image already in hand (a playlist's pick or preset), keyed by `key`.
+  /// nil: no glow and the neutral colour.
+  func lightUp(image: UIImage?, key: String) {
+    guard key != self.key else { return }
+    self.key = key
+    let token = UUID()
+    self.token = token
+    guard let image else {
+      land(.neutral, glow: nil, key: key)
+      return
+    }
+    if let cachedTint = CoverTint.cached(key: key) {
+      land(cachedTint, glow: image, key: key)
+      return
+    }
+    Task { @MainActor [weak self] in
+      let tint = await CoverTint.resolve(image: image, key: key)
+      guard let self, self.token == token else { return }
+      land(tint, glow: image, key: key)
+    }
+  }
+
+  private func land(_ tint: CoverTint, glow: UIImage?, key: String) {
+    self.tint = tint
+    apply?(tint, glow, key)
+  }
+
+  @objc
+  private func artworkDownloadFinished(notification: Notification) {
+    relight?()
+  }
+}
+
+// MARK: - DetailScreenChrome
+
 @MainActor
 final class DetailScreenChrome {
   /// Where the hero sits relative to the navigation bar.
   enum HeroPlacement {
-    /// The artwork runs up under a transparent bar (album, artist). The table's insets are
-    /// mirrored by hand and the iOS 26 top scroll-edge scrim is hidden so the artwork is
-    /// clean at rest.
+    /// The artwork runs up under a transparent bar, centred between the back and more
+    /// buttons (album, artist, playlist). The table's insets are mirrored by hand and the
+    /// iOS 26 top scroll-edge scrim is hidden so the artwork is clean at rest.
     case underBar
-    /// The hero starts below the bar with automatic insets (playlist, which has
-    /// pull-to-refresh).
+    /// The hero starts below the bar with automatic insets. No record page uses it since
+    /// the playlist page dropped pull-to-refresh (phone-taste; it re-syncs on every
+    /// appear); kept for a screen that needs a refresh spinner at the top edge.
     case belowBar
   }
 
@@ -55,6 +153,24 @@ final class DetailScreenChrome {
 
   private weak var host: BasicTableViewController?
   private let placement: HeroPlacement
+
+  // MARK: phone-taste lighting
+
+  private let lighter = DetailCoverLighter()
+  /// The record's colour; `.neutral` until the cover is read.
+  var tint: CoverTint { lighter.tint }
+  /// Called after a tint lands, so hosts can recolour their own headings.
+  var onTintChanged: ((CoverTint) -> ())?
+  /// Called when an artwork download finishes: the host lights up again from its current
+  /// cover, so a cover that arrives late still lights the page.
+  var relight: (() -> ())? {
+    get { lighter.relight }
+    set { lighter.relight = newValue }
+  }
+
+  /// When true (the album page) a landed tint recolours the visible rows' track numbers in
+  /// place. Rows bound later read `tint` themselves.
+  var tintsTrackNumbers = false
 
   /// - Parameters:
   ///   - menu: the overflow menu's actions, built on open.
@@ -81,6 +197,39 @@ final class DetailScreenChrome {
     )
     collapsedPlayItem.accessibilityLabel = "Play"
     collapsedPlayItem.isHidden = true
+    lighter.apply = { [weak self] tint, glow, key in
+      self?.landLight(tint: tint, glow: glow, key: key)
+    }
+  }
+
+  // MARK: Lighting
+
+  /// Light the page from a cover file on disk (keyed by its path). No file: no glow, the
+  /// neutral colour. An unchanged key does nothing.
+  func lightUp(coverPath: String?, key: String) {
+    lighter.lightUp(coverPath: coverPath, key: key)
+  }
+
+  /// Light the page from an image already in hand (a playlist's pick or preset).
+  func lightUp(image: UIImage?, key: String) {
+    lighter.lightUp(image: image, key: key)
+  }
+
+  /// Call `relight` whenever an artwork download for `account` finishes.
+  func observeArtworkDownloads(account: Account) {
+    lighter.observeArtworkDownloads(account: account)
+  }
+
+  private func landLight(tint: CoverTint, glow: UIImage?, key: String) {
+    header?.applyCoverLight(tint: tint, glowImage: glow, glowKey: key)
+    if tintsTrackNumbers, let tableView = host?.tableView {
+      // In place: a reload would restart the playing row's waveform, and
+      // reconfigureRows is the wrong tool on this diffable table.
+      for case let cell as PlayableTableCell in tableView.visibleCells {
+        cell.setTrackNumberColor(tint.text)
+      }
+    }
+    onTintChanged?(tint)
   }
 
   /// Whether the hero header should extend under the bar (`DetailHeaderConfiguration`).
@@ -131,7 +280,8 @@ final class DetailScreenChrome {
     stickyHeader.configure(title: title ?? "", subtitle: nil)
   }
 
-  /// Extra trailing bar items (Playlist's Edit) after the overflow and the collapsed play.
+  /// Extra trailing bar items after the overflow and the collapsed play (none today: the
+  /// playlist's Edit moved into the overflow menu, phone-taste).
   func setExtraTrailingItems(_ items: [UIBarButtonItem]) {
     host?.navigationItem.rightBarButtonItems = [optionsItem, collapsedPlayItem] + items
   }
@@ -222,6 +372,146 @@ extension DetailScreenChrome {
       label.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -16),
       label.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
     ])
+    return footer
+  }
+}
+
+// MARK: - DetailShelfBlock
+
+/// One shelf under a record page's songs (phone-taste): a two-voice heading ("MORE BY"
+/// and the artist, "MORE LIKE" and the playlist) over a row of covers that each play in one
+/// tap. Every album in it is on the phone; `onPlay` goes through OneTapPlay.
+struct DetailShelfBlock {
+  let shout: String
+  let answer: String?
+  let albums: [Album]
+  let onSelect: (Album) -> ()
+  let onPlay: (Album) -> ()
+}
+
+// MARK: - DetailRecordFooter
+
+/// The table footer of a record page: the on-phone line when part of the record is still
+/// on the hub, then its shelves. Sized by the caller (`DetailScreenChrome.makeRecordFooter`).
+final class DetailRecordFooter: UIView {
+  fileprivate var headings: [(label: UILabel, shout: String, answer: String?)] = []
+
+  /// Recolour the headings' answers in place, e.g. when the page's tint lands.
+  func setAnswerColor(_ color: UIColor) {
+    for heading in headings {
+      heading.label.attributedText = CassetteHeading.attributed(
+        shout: heading.shout,
+        answer: heading.answer,
+        answerColor: color
+      )
+    }
+  }
+}
+
+extension DetailScreenChrome {
+  /// The footer for a record page, `width` wide and sized to its content: the on-phone line
+  /// ("8 of 12 songs on this phone", only when part of it is on the hub), then each shelf
+  /// that has albums. nil when there is nothing to show.
+  static func makeRecordFooter(
+    width: CGFloat,
+    onPhone: Int,
+    total: Int,
+    shelves: [DetailShelfBlock],
+    answerColor: UIColor
+  )
+    -> DetailRecordFooter? {
+    let blocks = shelves.filter { !$0.albums.isEmpty }
+    let showsLine = CassetteLibraryFilterProvider.shared.isOnDeviceOnly && onPhone < total
+    guard showsLine || !blocks.isEmpty, width > 0 else { return nil }
+
+    let footer = DetailRecordFooter(frame: CGRect(x: 0, y: 0, width: width, height: 64))
+    footer.backgroundColor = .clear
+    let stack = UIStackView()
+    stack.axis = .vertical
+    stack.alignment = .fill
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    footer.addSubview(stack)
+    // Air under the last shelf; the on-phone line alone keeps its own 64pt block.
+    let bottomAir: CGFloat = blocks.isEmpty ? 0 : 16
+    NSLayoutConstraint.activate([
+      stack.topAnchor.constraint(equalTo: footer.topAnchor),
+      stack.leadingAnchor.constraint(equalTo: footer.leadingAnchor),
+      stack.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
+      stack.bottomAnchor.constraint(equalTo: footer.bottomAnchor, constant: -bottomAir),
+    ])
+
+    if showsLine {
+      let label = UILabel()
+      label.text = onPhone == 0
+        ? "None of these \(total) songs are on this phone yet"
+        : "\(onPhone) of \(total) songs on this phone"
+      label.font = .cassette(.metadata)
+      label.textColor = .cassette(.textSecondary)
+      label.textAlignment = .center
+      label.numberOfLines = 0
+      label.translatesAutoresizingMaskIntoConstraints = false
+      let lineBlock = UIView()
+      lineBlock.addSubview(label)
+      NSLayoutConstraint.activate([
+        lineBlock.heightAnchor.constraint(greaterThanOrEqualToConstant: 64),
+        label.leadingAnchor.constraint(equalTo: lineBlock.leadingAnchor, constant: 16),
+        label.trailingAnchor.constraint(equalTo: lineBlock.trailingAnchor, constant: -16),
+        label.centerYAnchor.constraint(equalTo: lineBlock.centerYAnchor),
+        label.topAnchor.constraint(greaterThanOrEqualTo: lineBlock.topAnchor, constant: 8),
+      ])
+      stack.addArrangedSubview(lineBlock)
+    }
+
+    for block in blocks {
+      let label = CassetteHeading.makeLabel()
+      label.attributedText = CassetteHeading.attributed(
+        shout: block.shout,
+        answer: block.answer,
+        answerColor: answerColor
+      )
+      label.accessibilityLabel = CassetteHeading.accessibilityLabel(
+        shout: block.shout,
+        answer: block.answer
+      )
+      let head = UIView()
+      head.addSubview(label)
+      NSLayoutConstraint.activate([
+        label.topAnchor.constraint(equalTo: head.topAnchor, constant: CassetteHeading.topSpacing),
+        label.bottomAnchor.constraint(
+          equalTo: head.bottomAnchor,
+          constant: -CassetteHeading.bottomSpacing
+        ),
+        label.leadingAnchor.constraint(
+          equalTo: head.leadingAnchor,
+          constant: CassetteHeading.sideInset
+        ),
+        label.trailingAnchor.constraint(
+          lessThanOrEqualTo: head.trailingAnchor,
+          constant: -CassetteHeading.sideInset
+        ),
+      ])
+      stack.addArrangedSubview(head)
+      footer.headings.append((label, block.shout, block.answer))
+
+      let shelf = AlbumShelfView()
+      shelf.translatesAutoresizingMaskIntoConstraints = false
+      shelf.heightAnchor.constraint(equalToConstant: AlbumShelfView.preferredHeight(for: .mock))
+        .isActive = true
+      shelf.configure(
+        albums: block.albums,
+        onSelect: block.onSelect,
+        onPlay: block.onPlay,
+        style: .mock
+      )
+      stack.addArrangedSubview(shelf)
+    }
+
+    let height = footer.systemLayoutSizeFitting(
+      CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+      withHorizontalFittingPriority: .required,
+      verticalFittingPriority: .fittingSizeLevel
+    ).height
+    footer.frame = CGRect(x: 0, y: 0, width: width, height: ceil(max(height, 1)))
     return footer
   }
 }

@@ -22,6 +22,23 @@
 import AmperfyKit
 import UIKit
 
+// MARK: - DetailHeroStyle
+
+/// How a detail header draws its hero (phone-taste record pages). Every style is compact
+/// width only: on iPad and Mac (regular width) each one keeps the classic side-by-side
+/// layout.
+enum DetailHeroStyle {
+  /// Today's centred header (Genre, Podcast, Playlist edit).
+  case classic
+  /// The record room (album, playlist): the 240pt cover centred up top between the back
+  /// and more buttons, then a left-aligned caps title, the answer line in the record's
+  /// colour and the tracked meta line.
+  case room
+  /// The artist page: a full-bleed photo when the artist has their own, else a fan of
+  /// their newest covers, else today's circle; the name in large caps.
+  case artistHero
+}
+
 // MARK: - DetailHeaderConfiguration
 
 struct DetailHeaderConfiguration {
@@ -37,6 +54,8 @@ struct DetailHeaderConfiguration {
   /// the content down. Other detail screens leave this false and keep
   /// the below-the-bar layout.
   var extendsUnderNavigationBar: Bool = false
+  /// phone-taste: the hero's look. `.classic` (the default) is today's header.
+  var heroStyle: DetailHeroStyle = .classic
 }
 
 // MARK: - DetailSubtitleButton
@@ -48,6 +67,172 @@ private final class DetailSubtitleButton: UIButton {
 
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
     bounds.insetBy(dx: 0, dy: -verticalHitSlop).contains(point)
+  }
+}
+
+// MARK: - DetailAnswerLabel
+
+/// The room's answer line (an album's artist, a playlist's own description), in the answer
+/// voice over up to three lines. A UIButton's configuration title cannot be held to a line
+/// count, so the room draws the line here and keeps the artist link's behaviour: the same
+/// 12pt vertical hit slop as DetailSubtitleButton, the link trait, and the push.
+private final class DetailAnswerLabel: UILabel {
+  private let verticalHitSlop: CGFloat = 12
+  /// Set when the line is a link (the album artist).
+  var onActivate: (() -> ())?
+
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    bounds.insetBy(dx: 0, dy: -verticalHitSlop).contains(point)
+  }
+
+  override func accessibilityActivate() -> Bool {
+    guard let onActivate else { return false }
+    onActivate()
+    return true
+  }
+}
+
+// MARK: - DetailCoverShadowView
+
+/// One of the two shadows under a lit hero cover. EntityImageView clips to its corners, so
+/// the shadow lives on its own view behind the cover, the same size, with a path that
+/// follows the cover's real shape (rounded rect, or an ellipse for the artist circle).
+private final class DetailCoverShadowView: UIView {
+  /// The cover's outline for a bounds.
+  var outline: ((CGRect) -> UIBezierPath)?
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    layer.shadowPath = outline?(bounds).cgPath
+  }
+}
+
+// MARK: - DetailArtistPhotoView
+
+/// The artist's own photo, full bleed: aspect fill biased toward the top quarter of the
+/// picture (the mock's `object-position: 50% 25%`), fading out over its lower half.
+private final class DetailArtistPhotoView: UIView {
+  private let fade = CAGradientLayer()
+
+  var image: UIImage? {
+    didSet {
+      layer.contents = image?.cgImage
+      setNeedsLayout()
+    }
+  }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isUserInteractionEnabled = false
+    clipsToBounds = true
+    layer.contentsGravity = .resize
+    // The mock's mask: solid to 55%, clear at the bottom edge.
+    fade.colors = [UIColor.black.cgColor, UIColor.black.cgColor, UIColor.clear.cgColor]
+    fade.locations = [0, 0.55, 1]
+    layer.mask = fade
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    fade.frame = bounds
+    layer.contentsRect = Self.contentsRect(imageSize: image?.size ?? .zero, in: bounds.size)
+    CATransaction.commit()
+  }
+
+  /// The part of the image that fills `size`: the full width or height, the other axis
+  /// cropped, centred horizontally and 25% down vertically.
+  static func contentsRect(imageSize: CGSize, in size: CGSize) -> CGRect {
+    guard imageSize.width > 0, imageSize.height > 0, size.width > 0, size.height > 0
+    else { return CGRect(x: 0, y: 0, width: 1, height: 1) }
+    let imageAspect = imageSize.width / imageSize.height
+    let viewAspect = size.width / size.height
+    if imageAspect < viewAspect {
+      // Taller than the frame: show the full width and a band of the height.
+      let shown = imageAspect / viewAspect
+      return CGRect(x: 0, y: (1 - shown) * 0.25, width: 1, height: shown)
+    }
+    let shown = viewAspect / imageAspect
+    return CGRect(x: (1 - shown) * 0.5, y: 0, width: shown, height: 1)
+  }
+}
+
+// MARK: - DetailCoverFanView
+
+/// No photo: the artist's own newest records, up to three covers fanned 46pt over each
+/// other, the second raised 14pt and in front (the mock's `.artistCovers`).
+private final class DetailCoverFanView: UIView {
+  static let coverSide: CGFloat = 150
+  static let overlap: CGFloat = 46
+  static let raise: CGFloat = 14
+  static var height: CGFloat { coverSide + raise }
+
+  private var hosts: [UIView] = []
+  private(set) var albumIDs: [String] = []
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isUserInteractionEnabled = false
+    backgroundColor = .clear
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  func show(albums: [Album], theme: ThemePreference) {
+    let shown = Array(albums.prefix(3))
+    albumIDs = shown.map(\.id)
+    hosts.forEach { $0.removeFromSuperview() }
+    hosts = shown.map { album in
+      let host = DetailCoverShadowView(frame: CGRect(
+        x: 0,
+        y: 0,
+        width: Self.coverSide,
+        height: Self.coverSide
+      ))
+      host.backgroundColor = .clear
+      host.layer.shadowColor = UIColor.black.cgColor
+      host.layer.shadowOpacity = 0.5
+      host.layer.shadowRadius = 20
+      host.layer.shadowOffset = CGSize(width: 0, height: 18)
+      host.outline = { bounds in
+        UIBezierPath(roundedRect: bounds, cornerRadius: CornerRadius.small.asCGFloat)
+      }
+      let cover = EntityImageView(frame: host.bounds)
+      cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      cover.shape = .rounded(.small)
+      cover.display(theme: theme, container: album)
+      host.addSubview(cover)
+      return host
+    }
+    // The second cover sits in front of its neighbours.
+    for (index, host) in hosts.enumerated() where index != 1 {
+      addSubview(host)
+    }
+    if hosts.count > 1 { addSubview(hosts[1]) }
+    setNeedsLayout()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let count = CGFloat(hosts.count)
+    guard count > 0 else { return }
+    let step = Self.coverSide - Self.overlap
+    let total = Self.coverSide + step * (count - 1)
+    var x = (bounds.width - total) / 2
+    for (index, host) in hosts.enumerated() {
+      let y = index == 1 ? 0 : Self.raise
+      host.frame = CGRect(x: x, y: y, width: Self.coverSide, height: Self.coverSide)
+      x += step
+    }
   }
 }
 
@@ -100,6 +285,16 @@ class GenericDetailTableHeader: UIView {
     return button
   }()
 
+  /// phone-taste: the room's answer line (see DetailAnswerLabel).
+  private let answerLabel: DetailAnswerLabel = {
+    let label = DetailAnswerLabel()
+    label.numberOfLines = 2
+    label.lineBreakMode = .byTruncatingTail
+    label.isHidden = true
+    label.setContentCompressionResistancePriority(.required, for: .vertical)
+    return label
+  }()
+
   private let infoLabel: UILabel = {
     let label = UILabel()
     // Quiet mono caption (year / album·song counts) — not Barlow.
@@ -142,6 +337,32 @@ class GenericDetailTableHeader: UIView {
     return stack
   }()
 
+  // MARK: phone-taste lighting
+
+  /// Clips the record's glow at the header's bottom edge while letting it rise 300pt above
+  /// the top for overscroll. The glow view inside spans exactly the header, so its scrim
+  /// reaches the solid page at the header's bottom edge.
+  private var glowClip: UIView?
+  private var glowView: CoverGlowView?
+  /// The two cover shadows (the mock's `.heroCover` box-shadow pair), behind entityImage.
+  private var tintShadow: DetailCoverShadowView?
+  private var depthShadow: DetailCoverShadowView?
+  /// The artist's own photo, full bleed (artist hero only).
+  private var artistPhotoView: DetailArtistPhotoView?
+  /// The fan of the artist's newest covers (artist hero, no photo).
+  private let fanView = DetailCoverFanView()
+  private var fanConstraints: [NSLayoutConstraint] = []
+
+  /// The record colour this page is lit with; nil until a host lights it (unlit pages,
+  /// Genre/Podcast/Playlist edit, never are). Until then a lit style reads `.neutral`.
+  private(set) var coverTint: CoverTint?
+
+  /// The decoded artist photo and the file it came from.
+  private var artistPhoto: UIImage?
+  private var artistPhotoPath: String?
+  /// The artist's newest credited records, for the fan when there is no photo.
+  private var fanAlbums: [Album] = []
+
   var playShuffleInfoView: LibraryElementDetailTableHeaderView?
   var isEditing = false
 
@@ -159,6 +380,16 @@ class GenericDetailTableHeader: UIView {
     didSet { refresh() }
   }
 
+  /// phone-taste: the line under the title when it is not the entity's own subtitle (a
+  /// playlist's description, shown verbatim). nil falls back to the entity's subtitle (an
+  /// album's artist).
+  var answerLine: String? {
+    didSet {
+      guard answerLine != oldValue else { return }
+      refresh()
+    }
+  }
+
   // MARK: Layout constants
 
   /// Square artwork side (album / playlist / genre / podcast).
@@ -166,6 +397,56 @@ class GenericDetailTableHeader: UIView {
   /// Artist photos render as a slightly smaller circle so the tightened
   /// picture/title/subtitle block reads as one unit.
   private static let artistCircleDiameter: CGFloat = 200.0
+
+  /// The record room's measures (phone.module.css .room, .albumHead, .artistLine, .meta,
+  /// .metaAlone, .actions).
+  private enum Room {
+    static let sideMargin: CGFloat = 22
+    static let coverToTitle: CGFloat = 24
+    static let titleToLine: CGFloat = 6
+    static let lineToMeta: CGFloat = 10
+    static let titleToMetaAlone: CGFloat = 10
+    static let metaToActions: CGFloat = 18
+    static let bottom: CGFloat = 24
+    /// The artist name sits 8pt over its meta line (.artistName margin-bottom).
+    static let nameToMeta: CGFloat = 8
+  }
+
+  /// The artist hero's measures (.artistPhoto, .artistHead, .artistCovers).
+  private enum ArtistHero {
+    static let photoHeight: CGFloat = 400
+    /// The name climbs this far up into the photo's faded foot.
+    static let photoOverlap: CGFloat = 92
+    /// Space between the fan and the name.
+    static let fanToHead: CGFloat = 22
+  }
+
+  /// How the hero is drawn right now: the configured style resolved against the width
+  /// and, for an artist, what is on the phone.
+  private enum HeroLayout {
+    case classic
+    case room
+    case artistPhoto
+    case artistFan
+    case artistCircle
+
+    var isLit: Bool { self != .classic }
+    var isArtist: Bool { self == .artistPhoto || self == .artistFan || self == .artistCircle }
+  }
+
+  private var heroLayout: HeroLayout {
+    guard let config, isCompactWidth else { return .classic }
+    switch config.heroStyle {
+    case .classic:
+      return .classic
+    case .room:
+      return .room
+    case .artistHero:
+      if artistPhoto != nil { return .artistPhoto }
+      if !fanAlbums.isEmpty { return .artistFan }
+      return .artistCircle
+    }
+  }
 
   private var config: DetailHeaderConfiguration?
 
@@ -219,6 +500,9 @@ class GenericDetailTableHeader: UIView {
     }
 
     configureArtworkPresentation()
+    if configuration.heroStyle == .artistHero {
+      refreshArtistPhoto()
+    }
     applyLayout()
     refresh()
     registerForTraitChanges(
@@ -252,16 +536,24 @@ class GenericDetailTableHeader: UIView {
     )
 
     subtitleButton.addTarget(self, action: #selector(subtitleButtonPressed), for: .touchUpInside)
+    answerLabel.addGestureRecognizer(UITapGestureRecognizer(
+      target: self,
+      action: #selector(subtitleButtonPressed)
+    ))
 
     entityImage.translatesAutoresizingMaskIntoConstraints = false
     artworkWrap.translatesAutoresizingMaskIntoConstraints = false
     mainStack.translatesAutoresizingMaskIntoConstraints = false
+    fanView.translatesAutoresizingMaskIntoConstraints = false
 
     artworkWrap.addSubview(entityImage)
+    artworkWrap.addSubview(fanView)
+    fanView.isHidden = true
 
     contentColumn.addArrangedSubview(titleLabel)
     contentColumn.addArrangedSubview(nameTextField)
     contentColumn.addArrangedSubview(subtitleButton)
+    contentColumn.addArrangedSubview(answerLabel)
     contentColumn.addArrangedSubview(infoLabel)
     contentColumn.addArrangedSubview(playSlot)
     contentColumn.addArrangedSubview(descriptionLabel)
@@ -315,6 +607,16 @@ class GenericDetailTableHeader: UIView {
       entityImage.bottomAnchor.constraint(lessThanOrEqualTo: artworkWrap.bottomAnchor),
       artworkWrap.widthAnchor.constraint(equalToConstant: Self.artworkSide),
     ]
+    // Artist hero without a photo: the fan sets the artwork block's height; the (hidden)
+    // circle only keeps a horizontal position.
+    fanConstraints = [
+      entityImage.centerXAnchor.constraint(equalTo: artworkWrap.centerXAnchor),
+      fanView.topAnchor.constraint(equalTo: artworkWrap.topAnchor),
+      fanView.bottomAnchor.constraint(equalTo: artworkWrap.bottomAnchor),
+      fanView.leadingAnchor.constraint(equalTo: artworkWrap.leadingAnchor),
+      fanView.trailingAnchor.constraint(equalTo: artworkWrap.trailingAnchor),
+      fanView.heightAnchor.constraint(equalToConstant: DetailCoverFanView.height),
+    ]
   }
 
   // cassette redesign (Surface 1) + Patch 104 (Root 3): the artist photo is
@@ -343,11 +645,44 @@ class GenericDetailTableHeader: UIView {
 
   private func applyLayout() {
     let compact = isCompactWidth
-    NSLayoutConstraint.deactivate(compact ? regularConstraints : compactConstraints)
-    NSLayoutConstraint.activate(compact ? compactConstraints : regularConstraints)
+    let layout = heroLayout
+    NSLayoutConstraint.deactivate(regularConstraints + compactConstraints + fanConstraints)
+    if !compact {
+      NSLayoutConstraint.activate(regularConstraints)
+    } else if layout == .artistFan {
+      NSLayoutConstraint.activate(fanConstraints)
+    } else {
+      NSLayoutConstraint.activate(compactConstraints)
+    }
     mainStack.axis = compact ? .vertical : .horizontal
     mainStack.alignment = compact ? .fill : .top
-    mainStack.spacing = compact ? CassetteTheme.Spacing.md : CassetteTheme.Spacing.xl
+    switch layout {
+    case .room:
+      mainStack.spacing = Room.coverToTitle
+    case .artistFan:
+      mainStack.spacing = ArtistHero.fanToHead
+    case .classic, .artistPhoto, .artistCircle:
+      mainStack.spacing = compact ? CassetteTheme.Spacing.md : CassetteTheme.Spacing.xl
+    }
+    // The page gutter: 22 in the lit styles, today's 25 otherwise. The top margin is
+    // resizeToFit's (the bar clearance), so it is kept as it is.
+    let side = layout.isLit ? Room.sideMargin : UIView.defaultMarginX
+    let bottom = layout.isLit ? Room.bottom : CassetteTheme.Spacing.lg
+    let margins = NSDirectionalEdgeInsets(
+      top: directionalLayoutMargins.top,
+      leading: side,
+      bottom: bottom,
+      trailing: side
+    )
+    if directionalLayoutMargins != margins {
+      directionalLayoutMargins = margins
+    }
+    // The artist hero draws its photo or its fan in place of the circle.
+    artworkWrap.isHidden = layout == .artistPhoto
+    entityImage.isHidden = layout == .artistFan
+    fanView.isHidden = layout != .artistFan
+    artistPhotoView?.isHidden = layout != .artistPhoto
+    applyShadowVisibility()
     artworkWidthConstraint.constant = (compact && config?.entityContainer is Artist)
       ? Self.artistCircleDiameter
       : Self.artworkSide
@@ -388,7 +723,17 @@ class GenericDetailTableHeader: UIView {
       let safeTop = config.rootView.view.safeAreaInsets.top
       guard navBarMinY > 0 || safeTop > 0 else { return }
       let statusBarH = navBarMinY > 0 ? navBarMinY : safeTop
-      topInset = statusBarH + CassetteTheme.Spacing.sm
+      switch heroLayout {
+      case .artistPhoto:
+        // phone-taste: the photo starts at y = 0 under the status bar and the name
+        // climbs 92pt into its faded foot (.artistHead margin-top -92).
+        topInset = ArtistHero.photoHeight - ArtistHero.photoOverlap
+      case .artistFan:
+        // The fan starts just under the back and more buttons (.artistCovers).
+        topInset = statusBarH + 44
+      case .classic, .room, .artistCircle:
+        topInset = statusBarH + CassetteTheme.Spacing.sm
+      }
     } else {
       topInset = directionalLayoutMargins.top
     }
@@ -446,31 +791,59 @@ class GenericDetailTableHeader: UIView {
   func refresh() {
     guard let config = config else { return }
     let entityContainer = config.entityContainer
-    entityImage.display(
-      theme: appDelegate.storage.settings.accounts.getSetting(entityContainer.account?.info).read
-        .themePreference,
-      container: entityContainer
-    )
-    titleLabel.text = entityContainer.name
+    let theme = appDelegate.storage.settings.accounts.getSetting(entityContainer.account?.info).read
+      .themePreference
+    entityImage.display(theme: theme, container: entityContainer)
 
-    // Album artist is the tappable link (Barlow, accent). Other entities keep
-    // quiet mono under the title. Year lives on infoLabel in mono caption.
-    var subtitleAttributes = AttributeContainer()
-    let subtitleIsLink = entityContainer is Album
-    subtitleAttributes.font = UIFont.cassette(subtitleIsLink ? .rowTitle : .cardSubtitle)
-    subtitleAttributes.foregroundColor = subtitleIsLink
-      ? UIColor.cassette(.accentProgress)
-      : UIColor.cassette(.textSecondary)
-    if let subtitle = entityContainer.subtitle {
-      subtitleButton.configuration?.attributedTitle = AttributedString(
-        subtitle,
-        attributes: subtitleAttributes
-      )
-      subtitleButton.isHidden = false
-      subtitleButton.isUserInteractionEnabled = subtitleIsLink
-      subtitleButton.accessibilityTraits = subtitleIsLink ? .link : .staticText
-    } else {
+    let layout = heroLayout
+    let tint = coverTint ?? .neutral
+    applyTitle(name: entityContainer.name, layout: layout)
+
+    // The line under the title: a playlist's own description, else the entity's subtitle
+    // (an album's artist, the tappable link).
+    let lineText = answerLine ?? entityContainer.subtitle
+    let lineIsLink = entityContainer is Album && answerLine == nil
+    if layout.isLit {
+      // phone-taste: the answer voice in the record's colour (never brand orange), up to
+      // two lines for an album and three for a playlist.
       subtitleButton.isHidden = true
+      if let lineText, !lineText.isEmpty {
+        answerLabel.attributedText = NSAttributedString.cassette(
+          lineText,
+          .answer,
+          color: tint.text,
+          lineHeightMultiple: 1.05
+        )
+        answerLabel.numberOfLines = entityContainer is Album ? 2 : 3
+        answerLabel.textAlignment = .natural
+        answerLabel.isHidden = false
+        answerLabel.isUserInteractionEnabled = lineIsLink
+        answerLabel.accessibilityTraits = lineIsLink ? .link : .staticText
+        answerLabel.onActivate = lineIsLink ? { [weak self] in self?.subtitleButtonPressed() } : nil
+      } else {
+        answerLabel.isHidden = true
+      }
+    } else {
+      answerLabel.isHidden = true
+      // Album artist is the tappable link (Barlow). Other entities keep quiet mono
+      // under the title. Year lives on infoLabel in mono caption. A lit page (an album
+      // at regular width) colours the link from its record instead of brand orange.
+      var subtitleAttributes = AttributeContainer()
+      subtitleAttributes.font = UIFont.cassette(lineIsLink ? .rowTitle : .cardSubtitle)
+      subtitleAttributes.foregroundColor = lineIsLink
+        ? (coverTint?.text ?? UIColor.cassette(.accentProgress))
+        : UIColor.cassette(.textSecondary)
+      if let lineText {
+        subtitleButton.configuration?.attributedTitle = AttributedString(
+          lineText,
+          attributes: subtitleAttributes
+        )
+        subtitleButton.isHidden = false
+        subtitleButton.isUserInteractionEnabled = lineIsLink
+        subtitleButton.accessibilityTraits = lineIsLink ? .link : .staticText
+      } else {
+        subtitleButton.isHidden = true
+      }
     }
 
     let infoText: String
@@ -492,30 +865,50 @@ class GenericDetailTableHeader: UIView {
       )
     }
     infoLabel.isHidden = infoText.isEmpty
-    infoLabel.text = infoText
-    // Quiet meta (year) sits tight under the artist. When that line is absent,
-    // keep real air between artist and the play controls — a hidden infoLabel
-    // collapses its trailing spacing and used to leave play crushed under the
-    // artist (stack default xs).
-    if !subtitleButton.isHidden {
-      if infoText.isEmpty {
-        contentColumn.setCustomSpacing(CassetteTheme.Spacing.lg, after: subtitleButton)
-      } else {
-        // Year under artist: stack default xs (4) was too tight against the
-        // UIButton subtitle's intrinsic padding; 2 was worse. Match the air
-        // between title and artist (xs) plus a little — 8pt reads as one
-        // quiet meta line, not glued to the name.
-        contentColumn.setCustomSpacing(8, after: subtitleButton)
-        contentColumn.setCustomSpacing(CassetteTheme.Spacing.lg, after: infoLabel)
-      }
+    if layout.isLit {
+      // phone-taste: the tracked mono meta in capitals, ink2.
+      infoLabel.attributedText = NSAttributedString.cassette(
+        infoText,
+        .meta,
+        color: .cassette(.textSecondary)
+      )
+    } else {
+      infoLabel.attributedText = nil
+      infoLabel.font = UIFont.cassette(.caption)
+      infoLabel.textColor = UIColor.cassette(.textSecondary)
+      infoLabel.text = infoText
     }
 
-    let textAlignment: NSTextAlignment = isCompactWidth ? .center : .left
-    titleLabel.textAlignment = textAlignment
+    if layout.isLit {
+      applyLitSpacing(layout: layout, hasMeta: !infoText.isEmpty)
+    } else {
+      contentColumn.setCustomSpacing(UIStackView.spacingUseDefault, after: titleLabel)
+      // Quiet meta (year) sits tight under the artist. When that line is absent,
+      // keep real air between artist and the play controls — a hidden infoLabel
+      // collapses its trailing spacing and used to leave play crushed under the
+      // artist (stack default xs).
+      if !subtitleButton.isHidden {
+        if infoText.isEmpty {
+          contentColumn.setCustomSpacing(CassetteTheme.Spacing.lg, after: subtitleButton)
+        } else {
+          // Year under artist: stack default xs (4) was too tight against the
+          // UIButton subtitle's intrinsic padding; 2 was worse. Match the air
+          // between title and artist (xs) plus a little — 8pt reads as one
+          // quiet meta line, not glued to the name.
+          contentColumn.setCustomSpacing(8, after: subtitleButton)
+        }
+      }
+      contentColumn.setCustomSpacing(CassetteTheme.Spacing.lg, after: infoLabel)
+    }
+
+    // phone-taste: the lit styles read left-aligned under a centred cover.
+    let centred = isCompactWidth && !layout.isLit
+    let textAlignment: NSTextAlignment = centred ? .center : .left
+    titleLabel.textAlignment = layout.isLit ? .natural : textAlignment
     nameTextField.textAlignment = textAlignment
-    infoLabel.textAlignment = textAlignment
-    descriptionLabel.textAlignment = isCompactWidth ? .center : .natural
-    subtitleButton.contentHorizontalAlignment = isCompactWidth ? .center : .leading
+    infoLabel.textAlignment = layout.isLit ? .natural : textAlignment
+    descriptionLabel.textAlignment = centred ? .center : .natural
+    subtitleButton.contentHorizontalAlignment = centred ? .center : .leading
 
     if isEditing {
       titleLabel.isHidden = true
@@ -528,6 +921,232 @@ class GenericDetailTableHeader: UIView {
 
     playShuffleInfoView?.refresh()
     resizeToFit()
+  }
+
+  /// The title in the header's voice: today's Barlow Bold 30, the room's 36pt ExtraBold
+  /// capitals, or the artist hero's 46pt name with a soft shadow.
+  private func applyTitle(name: String, layout: HeroLayout) {
+    switch layout {
+    case .classic:
+      titleLabel.attributedText = nil
+      titleLabel.font = UIFont.cassette(.heroTitle)
+      titleLabel.textColor = UIColor.cassette(.textPrimary)
+      titleLabel.text = name
+      titleLabel.numberOfLines = 2
+      titleLabel.adjustsFontSizeToFitWidth = false
+      titleLabel.accessibilityLabel = nil
+      titleLabel.layer.shadowOpacity = 0
+    case .room:
+      // Line height 0.92 as in the mock. Unverified on a device: if the caps clip at the
+      // top, drop the multiple and use a small baselineOffset instead.
+      titleLabel.attributedText = NSAttributedString.cassette(
+        name,
+        .pageTitle,
+        color: .cassette(.textPrimary),
+        lineHeightMultiple: 0.92
+      )
+      titleLabel.numberOfLines = 3
+      titleLabel.adjustsFontSizeToFitWidth = false
+      titleLabel.accessibilityLabel = name
+      titleLabel.layer.shadowOpacity = 0
+    case .artistPhoto, .artistFan, .artistCircle:
+      titleLabel.attributedText = NSAttributedString.cassette(
+        name,
+        .heroName,
+        color: .cassette(.textPrimary),
+        lineHeightMultiple: 0.9
+      )
+      titleLabel.numberOfLines = 3
+      titleLabel.adjustsFontSizeToFitWidth = true
+      titleLabel.minimumScaleFactor = 0.6
+      titleLabel.accessibilityLabel = name
+      // The mock's text-shadow: 0 2px 18px rgba(0,0,0,.5).
+      titleLabel.layer.shadowColor = UIColor.black.cgColor
+      titleLabel.layer.shadowOpacity = 0.5
+      titleLabel.layer.shadowRadius = 9
+      titleLabel.layer.shadowOffset = CGSize(width: 0, height: 2)
+    }
+  }
+
+  /// The lit styles' rhythm: title to line 6, line to meta 10 (meta 10 under the title
+  /// when there is no line), meta to the pills 18. The artist name sits 8 over its meta.
+  private func applyLitSpacing(layout: HeroLayout, hasMeta: Bool) {
+    let hasLine = !answerLabel.isHidden
+    let afterTitle: CGFloat
+    if layout.isArtist {
+      afterTitle = hasMeta ? Room.nameToMeta : Room.metaToActions
+    } else if hasLine {
+      afterTitle = Room.titleToLine
+    } else {
+      afterTitle = hasMeta ? Room.titleToMetaAlone : Room.metaToActions
+    }
+    contentColumn.setCustomSpacing(afterTitle, after: titleLabel)
+    contentColumn.setCustomSpacing(hasMeta ? Room.lineToMeta : Room.metaToActions, after: answerLabel)
+    contentColumn.setCustomSpacing(Room.metaToActions, after: infoLabel)
+  }
+
+  // MARK: phone-taste lighting
+
+  /// Lights the header with its record: the glow behind it, the tinted cover shadow and the
+  /// answer line's colour. `glowImage` is a small decode of the cover (nil shows no glow),
+  /// cached under `glowKey`; an unchanged key leaves the glow as it is. The glow sits
+  /// outside mainStack and never re-measures the header.
+  func applyCoverLight(tint: CoverTint, glowImage: UIImage?, glowKey: String) {
+    coverTint = tint
+    installGlowIfNeeded()
+    glowView?.show(image: glowImage, key: glowKey)
+    installShadowsIfNeeded()
+    tintShadow?.layer.shadowColor = tint.shadow(0.4).cgColor
+    applyShadowVisibility()
+    refresh()
+  }
+
+  private func installGlowIfNeeded() {
+    guard glowClip == nil else { return }
+    let clip = UIView()
+    clip.translatesAutoresizingMaskIntoConstraints = false
+    clip.isUserInteractionEnabled = false
+    clip.backgroundColor = .clear
+    clip.clipsToBounds = true
+    let glow = CoverGlowView(recipe: .page)
+    glow.translatesAutoresizingMaskIntoConstraints = false
+    clip.addSubview(glow)
+    // Backmost: behind the photo, the cover and the text.
+    insertSubview(clip, at: 0)
+    let overscroll: CGFloat = 300
+    NSLayoutConstraint.activate([
+      clip.topAnchor.constraint(equalTo: topAnchor, constant: -overscroll),
+      clip.bottomAnchor.constraint(equalTo: bottomAnchor),
+      clip.leadingAnchor.constraint(equalTo: leadingAnchor),
+      clip.trailingAnchor.constraint(equalTo: trailingAnchor),
+      glow.topAnchor.constraint(equalTo: topAnchor),
+      glow.bottomAnchor.constraint(equalTo: bottomAnchor),
+      glow.leadingAnchor.constraint(equalTo: leadingAnchor),
+      glow.trailingAnchor.constraint(equalTo: trailingAnchor),
+    ])
+    glowClip = clip
+    glowView = glow
+  }
+
+  /// The mock's `.heroCover` pair: 0 30 60 in the tint mixed 40% into black, and 0 8 18
+  /// black at 50%. Both sit behind entityImage at its size, inside artworkWrap (which spans
+  /// the full width in compact layout, so the shadow can never go on artworkWrap itself).
+  private func installShadowsIfNeeded() {
+    guard tintShadow == nil else { return }
+    let outline: (CGRect) -> UIBezierPath = { [weak self] bounds in
+      guard let self else { return UIBezierPath(rect: bounds) }
+      if case .circle = entityImage.shape {
+        return UIBezierPath(ovalIn: bounds)
+      }
+      // The radius actually drawn (refresh() repaints the cover at .small).
+      return UIBezierPath(roundedRect: bounds, cornerRadius: entityImage.layer.cornerRadius)
+    }
+    let tinted = DetailCoverShadowView()
+    tinted.layer.shadowOpacity = 1
+    tinted.layer.shadowRadius = 30
+    tinted.layer.shadowOffset = CGSize(width: 0, height: 30)
+    let depth = DetailCoverShadowView()
+    depth.layer.shadowColor = UIColor.black.cgColor
+    depth.layer.shadowOpacity = 0.5
+    depth.layer.shadowRadius = 9
+    depth.layer.shadowOffset = CGSize(width: 0, height: 8)
+    for host in [tinted, depth] {
+      host.outline = outline
+      host.backgroundColor = .clear
+      host.isUserInteractionEnabled = false
+      host.translatesAutoresizingMaskIntoConstraints = false
+      artworkWrap.insertSubview(host, belowSubview: entityImage)
+      NSLayoutConstraint.activate([
+        host.topAnchor.constraint(equalTo: entityImage.topAnchor),
+        host.bottomAnchor.constraint(equalTo: entityImage.bottomAnchor),
+        host.leadingAnchor.constraint(equalTo: entityImage.leadingAnchor),
+        host.trailingAnchor.constraint(equalTo: entityImage.trailingAnchor),
+      ])
+    }
+    tintShadow = tinted
+    depthShadow = depth
+  }
+
+  /// The cover shadows show under a visible cover only.
+  private func applyShadowVisibility() {
+    let hidden = entityImage.isHidden || artworkWrap.isHidden
+    tintShadow?.isHidden = hidden
+    depthShadow?.isHidden = hidden
+    tintShadow?.setNeedsLayout()
+    depthShadow?.setNeedsLayout()
+  }
+
+  // MARK: Artist hero
+
+  /// The artist's newest credited records (newest first), for the fan when the artist has
+  /// no photo of their own. Rebuilds the fan when the set changed.
+  func setArtistFan(albums: [Album]) {
+    guard config?.heroStyle == .artistHero else { return }
+    let shown = Array(albums.prefix(3))
+    guard shown.map(\.id) != fanAlbums.map(\.id) || fanView.albumIDs != shown.map(\.id)
+    else { return }
+    fanAlbums = shown
+    let theme = appDelegate.storage.settings.accounts
+      .getSetting(config?.entityContainer.account?.info).read.themePreference
+    fanView.show(albums: shown, theme: theme)
+    applyLayout()
+    refresh()
+  }
+
+  /// Shows the artist's own photo full bleed when it is on the phone (the one test every
+  /// surface uses, `Artist.hasOwnPhotoOnDisk`; a shared artwork row can carry someone
+  /// else's face). Call again when an artwork download finishes: a photo that lands
+  /// replaces the fan.
+  func refreshArtistPhoto() {
+    guard config?.heroStyle == .artistHero, let artist = config?.entityContainer as? Artist
+    else { return }
+    guard artist.hasOwnPhotoOnDisk, let path = artist.artwork?.imagePath else {
+      guard artistPhoto != nil || artistPhotoPath != nil else { return }
+      artistPhotoPath = nil
+      artistPhoto = nil
+      artistPhotoView?.image = nil
+      applyLayout()
+      refresh()
+      return
+    }
+    guard path != artistPhotoPath else { return }
+    artistPhotoPath = path
+    // About 3x the width of a phone, decoded off the main thread.
+    let maxPixel = Int((max(bounds.width, 430) * 3).rounded())
+    Task { @MainActor [weak self] in
+      let decoded = await Task.detached(priority: .userInitiated) {
+        AmbientSourceDecoder.thumbnail(contentsOfFile: path, maxPixelSize: maxPixel)
+      }.value
+      guard let self, artistPhotoPath == path else { return }
+      guard let decoded else {
+        artistPhotoPath = nil
+        return
+      }
+      installArtistPhotoIfNeeded()
+      artistPhotoView?.image = decoded
+      artistPhoto = decoded
+      applyLayout()
+      refresh()
+    }
+  }
+
+  private func installArtistPhotoIfNeeded() {
+    guard artistPhotoView == nil else { return }
+    let photo = DetailArtistPhotoView()
+    photo.translatesAutoresizingMaskIntoConstraints = false
+    // Above the glow, below the name.
+    if let glowClip {
+      insertSubview(photo, aboveSubview: glowClip)
+    } else {
+      insertSubview(photo, at: 0)
+    }
+    NSLayoutConstraint.activate([
+      photo.topAnchor.constraint(equalTo: topAnchor),
+      photo.leadingAnchor.constraint(equalTo: leadingAnchor),
+      photo.trailingAnchor.constraint(equalTo: trailingAnchor),
+      photo.heightAnchor.constraint(equalToConstant: ArtistHero.photoHeight),
+    ])
+    artistPhotoView = photo
   }
 
   func startEditing() {
@@ -555,6 +1174,7 @@ class GenericDetailTableHeader: UIView {
   @objc
   private func subtitleButtonPressed() {
     guard let album = config?.entityContainer as? Album,
+          answerLine == nil,
           let artist = album.artist,
           let account = album.account,
           let navController = config?.rootView.navigationController
