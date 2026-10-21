@@ -33,6 +33,9 @@ class GenreDetailVC: MultiSourceTableViewController {
   private var songsFetchedResultsController: GenreSongsFetchedResultsController!
   private var optionsButton: UIBarButtonItem!
   private var detailOperationsView: GenericDetailTableHeader?
+  /// What the page lists (phone-taste): on the phone, the artists, albums and songs on it;
+  /// in Server Mode, the hub's counts. Read in `refreshGenreMetadataLine`.
+  private var listedCounts = (artists: 0, albums: 0, songs: 0)
 
   init(account: Account, genre: Genre) {
     self.genre = genre
@@ -81,15 +84,19 @@ class GenreDetailVC: MultiSourceTableViewController {
     tableView.estimatedSectionFooterHeight = 0.0
     tableView.backgroundColor = .backgroundColor
 
+    // phone-taste: on the phone everything listed is already here, so the All/Cached
+    // scope is a no-op and is hidden (as on Search). Server Mode keeps it.
     configureSearchController(
       placeholder: "Artists, Albums and Songs",
-      scopeButtonTitles: ["All", "Cached"]
+      scopeButtonTitles: CassetteLibraryFilterProvider.shared.isOnDeviceOnly ? nil : ["All", "Cached"]
     )
     setNavBarTitle(title: genre.name)
+    refreshListedCounts()
 
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
       infoCB: {
-        "\(self.genre.artistCount) Artist\(self.genre.artistCount == 1 ? "" : "s") \(CommonString.oneMiddleDot) \(self.genre.albumCount) Album\(self.genre.albumCount == 1 ? "" : "s") \(CommonString.oneMiddleDot) \(self.genre.songCount) Song\(self.genre.songCount == 1 ? "" : "s")"
+        let counts = self.listedCounts
+        return "\(counts.artists) Artist\(counts.artists == 1 ? "" : "s") \(CommonString.oneMiddleDot) \(counts.albums) Album\(counts.albums == 1 ? "" : "s") \(CommonString.oneMiddleDot) \(counts.songs) Song\(counts.songs == 1 ? "" : "s")"
       },
       playContextCb: { () in PlayContext(
         containable: self.genre,
@@ -144,13 +151,13 @@ class GenreDetailVC: MultiSourceTableViewController {
           row: indexPath.row,
           section: 0
         ))
-        return PlayContext(containable: entity)
+        return Self.onPhonePlayContext(entity)
       case LibraryElement.Album.rawValue:
         let entity = self.albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
           row: indexPath.row,
           section: 0
         ))
-        return PlayContext(containable: entity)
+        return Self.onPhonePlayContext(entity)
       case LibraryElement.Song.rawValue:
         let entity = self.songsFetchedResultsController.getWrappedEntity(at: IndexPath(
           row: indexPath.row,
@@ -184,7 +191,10 @@ class GenreDetailVC: MultiSourceTableViewController {
               isBackground: true
             )
           }
-          completionHandler(SwipeActionContext(containable: artist))
+          completionHandler(SwipeActionContext(
+            containable: artist,
+            playContext: Self.onPhonePlayContext(artist)
+          ))
         }
       case LibraryElement.Album.rawValue:
         let album = self.albumsFetchedResultsController.getWrappedEntity(at: IndexPath(
@@ -206,7 +216,10 @@ class GenreDetailVC: MultiSourceTableViewController {
               isBackground: true
             )
           }
-          completionHandler(SwipeActionContext(containable: album))
+          completionHandler(SwipeActionContext(
+            containable: album,
+            playContext: Self.onPhonePlayContext(album)
+          ))
         }
       case LibraryElement.Song.rawValue:
         let songIndexPath = IndexPath(row: indexPath.row, section: 0)
@@ -247,20 +260,47 @@ class GenreDetailVC: MultiSourceTableViewController {
           isBackground: true
         )
       }
+      self.refreshListedCounts()
       self.refreshGenreMetadataLine()
       self.detailOperationsView?.refresh()
     }
   }
 
-  // Patch 026: genre metadata line — "23 artists · 412 songs". cassette:
-  // leading type noun dropped, matching the other detail pages.
-  private func refreshGenreMetadataLine() {
-    var parts: [String] = []
-    if genre.artistCount > 0 {
-      parts.append("\(genre.artistCount) artist\(genre.artistCount == 1 ? "" : "s")")
+  /// phone-taste: count what the page lists. On the phone the three lists hold only what
+  /// is on it, so the counts come from them; Server Mode keeps the hub's counts.
+  private func refreshListedCounts() {
+    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly,
+          let artistsFetchedResultsController,
+          let albumsFetchedResultsController,
+          let songsFetchedResultsController
+    else {
+      listedCounts = (genre.artistCount, genre.albumCount, genre.songCount)
+      return
     }
-    if genre.songCount > 0 {
-      parts.append("\(genre.songCount) song\(genre.songCount == 1 ? "" : "s")")
+    listedCounts = (
+      artistsFetchedResultsController.listedCount,
+      albumsFetchedResultsController.listedCount,
+      songsFetchedResultsController.listedCount
+    )
+  }
+
+  /// A row's play context with only the songs this phone can play (OneTapPlay's rule), so
+  /// a long-press or swipe Play never queues music that is not here.
+  private static func onPhonePlayContext(_ containable: PlayableContainable) -> PlayContext {
+    PlayContext(containable: containable, index: 0, playables: OneTapPlay.playables(of: containable))
+  }
+
+  // Patch 026: genre metadata line, "23 artists · 412 songs". cassette:
+  // leading type noun dropped, matching the other detail pages. phone-taste: counted from
+  // what the page lists (see refreshListedCounts).
+  private func refreshGenreMetadataLine() {
+    let counts = listedCounts
+    var parts: [String] = []
+    if counts.artists > 0 {
+      parts.append("\(counts.artists) artist\(counts.artists == 1 ? "" : "s")")
+    }
+    if counts.songs > 0 {
+      parts.append("\(counts.songs) song\(counts.songs == 1 ? "" : "s")")
     }
     detailOperationsView?.metadataOverride = parts.joined(separator: " · ")
   }
@@ -441,7 +481,9 @@ class GenreDetailVC: MultiSourceTableViewController {
 
   override func updateSearchResults(for searchController: UISearchController) {
     guard let searchText = searchController.searchBar.text else { return }
-    if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex == 0 {
+    // With the scope bar hidden (on the phone) the selected index is -1, not 0, so the
+    // default search is anything but the Cached scope (index 1), as on Search.
+    if !searchText.isEmpty, searchController.searchBar.selectedScopeButtonIndex != 1 {
       artistsFetchedResultsController.search(searchText: searchText, onlyCached: false)
       albumsFetchedResultsController.search(searchText: searchText, onlyCached: false)
       songsFetchedResultsController.search(searchText: searchText, onlyCachedSongs: false)

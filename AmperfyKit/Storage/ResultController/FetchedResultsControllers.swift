@@ -409,6 +409,9 @@ public class GenreFetchedResultsController: CachedFetchedResultsController<Genre
 
 public class GenreArtistsFetchedResultsController: BasicFetchedResultsController<ArtistMO> {
   let genre: Genre
+  /// The on-phone ownership predicate (phone-taste), ANDed into the init and search
+  /// predicates; nil in Server Mode.
+  private let onPhonePredicate: NSPredicate?
 
   public init(
     for genre: Genre,
@@ -416,6 +419,9 @@ public class GenreArtistsFetchedResultsController: BasicFetchedResultsController
     isGroupedInAlphabeticSections: Bool
   ) {
     self.genre = genre
+    // phone-taste: on the phone, only the artists on it (nil, so no change, in Server Mode).
+    let onPhone = makeCassetteOwnershipPredicate(.artist, coreDataCompanion: coreDataCompanion)
+    self.onPhonePredicate = onPhone
     let fetchRequest = ArtistMO.alphabeticSortedFetchRequest
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
       NSCompoundPredicate(orPredicateWithSubpredicates: [
@@ -423,7 +429,7 @@ public class GenreArtistsFetchedResultsController: BasicFetchedResultsController
         coreDataCompanion.library.getFetchPredicate(onlyCachedArtists: true),
       ]),
       coreDataCompanion.library.getFetchPredicate(forGenre: genre),
-    ])
+    ] + [onPhone].compactMap { $0 })
     fetchRequest.relationshipKeyPathsForPrefetching = ArtistMO.relationshipKeyPathsForPrefetching
     fetchRequest.returnsObjectsAsFaults = false
     super.init(
@@ -443,7 +449,7 @@ public class GenreArtistsFetchedResultsController: BasicFetchedResultsController
         coreDataCompanion.library.getFetchPredicate(forGenre: genre),
         coreDataCompanion.library.getFetchPredicate(onlyCachedArtists: onlyCached),
         ArtistMO.getIdentifierBasedSearchPredicate(searchText: searchText),
-      ])
+      ] + [onPhonePredicate].compactMap { $0 })
       search(predicate: predicate)
     } else {
       showAllResults()
@@ -455,6 +461,9 @@ public class GenreArtistsFetchedResultsController: BasicFetchedResultsController
 
 public class GenreAlbumsFetchedResultsController: BasicFetchedResultsController<AlbumMO> {
   let genre: Genre
+  /// The on-phone ownership predicate (phone-taste), ANDed into the init and search
+  /// predicates; nil in Server Mode.
+  private let onPhonePredicate: NSPredicate?
 
   public init(
     for genre: Genre,
@@ -462,6 +471,9 @@ public class GenreAlbumsFetchedResultsController: BasicFetchedResultsController<
     isGroupedInAlphabeticSections: Bool
   ) {
     self.genre = genre
+    // phone-taste: on the phone, only the albums on it (nil, so no change, in Server Mode).
+    let onPhone = makeCassetteOwnershipPredicate(.album, coreDataCompanion: coreDataCompanion)
+    self.onPhonePredicate = onPhone
     let fetchRequest = AlbumMO.alphabeticSortedFetchRequest
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
       NSCompoundPredicate(orPredicateWithSubpredicates: [
@@ -469,7 +481,7 @@ public class GenreAlbumsFetchedResultsController: BasicFetchedResultsController<
         coreDataCompanion.library.getFetchPredicate(onlyCachedAlbums: true),
       ]),
       coreDataCompanion.library.getFetchPredicate(forGenre: genre),
-    ])
+    ] + [onPhone].compactMap { $0 })
     fetchRequest.relationshipKeyPathsForPrefetching = AlbumMO.relationshipKeyPathsForPrefetching
     fetchRequest.returnsObjectsAsFaults = false
     super.init(
@@ -489,7 +501,7 @@ public class GenreAlbumsFetchedResultsController: BasicFetchedResultsController<
         coreDataCompanion.library.getFetchPredicate(forGenre: genre),
         coreDataCompanion.library.getFetchPredicate(onlyCachedAlbums: onlyCached),
         ArtistMO.getIdentifierBasedSearchPredicate(searchText: searchText),
-      ])
+      ] + [onPhonePredicate].compactMap { $0 })
       search(predicate: predicate)
     } else {
       showAllResults()
@@ -501,6 +513,9 @@ public class GenreAlbumsFetchedResultsController: BasicFetchedResultsController<
 
 public class GenreSongsFetchedResultsController: BasicFetchedResultsController<SongMO> {
   let genre: Genre
+  /// The on-phone ownership predicate (phone-taste), ANDed into the init and search
+  /// predicates; nil in Server Mode.
+  private let onPhonePredicate: NSPredicate?
 
   public init(
     for genre: Genre,
@@ -508,11 +523,15 @@ public class GenreSongsFetchedResultsController: BasicFetchedResultsController<S
     isGroupedInAlphabeticSections: Bool
   ) {
     self.genre = genre
+    // phone-taste: on the phone, only the songs on it (nil, so no change, in Server Mode).
+    // Play-all and song-row playback follow, since getContextSongs reads this predicate.
+    let onPhone = makeCassetteOwnershipPredicate(.song, coreDataCompanion: coreDataCompanion)
+    self.onPhonePredicate = onPhone
     let fetchRequest = SongMO.alphabeticSortedFetchRequest
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
       SongMO.excludeServerDeleteUncachedSongsFetchPredicate,
       coreDataCompanion.library.getFetchPredicate(forGenre: genre),
-    ])
+    ] + [onPhone].compactMap { $0 })
     fetchRequest.relationshipKeyPathsForPrefetching = SongMO.relationshipKeyPathsForPrefetching
     fetchRequest.returnsObjectsAsFaults = false
     super.init(
@@ -529,11 +548,25 @@ public class GenreSongsFetchedResultsController: BasicFetchedResultsController<S
         coreDataCompanion.library.getFetchPredicate(forGenre: genre),
         SongMO.getIdentifierBasedSearchPredicate(searchText: searchText),
         coreDataCompanion.library.getFetchPredicate(onlyCachedSongs: onlyCachedSongs),
-      ])
+      ] + [onPhonePredicate].compactMap { $0 })
       search(predicate: predicate)
     } else {
       showAllResults()
     }
+  }
+}
+
+// MARK: - Listed counts (genre page)
+
+extension BasicFetchedResultsController {
+  /// How many objects the controller lists with no search applied: a count of its init
+  /// predicate, so a genre page on the phone counts only what is on the phone
+  /// (phone-taste: the genre page's counts match its lists, not the hub's whole library).
+  public var listedCount: Int {
+    let request = fetchResultsController.fetchRequest.copy() as! NSFetchRequest<ResultType>
+    request.predicate = defaultPredicate
+    request.relationshipKeyPathsForPrefetching = nil
+    return (try? coreDataCompanion.context.count(for: request)) ?? 0
   }
 }
 
