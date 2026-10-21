@@ -65,12 +65,20 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   // enum's own append-only Codable-compat rule.
   case moodDoors
 
+  // cassette 2026-10-20: two rows from the phone's own play log (AmperfyKit/Home/
+  // ListeningShelves.swift). Appended (ordinals 17, 18) per the append-only rule.
+  case onRepeat
+  case aroundNow
+
   // cassette redesign (Surface 4): Resume leads the Home IA again — a
   // single full-width card sourced from the lastPlayedDate FRCs. The four
   // shelves follow (Recent = recently played; typed shelves = browse).
   public static let defaultValue: [HomeSection] = [
     .resume,
     .recent,
+    // cassette 2026-10-20: what you are into now, and what you play at this time.
+    .onRepeat,
+    .aroundNow,
     .yourPlaylists,
     // cassette: Mood sits right below Playlists, per founder direction.
     .moodDoors,
@@ -114,6 +122,8 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .recent: return "Recent"
     case .forgottenAlbums: return "Albums" // the from-your-collection / anti-recency shelf, surfaced as "Albums"
     case .moodDoors: return "Mood" // accessibility fallback only — MoodDoorsHeaderView owns the visible header
+    case .onRepeat: return "On Repeat"
+    case .aroundNow: return ListeningShelves.aroundNowTitle(now: Date())
     }
   }
 
@@ -140,6 +150,8 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .recent: return false
     case .forgottenAlbums: return false
     case .moodDoors: return false
+    case .onRepeat: return false
+    case .aroundNow: return false
     }
   }
 }

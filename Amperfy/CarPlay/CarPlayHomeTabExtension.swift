@@ -38,8 +38,9 @@ extension CarPlaySceneDelegate {
   /// cassette 2026-10-20 (driving pass): Recent leads (the row people actually use, with
   /// the Resume item at its head, since CarPlay has no Resume card), then Radio, the most
   /// natural thing to play while driving, then Playlists, Newest Albums and Artists.
+  /// On Repeat and Around This Time follow Recent (the phone's own play log).
   private var carPlayHomeSections: [HomeSection] {
-    [.recent, .radios, .yourPlaylists, .newestAlbums, .recentlyPlayedArtists]
+    [.recent, .onRepeat, .aroundNow, .radios, .yourPlaylists, .newestAlbums, .recentlyPlayedArtists]
   }
 
   /// The items a CarPlay Home row shows. Recent carries the Resume item first.

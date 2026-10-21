@@ -423,6 +423,7 @@ class HomeManager: NSObject {
     rankedAlbumIDs = rankedContainerIDs(albumScores)
 
     updateRecent()
+    updateListeningShelves()
     updatePlaylists()
     updateAlbums()
     // cassette: the Albums + Artists shelves now run the SHARED home-shelf engine
@@ -651,6 +652,42 @@ class HomeManager: NSObject {
       return true
     }
   }
+
+  /// cassette 2026-10-20: On Repeat and Around This Time, ranked from the phone's own
+  /// play log (one timestamped entry per completed play) by ListeningShelves. Only albums
+  /// on this phone; overlap with Recent is allowed. A row with too little history to say
+  /// anything stays empty, and an empty row is hidden.
+  func updateListeningShelves() {
+    let now = Date()
+    let since = now.addingTimeInterval(-Double(ListeningShelves.lookbackDays) * 86400)
+    let entries = storage.main.library.getScrobbleEntries(
+      for: account,
+      since: since,
+      fetchLimit: Self.listeningPlayFetchLimit
+    )
+    var albumsByID = [String: Album]()
+    var plays = [ListeningPlay]()
+    for entry in entries {
+      guard let date = entry.date,
+            let album = entry.playable?.asSong?.album,
+            !album.id.isEmpty else { continue }
+      albumsByID[album.id] = album
+      plays.append(ListeningPlay(date: date, albumID: album.id))
+    }
+    let isOnPhone = makeOnPhoneCheck()
+    func items(_ ids: [String], _ section: HomeSection) -> [HomeItem] {
+      ids.compactMap { albumsByID[$0] }
+        .filter { isOnPhone($0) }
+        .prefix(Self.shelfCarouselCap)
+        .map { HomeItem(section: section, stableID: Self.stableID(for: $0), playableContainable: $0) }
+    }
+    data[.onRepeat] = items(ListeningShelves.onRepeat(plays, now: now), .onRepeat)
+    data[.aroundNow] = items(ListeningShelves.aroundNow(plays, now: now), .aroundNow)
+  }
+
+  /// Two months of plays is about a thousand entries for a heavy listener; the cap only
+  /// bounds the fetch on a recompute.
+  private static let listeningPlayFetchLimit = 5000
 
   /// Recently-played playlists. Overlap with Recent is allowed (section-scoped
   /// identity), so no cross-shelf subtraction.

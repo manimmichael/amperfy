@@ -649,6 +649,23 @@ public class LibraryStorage: PlayableFileCachable {
     return mos.map { ScrobbleEntry(managedObject: $0) }
   }
 
+  /// cassette 2026-10-20: every completed play on this phone since `since`, newest first,
+  /// for the On Repeat and Around This Time rows (ListeningShelves).
+  public func getScrobbleEntries(for account: Account, since: Date, fetchLimit: Int) -> [ScrobbleEntry] {
+    let fetchRequest = ScrobbleEntryMO.fetchRequest()
+    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+      getFetchPredicate(forAccount: account),
+      NSPredicate(format: "%K >= %@", #keyPath(ScrobbleEntryMO.date), since as NSDate),
+    ])
+    fetchRequest.sortDescriptors = [
+      NSSortDescriptor(key: #keyPath(ScrobbleEntryMO.date), ascending: false),
+    ]
+    fetchRequest.fetchLimit = fetchLimit
+    fetchRequest.relationshipKeyPathsForPrefetching = ["playable"]
+    let mos = (try? context.fetch(fetchRequest)) ?? []
+    return mos.map { ScrobbleEntry(managedObject: $0) }
+  }
+
   func deleteRadio(_ radio: Radio) {
     context.delete(radio.managedObject)
   }
