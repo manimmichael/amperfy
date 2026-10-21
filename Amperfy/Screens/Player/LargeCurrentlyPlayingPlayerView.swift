@@ -437,7 +437,9 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
   /// cassette 2026-10-21 (founder: "it's not uncommon for me to forget I'm on a radio
   /// station"): on the radio, a small line over the song names the station, its mark and
   /// its name in the kicker voice, so Next to another station never leaves you guessing.
-  /// First row of the title stack; hidden for everything that is not a station.
+  /// It floats in the room under the artwork, pinned just above the title stack rather
+  /// than inside it, so the song and artist stay exactly where they sit for a record
+  /// (founder: "without pushing the titles down"). Hidden for everything but a station.
   private let stationMark = UIImageView()
   private let stationLabel = UILabel()
   private lazy var stationRow: UIStackView = {
@@ -465,10 +467,16 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
   }()
 
   private func refreshStationRow() {
-    guard let titleStack = albumContainerView.superview as? UIStackView else { return }
+    guard let titleStack = albumContainerView.superview as? UIStackView,
+          let host = titleStack.superview else { return }
     if stationRow.superview == nil {
-      titleStack.insertArrangedSubview(stationRow, at: 0)
-      titleStack.setCustomSpacing(10, after: stationRow)
+      stationRow.translatesAutoresizingMaskIntoConstraints = false
+      host.addSubview(stationRow)
+      NSLayoutConstraint.activate([
+        stationRow.leadingAnchor.constraint(equalTo: titleStack.leadingAnchor),
+        stationRow.trailingAnchor.constraint(lessThanOrEqualTo: titleStack.trailingAnchor),
+        stationRow.bottomAnchor.constraint(equalTo: titleStack.topAnchor, constant: -12),
+      ])
     }
     guard let radio = appDelegate.player.currentlyPlaying?.asRadio else {
       stationRow.isHidden = true
