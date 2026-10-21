@@ -274,10 +274,11 @@ public enum ListeningShelves {
       return ListeningShelves.rounded((mood + sound) / 2)
     }
 
-    /// With sound: the mood and the sound each clear their bar. Without: the mood clears
-    /// `bar.moodOnly`, the bar this match used before sound.
+    /// With sound: the mood and the sound each clear their floor and the score clears
+    /// `bar.score`. Without: the mood clears `bar.moodOnly`, the bar this match used before
+    /// sound.
     public func passes(_ bar: Bar) -> Bool {
-      if let sound { return mood >= bar.mood && sound >= bar.sound }
+      if let sound { return mood >= bar.mood && sound >= bar.sound && score >= bar.score }
       return mood >= bar.moodOnly
     }
   }
@@ -285,11 +286,14 @@ public enum ListeningShelves {
   public struct Bar: Sendable {
     public let mood: Double
     public let sound: Double
+    /// What the ranking number (`Likeness.score`) must reach; 0 for none.
+    public let score: Double
     public let moodOnly: Double
 
-    public init(mood: Double, sound: Double, moodOnly: Double) {
+    public init(mood: Double, sound: Double, score: Double = 0, moodOnly: Double) {
       self.mood = mood
       self.sound = sound
+      self.score = score
       self.moodOnly = moodOnly
     }
   }
@@ -422,9 +426,13 @@ public enum ListeningShelves {
   /// the time-of-day playlist): the old mood bar, and a sound that is at least a few percent
   /// of what was played (`likeness(_:toProfile:)`). Without sound, the mood alone.
   public static let latelyBar = Bar(mood: moreLikeLatelyMinMatch, sound: 0.03, moodOnly: moreLikeLatelyMinMatch)
-  /// How close another record must be to a page's record, artist or playlist (MORE LIKE).
+  /// How close another record must be to a page's record, artist or playlist (MORE LIKE):
+  /// mood and sound together at 0.55 or better, neither far off on its own. Two separate
+  /// bars (0.6 and 0.3) turned away records that plainly belong, close on one side and
+  /// just short on the other (A Fever You Can't Sweat Out beside nimrod.: sound 0.93,
+  /// mood 0.57), leaving 13 of the founder's tagged records with no shelf.
   public static func recordBar(moodOnly: Double) -> Bar {
-    Bar(mood: 0.6, sound: 0.3, moodOnly: moodOnly)
+    Bar(mood: 0.45, sound: 0.25, score: 0.55, moodOnly: moodOnly)
   }
 
   /// Albums whose combined song tags match the profile closely (`latelyBar`), best first,

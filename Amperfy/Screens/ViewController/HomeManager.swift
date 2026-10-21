@@ -564,9 +564,8 @@ class HomeManager: NSObject {
   }
 
   /// Rebuild the song-derived scores once, then every shelf. Order is Recent →
-  /// Resume → Playlists → Albums → Artists. Shelves no longer subtract one
-  /// another (section-scoped `HomeItem` identity allows overlap), so this is a
-  /// straight rebuild with no cross-shelf dedup.
+  /// Resume → Playlists → Albums → Artists. Then the softer rows give way to the
+  /// rows above them (`cascadeSofterRows`).
   private func recomputeAllShelves() {
     // Suppress the per-builder snapshot callbacks and fire exactly one apply for
     // the whole rebuild (via defer, so it still fires if a builder bails early).
@@ -604,11 +603,52 @@ class HomeManager: NSObject {
     if buildsForgottenShelf {
       updateAlbumsViaEngine(shelfInput)
     }
+    cascadeSofterRows()
     // cassette 2026-10-20: More Like Lately takes the Albums row's place when it has
     // something; Albums stays as the fallback until mood tags arrive.
     if !(data[.moreLikeLately] ?? []).isEmpty {
       data[.forgottenAlbums] = []
     }
+  }
+
+  /// The rows that suggest rather than report: they give way to the rows above them.
+  private static let softerRows: Set<HomeSection> = [.aroundNow, .moreLikeLately, .forgottenAlbums]
+
+  /// Home's rows in cascading priority (founder, 2026-10-21: "everything else is a softer
+  /// recommendation and should emphasize variety over accuracy"). Resume, On Repeat and
+  /// Recent report what you play and stay exact. The softer rows (this time of day, More
+  /// Like, Albums) leave out any record, and any artist, already shown in a row above them,
+  /// and show one record per artist, so scrolling down keeps turning up something new.
+  /// Runs once at the end of a recompute, over the rows in the order Home shows them; the
+  /// softer rows arrive uncapped so what they give way to is backfilled from further down.
+  private func cascadeSofterRows() {
+    var shownAlbums = Set<String>()
+    var shownArtists = Set<String>()
+    for section in orderedVisibleSections {
+      var items = data[section] ?? []
+      if Self.softerRows.contains(section) {
+        var rowArtists = Set<String>()
+        items = items.filter { item in
+          guard let album = item.playableContainable as? Album else { return true }
+          let artist = Self.artistKey(of: album)
+          return !shownAlbums.contains(album.id) && !shownArtists.contains(artist)
+            && rowArtists.insert(artist).inserted
+        }
+        items = Array(items.prefix(Self.shelfCarouselCap))
+        data[section] = items
+      }
+      for item in items {
+        guard let album = item.playableContainable as? Album else { continue }
+        shownAlbums.insert(album.id)
+        shownArtists.insert(Self.artistKey(of: album))
+      }
+    }
+  }
+
+  /// An album's artist as the cascade compares them: the normalised name, else the id.
+  private static func artistKey(of album: Album) -> String {
+    let key = ListeningShelves.normalizedArtistName(album.artist?.name ?? "")
+    return key.isEmpty ? album.id : key
   }
 
   // MARK: - Play scoring (Home Shelves v1 foundation)
@@ -960,14 +1000,15 @@ class HomeManager: NSObject {
       plays.append(ListeningPlay(date: date, albumID: albumID))
     }
     let isOnPhone = makeOnPhoneCheck()
-    func items(_ ids: [String], _ section: HomeSection) -> [HomeItem] {
+    func items(_ ids: [String], _ section: HomeSection, capped: Bool = true) -> [HomeItem] {
       ids.compactMap { albumsByID[$0] }
         .filter { isOnPhone($0) }
-        .prefix(Self.shelfCarouselCap)
+        .prefix(capped ? Self.shelfCarouselCap : Int.max)
         .map { HomeItem(section: section, stableID: Self.stableID(for: $0), playableContainable: $0) }
     }
     data[.onRepeat] = items(ListeningShelves.onRepeat(plays, now: now), .onRepeat)
-    data[.aroundNow] = items(ListeningShelves.aroundNow(plays, now: now), .aroundNow)
+    // Uncapped: cascadeSofterRows trims it against On Repeat, then caps it.
+    data[.aroundNow] = items(ListeningShelves.aroundNow(plays, now: now), .aroundNow, capped: false)
     updateLatelyShelves(lately, now: now, isOnPhone: isOnPhone)
     updateMadeForYouMixes(songPlays: songPlays, lately: lately, now: now, isOnPhone: isOnPhone)
   }
@@ -1060,10 +1101,10 @@ class HomeManager: NSObject {
       )
       moreLikeCache = (key, now, moreLikeIDs)
     }
+    // Uncapped: cascadeSofterRows trims it against the rows above, then caps it.
     data[.moreLikeLately] = moreLikeIDs
       .compactMap { index.albumsByID[$0] }
       .filter { isOnPhone($0) }
-      .prefix(Self.shelfCarouselCap)
       .map { album in
         HomeItem(
           section: .moreLikeLately,
