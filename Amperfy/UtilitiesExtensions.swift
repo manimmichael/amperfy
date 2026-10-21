@@ -505,15 +505,15 @@ extension UIContentUnavailableConfiguration {
     return config
   }
 
-  /// The on-device library is empty: nothing has been sent to this phone yet.
-  /// There is no Server Mode toggle on the phone, so the copy never points at
-  /// one; music arrives from the web.
+  /// The on-device library is empty: nothing has synced to this phone yet. The hub
+  /// (Cassette Player on the person's computer) is the source of truth and the phone
+  /// mirrors what they chose to sync there; nothing is added on the web.
   @MainActor
   static var cassetteOnDeviceEmpty: UIContentUnavailableConfiguration {
     cassetteEmpty(
       image: .musicalNotes,
       title: "No music on this phone yet",
-      body: "Add music to your phone from Cassette on the web and it arrives here."
+      body: "Choose what syncs to this phone in Cassette Player on your computer. It arrives here while both are on the same Wi-Fi."
     )
   }
 
@@ -522,7 +522,7 @@ extension UIContentUnavailableConfiguration {
   static var cassetteOnDeviceNoResults: UIContentUnavailableConfiguration {
     cassetteNoResults(
       title: "No results on this phone",
-      body: "Only music on this phone is searched. Add more from Cassette on the web."
+      body: "Only music on this phone is searched. Choose what else syncs here in Cassette Player on your computer."
     )
   }
 }

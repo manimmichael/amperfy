@@ -54,6 +54,11 @@ public final class IntentExecutor {
   /// "Syncing your library" banner — so the banner reflects a real download wave,
   /// not the 30s poll itself.
   private var downloadsInFlightThisPass = false
+  /// Per pass, for the Home status line: album adds outstanding when the pass began, and
+  /// whether the hub answered or failed to answer an add that needed it.
+  private var pendingAlbumAddsThisPass = 0
+  private var hubReachedThisPass = false
+  private var hubUnreachableThisPass = false
   // Once-per-launch device registration (user_devices upsert). The header
   // keep-alive rides every request; this full registration also refreshes
   // platform/model/app_version.
@@ -157,6 +162,9 @@ public final class IntentExecutor {
     defer { isRunning = false }
     didRemoveThisCycle = false
     downloadsInFlightThisPass = false
+    pendingAlbumAddsThisPass = 0
+    hubReachedThisPass = false
+    hubUnreachableThisPass = false
     // Reset per-poll; set below by anything that constitutes real work.
     var pollDidWork = false
     artworkDidWorkThisPass = false
@@ -199,6 +207,7 @@ public final class IntentExecutor {
 
     print("Cassette poll: received \(intents.count) actionable intent(s)")
     if !intents.isEmpty { pollDidWork = true }
+    pendingAlbumAddsThisPass = intents.filter { $0.scope == "album" && $0.intentKind != "remove" }.count
     // The fetch above round-tripped to cassette.digital with a valid bearer
     // token, so the device is paired and reachable: stamp the freshness signal
     // the account menu reads ("Synced 5m ago"). Persisted (not just the
@@ -270,7 +279,14 @@ public final class IntentExecutor {
     // Publish the sync-active state for the Home banner: true while a real
     // download wave is moving (an intent left `syncing`), false once every
     // actionable intent's tracks are on disk. Only flips on a real change.
-    await CassetteSyncStatus.setActive(downloadsInFlightThisPass)
+    // with how many albums are still outstanding and whether the hub answered (nil when
+    // no add needed it this pass).
+    let hubReachable: Bool? = hubReachedThisPass ? true : (hubUnreachableThisPass ? false : nil)
+    await CassetteSyncStatus.update(
+      active: downloadsInFlightThisPass,
+      pendingAlbums: pendingAlbumAddsThisPass,
+      hubReachable: hubReachable
+    )
   }
 
   /// Pull-to-refresh entry point (B2). Drives the full on-demand convergence
@@ -1568,6 +1584,7 @@ public final class IntentExecutor {
     if !isRemove {
       let reachable = await isCassettePlayerReachable()
       print("Cassette poll: intent \(intent.id) - Cassette Player reachable=\(reachable)")
+      if reachable { hubReachedThisPass = true } else { hubUnreachableThisPass = true }
       guard reachable else {
         try? await api.updateIntent(
           id: intent.id,

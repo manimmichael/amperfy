@@ -58,25 +58,78 @@ extension Notification.Name {
 
 // MARK: - CassetteSyncStatus
 
-/// cassette: the one place the app asks "is a library sync wave moving right now?"
+/// cassette: the one place the app asks "is music arriving from the hub, and can the
+/// phone reach it?"
 ///
-/// A wave = the phone still has owned tracks to pull. The intent executor is the
-/// authority: a poll that enqueues downloads, or leaves any intent `syncing`
-/// (downloads in flight), is active; a poll where everything it covers is already
-/// on disk is idle. This deliberately does NOT track the 30s poll itself — that
-/// would blink the banner on every quiet check. Counts (albums/tracks) are a
-/// follow-up; today this is just the on/off the banner needs.
+/// A wave = the phone still has albums to pull from the hub (the person's Cassette Player).
+/// The intent executor is the authority: at the end of each pass it reports how many album
+/// adds are still outstanding and whether the hub answered. This deliberately does NOT
+/// track the 30s poll itself, which would blink the status on every quiet check.
+///
+/// Library data only. Playlists, likes and listens sync through the cloud and never wait
+/// on the hub, so nothing here speaks for them.
 @MainActor
 public enum CassetteSyncStatus {
+  /// Whether downloads are in flight (the Home status line shows while true).
   public private(set) static var isActive = false
+  /// Album adds still outstanding after the last pass.
+  public private(set) static var pendingAlbums = 0
+  /// The size of the current wave: the most albums outstanding since it began. Resets when
+  /// nothing is outstanding, so "3 of 12" counts this wave, not history.
+  public private(set) static var waveTotal = 0
+  /// False when the last pass had albums to pull and the hub did not answer.
+  public private(set) static var isHubReachable = true
 
   /// Called at the end of each intent pass with whether real sync work remains.
   /// Posts `.cassetteSyncActiveChanged` only on a real transition, so observers
   /// don't churn on every poll.
   public static func setActive(_ active: Bool) {
-    guard active != isActive else { return }
+    update(active: active, pendingAlbums: pendingAlbums, hubReachable: isHubReachable)
+  }
+
+  /// The full end-of-pass report. `hubReachable` is nil when the pass did not need the hub
+  /// (nothing to pull), which leaves the last known answer standing until it matters.
+  public static func update(active: Bool, pendingAlbums: Int, hubReachable: Bool?) {
+    let newTotal = pendingAlbums == 0 ? 0 : max(waveTotal, pendingAlbums)
+    let newReachable = pendingAlbums == 0 ? true : (hubReachable ?? isHubReachable)
+    guard active != isActive || pendingAlbums != Self.pendingAlbums || newTotal != waveTotal
+      || newReachable != isHubReachable else { return }
     isActive = active
+    Self.pendingAlbums = pendingAlbums
+    waveTotal = newTotal
+    isHubReachable = newReachable
     NotificationCenter.default.post(name: .cassetteSyncActiveChanged, object: nil)
+  }
+
+  /// The one quiet line Home shows, or nil when there is nothing to say (the normal case).
+  /// - Arriving: "Syncing 3 of 12 albums from Michael's MacBook Pro"
+  /// - Hub out of reach with albums waiting: "Can't reach Michael's MacBook Pro · new music
+  ///   arrives when it's back"
+  public static func statusLine(hubName: String?) -> String? {
+    let hub = hubName ?? "your computer"
+    if pendingAlbums > 0, !isHubReachable {
+      return "Can't reach \(hub) · new music arrives when it's back"
+    }
+    guard isActive || pendingAlbums > 0 else { return nil }
+    if waveTotal > 1 {
+      let done = max(0, min(waveTotal, waveTotal - pendingAlbums + 1))
+      return "Syncing \(done) of \(waveTotal) albums from \(hub)"
+    }
+    return "Syncing from \(hub)"
+  }
+
+  /// A human name for the paired hub from its LAN address (`http://<host>:<port>`): a
+  /// Bonjour host like "Michaels-MacBook-Pro.local" reads "Michaels MacBook Pro"; a bare IP
+  /// carries no name and returns nil.
+  public static func hubName(serverUrl: String?) -> String? {
+    guard let serverUrl, let host = URL(string: serverUrl)?.host, !host.isEmpty else { return nil }
+    let isIPv4 = host.split(separator: ".").count == 4
+      && host.allSatisfy { $0.isNumber || $0 == "." }
+    if isIPv4 || host.contains(":") { return nil }
+    var name = host
+    if name.lowercased().hasSuffix(".local") { name = String(name.dropLast(".local".count)) }
+    name = name.replacingOccurrences(of: "-", with: " ").trimmingCharacters(in: .whitespaces)
+    return name.isEmpty ? nil : name
   }
 }
 

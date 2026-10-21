@@ -169,6 +169,18 @@ public final class DeviceOwnershipManager {
     if let caught { throw caught }
   }
 
+  /// Delete every ownership record and its file: the "remove music from this phone" choice
+  /// at logout. Returns how many tracks were removed. Library data only (the hub's music);
+  /// playlists, likes and listens live in the cloud and are untouched.
+  @discardableResult
+  public func removeAll() throws -> Int {
+    let ids = try fetchAll().map(\.cassetteLocalId)
+    for id in ids {
+      try remove(cassetteLocalId: id)
+    }
+    return ids.count
+  }
+
   public func fetchOne(cassetteLocalId: String) throws -> DeviceOwnershipMO? {
     var result: DeviceOwnershipMO?
     var caught: Error?

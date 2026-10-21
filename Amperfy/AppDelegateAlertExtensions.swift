@@ -54,11 +54,39 @@ extension AppDelegate {
     }
   }
 
+  /// The one logout prompt (Settings > Account and the profile menu both use it). Logging
+  /// out never decides for the person what happens to their music: the music synced from
+  /// their hub can stay on the phone or be removed. Playlists, likes and listens live in
+  /// the cloud either way, so the prompt says so.
+  func presentLogoutChoice(for accountInfo: AccountInfo) {
+    guard let topView = Self.topViewController() else { return }
+    // The person's Cassette account, never the `cassette-*` machine login the hub mints.
+    let name = CassetteSyncAPI.accountName ?? CassetteSyncAPI.accountEmail
+    let alert = UIAlertController(
+      title: name.map { "Log out of \($0)?" } ?? "Log out?",
+      message: "Your playlists, likes and listening history stay in your account. What should happen to the music on this phone?",
+      preferredStyle: .alert
+    )
+    let keep = UIAlertAction(title: "Keep Music on This Phone", style: .default) { _ in
+      self.logoutAccount(accountInfo, removeMusic: false)
+    }
+    alert.addAction(keep)
+    alert.addAction(UIAlertAction(title: "Remove Music from This Phone", style: .destructive) { _ in
+      self.logoutAccount(accountInfo, removeMusic: true)
+    })
+    alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+    // No preferredAction: iOS 26 fills it with the app tint (cream) and forces white text,
+    // which is unreadable. Keep leads the list instead.
+    topView.present(alert, animated: true)
+  }
+
   /// Patch 111 (5): full account teardown, extracted from AccountSettingsView
   /// so the profile menu's "Log Out" can reuse it. Stops the account's manager,
-  /// deletes its cache, drops credentials, then either switches to the next
-  /// account or returns to the login screen.
-  public func logoutAccount(_ accountInfo: AccountInfo) {
+  /// drops credentials, then either switches to the next account or returns to the
+  /// login screen. Music synced from the hub (CassetteMusic + ownership records) and the
+  /// account's cache (covers) are removed only when the person chose that; they used to be
+  /// cache-deleted on every logout while the warning claimed all music went with it.
+  public func logoutAccount(_ accountInfo: AccountInfo, removeMusic: Bool) {
     closeAllButActiveMainTabs()
     if storage.settings.accounts.allAccounts.count <= 1 {
       stopForInit()
@@ -68,7 +96,14 @@ extension AppDelegate {
     meta.stopManager()
     resetMeta(accountInfo)
 
-    CacheFileManager.shared.deleteAccountCache(accountInfo: accountInfo)
+    if removeMusic {
+      do {
+        try DeviceOwnershipManager(context: storage.main.context).removeAll()
+      } catch {
+        os_log("Logout: removing synced music failed: %{public}@", type: .error, "\(error)")
+      }
+      CacheFileManager.shared.deleteAccountCache(accountInfo: accountInfo)
+    }
     storage.settings.accounts.logout(accountInfo)
     notificationHandler.post(name: .accountDeleted, object: nil, userInfo: nil)
     notificationHandler.post(name: .accountActiveChanged, object: nil, userInfo: nil)

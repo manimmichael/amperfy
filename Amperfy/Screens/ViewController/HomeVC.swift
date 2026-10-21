@@ -249,22 +249,23 @@ final class HomeVC: UICollectionViewController {
     updateSyncBannerPresentation(animated: true)
   }
 
-  /// Show/hide the sync banner to match `CassetteSyncStatus.isActive`, inset the
-  /// content below it while it is up, and re-apply the snapshot so the Resume
-  /// section drops out (the banner covers it) and returns when the wave ends.
+  /// Show/hide the hub status line to match `CassetteSyncStatus` and inset the content
+  /// below it while it is up. Resume stays: a single line does not cover it.
   private func updateSyncBannerPresentation(animated: Bool) {
-    let active = CassetteSyncStatus.isActive
-    syncBanner.isHidden = !active
-    if active { syncBanner.startAnimating() } else { syncBanner.stopAnimating() }
+    let hubName = CassetteSyncStatus.hubName(
+      serverUrl: appDelegate.storage.settings.accounts.activeSetting.read.loginCredentials?.serverUrl
+    )
+    let line = CassetteSyncStatus.statusLine(hubName: hubName)
+    let active = line != nil
+    syncBanner.show(line, isSyncing: CassetteSyncStatus.isHubReachable)
 
     // The banner's height is content-driven; lay it out, then inset the content by
     // that height plus a small gap so the first shelf clears it.
     view.layoutIfNeeded()
-    let topInset = active ? (syncBanner.frame.height + 18) : 0
+    let topInset = active ? (syncBanner.frame.height + 8) : 0
     collectionView.contentInset.top = topInset
     collectionView.verticalScrollIndicatorInsets.top = topInset
 
-    // Resume is section-gated on the sync state inside applySnapshot.
     applySnapshot(animated: animated)
   }
 
@@ -628,11 +629,6 @@ final class HomeVC: UICollectionViewController {
     var seenSections = Set<HomeSection>()
     for section in sharedHome.orderedVisibleSections {
       guard seenSections.insert(section).inserted else { continue }
-      // cassette: while a sync wave is moving, the "Syncing your library" banner
-      // takes the top slot — drop the Resume section so the banner covers it. It
-      // returns automatically when the wave finishes (updateSyncBannerPresentation
-      // re-applies the snapshot).
-      if section == .resume, CassetteSyncStatus.isActive { continue }
       // cassette: .moodDoors is a static, always-present header-only
       // section (zero HomeItems by design — see HomeSection.swift) — append
       // it (beta accounts only, BUG-348) instead of via sharedHome.data, which it never
@@ -1069,65 +1065,43 @@ extension UIFont {
 
 // MARK: - SyncBannerView
 
-/// cassette: the iOS half of Android's "Syncing your library" home banner. It
-/// sits at the top of Home over the Resume card while a library download wave is
-/// moving (CassetteSyncStatus.isActive) and disappears when it finishes — a paired
-/// phone says what it is doing instead of showing a bare spinner. Simple v1: a
-/// spinner + label + an indeterminate bar; live album/track counts are the
-/// follow-up (see CassetteSyncStatus).
+/// cassette: the hub status line. One quiet line at the top of Home, shown only while there
+/// is something to say about the hub (the person's Cassette Player): music arriving
+/// ("Syncing 3 of 12 albums from Michael's MacBook Pro") or the hub out of reach with
+/// albums waiting ("Can't reach Michael's MacBook Pro · new music arrives when it's
+/// back"). When everything is in sync it is hidden; the account menu keeps the quiet
+/// "Synced 5m ago". Text comes from `CassetteSyncStatus.statusLine`. It replaced the
+/// two-line "SYNCING YOUR LIBRARY" card with its indeterminate bar (founder 2026-10-20:
+/// "clean and minimal").
 ///
-/// Defined here rather than in its own file on purpose: a standalone .swift needs
-/// adding to the Xcode target's Compile Sources or nothing can see it ("Cannot
-/// find 'SyncBannerView' in scope"). Living in HomeVC.swift — already in the
-/// target, and HomeVC is the only caller — sidesteps that.
+/// Defined here rather than in its own file on purpose: HomeVC is the only caller.
 final class SyncBannerView: UIView {
   private let spinner: UIActivityIndicatorView = {
     let view = UIActivityIndicatorView(style: .medium)
     view.translatesAutoresizingMaskIntoConstraints = false
-    view.color = CassetteTheme.UIColors.orange
-    view.hidesWhenStopped = false
+    view.color = UIColor.cassette(.textSecondary)
+    view.transform = CGAffineTransform(scaleX: 0.75, y: 0.75)
+    view.hidesWhenStopped = true
     return view
   }()
 
-  private let titleLabel: UILabel = {
-    let label = UILabel()
-    label.translatesAutoresizingMaskIntoConstraints = false
-    label.textColor = CassetteTheme.UIColors.ink
-    label.attributedText = NSAttributedString(
-      string: "SYNCING YOUR LIBRARY",
-      attributes: [.font: UIFont.cassette(.rowTitle), .kern: 0.9]
-    )
-    return label
+  /// Shown instead of the spinner when the hub cannot be reached.
+  private let dot: UIView = {
+    let view = UIView()
+    view.translatesAutoresizingMaskIntoConstraints = false
+    view.backgroundColor = UIColor.cassette(.textTertiary)
+    view.layer.cornerRadius = 3
+    return view
   }()
 
-  private let detailLabel: UILabel = {
+  private let label: UILabel = {
     let label = UILabel()
     label.translatesAutoresizingMaskIntoConstraints = false
     label.font = UIFont.cassette(.metadata)
-    label.textColor = CassetteTheme.UIColors.ink2
-    label.text = "Fetching your albums and tracks"
+    label.textColor = UIColor.cassette(.textSecondary)
+    label.numberOfLines = 1
+    label.lineBreakMode = .byTruncatingMiddle
     return label
-  }()
-
-  // Indeterminate bar: a faint full-width track with an accent segment that
-  // pulses, so the banner reads as "working" without claiming a progress it can't
-  // measure yet. A pulse (opacity) is used over a moving segment on purpose — it
-  // needs no frame math and can't misbehave across layout passes.
-  private let barTrack: UIView = {
-    let view = UIView()
-    view.translatesAutoresizingMaskIntoConstraints = false
-    view.backgroundColor = CassetteTheme.UIColors.ink4
-    view.layer.cornerRadius = 2
-    view.clipsToBounds = true
-    return view
-  }()
-
-  private let barFill: UIView = {
-    let view = UIView()
-    view.translatesAutoresizingMaskIntoConstraints = false
-    view.backgroundColor = CassetteTheme.UIColors.orange
-    view.layer.cornerRadius = 2
-    return view
   }()
 
   override init(frame: CGRect) {
@@ -1142,60 +1116,30 @@ final class SyncBannerView: UIView {
 
   private func setup() {
     translatesAutoresizingMaskIntoConstraints = false
-    backgroundColor = CassetteTheme.UIColors.bg2
-    layer.cornerRadius = 14
-    layer.cornerCurve = .continuous
-    layer.borderWidth = 1
-    layer.borderColor = CassetteTheme.UIColors.ink4.cgColor
-
-    let textStack = UIStackView(arrangedSubviews: [titleLabel, detailLabel])
-    textStack.translatesAutoresizingMaskIntoConstraints = false
-    textStack.axis = .vertical
-    textStack.spacing = 2
-
     addSubview(spinner)
-    addSubview(textStack)
-    addSubview(barTrack)
-    barTrack.addSubview(barFill)
-
+    addSubview(dot)
+    addSubview(label)
     NSLayoutConstraint.activate([
-      spinner.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-      spinner.centerYAnchor.constraint(equalTo: textStack.centerYAnchor),
-
-      textStack.topAnchor.constraint(equalTo: topAnchor, constant: 12),
-      textStack.leadingAnchor.constraint(equalTo: spinner.trailingAnchor, constant: 12),
-      textStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-
-      barTrack.topAnchor.constraint(equalTo: textStack.bottomAnchor, constant: 8),
-      barTrack.leadingAnchor.constraint(equalTo: textStack.leadingAnchor),
-      barTrack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-      barTrack.heightAnchor.constraint(equalToConstant: 4),
-      barTrack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
-
-      // The fill spans ~45% of the track; the pulse carries the motion.
-      barFill.leadingAnchor.constraint(equalTo: barTrack.leadingAnchor),
-      barFill.topAnchor.constraint(equalTo: barTrack.topAnchor),
-      barFill.bottomAnchor.constraint(equalTo: barTrack.bottomAnchor),
-      barFill.widthAnchor.constraint(equalTo: barTrack.widthAnchor, multiplier: 0.45),
+      spinner.leadingAnchor.constraint(equalTo: leadingAnchor),
+      spinner.centerYAnchor.constraint(equalTo: label.centerYAnchor),
+      spinner.widthAnchor.constraint(equalToConstant: 16),
+      dot.centerXAnchor.constraint(equalTo: spinner.centerXAnchor),
+      dot.centerYAnchor.constraint(equalTo: label.centerYAnchor),
+      dot.widthAnchor.constraint(equalToConstant: 6),
+      dot.heightAnchor.constraint(equalToConstant: 6),
+      label.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+      label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+      label.leadingAnchor.constraint(equalTo: spinner.trailingAnchor, constant: CassetteTheme.Spacing.sm),
+      label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
     ])
   }
 
-  /// Show the motion. Idempotent — safe to call whenever the banner appears.
-  func startAnimating() {
-    spinner.startAnimating()
-    barFill.layer.removeAllAnimations()
-    barFill.alpha = 1
-    UIView.animate(
-      withDuration: 0.85,
-      delay: 0,
-      options: [.repeat, .autoreverse, .curveEaseInOut, .allowUserInteraction],
-      animations: { self.barFill.alpha = 0.28 }
-    )
-  }
-
-  func stopAnimating() {
-    spinner.stopAnimating()
-    barFill.layer.removeAllAnimations()
-    barFill.alpha = 1
+  /// `text` nil hides the line. `isSyncing` picks the spinner (music moving) over the dot
+  /// (hub out of reach).
+  func show(_ text: String?, isSyncing: Bool) {
+    label.text = text
+    isHidden = text == nil
+    dot.isHidden = text == nil || isSyncing
+    if text != nil, isSyncing { spinner.startAnimating() } else { spinner.stopAnimating() }
   }
 }

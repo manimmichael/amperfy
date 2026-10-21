@@ -30,8 +30,6 @@ struct AccountSettingsView: View {
   @State
   var isPwUpdateDialogVisible = false
   @State
-  var isShowLogoutAlert = false
-  @State
   var isShowResyncLibraryAlert = false
   @EnvironmentObject
   var settings: Settings
@@ -67,12 +65,6 @@ struct AccountSettingsView: View {
     syncVC.modalPresentationStyle = .formSheet
     AppDelegate.mainSceneDelegate?.window?.rootViewController?.dismiss(animated: false)
     AppDelegate.mainSceneDelegate?.window?.rootViewController?.present(syncVC, animated: true)
-  }
-
-  private func logout(accountInfo: AccountInfo) {
-    // Patch 111 (5): teardown extracted to AppDelegate.logoutAccount so the
-    // profile menu's "Log Out" reuses the exact same flow.
-    appDelegate.logoutAccount(accountInfo)
   }
 
   /// cassette: a Cassette-paired account's Subsonic login is a `cassette-*`
@@ -149,20 +141,8 @@ struct AccountSettingsView: View {
           }
 
           SettingsSection {
-            SettingsButtonRow(title: "Logout", actionType: .destructive) {
-              isShowLogoutAlert = true
-            }
-            .alert(isPresented: $isShowLogoutAlert) {
-              Alert(
-                title: Text("Logout"),
-                message: Text(
-                  "Logging out will sign you out of the current account. Your login credentials will be removed, and all downloaded files for this account will be deleted.\n\nDo you want to log out?"
-                ),
-                primaryButton: .destructive(Text("Logout")) {
-                  logout(accountInfo: activeAccountInfo)
-                },
-                secondaryButton: .cancel()
-              )
+            SettingsButtonRow(title: "Log Out", actionType: .destructive) {
+              appDelegate.presentLogoutChoice(for: activeAccountInfo)
             }
           }
         } else {

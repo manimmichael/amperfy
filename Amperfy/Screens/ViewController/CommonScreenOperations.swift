@@ -227,20 +227,11 @@ extension UIViewController {
     return "\(days)d ago"
   }
 
-  /// Patch 111 (5): confirm before the destructive account logout.
+  /// Patch 111 (5): confirm before logging out. The prompt is shared with Settings >
+  /// Account and asks whether the music on this phone stays or goes; it used to name the
+  /// hub's `cassette-*` machine login and claim every download would be deleted.
   private func confirmLogout(accountInfo: AccountInfo) {
-    let username = appDelegate.storage.settings.accounts.getSetting(accountInfo).read
-      .loginCredentials?.username ?? "this account"
-    let alert = UIAlertController(
-      title: "Log Out",
-      message: "Log out of \(username)? Downloaded files for this account will be removed from this device.",
-      preferredStyle: .alert
-    )
-    alert.addAction(UIAlertAction(title: "Log Out", style: .destructive, handler: { _ in
-      self.appDelegate.logoutAccount(accountInfo)
-    }))
-    alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-    present(alert, animated: true)
+    appDelegate.presentLogoutChoice(for: accountInfo)
   }
 
   public func setupUserNavButton(
