@@ -131,6 +131,29 @@ public enum ListeningShelves {
     )
   }
 
+  // Most played, lately (an artist page's MOST PLAYED): this phone's own plays of each
+  // song over the lookback window, decayed so last week outweighs two months ago. Kept
+  // apart from the all-time counts (Song.playCount, the cloud's popular-rank), never
+  // blended with them (founder, 2026-10-21).
+  static let mostPlayedLatelyHalfLifeDays = 14.0
+  static let mostPlayedLatelyMinPlays = 2
+
+  /// Song ids, most played lately first. Each play is a completed play's date and song id;
+  /// a song needs two plays in the window to count.
+  public static func mostPlayedLately(
+    _ plays: [(date: Date, songID: String)],
+    now: Date
+  )
+    -> [String] {
+    // rank() only uses ListeningPlay's id as a key, so a song id works as well as an album's.
+    rank(
+      plays.map { ListeningPlay(date: $0.date, albumID: $0.songID) },
+      now: now,
+      halfLifeDays: mostPlayedLatelyHalfLifeDays,
+      minPlays: mostPlayedLatelyMinPlays
+    )
+  }
+
   /// Albums with at least `minPlays` plays, by decayed weight, ties by plain count, then id
   /// so the order is stable.
   static func rank(

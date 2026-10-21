@@ -49,10 +49,18 @@ class ArtistDetailVC: MultiSourceTableViewController {
   private let stickyHeader = DetailStickyHeaderView()
 
   /// phone-taste: MOST PLAYED lists only songs that have actually been played, at most
-  /// five, with no "Show more". Order comes from cloud play counts via
-  /// `POST /api/sync/popular-rank`; unpaired or offline falls back to this phone's own
-  /// play counts.
+  /// five, with no "Show more". When this phone has played at least three of the artist's
+  /// songs twice in the last 60 days, it shows those, most played lately first, headed
+  /// MOST PLAYED *lately* (ListeningShelves.mostPlayedLately). Otherwise it shows all-time
+  /// counts: the cloud's via `POST /api/sync/popular-rank`, or this phone's own when
+  /// unpaired or offline. The two counts stay separate, never blended (founder, 2026-10-21).
   private static let mostPlayedLimit = 5
+  /// Songs played lately needed before MOST PLAYED switches to the lately order.
+  private static let mostPlayedLatelyMinSongs = 3
+  /// How many play-log entries the lately order reads (the same bound Home uses).
+  private static let mostPlayedLatelyFetchLimit = 5000
+  /// Whether MOST PLAYED is showing the lately order (its heading says so).
+  private var mostPlayedIsLately = false
   /// A MOST PLAYED row: the 44pt cover plus 8pt above and below.
   private static let mostPlayedRowHeight: CGFloat = 60
   private static let mostPlayedVerticalMargin: CGFloat = 8
@@ -99,6 +107,8 @@ class ArtistDetailVC: MultiSourceTableViewController {
   private var moreLikeAlbums: [Album] = []
   /// The MORE LIKE heading's label, recoloured in place when the tint lands.
   private weak var moreLikeHeadingLabel: UILabel?
+  /// The MOST PLAYED heading's label, recoloured in place when the tint lands ("lately").
+  private weak var mostPlayedHeadingLabel: UILabel?
 
   private func frozenMostPlayedSong(at row: Int) -> Song? {
     guard row >= 0, row < frozenMostPlayedSongs.count else { return nil }
@@ -118,7 +128,12 @@ class ArtistDetailVC: MultiSourceTableViewController {
   private func seedMostPlayedIfNeeded(_ local: [Song]) {
     guard !hasSeededMostPlayed else { return }
     hasSeededMostPlayed = true
-    frozenMostPlayedSongs = rememberedMostPlayedSongs(in: local) ?? localPlayedSongs(local)
+    if let lately = latelyPlayedSongs(local) {
+      mostPlayedIsLately = true
+      frozenMostPlayedSongs = lately
+    } else {
+      frozenMostPlayedSongs = rememberedMostPlayedSongs(in: local) ?? localPlayedSongs(local)
+    }
     if isViewLoaded, tableView.window != nil {
       tableView.reloadData()
     }
@@ -130,7 +145,13 @@ class ArtistDetailVC: MultiSourceTableViewController {
     let local = listedSongs()
     seedMostPlayedIfNeeded(local)
     guard !local.isEmpty else {
-      applyMostPlayed([])
+      applyMostPlayed([], lately: false)
+      return
+    }
+    // Recently popular for you, from this phone's own play log, when there is enough of it.
+    if let lately = latelyPlayedSongs(local) {
+      mostPlayedRankGeneration &+= 1
+      applyMostPlayed(lately, lately: true)
       return
     }
     mostPlayedRankGeneration &+= 1
@@ -141,8 +162,33 @@ class ArtistDetailVC: MultiSourceTableViewController {
       let ranked = await self.rankMostPlayedCloudOrLocal(local)
       guard generation == self.mostPlayedRankGeneration else { return }
       Self.rememberedMostPlayed[artistID] = ranked.map(\.id)
-      self.applyMostPlayed(ranked)
+      self.applyMostPlayed(ranked, lately: false)
     }
+  }
+
+  /// The artist's songs this phone has played lately, most played first, or nil when fewer
+  /// than `mostPlayedLatelyMinSongs` qualify. Reads the play log (one entry per completed
+  /// play) for the lookback window, as Home's On Repeat does.
+  private func latelyPlayedSongs(_ songs: [Song]) -> [Song]? {
+    guard !songs.isEmpty else { return nil }
+    let byID = Dictionary(songs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    let now = Date()
+    let since = now.addingTimeInterval(-Double(ListeningShelves.lookbackDays) * 86400)
+    let entries = appDelegate.storage.main.library.getScrobbleEntries(
+      for: account,
+      since: since,
+      fetchLimit: Self.mostPlayedLatelyFetchLimit
+    )
+    var plays = [(date: Date, songID: String)]()
+    for entry in entries {
+      guard let date = entry.date, let song = entry.playable?.asSong, byID[song.id] != nil
+      else { continue }
+      plays.append((date, song.id))
+    }
+    let ranked = ListeningShelves.mostPlayedLately(plays, now: now)
+      .compactMap { byID[$0] }
+      .prefix(Self.mostPlayedLimit)
+    return ranked.count >= Self.mostPlayedLatelyMinSongs ? Array(ranked) : nil
   }
 
   /// This phone's own played songs, most played first (the songs list sorts by play count).
@@ -161,16 +207,18 @@ class ArtistDetailVC: MultiSourceTableViewController {
   /// Swap MOST PLAYED to `songs` when they differ from what is shown. MOST PLAYED sits
   /// above the shelves, so when it changes height while the reader is below it, the
   /// scroll position moves with it and what they are looking at stays put.
-  private func applyMostPlayed(_ songs: [Song]) {
-    guard songs != frozenMostPlayedSongs else { return }
+  private func applyMostPlayed(_ songs: [Song], lately: Bool) {
+    guard songs != frozenMostPlayedSongs || lately != mostPlayedIsLately else { return }
     let section = BodySection.mostPlayed.rawValue
     guard isViewLoaded, tableView.numberOfSections > section else {
       // Not loaded yet: the first load reads it.
       frozenMostPlayedSongs = songs
+      mostPlayedIsLately = lately
       return
     }
     let before = tableView.rect(forSection: section)
     frozenMostPlayedSongs = songs
+    mostPlayedIsLately = lately
     UIView.performWithoutAnimation {
       tableView.reloadSections(IndexSet(integer: section), with: .none)
     }
@@ -698,6 +746,13 @@ class ArtistDetailVC: MultiSourceTableViewController {
       answer: artist.name,
       answerColor: tint.text
     )
+    if mostPlayedIsLately {
+      mostPlayedHeadingLabel?.attributedText = CassetteHeading.attributed(
+        shout: "Most played",
+        answer: "lately",
+        answerColor: tint.text
+      )
+    }
   }
 
   @objc
@@ -765,11 +820,13 @@ class ArtistDetailVC: MultiSourceTableViewController {
     switch BodySection(rawValue: section) {
     case .mostPlayed:
       guard !frozenMostPlayedSongs.isEmpty else { return nil }
-      return CassetteHeading.makeTableHeaderView(
+      let view = CassetteHeading.makeTableHeaderView(
         shout: "Most played",
-        answer: nil,
+        answer: mostPlayedIsLately ? "lately" : nil,
         answerColor: lighter.tint.text
       )
+      mostPlayedHeadingLabel = view.subviews.compactMap { $0 as? UILabel }.first
+      return view
     case .albums:
       guard !shelfAlbums.isEmpty else { return nil }
       return CassetteHeading.makeTableHeaderView(
