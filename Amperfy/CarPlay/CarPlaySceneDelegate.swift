@@ -446,8 +446,9 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     /// `updateHomeSections` compares, so the row's art is drawn only when it changes.
     var moodRow: CPListImageRowItem?
     var moodTiles: [CarMoodTile] = []
-    /// The Lately tile's four covers, decoded once per signature (the Mood list reuses them).
-    var moodCovers: [UIImage] = []
+    /// Each record tile's four covers by tile ("lately" or a mix id), decoded once per
+    /// signature (the Made for You list reuses them).
+    var moodCovers: [String: [UIImage]] = [:]
     var moodSignature: String?
     /// The time-of-day row's title as last rendered, so a title-only change gets through the
     /// early-out (Weekday Evenings becomes Weekday Nights with the same albums).

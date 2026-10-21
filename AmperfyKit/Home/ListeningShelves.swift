@@ -413,3 +413,426 @@ public enum ListeningShelves {
     return picked
   }
 }
+
+// MARK: - Made for you (founder, 2026-10-21)
+
+/// The playlists Home makes for you, beside Lately: one for this part of the day, the
+/// favourites you have not played in a while, and the mood mixes (Road Trip, Get Pumped,
+/// Focus, Wind Down, Late Night, Feel Good). All of them are built on the phone, from songs
+/// on the phone, by the same tag maths as Lately; none calls the server. The mood mixes
+/// replace the server's mood doors on the phone, whose mixes drifted (the founder's road
+/// trip, 2026-08: Olivia Rodrigo beside Brand New, Chumbawamba after Coldplay in Focus).
+/// Here they read only song-level tags (never the album energy fallback behind BUG-354),
+/// grow outward from one seed song so they hang together, and space artists out.
+extension ListeningShelves {
+  /// A song as the made-for-you mixes see it.
+  public struct MixSong: Sendable {
+    public let songID: String
+    public let albumID: String
+    /// The artist, normalised (`normalizedArtistName`), for spacing and caps.
+    public let artistKey: String
+    /// Lowercased genre, or nil.
+    public let genre: String?
+    /// The record's year, 0 when unknown.
+    public let year: Int
+    public let tags: TagVector
+
+    public init(songID: String, albumID: String, artistKey: String, genre: String?, year: Int, tags: TagVector) {
+      self.songID = songID
+      self.albumID = albumID
+      self.artistKey = artistKey
+      self.genre = genre
+      self.year = year
+      self.tags = tags
+    }
+
+    var energy: String? { Self.value(of: "energy:", in: tags) }
+    var valence: String? { Self.value(of: "valence:", in: tags) }
+    var moods: Set<String> {
+      Set(tags.keys.filter { $0.hasPrefix("mood:") }.map { String($0.dropFirst(5)) })
+    }
+
+    var moodVector: TagVector { tags.filter { $0.key.hasPrefix("mood:") } }
+
+    private static func value(of prefix: String, in tags: TagVector) -> String? {
+      tags.keys.first { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }
+    }
+  }
+
+  /// A mood mix: which songs may join (energy, valence, moods that rule a song out) and the
+  /// moods it is after. Keys and colours are the app's mood doors (MoodDoors.swift).
+  public struct MoodMix: Sendable {
+    public let key: String
+    public let title: String
+    public let hexColor: String
+    let energies: Set<String>?
+    let valences: Set<String>?
+    let target: TagVector
+    let avoid: Set<String>
+
+    init(
+      key: String,
+      title: String,
+      hexColor: String,
+      energies: Set<String>?,
+      valences: Set<String>?,
+      moods: [String: Double],
+      avoid: Set<String>
+    ) {
+      self.key = key
+      self.title = title
+      self.hexColor = hexColor
+      self.energies = energies
+      self.valences = valences
+      var target = TagVector()
+      for (mood, weight) in moods { target["mood:\(mood)"] = weight }
+      self.target = target
+      self.avoid = avoid
+    }
+
+    /// How well a song's moods fit, 0 to 1, or nil when the song may not join at all.
+    func fit(_ song: MixSong) -> Double? {
+      if let energies {
+        guard let energy = song.energy, energies.contains(energy) else { return nil }
+      }
+      if let valences {
+        guard let valence = song.valence, valences.contains(valence) else { return nil }
+      }
+      let moods = song.moods
+      guard !moods.isEmpty, moods.isDisjoint(with: avoid) else { return nil }
+      let fit = cosine(song.moodVector, target)
+      return fit >= MoodMix.minFit ? fit : nil
+    }
+
+    /// One target mood among a song's one to three is enough (about 0.3 against a
+    /// ten-mood target); the energy and valence gates do the rest.
+    static let minFit = 0.28
+  }
+
+  /// The six mood mixes, keyed and coloured like the mood doors. Their moods are the
+  /// catalog's song taxonomy (taxonomy.ts MOODS); energy is low / medium / high and valence
+  /// dark / bittersweet / bright, read per song.
+  public static let moodMixes: [MoodMix] = [
+    MoodMix(
+      key: "road-trip",
+      title: "Road Trip",
+      hexColor: "#D4A020",
+      energies: ["medium", "high"],
+      valences: ["bright", "bittersweet"],
+      moods: [
+        "hopeful": 1, "nostalgic": 1, "euphoric": 1, "triumphant": 1, "energetic": 0.9,
+        "uplifting": 1, "joyful": 1, "playful": 0.8, "confident": 0.7, "defiant": 0.5,
+        "romantic": 0.4, "wistful": 0.4,
+      ],
+      avoid: ["somber", "mournful", "despairing", "eerie", "lonely"]
+    ),
+    MoodMix(
+      key: "get-pumped",
+      title: "Get Pumped",
+      hexColor: "#E8452C",
+      energies: ["high"],
+      valences: nil,
+      moods: [
+        "energetic": 1, "euphoric": 1, "triumphant": 1, "intense": 1, "defiant": 1,
+        "confident": 1, "empowering": 1, "urgent": 0.8, "rebellious": 0.8, "aggressive": 0.7,
+        "cathartic": 0.6, "playful": 0.5,
+      ],
+      avoid: ["tender", "peaceful", "serene", "somber", "mournful", "lonely", "melancholic"]
+    ),
+    MoodMix(
+      key: "focus",
+      title: "Focus",
+      hexColor: "#3A7CA5",
+      energies: ["low", "medium"],
+      valences: nil,
+      moods: [
+        "contemplative": 1, "dreamy": 1, "peaceful": 1, "serene": 1, "mysterious": 0.6,
+        "wistful": 0.5, "hopeful": 0.4,
+      ],
+      avoid: [
+        "aggressive", "intense", "urgent", "anxious", "defiant", "rebellious", "tense",
+        "euphoric", "playful", "cathartic", "despairing",
+      ]
+    ),
+    MoodMix(
+      key: "wind-down",
+      title: "Wind Down",
+      hexColor: "#4A9B8E",
+      energies: ["low"],
+      valences: nil,
+      moods: [
+        "peaceful": 1, "serene": 1, "tender": 1, "dreamy": 0.8, "contemplative": 0.8,
+        "wistful": 0.6, "romantic": 0.5, "hopeful": 0.4, "soulful": 0.5,
+      ],
+      avoid: [
+        "aggressive", "intense", "urgent", "anxious", "tense", "energetic", "euphoric",
+        "defiant", "rebellious", "restless",
+      ]
+    ),
+    MoodMix(
+      key: "late-night",
+      title: "Late Night",
+      hexColor: "#6B4FA0",
+      energies: ["low", "medium"],
+      valences: ["dark", "bittersweet"],
+      moods: [
+        "brooding": 1, "haunting": 1, "mysterious": 1, "melancholic": 1, "dreamy": 0.8,
+        "lonely": 0.8, "wistful": 0.6, "eerie": 0.6, "vulnerable": 0.6, "somber": 0.5,
+      ],
+      avoid: ["playful", "joyful", "euphoric", "triumphant", "uplifting", "empowering"]
+    ),
+    MoodMix(
+      key: "feel-good",
+      title: "Feel Good",
+      hexColor: "#D64B8C",
+      energies: ["medium", "high"],
+      valences: ["bright"],
+      moods: [
+        "playful": 1, "hopeful": 1, "joyful": 1, "euphoric": 1, "uplifting": 1,
+        "romantic": 0.6, "confident": 0.6, "triumphant": 0.6, "energetic": 0.5,
+      ],
+      avoid: ["somber", "melancholic", "mournful", "despairing", "brooding", "haunting", "eerie"]
+    ),
+  ]
+
+  /// The mood mixes in the order this part of the day suits them: the quiet ones first at
+  /// night, the lively ones first by day.
+  public static func moodMixOrder(for daypart: Daypart) -> [String] {
+    switch daypart {
+    case .morning: return ["focus", "get-pumped", "feel-good", "road-trip", "wind-down", "late-night"]
+    case .afternoon: return ["focus", "road-trip", "feel-good", "get-pumped", "wind-down", "late-night"]
+    case .evening: return ["feel-good", "road-trip", "wind-down", "late-night", "get-pumped", "focus"]
+    case .late: return ["late-night", "wind-down", "focus", "feel-good", "road-trip", "get-pumped"]
+    }
+  }
+
+  public static func daypart(of date: Date, calendar: Calendar = .current) -> Daypart {
+    Daypart(hour: calendar.component(.hour, from: date))
+  }
+
+  // Tuning: one mix's shape.
+  public static let madeMixLength = 30
+  public static let madeMixMinSongs = 15
+  /// The founder's rule (2026-08-20): wait four or five songs before an artist comes back.
+  public static let mixArtistGap = 4
+  static let mixMaxPerAlbum = 2
+  static let mixMaxPerArtist = 3
+
+  /// A mood mix of up to `count` songs, or [] when fewer than `minSongs` songs fit.
+  ///
+  /// Grown from one seed: the best-fitting song among those played lately (`favored`),
+  /// chosen at random from the top three, else the best fit overall. Each next song is one of
+  /// the five best by fit to the mood (55%) and closeness to the songs already in (45%),
+  /// with a small pull toward the seed's genre and away from records more than a dozen years
+  /// from the seed's. No artist within `mixArtistGap` songs of itself (relaxed only when
+  /// nothing else is left), at most two songs per album and three per artist.
+  public static func moodMix<R: RandomNumberGenerator>(
+    _ mood: MoodMix,
+    songs: [MixSong],
+    favored: Set<String>,
+    count: Int = madeMixLength,
+    minSongs: Int = madeMixMinSongs,
+    using rng: inout R
+  )
+    -> [String] {
+    var eligible: [(song: MixSong, fit: Double)] = []
+    for song in songs {
+      if let fit = mood.fit(song) { eligible.append((song, fit)) }
+    }
+    guard eligible.count >= minSongs else { return [] }
+    eligible.sort { $0.fit != $1.fit ? $0.fit > $1.fit : $0.song.songID < $1.song.songID }
+
+    let favoredFits = eligible.filter { favored.contains($0.song.songID) }
+    let seedPool = favoredFits.isEmpty ? Array(eligible.prefix(1)) : Array(favoredFits.prefix(3))
+    guard let seed = seedPool.randomElement(using: &rng) else { return [] }
+
+    return grow(
+      from: seed.song,
+      candidates: eligible,
+      count: count,
+      score: { candidate, centroid in
+        var score = 0.55 * candidate.fit + 0.45 * cosine(candidate.song.tags, centroid)
+        if let genre = seed.song.genre, candidate.song.genre == genre { score += 0.08 }
+        if seed.song.year > 0, candidate.song.year > 0, abs(candidate.song.year - seed.song.year) > 12 {
+          score -= 0.08
+        }
+        return score
+      },
+      using: &rng
+    )
+  }
+
+  /// A mix for this part of the day on this kind of day: songs whose moods match what you
+  /// play in this slot (the last two months, recent habits weighted up), drawn like Lately
+  /// and leaving out the songs already in it (`excluding`). [] with fewer than eight plays
+  /// in the slot or fewer than `minSongs` songs.
+  public static func daypartMix<R: RandomNumberGenerator>(
+    plays: [(date: Date, songID: String)],
+    songs: [MixSong],
+    excluding: Set<String>,
+    playedRecently: Set<String>,
+    now: Date,
+    calendar: Calendar = .current,
+    count: Int = madeMixLength,
+    minSongs: Int = madeMixMinSongs,
+    using rng: inout R
+  )
+    -> [String] {
+    let slot = slot(of: now, calendar: calendar)
+    let since = now.addingTimeInterval(-Double(lookbackDays) * 86400)
+    let tagsByID = Dictionary(songs.map { ($0.songID, $0.tags) }, uniquingKeysWith: { first, _ in first })
+    var profile = TagVector()
+    var slotPlays = 0
+    for play in plays where play.date >= since && play.date <= now {
+      guard Self.slot(of: play.date, calendar: calendar) == slot, let tags = tagsByID[play.songID]
+      else { continue }
+      let ageDays = max(0, now.timeIntervalSince(play.date) / 86400)
+      add(tags, into: &profile, weight: pow(0.5, ageDays / aroundNowHalfLifeDays))
+      slotPlays += 1
+    }
+    guard slotPlays >= 8, !profile.isEmpty else { return [] }
+    let candidates = songs
+      .filter { !excluding.contains($0.songID) }
+      .map { SongCandidate(songID: $0.songID, albumID: $0.albumID, tags: $0.tags) }
+    let picked = latelyMix(candidates, profile: profile, playedRecently: playedRecently, count: count, using: &rng)
+    guard picked.count >= minSongs else { return [] }
+    let artistByID = Dictionary(songs.map { ($0.songID, $0.artistKey) }, uniquingKeysWith: { first, _ in first })
+    return spacedByArtist(picked, artistOf: { artistByID[$0] ?? $0 })
+  }
+
+  /// One song's history, for Been a While.
+  public struct PlayedSong: Sendable {
+    public let songID: String
+    public let albumID: String
+    public let artistKey: String
+    public let playCount: Int
+    public let lastPlayed: Date?
+
+    public init(songID: String, albumID: String, artistKey: String, playCount: Int, lastPlayed: Date?) {
+      self.songID = songID
+      self.albumID = albumID
+      self.artistKey = artistKey
+      self.playCount = playCount
+      self.lastPlayed = lastPlayed
+    }
+  }
+
+  /// Favourites you have not played in a while: songs played at least four times, none of
+  /// them in the last 45 days, drawn from the 80 most played, at most two per album and three
+  /// per artist, artists spaced out. [] when fewer than `minSongs` qualify.
+  public static func beenAWhile<R: RandomNumberGenerator>(
+    _ songs: [PlayedSong],
+    now: Date,
+    count: Int = madeMixLength,
+    minSongs: Int = madeMixMinSongs,
+    using rng: inout R
+  )
+    -> [String] {
+    let cutoff = now.addingTimeInterval(-45 * 86400)
+    let pool = songs
+      .filter { $0.playCount >= 4 && ($0.lastPlayed.map { $0 < cutoff } ?? false) }
+      .sorted { $0.playCount != $1.playCount ? $0.playCount > $1.playCount : $0.songID < $1.songID }
+      .prefix(80)
+    guard pool.count >= minSongs else { return [] }
+    var perAlbum = [String: Int]()
+    var perArtist = [String: Int]()
+    var picked = [String]()
+    for song in pool.shuffled(using: &rng) where picked.count < count {
+      guard perAlbum[song.albumID, default: 0] < mixMaxPerAlbum,
+            perArtist[song.artistKey, default: 0] < mixMaxPerArtist
+      else { continue }
+      perAlbum[song.albumID, default: 0] += 1
+      perArtist[song.artistKey, default: 0] += 1
+      picked.append(song.songID)
+    }
+    guard picked.count >= minSongs else { return [] }
+    let artistByID = Dictionary(pool.map { ($0.songID, $0.artistKey) }, uniquingKeysWith: { first, _ in first })
+    return spacedByArtist(picked, artistOf: { artistByID[$0] ?? $0 })
+  }
+
+  /// The same songs, reordered so an artist does not come back within `gap` songs wherever
+  /// the mix allows it (the founder's rule, 2026-08-20). Stable otherwise.
+  public static func spacedByArtist(
+    _ ids: [String],
+    artistOf: (String) -> String,
+    gap: Int = mixArtistGap
+  )
+    -> [String] {
+    var remaining = ids
+    var result = [String]()
+    result.reserveCapacity(ids.count)
+    while !remaining.isEmpty {
+      let recent = Set(result.suffix(gap).map(artistOf))
+      let index = remaining.firstIndex { !recent.contains(artistOf($0)) } ?? 0
+      result.append(remaining.remove(at: index))
+    }
+    return result
+  }
+
+  /// Grows a mix from `seed`: each step scores every song still allowed against the songs
+  /// already in (their summed tags) and takes one of the best five at random.
+  static func grow<R: RandomNumberGenerator>(
+    from seed: MixSong,
+    candidates: [(song: MixSong, fit: Double)],
+    count: Int,
+    score: ((song: MixSong, fit: Double), TagVector) -> Double,
+    using rng: inout R
+  )
+    -> [String] {
+    var picked = [seed.songID]
+    var pickedArtists = [seed.artistKey]
+    var perAlbum = [seed.albumID: 1]
+    var perArtist = [seed.artistKey: 1]
+    var centroid = seed.tags
+    var pool = candidates.filter { $0.song.songID != seed.songID }
+    while picked.count < count, !pool.isEmpty {
+      let recentArtists = Set(pickedArtists.suffix(mixArtistGap))
+      let capped = pool.filter {
+        perAlbum[$0.song.albumID, default: 0] < mixMaxPerAlbum
+          && perArtist[$0.song.artistKey, default: 0] < mixMaxPerArtist
+      }
+      guard !capped.isEmpty else { break }
+      let spaced = capped.filter { !recentArtists.contains($0.song.artistKey) }
+      let options = spaced.isEmpty ? capped : spaced
+      let best = options
+        .map { (candidate: $0, score: score($0, centroid)) }
+        .sorted { $0.score != $1.score ? $0.score > $1.score : $0.candidate.song.songID < $1.candidate.song.songID }
+        .prefix(5)
+      guard let next = best.randomElement(using: &rng)?.candidate else { break }
+      picked.append(next.song.songID)
+      pickedArtists.append(next.song.artistKey)
+      perAlbum[next.song.albumID, default: 0] += 1
+      perArtist[next.song.artistKey, default: 0] += 1
+      add(next.song.tags, into: &centroid)
+      pool.removeAll { $0.song.songID == next.song.songID }
+    }
+    return picked
+  }
+
+  /// A small seeded generator, so a mix is the same all day and new the next (the founder,
+  /// 2026-08-20: mood playlists build once a day instead of rerolling on every tap).
+  public struct DailyGenerator: RandomNumberGenerator {
+    private var state: UInt64
+
+    /// Seeded from the day (in `calendar`'s time zone) and the mix's key.
+    public init(day: Date, key: String, calendar: Calendar = .current) {
+      let parts = calendar.dateComponents([.year, .month, .day], from: day)
+      let text = "\(parts.year ?? 0)-\(parts.month ?? 0)-\(parts.day ?? 0)|\(key)"
+      var hash: UInt64 = 0xCBF2_9CE4_8422_2325
+      for byte in text.utf8 {
+        hash ^= UInt64(byte)
+        hash = hash &* 0x0000_0100_0000_01B3
+      }
+      state = hash
+    }
+
+    public mutating func next() -> UInt64 {
+      // SplitMix64.
+      state &+= 0x9E37_79B9_7F4A_7C15
+      var z = state
+      z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+      z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+      return z ^ (z >> 31)
+    }
+  }
+}

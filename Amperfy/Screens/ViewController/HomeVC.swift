@@ -50,7 +50,8 @@ final class HomeVC: UICollectionViewController {
   private var isCheckingForUpdates = false
   private var pullPastThreshold = false
   /// The Lately mix generation the Mood row was last drawn with (see applySnapshot).
-  private var appliedLatelyGeneration: Int?
+  /// What the made-for-you row was last drawn from (HomeManager.madeForYouSignature).
+  private var appliedMadeForYouSignature: [Int]?
 
   // MARK: - Init
 
@@ -412,10 +413,11 @@ final class HomeVC: UICollectionViewController {
         trailing: 0
       )
       sectionLayout.supplementariesFollowContentInsets = false
-      // phone-taste: 28 above the MOOD heading, the heading, 12, a 150pt tile, 2.
+      // phone-taste: 28 above the heading, the heading, 12, a 150pt tile with its name and
+      // song count under it (as an album tile), 2.
       let headerSize = NSCollectionLayoutSize(
         widthDimension: .fractionalWidth(1.0),
-        heightDimension: .estimated(224)
+        heightDimension: .estimated(272)
       )
       let header = NSCollectionLayoutBoundarySupplementaryItem(
         layoutSize: headerSize,
@@ -609,9 +611,13 @@ final class HomeVC: UICollectionViewController {
           withReuseIdentifier: MoodDoorsHeaderView.reuseID,
           for: indexPath
         ) as? MoodDoorsHeaderView, let self else { return nil }
-        // phone-taste: the Lately tile shows and plays the mix HomeManager keeps. The row
-        // never builds a mix or a mood index itself.
-        moodHeader.configure(parentViewController: self, latelyMix: sharedHome.latelyMix)
+        // phone-taste: the made-for-you tiles show and play the playlists HomeManager keeps.
+        // The row never builds a mix or a mood index itself; a tile's picture opens it.
+        moodHeader.configure(
+          parentViewController: self,
+          mixes: sharedHome.madeForYouMixes,
+          onOpen: { [weak self] mix in self?.openMadeForYou(mix) }
+        )
         return moodHeader
       }
 
@@ -656,9 +662,18 @@ final class HomeVC: UICollectionViewController {
     case .radios: return ("RADIO", nil)
     case .yourPlaylists: return ("PLAYLISTS", nil)
     case .recentlyPlayedArtists: return ("ARTISTS", nil)
-    case .moodDoors: return ("MOOD", nil)
+    case .moodDoors: return ("PLAYLISTS", "made for you")
     default: return (section.title.uppercased(), nil)
     }
+  }
+
+  // MARK: - Made for you
+
+  /// Opens a made-for-you playlist's page (founder, 2026-10-21: "I'd love to see what's
+  /// inside!").
+  private func openMadeForYou(_ mix: HomeManager.MadeForYouMix) {
+    navigationController?.pushViewController(MixDetailVC(account: account, mix: mix), animated: true)
+    navigationController?.navigationBar.prefersLargeTitles = false
   }
 
   // MARK: - Resume
@@ -722,13 +737,13 @@ final class HomeVC: UICollectionViewController {
         // cassette (BUG-348): the mood doors render only for accounts in the
         // Mixtape beta. The door API answers 404 otherwise, so an opted-out
         // account must never see tiles that can only fail.
-        // phone-taste: without the beta the row shows only when there is a Lately mix
-        // to play (never an empty Mood row). This reads the mix HomeManager keeps (built
-        // from the mood index LatelyLibrary builds off the main thread). Never call
-        // LatelyLibrary.snapshot here: on a cache miss it builds the index on the main
-        // thread, and this also runs from the sync banner and beta paths.
-        let hasLatelyMix = !(sharedHome.latelyMix?.songs.isEmpty ?? true)
-        guard CassetteBetaAccess.isBetaTester || hasLatelyMix else { continue }
+        // phone-taste: the row shows only when there is a made-for-you playlist to play
+        // (never an empty row). Founder, 2026-10-21: the mood mixes are built on the phone
+        // now, so the row no longer depends on the Mixtape beta. This reads the playlists
+        // HomeManager keeps (built from the mood index LatelyLibrary builds off the main
+        // thread). Never call LatelyLibrary.snapshot here: on a cache miss it builds the
+        // index on the main thread, and this also runs from the sync banner and beta paths.
+        guard !sharedHome.madeForYouMixes.isEmpty else { continue }
         snapshot.appendSections([section])
         continue
       }
@@ -755,13 +770,13 @@ final class HomeVC: UICollectionViewController {
     // Lately mix when the header is rebuilt. Reload the section when the mix changed; its
     // generation moves only when its songs or its covers do, so a play, a pause or a cache
     // expiry never snaps the row back to its start.
-    let latelyGeneration = sharedHome.latelyMix?.generation
-    if latelyGeneration != appliedLatelyGeneration,
+    let madeForYouSignature = sharedHome.madeForYouSignature
+    if madeForYouSignature != appliedMadeForYouSignature,
        snapshot.sectionIdentifiers.contains(.moodDoors),
        current.sectionIdentifiers.contains(.moodDoors) {
       snapshot.reloadSections([.moodDoors])
     }
-    appliedLatelyGeneration = latelyGeneration
+    appliedMadeForYouSignature = madeForYouSignature
     // cassette (CarPlay off-window crash): never run the animated diff while Home is
     // off-window (CarPlay is the active scene). An animated apply against a collection
     // view that is not in any window is the production SIGTRAP; a non-animated apply

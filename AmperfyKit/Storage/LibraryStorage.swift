@@ -1816,6 +1816,29 @@ public class LibraryStorage: PlayableFileCachable {
     getSongs(account: account)
   }
 
+  /// cassette (made for you, 2026-10-21): songs played at least `minPlayCount` times whose
+  /// last play is before `lastPlayedBefore`, most played first, at most `fetchLimit`. Home's
+  /// Been a While draws from these (the caller keeps only songs on the phone).
+  public func getFormerFavoriteSongs(
+    for account: Account,
+    lastPlayedBefore: Date,
+    minPlayCount: Int,
+    fetchLimit: Int
+  )
+    -> [Song] {
+    let fetchRequest = SongMO.identifierSortedFetchRequest
+    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+      getFetchPredicate(forAccount: account),
+      NSPredicate(format: "playCount >= %@", NSNumber(value: minPlayCount)),
+      NSPredicate(format: "lastPlayedDate != nil AND lastPlayedDate < %@", lastPlayedBefore as NSDate),
+    ])
+    fetchRequest.sortDescriptors = [NSSortDescriptor(key: "playCount", ascending: false)]
+    fetchRequest.fetchLimit = fetchLimit
+    fetchRequest.relationshipKeyPathsForPrefetching = ["album", "artist"]
+    let found = (try? context.fetch(fetchRequest)) ?? []
+    return found.map { Song(managedObject: $0) }
+  }
+
   private func getSongs(account: Account?) -> [Song] {
     let fetchRequest = SongMO.identifierSortedFetchRequest
     if let account {

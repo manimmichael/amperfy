@@ -20,9 +20,8 @@ final class MoodDoorsHeaderView: UICollectionReusableView {
 
   private var hostingController: UIHostingController<MoodDoorRow>?
 
-  /// Set by HomeVC when configuring this header — the view controller a
-  /// generated mixtape's preview sheet presents from. Presentation happens
-  /// on tap (async, after the network call resolves), not at configure time.
+  /// Set by HomeVC when configuring this header: the view controller the hosted row is a
+  /// child of.
   weak var parentViewController: UIViewController?
 
   override init(frame: CGRect) {
@@ -41,19 +40,20 @@ final class MoodDoorsHeaderView: UICollectionReusableView {
   /// pull-to-refresh), so the hosting controller is torn down and rebuilt on
   /// every configure rather than only once in init.
   ///
-  /// phone-taste: `latelyMix` is HomeManager's Lately mix (nil when there is none). The
-  /// row draws and plays exactly that mix, and never builds one itself.
-  func configure(parentViewController: UIViewController, latelyMix: HomeManager.LatelyMix?) {
+  /// phone-taste: `mixes` are HomeManager's made-for-you playlists (Lately first). The row
+  /// draws and plays exactly those, and never builds one itself; `onOpen` opens one's page.
+  func configure(
+    parentViewController: UIViewController,
+    mixes: [HomeManager.MadeForYouMix],
+    onOpen: @escaping (HomeManager.MadeForYouMix) -> ()
+  ) {
     self.parentViewController = parentViewController
 
     hostingController?.willMove(toParent: nil)
     hostingController?.view.removeFromSuperview()
     hostingController?.removeFromParent()
 
-    let row = MoodDoorRow(latelyMix: latelyMix) { [weak self, weak parentViewController] mixtape in
-      parentViewController?.presentMixtapePreview(mixtape)
-      _ = self // keep the row's callback alive for the lifetime of this configure
-    }
+    let row = MoodDoorRow(mixes: mixes, onOpen: onOpen)
     let hosting = UIHostingController(rootView: row)
     hostingController = hosting
 

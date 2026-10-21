@@ -212,6 +212,77 @@ class HomeManager: NSObject {
     }
   }
 
+  /// The Lately mix's leading moods ("Wistful · Contemplative") for its page, kept with it.
+  private var latelyDescription: String?
+
+  /// phone-taste (founder, 2026-10-21): a playlist Home makes for you. Lately is one; the
+  /// rest (this part of the day, Been a While and the mood mixes) are ListeningShelves'
+  /// made-for-you mixes, drawn on the phone from songs on the phone.
+  struct MadeForYouMix {
+    enum Kind: Equatable {
+      case lately
+      case daypart
+      case beenAWhile
+      case mood(key: String, hexColor: String)
+    }
+
+    let kind: Kind
+    let title: String
+    /// The answer line on the mix's page ("Wistful · Contemplative"), or nil.
+    let subtitle: String?
+    /// The songs a tap plays, in order.
+    let songs: [AbstractPlayable]
+    /// Up to four of the mix's albums for its picture, those with a cover on disk first.
+    let leadAlbums: [Album]
+
+    var id: String {
+      switch kind {
+      case .lately: return "lately"
+      case .daypart: return "daypart"
+      case .beenAWhile: return "been-a-while"
+      case let .mood(key, _): return "mood:\(key)"
+      }
+    }
+  }
+
+  /// Every made-for-you playlist in row order: Lately first, then the rest.
+  var madeForYouMixes: [MadeForYouMix] {
+    var all = [MadeForYouMix]()
+    if let latelyMix, !latelyMix.songs.isEmpty {
+      all.append(MadeForYouMix(
+        kind: .lately,
+        title: "Lately",
+        subtitle: latelyDescription,
+        songs: latelyMix.songs,
+        leadAlbums: latelyMix.leadAlbums
+      ))
+    }
+    return all + otherMixes
+  }
+
+  /// Moves whenever any made-for-you playlist's songs or pictures change, and only then,
+  /// so Home redraws that row only when there is something new to draw.
+  var madeForYouSignature: [Int] {
+    [latelyMix?.generation ?? -1, otherMixesGeneration]
+  }
+
+  /// The made-for-you playlists after Lately.
+  private(set) var otherMixes: [MadeForYouMix] = []
+  private var otherMixesGeneration = 0
+  /// What `otherMixes` were drawn from; they are drawn again only when this changes.
+  private var otherMixesKey: OtherMixesKey?
+
+  private struct OtherMixesKey: Equatable {
+    /// The day they were seeded for (each is the same all day, new the next).
+    let day: Date
+    let weekend: Bool
+    let daypart: ListeningShelves.Daypart
+    let tagCount: Int
+    let candidateCount: Int
+    /// The time-of-day mix leaves out Lately's songs, so a new Lately redraws it.
+    let latelySongIDs: [String]
+  }
+
   /// More Like Lately's ranking and what it was ranked from (see updateLatelyShelves).
   private var moreLikeCache: (key: LatelyMixKey, at: Date, ids: [String])?
   private static let moreLikeLifetime: TimeInterval = 5 * 60
@@ -864,8 +935,12 @@ class HomeManager: NSObject {
     var albumsByID = [String: Album]()
     var plays = [ListeningPlay]()
     var lately = LatelyPlays()
+    // Every play in the lookback, for the made-for-you mixes (the time-of-day one reads two
+    // months of habit).
+    var songPlays = [(date: Date, songID: String)]()
     for entry in entries {
       guard let date = entry.date, let song = entry.playable?.asSong else { continue }
+      songPlays.append((date, song.id))
       let album = song.album
       let albumID = album?.id ?? ""
       if date >= latelySince {
@@ -887,6 +962,7 @@ class HomeManager: NSObject {
     data[.onRepeat] = items(ListeningShelves.onRepeat(plays, now: now), .onRepeat)
     data[.aroundNow] = items(ListeningShelves.aroundNow(plays, now: now), .aroundNow)
     updateLatelyShelves(lately, now: now, isOnPhone: isOnPhone)
+    updateMadeForYouMixes(songPlays: songPlays, lately: lately, now: now, isOnPhone: isOnPhone)
   }
 
   /// The last 30 days of plays as the lately pass needs them.
@@ -999,15 +1075,22 @@ class HomeManager: NSObject {
       return
     }
     var rng = SystemRandomNumberGenerator()
-    let songs: [AbstractPlayable] = ListeningShelves.latelyMix(
+    let ids = ListeningShelves.latelyMix(
       index.songCandidates,
       profile: profile(),
       playedRecently: lately.songsJustPlayed,
       count: Self.latelyMixLength,
       using: &rng
     )
-    .compactMap { index.songsByID[$0] }
-    .filter { isOnPhone.contains($0) }
+    // No artist back within four songs where the mix allows it (founder, 2026-08-20).
+    let spaced = ListeningShelves.spacedByArtist(ids) { id in
+      Self.artistKey(of: index.songsByID[id])
+    }
+    let songs: [AbstractPlayable] = spaced
+      .compactMap { index.songsByID[$0] }
+      .filter { isOnPhone.contains($0) }
+    let described = ListeningShelves.describe(profile())
+    latelyDescription = described.isEmpty ? nil : described
     setLatelyMix(songs, key: key)
   }
 
@@ -1081,6 +1164,202 @@ class HomeManager: NSObject {
   /// Two months of plays is about a thousand entries for a heavy listener; the cap only
   /// bounds the fetch on a recompute.
   private static let listeningPlayFetchLimit = 5000
+
+  // MARK: - Made for you (founder, 2026-10-21)
+
+  /// The playlists made for you after Lately: this part of the day, Been a While, then the
+  /// mood mixes in the order this part of the day suits them. Each is seeded by the day, so
+  /// it is the same all day and new the next. They are drawn again only when the day, the
+  /// part of the day, the tags, the tagged music on the phone or Lately's songs change;
+  /// otherwise they stay, minus songs that have left the phone. The mood index is read
+  /// through `moodIndexIfReady`, never built here on the main thread.
+  private func updateMadeForYouMixes(
+    songPlays: [(date: Date, songID: String)],
+    lately: LatelyPlays,
+    now: Date,
+    isOnPhone: OnPhoneCheck
+  ) {
+    let tags = LibraryMoods.shared.byLocalID
+    guard let index = LatelyLibrary.moodIndexIfReady(storage: storage, account: account, now: now)
+    else {
+      if tags.isEmpty {
+        otherMixesKey = nil
+        setOtherMixes([])
+      } else {
+        keepOtherMixes(isOnPhone: isOnPhone)
+      }
+      return
+    }
+    let calendar = Calendar.current
+    let daypart = ListeningShelves.daypart(of: now, calendar: calendar)
+    let key = OtherMixesKey(
+      day: calendar.startOfDay(for: now),
+      weekend: calendar.isDateInWeekend(now),
+      daypart: daypart,
+      tagCount: tags.count,
+      candidateCount: index.songCandidates.count,
+      latelySongIDs: latelyMix?.songs.map(\.id) ?? []
+    )
+    guard key != otherMixesKey else {
+      keepOtherMixes(isOnPhone: isOnPhone)
+      return
+    }
+    otherMixesKey = key
+
+    var mixSongs = [ListeningShelves.MixSong]()
+    mixSongs.reserveCapacity(index.songCandidates.count)
+    for candidate in index.songCandidates {
+      guard let song = index.songsByID[candidate.songID] else { continue }
+      let album = song.album
+      let year = album?.year ?? 0
+      let genre = (song.genre?.name ?? album?.genre?.name)?.lowercased() ?? ""
+      mixSongs.append(ListeningShelves.MixSong(
+        songID: candidate.songID,
+        albumID: candidate.albumID,
+        artistKey: Self.artistKey(of: song),
+        genre: genre.isEmpty ? nil : genre,
+        year: year > 0 ? year : song.year,
+        tags: candidate.tags
+      ))
+    }
+    var mixes = [MadeForYouMix]()
+    let slotKey = "\(key.weekend ? "weekend" : "weekday")-\(daypart)"
+
+    // This part of the day.
+    var daypartRNG = ListeningShelves.DailyGenerator(day: now, key: "daypart|\(slotKey)", calendar: calendar)
+    let daypartIDs = ListeningShelves.daypartMix(
+      plays: songPlays,
+      songs: mixSongs,
+      excluding: Set(key.latelySongIDs),
+      playedRecently: lately.songsJustPlayed,
+      now: now,
+      calendar: calendar,
+      using: &daypartRNG
+    )
+    if let mix = makeMix(
+      .daypart,
+      title: ListeningShelves.aroundNowTitle(now: now, calendar: calendar),
+      ids: daypartIDs,
+      songsByID: index.songsByID,
+      isOnPhone: isOnPhone
+    ) {
+      mixes.append(mix)
+    }
+
+    // Been a While: favourites on the phone, untagged ones too.
+    let cutoff = now.addingTimeInterval(-45 * 86400)
+    let former = storage.main.library.getFormerFavoriteSongs(
+      for: account,
+      lastPlayedBefore: cutoff,
+      minPlayCount: 4,
+      fetchLimit: 400
+    ).filter { isOnPhone.contains($0) }
+    var formerByID = [String: Song]()
+    for song in former { formerByID[song.id] = song }
+    var whileRNG = ListeningShelves.DailyGenerator(day: now, key: "been-a-while", calendar: calendar)
+    let whileIDs = ListeningShelves.beenAWhile(
+      former.map {
+        ListeningShelves.PlayedSong(
+          songID: $0.id,
+          albumID: $0.album?.id ?? $0.id,
+          artistKey: Self.artistKey(of: $0),
+          playCount: $0.playCount,
+          lastPlayed: $0.lastTimePlayed
+        )
+      },
+      now: now,
+      using: &whileRNG
+    )
+    if let mix = makeMix(.beenAWhile, title: "Been a While", ids: whileIDs, songsByID: formerByID, isOnPhone: isOnPhone) {
+      mixes.append(mix)
+    }
+
+    // The mood mixes, the ones this part of the day suits first.
+    let favored = Set(lately.songPlays.map(\.songID))
+    for moodKey in ListeningShelves.moodMixOrder(for: daypart) {
+      guard let mood = ListeningShelves.moodMixes.first(where: { $0.key == moodKey }) else { continue }
+      var moodRNG = ListeningShelves.DailyGenerator(day: now, key: "mood|\(mood.key)", calendar: calendar)
+      let ids = ListeningShelves.moodMix(mood, songs: mixSongs, favored: favored, using: &moodRNG)
+      if let mix = makeMix(
+        .mood(key: mood.key, hexColor: mood.hexColor),
+        title: mood.title,
+        ids: ids,
+        songsByID: index.songsByID,
+        isOnPhone: isOnPhone
+      ) {
+        mixes.append(mix)
+      }
+    }
+    setOtherMixes(mixes)
+  }
+
+  /// A made-for-you playlist from song ids, keeping only songs on the phone (and live rows);
+  /// nil when too few are left.
+  private func makeMix(
+    _ kind: MadeForYouMix.Kind,
+    title: String,
+    subtitle: String? = nil,
+    ids: [String],
+    songsByID: [String: Song],
+    isOnPhone: OnPhoneCheck
+  )
+    -> MadeForYouMix? {
+    let songs: [AbstractPlayable] = ids.compactMap { songsByID[$0] }.filter {
+      isOnPhone.contains($0) && !$0.playableManagedObject.isDeleted
+        && $0.playableManagedObject.managedObjectContext != nil
+    }
+    guard songs.count >= ListeningShelves.madeMixMinSongs else { return nil }
+    return MadeForYouMix(
+      kind: kind,
+      title: title,
+      subtitle: subtitle,
+      songs: songs,
+      leadAlbums: leadAlbums(for: songs)
+    )
+  }
+
+  /// Store the made-for-you playlists after Lately; the generation moves only when one
+  /// actually differs from what is there.
+  private func setOtherMixes(_ mixes: [MadeForYouMix]) {
+    func signature(_ list: [MadeForYouMix]) -> [String] {
+      list.map { mix in
+        ([mix.id, mix.title] + mix.songs.map(\.id) + mix.leadAlbums.map(\.id)).joined(separator: ",")
+      }
+    }
+    guard signature(mixes) != signature(otherMixes) else { return }
+    otherMixes = mixes
+    otherMixesGeneration += 1
+  }
+
+  /// Keep the made-for-you playlists, dropping songs that are no longer on the phone (a
+  /// playlist left with too few songs goes).
+  private func keepOtherMixes(isOnPhone: OnPhoneCheck) {
+    guard isOnPhone.owned != nil, !otherMixes.isEmpty else { return }
+    let kept: [MadeForYouMix] = otherMixes.compactMap { mix in
+      let songs = mix.songs.filter {
+        isOnPhone.contains($0) && !$0.playableManagedObject.isDeleted
+          && $0.playableManagedObject.managedObjectContext != nil
+      }
+      guard songs.count >= ListeningShelves.madeMixMinSongs else { return nil }
+      guard songs.count != mix.songs.count else { return mix }
+      return MadeForYouMix(
+        kind: mix.kind,
+        title: mix.title,
+        subtitle: mix.subtitle,
+        songs: songs,
+        leadAlbums: leadAlbums(for: songs)
+      )
+    }
+    setOtherMixes(kept)
+  }
+
+  /// The artist a mix spaces and caps by: the album artist, else the song's, normalised.
+  private static func artistKey(of song: Song?) -> String {
+    guard let song else { return "" }
+    let name = song.album?.artist?.name ?? song.artist?.name ?? ""
+    let key = ListeningShelves.normalizedArtistName(name)
+    return key.isEmpty ? song.id : key
+  }
 
   /// Recently-played playlists. Overlap with Recent is allowed (section-scoped
   /// identity), so no cross-shelf subtraction.
@@ -1232,7 +1511,8 @@ class HomeManager: NSObject {
         key: key, title: album.name, artist: album.artist?.name ?? "",
         genre: album.genre?.name, trackCount: tracks.count,
         playedTrackCount: played, totalPlays: total,
-        lastPlayedAt: ms(last), addedAt: ms(added)))
+        lastPlayedAt: ms(last), addedAt: ms(added)
+      ))
     }
 
     // Artists: all-artist fetch ∪ played artists from the sample.
@@ -1257,14 +1537,16 @@ class HomeManager: NSObject {
       shelfArtists.append(ShelfArtist(
         key: key, name: artist.name, genre: artist.genre?.name,
         trackCount: songs.count, albumCount: artist.albums.count,
-        totalPlays: total, lastPlayedAt: ms(last), addedAt: ms(added)))
+        totalPlays: total, lastPlayedAt: ms(last), addedAt: ms(added)
+      ))
     }
 
     let input = ShelfInput(
       albums: shelfAlbums, artists: shelfArtists, playlists: [],
       recentArtistKeys: nil,
       now: Int64(Date().timeIntervalSince1970 * 1000),
-      seed: "cassette-home")
+      seed: "cassette-home"
+    )
     return EngineShelfData(input: input, albumsByKey: albumsByKey, artistsByKey: artistsByKey)
   }
 
@@ -1280,7 +1562,8 @@ class HomeManager: NSObject {
 
   private func updateAlbumsViaEngine(_ shelf: EngineShelfData) {
     let picks = buildAlbums(
-      shelf.input.albums, HOME_SHELF_CONFIG, shelf.input.now, shelf.input.seed, recentExclusions())
+      shelf.input.albums, HOME_SHELF_CONFIG, shelf.input.now, shelf.input.seed, recentExclusions()
+    )
     data[.forgottenAlbums] = picks.compactMap { shelf.albumsByKey[$0.key] }.map {
       HomeItem(section: .forgottenAlbums, stableID: Self.stableID(for: $0), playableContainable: $0)
     }
@@ -1290,7 +1573,11 @@ class HomeManager: NSObject {
   private func updateArtistsViaEngine(_ shelf: EngineShelfData) {
     let picks = buildArtists(shelf.input, HOME_SHELF_CONFIG, recentExclusions())
     data[.recentlyPlayedArtists] = picks.compactMap { shelf.artistsByKey[$0.key] }.map {
-      HomeItem(section: .recentlyPlayedArtists, stableID: Self.stableID(for: $0), playableContainable: $0)
+      HomeItem(
+        section: .recentlyPlayedArtists,
+        stableID: Self.stableID(for: $0),
+        playableContainable: $0
+      )
     }
     notifySnapshot()
   }

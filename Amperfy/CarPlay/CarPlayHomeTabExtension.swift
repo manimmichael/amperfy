@@ -26,13 +26,18 @@ import Foundation
 
 // MARK: - CarMoodTile
 
-/// phone-taste: one tile of the car's Mood row. A tap resolves to one of these (stored in the
-/// session when the row is drawn), never to live data.
+/// phone-taste: one tile of the car's Made for You row (was Mood). A tap resolves to one of
+/// these (stored in the session when the row is drawn), never to live data.
 enum CarMoodTile: Equatable {
   /// The Lately mix (HomeManager.latelyMix): songs on this phone that match recent listening.
   case lately
-  /// A mood door: POST /api/mixtape/door, cut to the songs on this phone.
+  /// A mood door: POST /api/mixtape/door, cut to the songs on this phone. No longer offered
+  /// (founder, 2026-10-21: the phone's own mood mixes replace the doors); kept so a door
+  /// load in flight still resolves.
   case door(key: String, label: String, hexColor: String)
+  /// One of Home's other made-for-you playlists (HomeManager.otherMixes), by id: this part
+  /// of the day, Been a While or a mood mix, all built on the phone.
+  case mix(id: String, title: String, hexColor: String?)
 }
 
 // MARK: - CarPlaySceneDelegate + Home
@@ -66,9 +71,6 @@ extension CarPlaySceneDelegate {
       .recentlyPlayedArtists,
     ]
   }
-
-  /// The doors the car offers, in the car's order (Road Trip first; no Focus or Feel Good).
-  private static let carDoorKeys = ["road-trip", "get-pumped", "wind-down", "late-night"]
 
   /// The Lately tile needs four covers for its picture (the mock shows it at four or more).
   private static let latelyCoverCount = 4
@@ -369,15 +371,16 @@ extension CarPlaySceneDelegate {
 // MARK: - Mood row (phone-taste)
 
 extension CarPlaySceneDelegate {
-  /// What decides the Mood row's tiles and art: the Lately mix's lead albums (when it has
-  /// songs), whether the doors show, and the door keys. Cheap: no image is decoded here.
+  /// What decides the Made for You row's tiles and art: the Lately mix's lead albums (when
+  /// it has songs), and each other playlist's id, title and lead albums. Cheap: no image is
+  /// decoded here.
   func moodSignature() -> String {
     var parts = [String]()
     if let mix = sharedHome?.latelyMix, !mix.songs.isEmpty {
       parts.append("lately:" + mix.leadAlbums.map(\.id).joined(separator: ","))
     }
-    if CassetteBetaAccess.isBetaTester {
-      parts.append("doors:" + Self.carDoorKeys.joined(separator: ","))
+    for mix in sharedHome?.otherMixes ?? [] {
+      parts.append("\(mix.id)=\(mix.title):" + mix.leadAlbums.map(\.id).joined(separator: ","))
     }
     return parts.joined(separator: "|")
   }
@@ -401,45 +404,55 @@ extension CarPlaySceneDelegate {
   }
 
   /// The Lately tile when the mix has songs and four of its lead albums have a cover on disk
-  /// (decoded here, once per signature), then the four doors for Mixtape beta accounts.
+  /// (decoded here, once per signature), then Home's other made-for-you playlists: a mood
+  /// mix as its colour and name, the others as their records with the name across them
+  /// (shown only with four covers on disk, like Lately). The server's mood doors are no
+  /// longer offered (founder, 2026-10-21): the phone's mood mixes replace them, with no beta.
   private func rebuildMoodTiles() {
     var tiles = [CarMoodTile]()
-    var covers = [UIImage]()
-    if let mix = sharedHome?.latelyMix, !mix.songs.isEmpty {
-      let preference = getPreference(activeAccountInfo).artworkDisplayPreference
-      covers = mix.leadAlbums.compactMap {
+    var coversByTile = [String: [UIImage]]()
+    let preference = getPreference(activeAccountInfo).artworkDisplayPreference
+    func fourCovers(_ albums: [Album]) -> [UIImage]? {
+      let covers = albums.compactMap {
         LibraryEntityImage.coverImage(
           libraryEntity: $0,
           artworkDisplayPreference: preference,
           useCache: false
         )
       }
-      if covers.count >= Self.latelyCoverCount {
-        covers = Array(covers.prefix(Self.latelyCoverCount))
-        tiles.append(.lately)
-      } else {
-        covers = []
-      }
+      return covers.count >= Self.latelyCoverCount ? Array(covers.prefix(Self.latelyCoverCount)) : nil
     }
-    if CassetteBetaAccess.isBetaTester {
-      for key in Self.carDoorKeys {
-        guard let door = MoodDoors.all.first(where: { $0.key == key }) else { continue }
-        tiles.append(.door(key: door.key, label: door.label, hexColor: door.hexColor))
+    if let mix = sharedHome?.latelyMix, !mix.songs.isEmpty, let covers = fourCovers(mix.leadAlbums) {
+      tiles.append(.lately)
+      coversByTile["lately"] = covers
+    }
+    for mix in sharedHome?.otherMixes ?? [] {
+      if case let .mood(_, hexColor) = mix.kind {
+        tiles.append(.mix(id: mix.id, title: mix.title, hexColor: hexColor))
+      } else if let covers = fourCovers(mix.leadAlbums) {
+        tiles.append(.mix(id: mix.id, title: mix.title, hexColor: nil))
+        coversByTile[mix.id] = covers
       }
     }
     session.moodTiles = tiles
-    session.moodCovers = covers
+    session.moodCovers = coversByTile
   }
 
-  /// A tile's picture and title. Lately: its records in a square with LATELY across them. A
-  /// door: its colour and its name.
+  /// A tile's picture and title. Lately and the other record playlists: their records in a
+  /// square with the name across them. A mood mix (or a door): its colour and its name.
   private func moodArt(_ tile: CarMoodTile, slot: CarPlayStyle.Slot) -> (image: UIImage, title: String) {
     switch tile {
     case .lately:
-      return (style.mosaicArt(covers: session.moodCovers, word: "Lately", slot: slot), "Lately")
+      return (style.mosaicArt(covers: session.moodCovers["lately"] ?? [], word: "Lately", slot: slot), "Lately")
     case let .door(_, label, hexColor):
       let color = UIColor(cassetteHexString: hexColor) ?? UIColor.cassette(.surfaceElevated)
       return (style.wordArt(word: label, color: color, slot: slot), label)
+    case let .mix(id, title, hexColor):
+      if let hexColor {
+        let color = UIColor(cassetteHexString: hexColor) ?? UIColor.cassette(.surfaceElevated)
+        return (style.wordArt(word: title, color: color, slot: slot), title)
+      }
+      return (style.mosaicArt(covers: session.moodCovers[id] ?? [], word: title, slot: slot), title)
     }
   }
 
@@ -449,7 +462,7 @@ extension CarPlaySceneDelegate {
   }
 
   private func createMoodRow(elements: [CPListImageRowItemRowElement]) -> CPListImageRowItem {
-    let row = CPListImageRowItem(text: "Mood", elements: elements, allowsMultipleLines: false)
+    let row = CPListImageRowItem(text: "Made for You", elements: elements, allowsMultipleLines: false)
     // The title opens the tiles as a plain list (the same art at row size).
     row.handler = { [weak self] _, completion in
       guard let self else { completion(); return }
@@ -489,7 +502,7 @@ extension CarPlaySceneDelegate {
       }
       return item
     }
-    let template = CPListTemplate(title: "Mood", sections: [CPListSection(items: rows)])
+    let template = CPListTemplate(title: "Made for You", sections: [CPListSection(items: rows)])
     template.emptyViewTitleVariants = ["Nothing here yet"]
     return template
   }
@@ -500,7 +513,22 @@ extension CarPlaySceneDelegate {
       playLately(completion: completion)
     case let .door(key, label, _):
       playDoor(key: key, label: label, completion: completion)
+    case let .mix(id, title, _):
+      playMix(id: id, title: title, completion: completion)
     }
+  }
+
+  /// One of Home's other made-for-you playlists, played at once from the songs still on the
+  /// phone.
+  private func playMix(id: String, title: String, completion: @escaping () -> ()) {
+    let mix = sharedHome?.otherMixes.first(where: { $0.id == id })
+    let songs = OneTapPlay.playables(mix?.songs ?? [])
+    guard !songs.isEmpty else {
+      presentCarAlert("\(title) has nothing on this phone right now", completion: completion)
+      return
+    }
+    appDelegate.player.play(context: PlayContext(name: title, playables: songs))
+    displayNowPlaying { completion() }
   }
 
   /// The Lately mix Home built with the tile (songs on this phone matching recent listening),
