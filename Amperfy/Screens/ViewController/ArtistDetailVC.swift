@@ -26,18 +26,17 @@ import UIKit
 class ArtistDetailVC: MultiSourceTableViewController {
   override var sceneTitle: String? { artist.name }
 
-  /// cassette: artist detail body — "Albums" now LEADS (this is the owned-
-  /// library artist view; albums are what the user owns and came here for), and
-  /// "Popular" (songs by play count) is the demoted secondary section below it.
-  /// Section 0 stays the empty spacer the legacy layout needs (see
-  /// numberOfSections). FLAG: a single ArtistDetailVC serves BOTH the owned-
-  /// library and (in Server Mode) the broader-catalog artist context — there is
-  /// no distinct discovery screen — so per the brief the owned-library order
-  /// (albums-first) is applied to this shared view.
-  private enum BodySection: Int {
+  /// phone-taste: the approved mock puts what you play first. MOST PLAYED leads, then the
+  /// artist's ALBUMS, then MORE LIKE them from your own shelf. (From Patch 110 until the
+  /// mock, Albums led and "Popular" followed; the founder-approved mock overturns that.)
+  /// Section 0 stays the empty spacer the legacy layout needs (see numberOfSections). A
+  /// single ArtistDetailVC serves both the owned-library and (in Server Mode) the
+  /// broader-catalog artist context; there is no separate discovery screen.
+  private enum BodySection: Int, CaseIterable {
     case spacer = 0
-    case albums = 1
-    case popular = 2
+    case mostPlayed = 1
+    case albums = 2
+    case moreLike = 3
   }
 
   private var artist: Artist
@@ -49,58 +48,82 @@ class ArtistDetailVC: MultiSourceTableViewController {
   private var detailOperationsView: GenericDetailTableHeader?
   private let stickyHeader = DetailStickyHeaderView()
 
-  /// Patch 110 (3a): Popular is capped to `popularCollapsedLimit` with a
-  /// "Show more" that expands to `popularTeaserLimit` (shared contract with
-  /// web/Android). Order comes from cloud play counts via
-  /// `POST /api/sync/popular-rank`; offline falls back to the FRC's local
-  /// play-count sort with the same caps.
-  private static let popularCollapsedLimit = 5
-  private static let popularTeaserLimit = 20
-  private var isPopularExpanded = false
+  /// phone-taste: MOST PLAYED lists only songs that have actually been played, at most
+  /// five, with no "Show more". Order comes from cloud play counts via
+  /// `POST /api/sync/popular-rank`; unpaired or offline falls back to this phone's own
+  /// play counts.
+  private static let mostPlayedLimit = 5
+  /// A MOST PLAYED row: the 44pt cover plus 8pt above and below.
+  private static let mostPlayedRowHeight: CGFloat = 60
+  private static let mostPlayedVerticalMargin: CGFloat = 8
+  /// The page gutter the rows share with the shelves.
+  private static let gutter: CGFloat = 20
+  /// The shelves' tiles (150pt, clear over the lit page).
+  private static let shelfStyle = AlbumShelfStyle.mockLit
   /// Bumps when a new rank request starts so a late response can't paint stale.
-  private var popularRankGeneration = 0
+  private var mostPlayedRankGeneration = 0
 
-  /// cassette: Popular order is SNAPSHOTTED for the presentation so a live
-  /// play-count bump never reorders rows under the user. Cloud rank is
-  /// awaited before the first paint (empty until then) so a local/hub tally
-  /// never flashes then re-ranks. Re-ranks on the next appearance only.
-  private var frozenPopularSongs: [Song] = []
+  /// cassette: the MOST PLAYED order is SNAPSHOTTED for the presentation so a live
+  /// play-count bump never reorders rows under the user. Cloud rank is awaited before the
+  /// first paint (empty until then) so a local/hub tally never flashes then re-ranks.
+  /// Re-ranks on the next appearance only.
+  private var frozenMostPlayedSongs: [Song] = []
 
-  private func frozenPopularSong(at row: Int) -> Song? {
-    guard row >= 0, row < frozenPopularSongs.count else { return nil }
-    return frozenPopularSongs[row]
+  // MARK: phone-taste state
+
+  /// Reads the lead record's colour and glow. The artist page has no DetailScreenChrome,
+  /// so it owns its lighter and lights its own header.
+  private let lighter = DetailCoverLighter()
+  /// Every album of the artist on the shelf, newest first (year 0 last, then by name).
+  private var artistAlbums: [Album] = []
+  /// The record that lights the page: the artist's own newest album with a cover file.
+  private var leadAlbum: Album?
+  /// The artist's own newest records for the hero fan.
+  private var fanAlbums: [Album] = []
+  /// MORE LIKE: other artists on the phone whose moods match, one album each.
+  private var moreLikeAlbums: [Album] = []
+  /// The MORE LIKE heading's label, recoloured in place when the tint lands.
+  private weak var moreLikeHeadingLabel: UILabel?
+
+  private func frozenMostPlayedSong(at row: Int) -> Song? {
+    guard row >= 0, row < frozenMostPlayedSongs.count else { return nil }
+    return frozenMostPlayedSongs[row]
   }
 
-  /// Hold Popular empty, then paint once from cloud (or local fallback).
-  private func freezePopularOrder() {
+  /// Hold MOST PLAYED empty, then paint once from cloud (or local fallback).
+  private func freezeMostPlayedOrder() {
     let count = songsFetchedResultsController?.sections?[0].numberOfObjects ?? 0
     let local = (0 ..< count).compactMap {
       songsFetchedResultsController?.getWrappedEntity(at: IndexPath(row: $0, section: 0))
     }
-    // Hold until ranked — mirrors web holding songs for the ranked fresh payload.
-    frozenPopularSongs = []
-    if isViewLoaded, tableView.numberOfSections > BodySection.popular.rawValue {
-      tableView.reloadSections(IndexSet(integer: BodySection.popular.rawValue), with: .none)
+    // Hold until ranked: mirrors web holding songs for the ranked fresh payload.
+    frozenMostPlayedSongs = []
+    if isViewLoaded, tableView.numberOfSections > BodySection.mostPlayed.rawValue {
+      tableView.reloadSections(IndexSet(integer: BodySection.mostPlayed.rawValue), with: .none)
     }
     guard !local.isEmpty else { return }
-    popularRankGeneration &+= 1
-    let generation = popularRankGeneration
+    mostPlayedRankGeneration &+= 1
+    let generation = mostPlayedRankGeneration
     Task { @MainActor [weak self] in
       guard let self else { return }
-      let ranked = await self.rankPopularCloudOrLocal(local)
-      guard generation == self.popularRankGeneration else { return }
-      self.frozenPopularSongs = Array(ranked.prefix(Self.popularTeaserLimit))
-      if self.isViewLoaded, self.tableView.numberOfSections > BodySection.popular.rawValue {
-        self.tableView.reloadSections(IndexSet(integer: BodySection.popular.rawValue), with: .none)
+      let ranked = await self.rankMostPlayedCloudOrLocal(local)
+      guard generation == self.mostPlayedRankGeneration else { return }
+      self.frozenMostPlayedSongs = ranked
+      if self.isViewLoaded, self.tableView.numberOfSections > BodySection.mostPlayed.rawValue {
+        self.tableView.reloadSections(
+          IndexSet(integer: BodySection.mostPlayed.rawValue),
+          with: .none
+        )
       }
     }
   }
 
-  /// Cloud union counts via popular-rank; unpaired / offline → FRC local order.
-  private func rankPopularCloudOrLocal(_ songs: [Song]) async -> [Song] {
-    guard CassetteSyncAPI.bearerToken != nil else {
-      return Array(songs.prefix(Self.popularTeaserLimit))
-    }
+  /// Cloud union counts via popular-rank, played songs only; if none of the cloud's have a
+  /// play (or the phone is unpaired / offline), this phone's own plays. Song.playCount
+  /// counts every time a song is put into the player, skips included.
+  private func rankMostPlayedCloudOrLocal(_ songs: [Song]) async -> [Song] {
+    let localPlayed = Array(songs.filter { $0.playCount > 0 }.prefix(Self.mostPlayedLimit))
+    guard CassetteSyncAPI.bearerToken != nil else { return localPlayed }
     var byLocalId: [String: Song] = [:]
     var inputs: [(cassetteLocalId: String, title: String)] = []
     inputs.reserveCapacity(songs.count)
@@ -111,26 +134,14 @@ class ArtistDetailVC: MultiSourceTableViewController {
     }
     do {
       let ranked = try await CassetteSyncAPI.shared.rankPopular(items: inputs)
-      let ordered = ranked.compactMap { byLocalId[$0.cassetteLocalId] }
-      if !ordered.isEmpty {
-        return Array(ordered.prefix(Self.popularTeaserLimit))
+      let played = ranked.filter { $0.playCount > 0 }.compactMap { byLocalId[$0.cassetteLocalId] }
+      if !played.isEmpty {
+        return Array(played.prefix(Self.mostPlayedLimit))
       }
     } catch {
-      // Offline / network — fall through to local play-count FRC order.
+      // Offline or network: fall through to local play counts.
     }
-    return Array(songs.prefix(Self.popularTeaserLimit))
-  }
-
-  private var popularTotalCount: Int {
-    frozenPopularSongs.count
-  }
-
-  private var popularRowsShown: Int {
-    isPopularExpanded ? popularTotalCount : min(popularTotalCount, Self.popularCollapsedLimit)
-  }
-
-  private var showsPopularShowMore: Bool {
-    !isPopularExpanded && popularTotalCount > Self.popularCollapsedLimit
+    return localPlayed
   }
 
   init(account: Account, artist: Artist) {
@@ -140,6 +151,10 @@ class ArtistDetailVC: MultiSourceTableViewController {
 
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
+  }
+
+  deinit {
+    NotificationCenter.default.removeObserver(self)
   }
 
   override func viewDidLoad() {
@@ -200,6 +215,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
     // explicitly.
     albumsFetchedResultsController.fetch()
     songsFetchedResultsController.fetch()
+    recomputeAlbumState()
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.register(nibName: PlayableTableCell.typeName)
     // Patch 110 (3b): the artist's albums render as a horizontal carousel
@@ -212,10 +228,10 @@ class ArtistDetailVC: MultiSourceTableViewController {
     tableView.estimatedSectionHeaderHeight = 0.0
     tableView.sectionFooterHeight = 0.0
     tableView.estimatedSectionFooterHeight = 0.0
+    // The two-voice headings carry their own 28pt of air.
+    tableView.sectionHeaderTopPadding = 0
     tableView.backgroundColor = .backgroundColor
-    // Patch 111 (1): no row separators. The only divider is the subtle line
-    // between the top-level sections (Popular → Albums), drawn in the custom
-    // Albums header (viewForHeaderInSection).
+    // Patch 111 (1): no row separators and no dividers between the sections.
     tableView.separatorStyle = .none
 
     // cassette Patch 104 (Root 2): artwork is the first content of the
@@ -266,10 +282,12 @@ class ArtistDetailVC: MultiSourceTableViewController {
       rootView: self,
       tableView: tableView,
       playShuffleInfoConfig: playShuffleInfoConfig,
-      extendsUnderNavigationBar: true
+      extendsUnderNavigationBar: true,
+      heroStyle: .artistHero
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
+    detailOperationsView?.setArtistFan(albums: fanAlbums)
     refreshArtistMetadataLine()
     DetailStickyHeaderSupport.install(
       stickyHeader: stickyHeader,
@@ -283,40 +301,54 @@ class ArtistDetailVC: MultiSourceTableViewController {
       self?.stickyHeader.alpha = 0
     }
 
+    // phone-taste: the page is lit by the artist's own newest record. Rank numbers and the
+    // MORE LIKE answer follow its colour; a cover or a photo that downloads later relights.
+    lighter.apply = { [weak self] tint, glow, key in
+      self?.landLight(tint: tint, glow: glow, key: key)
+    }
+    lighter.relight = { [weak self] in
+      guard let self else { return }
+      recomputeLeadAlbum()
+      lightUpFromLeadAlbum()
+      detailOperationsView?.refreshArtistPhoto()
+    }
+    lighter.observeArtworkDownloads(account: account)
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(moodIndexChanged),
+      name: .cassetteMoodIndexReady,
+      object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(moodIndexChanged),
+      name: .cassetteLibraryMoodsChanged,
+      object: nil
+    )
+
     containableAtIndexPathCallback = { indexPath in
       switch BodySection(rawValue: indexPath.section) {
-      case .albums:
-        // Patch 110 (3b): albums are a single carousel row — no per-album swipe.
-        return nil
-      case .popular:
-        guard indexPath.row < self.popularRowsShown else { return nil }
-        return self.frozenPopularSong(at: indexPath.row)
+      case .mostPlayed:
+        return self.frozenMostPlayedSong(at: indexPath.row)
       default:
+        // The shelves are single carousel rows: no per-album swipe or menu.
         return nil
       }
     }
     playContextAtIndexPathCallback = { indexPath in
       switch BodySection(rawValue: indexPath.section) {
-      case .albums:
-        // Patch 110 (3b): albums are a single carousel row — taps navigate via
-        // the carousel's onSelect, not a play context.
-        return nil
-      case .popular:
-        guard indexPath.row < self.popularRowsShown else { return nil }
+      case .mostPlayed:
         let songIndexPath = IndexPath(row: indexPath.row, section: 0)
         return self.convertIndexPathToPlayContext(songIndexPath: songIndexPath)
       default:
+        // Shelf taps navigate (onSelect) or play (the tile's disc), not a play context.
         return nil
       }
     }
     swipeCallback = { indexPath, completionHandler in
       switch BodySection(rawValue: indexPath.section) {
-      case .albums:
-        // Patch 110 (3b): no swipe actions on the carousel row.
-        completionHandler(nil)
-      case .popular:
-        guard indexPath.row < self.popularRowsShown,
-              let song = self.frozenPopularSong(at: indexPath.row) else {
+      case .mostPlayed:
+        guard let song = self.frozenMostPlayedSong(at: indexPath.row) else {
           completionHandler(nil)
           return
         }
@@ -324,6 +356,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
         let playContext = self.convertIndexPathToPlayContext(songIndexPath: songIndexPath)
         completionHandler(SwipeActionContext(containable: song, playContext: playContext))
       default:
+        // No swipe actions on the carousel rows.
         completionHandler(nil)
       }
     }
@@ -332,9 +365,9 @@ class ArtistDetailVC: MultiSourceTableViewController {
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     navigationController?.navigationBar.prefersLargeTitles = false
-    // Rank Popular from the cloud play store (hold until ranked so local
+    // Rank MOST PLAYED from the cloud play store (hold until ranked so local
     // counts never flash then re-order). Re-ranks on the next appearance.
-    freezePopularOrder()
+    freezeMostPlayedOrder()
   }
 
   override func viewDidLayoutSubviews() {
@@ -389,12 +422,13 @@ class ArtistDetailVC: MultiSourceTableViewController {
   }
 
   private func refreshStickyHeaderText() {
+    let counts = ownCounts()
     var parts = ["Artist"]
-    if artist.albumCount > 0 {
-      parts.append("\(artist.albumCount) album\(artist.albumCount == 1 ? "" : "s")")
+    if counts.albums > 0 {
+      parts.append("\(counts.albums) album\(counts.albums == 1 ? "" : "s")")
     }
-    if artist.songCount > 0 {
-      parts.append("\(artist.songCount) song\(artist.songCount == 1 ? "" : "s")")
+    if counts.songs > 0 {
+      parts.append("\(counts.songs) song\(counts.songs == 1 ? "" : "s")")
     }
     let subtitle = parts.count > 1 ? parts.joined(separator: " · ") : nil
     stickyHeader.configure(title: artist.name, subtitle: subtitle)
@@ -408,6 +442,9 @@ class ArtistDetailVC: MultiSourceTableViewController {
     updateStickyHeaderAlpha()
     albumsFetchedResultsController?.delegate = self
     songsFetchedResultsController?.delegate = self
+    lightUpFromLeadAlbum()
+    detailOperationsView?.refreshArtistPhoto()
+    refreshMoreLike()
     Task { @MainActor in
       do {
         try await artist.fetch(
@@ -430,21 +467,33 @@ class ArtistDetailVC: MultiSourceTableViewController {
   }
 
   // Patch 026: artist metadata line. Year doesn't apply, so we surface
-  // catalog scope instead: "12 albums · 187 songs". Counts are suppressed
-  // when missing rather than rendered as zeros.
+  // scope instead. phone-taste: "12 albums · 187 songs" counted from the artist's own
+  // records in the list, which on the phone is what is on the phone (the header sets it
+  // in tracked capitals). Counts are suppressed when missing rather than rendered as
+  // zeros.
   //
   // cassette: the leading type noun is gone across every detail page. It
   // only ever told you which page you were already looking at.
   private func refreshArtistMetadataLine() {
+    let counts = ownCounts()
     var parts: [String] = []
-    if artist.albumCount > 0 {
-      parts.append("\(artist.albumCount) album\(artist.albumCount == 1 ? "" : "s")")
+    if counts.albums > 0 {
+      parts.append("\(counts.albums) album\(counts.albums == 1 ? "" : "s")")
     }
-    if artist.songCount > 0 {
-      parts.append("\(artist.songCount) song\(artist.songCount == 1 ? "" : "s")")
+    if counts.songs > 0 {
+      parts.append("\(counts.songs) song\(counts.songs == 1 ? "" : "s")")
     }
-    detailOperationsView?.metadataOverride = parts.joined(separator: " · ")
+    detailOperationsView?.metadataOverride = parts.joined(separator: " \(CommonString.oneMiddleDot) ")
     refreshStickyHeaderText()
+  }
+
+  /// The artist's own records the list holds: albums credited to them (not records they
+  /// only appear on), and the songs FRC's count (on the phone, the songs on the phone).
+  /// Artist.albumCount / songCount count every hub record, on the phone or not.
+  private func ownCounts() -> (albums: Int, songs: Int) {
+    let albums = artistAlbums.filter(isCredited).count
+    let songs = songsFetchedResultsController?.sections?.first?.numberOfObjects ?? 0
+    return (albums, songs)
   }
 
   override func viewWillDisappear(_ animated: Bool) {
@@ -488,27 +537,129 @@ class ArtistDetailVC: MultiSourceTableViewController {
   }
 
   func convertIndexPathToPlayContext(songIndexPath: IndexPath) -> PlayContext? {
-    // Play from the frozen popular order so the queue matches what's on screen.
-    guard let selectedSong = frozenPopularSong(at: songIndexPath.row) else { return nil }
+    // Play from the frozen MOST PLAYED order so the queue matches what's on screen.
+    guard let selectedSong = frozenMostPlayedSong(at: songIndexPath.row) else { return nil }
     let contextSongs = appDelegate.storage.settings.user.isOfflineMode
-      ? frozenPopularSongs.filter { $0.isCached }
-      : frozenPopularSongs
+      ? frozenMostPlayedSongs.filter { $0.isCached }
+      : frozenMostPlayedSongs
     guard let playContextIndex = contextSongs.firstIndex(of: selectedSong) else { return nil }
     return PlayContext(containable: artist, index: playContextIndex, playables: contextSongs)
   }
 
   func convertCellViewToPlayContext(cell: UITableViewCell) -> PlayContext? {
     guard let indexPath = tableView.indexPath(for: cell),
-          BodySection(rawValue: indexPath.section) == .popular
+          BodySection(rawValue: indexPath.section) == .mostPlayed
     else { return nil }
     return convertIndexPathToPlayContext(songIndexPath: IndexPath(row: indexPath.row, section: 0))
+  }
+
+  // MARK: - Records (phone-taste)
+
+  /// Whether `album` is credited to this artist: its album artist is this artist, or one
+  /// with the same name (the phone can hold one artist under several identities).
+  private func isCredited(_ album: Album) -> Bool {
+    guard let credited = album.artist else { return false }
+    if credited.id == artist.id { return true }
+    let name = ListeningShelves.normalizedArtistName(credited.name)
+    return !name.isEmpty && name == ListeningShelves.normalizedArtistName(artist.name)
+  }
+
+  /// The album cover file on disk, if there is one.
+  private func coverPath(of album: Album) -> String? {
+    let setting = appDelegate.storage.settings.accounts.getSetting(account.info).read
+    return album.imagePath(setting: setting.artworkDisplayPreference)
+  }
+
+  /// Every album the FRC holds, newest first, year 0 last, then by name. The shared fetch
+  /// request (oldest first) is left as it is.
+  private func allArtistAlbums() -> [Album] {
+    let count = albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0
+    let albums = (0 ..< count).compactMap { albumsFetchedResultsController.getWrappedEntity(at: $0) }
+    return albums.sorted { lhs, rhs in
+      let ly = lhs.year > 0 ? lhs.year : Int.min
+      let ry = rhs.year > 0 ? rhs.year : Int.min
+      if ly != ry { return ly > ry }
+      return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+    }
+  }
+
+  /// Rebuilds the albums, the lead record and the fan from the FRC.
+  private func recomputeAlbumState() {
+    artistAlbums = allArtistAlbums()
+    recomputeLeadAlbum()
+    let credited = artistAlbums.filter(isCredited)
+    // The artist's own newest three; with none credited, the newest they appear on.
+    fanAlbums = Array((credited.isEmpty ? artistAlbums : credited).prefix(3))
+  }
+
+  /// The record that lights the page: the newest album credited to this artist that has a
+  /// cover file, else the newest credited album (no glow, neutral colour), else the newest
+  /// album they appear on. A compilation they are on never lights their page while a
+  /// record of their own is here.
+  private func recomputeLeadAlbum() {
+    let credited = artistAlbums.filter(isCredited)
+    leadAlbum = credited.first { coverPath(of: $0) != nil } ?? credited.first ?? artistAlbums.first
+  }
+
+  private func lightUpFromLeadAlbum() {
+    let path = leadAlbum.flatMap { coverPath(of: $0) }
+    lighter.lightUp(coverPath: path, key: path ?? "artist-no-cover:\(artist.id)")
+  }
+
+  /// The tint landed: light the header, and recolour the ranks and the MORE LIKE answer in
+  /// place (a reload would restart the playing row's waveform).
+  private func landLight(tint: CoverTint, glow: UIImage?, key: String) {
+    detailOperationsView?.applyCoverLight(tint: tint, glowImage: glow, glowKey: key)
+    for cell in tableView.visibleCells {
+      guard let cell = cell as? PlayableTableCell,
+            let indexPath = tableView.indexPath(for: cell),
+            BodySection(rawValue: indexPath.section) == .mostPlayed
+      else { continue }
+      cell.setTrackNumberColor(tint.text)
+    }
+    moreLikeHeadingLabel?.attributedText = CassetteHeading.attributed(
+      shout: "More like",
+      answer: artist.name,
+      answerColor: tint.text
+    )
+  }
+
+  @objc
+  private func moodIndexChanged() {
+    refreshMoreLike()
+  }
+
+  /// MORE LIKE: other artists on the phone whose music carries the same moods, one album
+  /// each, best match first. Hidden until the mood index is ready (it never builds on the
+  /// main thread here); reloads its section only when the set changed.
+  private func refreshMoreLike() {
+    var albums: [Album] = []
+    if let index = LatelyLibrary.moodIndexIfReady(storage: appDelegate.storage, account: account) {
+      let ids = ListeningShelves.moreLikeArtist(
+        pageArtistName: artist.name,
+        albums: index.albumCandidates,
+        artistNameByAlbum: index.artistNameByAlbumID
+      )
+      albums = ids.compactMap { index.albumsByID[$0] }
+    }
+    guard albums.map(\.id) != moreLikeAlbums.map(\.id) else { return }
+    moreLikeAlbums = albums
+    guard isViewLoaded, tableView.numberOfSections > BodySection.moreLike.rawValue else { return }
+    tableView.reloadSections(IndexSet(integer: BodySection.moreLike.rawValue), with: .none)
+  }
+
+  private func pushAlbum(_ album: Album) {
+    navigationController?.pushViewController(
+      AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
+      animated: true
+    )
   }
 
   // MARK: - Table view data source
 
   override func numberOfSections(in tableView: UITableView) -> Int {
-    // 2 section + 1 top section. The top section is needed due to display bugs
-    3
+    // 3 sections + 1 top section. The top section is needed due to display bugs
+    BodySection.allCases.count
   }
 
   override func tableView(
@@ -517,101 +668,83 @@ class ArtistDetailVC: MultiSourceTableViewController {
   )
     -> String? {
     switch BodySection(rawValue: section) {
+    case .mostPlayed:
+      return "Most Played"
     case .albums:
       return "Albums"
-    case .popular:
-      return "Popular"
+    case .moreLike:
+      return "More Like"
     default:
       return ""
     }
   }
 
-  // Patch 111 (1/2): custom section headers — leading at the shared content
-  // margin (16pt, matching rows and the album carousel). cassette: the
-  // hairline divider that used to sit atop the Popular header was removed.
+  /// phone-taste: two-voice headings (Barlow capitals, then the answer in the New York
+  /// italic), at the 20pt gutter with 28pt of air above. No dividers between sections.
   override func tableView(
     _ tableView: UITableView,
     viewForHeaderInSection section: Int
   )
     -> UIView? {
-    // cassette: section headers are just the uppercased label now — no
-    // dividers between the top-level sections.
     switch BodySection(rawValue: section) {
+    case .mostPlayed:
+      guard !frozenMostPlayedSongs.isEmpty else { return nil }
+      return CassetteHeading.makeTableHeaderView(
+        shout: "Most played",
+        answer: nil,
+        answerColor: lighter.tint.text
+      )
     case .albums:
-      guard (albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0) > 0 else {
-        return nil
-      }
-      return makeSectionHeaderView(title: "Albums")
-    case .popular:
-      guard popularTotalCount > 0 else { return nil }
-      return makeSectionHeaderView(title: "Popular")
+      guard !artistAlbums.isEmpty else { return nil }
+      return CassetteHeading.makeTableHeaderView(
+        shout: "Albums",
+        answer: nil,
+        answerColor: lighter.tint.text
+      )
+    case .moreLike:
+      guard !moreLikeAlbums.isEmpty else { return nil }
+      let view = CassetteHeading.makeTableHeaderView(
+        shout: "More like",
+        answer: artist.name,
+        answerColor: lighter.tint.text
+      )
+      moreLikeHeadingLabel = view.subviews.compactMap { $0 as? UILabel }.first
+      return view
     default:
       return nil
     }
   }
 
-  private func makeSectionHeaderView(title: String) -> UIView {
-    let container = UIView()
-    container.backgroundColor = .clear
-    let label = UILabel()
-    label.text = title.uppercased()
-    label.font = UIFont.cassette(.caption)
-    label.textColor = CassetteTheme.UIColors.ink2
-    label.translatesAutoresizingMaskIntoConstraints = false
-    container.addSubview(label)
-    NSLayoutConstraint.activate([
-      label.leadingAnchor.constraint(
-        equalTo: container.leadingAnchor,
-        constant: UIView.defaultMarginCellX
-      ),
-      label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
-    ])
-    return container
-  }
-
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
     switch BodySection(rawValue: section) {
+    case .mostPlayed:
+      return frozenMostPlayedSongs.count
     case .albums:
       // Patch 110 (3b): a single row hosting the horizontal album carousel.
-      return (albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0) > 0 ? 1 : 0
-    case .popular:
-      return popularRowsShown + (showsPopularShowMore ? 1 : 0)
+      return artistAlbums.isEmpty ? 0 : 1
+    case .moreLike:
+      return moreLikeAlbums.isEmpty ? 0 : 1
     default:
       return 0
     }
   }
 
-  /// Patch 110 (3b): all of the artist's albums, in FRC order, for the carousel.
-  private func allArtistAlbums() -> [Album] {
-    let count = albumsFetchedResultsController.sections?[0].numberOfObjects ?? 0
-    return (0 ..< count).compactMap { albumsFetchedResultsController.getWrappedEntity(at: $0) }
-  }
-
   private var albumsReloadScheduled = false
-  /// Coalesce FRC album changes into a single reload of the carousel row.
+  /// Coalesce FRC album changes into a single reload of the carousel row, and rebuild what
+  /// depends on the albums: the lead record, the fan, the meta line and the light.
   private func scheduleAlbumsReload() {
     guard !albumsReloadScheduled else { return }
     albumsReloadScheduled = true
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
       albumsReloadScheduled = false
+      recomputeAlbumState()
+      detailOperationsView?.setArtistFan(albums: fanAlbums)
+      refreshArtistMetadataLine()
+      lightUpFromLeadAlbum()
       guard tableView.numberOfSections > BodySection.albums.rawValue else { return }
       tableView.reloadSections(IndexSet(integer: BodySection.albums.rawValue), with: .none)
     }
-  }
-
-  /// Patch 110 (3a): centered "Show more" row that reveals the full Popular
-  /// list. Quiet ink2 styling — orange stays reserved for live state.
-  private func makePopularShowMoreCell() -> UITableViewCell {
-    let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-    var content = cell.defaultContentConfiguration()
-    content.text = "Show more"
-    content.textProperties.color = CassetteTheme.UIColors.ink2
-    content.textProperties.font = UIFont.cassette(.rowTitle)
-    content.textProperties.alignment = .center
-    cell.contentConfiguration = content
-    cell.backgroundColor = .clear
-    return cell
   }
 
   override func tableView(
@@ -620,31 +753,50 @@ class ArtistDetailVC: MultiSourceTableViewController {
   )
     -> UITableViewCell {
     switch BodySection(rawValue: indexPath.section) {
+    case .mostPlayed:
+      let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
+      guard let song = frozenMostPlayedSong(at: indexPath.row) else { return UITableViewCell() }
+      // A ranked row: the number in the record's colour, a 44pt cover, the album under the
+      // title, no length, clear over the lit page.
+      cell.display(
+        playable: song,
+        playContextCb: convertCellViewToPlayContext,
+        rootView: self,
+        contextArtistName: artist.name,
+        options: PlayableCellOptions(
+          horizontalMargin: Self.gutter,
+          verticalMargin: Self.mostPlayedVerticalMargin,
+          subtitleOverride: song.album?.name,
+          hidesDuration: true,
+          clearsBackground: true,
+          rank: indexPath.row + 1,
+          rankColor: lighter.tint.text
+        )
+      )
+      return cell
     case .albums:
       let cell = tableView.dequeueReusableCell(
         withIdentifier: AlbumCarouselTableCell.reuseIdentifier,
         for: indexPath
       ) as! AlbumCarouselTableCell
-      cell.configure(albums: allArtistAlbums()) { [weak self] album in
-        guard let self else { return }
-        navigationController?.pushViewController(
-          AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
-          animated: true
-        )
-      }
+      cell.configure(
+        albums: artistAlbums,
+        onSelect: { [weak self] album in self?.pushAlbum(album) },
+        onPlay: { album in OneTapPlay.play(album) },
+        style: Self.shelfStyle,
+        subtitle: { album in album.year > 0 ? "\(album.year)" : "" }
+      )
       return cell
-    case .popular:
-      if showsPopularShowMore, indexPath.row == popularRowsShown {
-        return makePopularShowMoreCell()
-      }
-      let cell: PlayableTableCell = dequeueCell(for: tableView, at: indexPath)
-      guard let song = frozenPopularSong(at: indexPath.row) else { return UITableViewCell() }
-      // Artist page: repeating the page's artist under every Popular row is noise.
-      cell.display(
-        playable: song,
-        playContextCb: convertCellViewToPlayContext,
-        rootView: self,
-        contextArtistName: artist.name
+    case .moreLike:
+      let cell = tableView.dequeueReusableCell(
+        withIdentifier: AlbumCarouselTableCell.reuseIdentifier,
+        for: indexPath
+      ) as! AlbumCarouselTableCell
+      cell.configure(
+        albums: moreLikeAlbums,
+        onSelect: { [weak self] album in self?.pushAlbum(album) },
+        onPlay: { album in OneTapPlay.play(album) },
+        style: Self.shelfStyle
       )
       return cell
     default:
@@ -658,11 +810,12 @@ class ArtistDetailVC: MultiSourceTableViewController {
   )
     -> CGFloat {
     switch BodySection(rawValue: section) {
+    case .mostPlayed:
+      return frozenMostPlayedSongs.isEmpty ? 0 : CassetteHeading.tableHeaderHeight
     case .albums:
-      return albumsFetchedResultsController.sections?[0]
-        .numberOfObjects ?? 0 > 0 ? CommonScreenOperations.tableSectionHeightLarge : 0
-    case .popular:
-      return popularTotalCount > 0 ? CommonScreenOperations.tableSectionHeightLarge : 0
+      return artistAlbums.isEmpty ? 0 : CassetteHeading.tableHeaderHeight
+    case .moreLike:
+      return moreLikeAlbums.isEmpty ? 0 : CassetteHeading.tableHeaderHeight
     default:
       return 0.0
     }
@@ -674,13 +827,10 @@ class ArtistDetailVC: MultiSourceTableViewController {
   )
     -> CGFloat {
     switch BodySection(rawValue: indexPath.section) {
-    case .albums:
-      return AlbumCarousel.shelfHeight
-    case .popular:
-      if showsPopularShowMore, indexPath.row == popularRowsShown {
-        return 48.0
-      }
-      return PlayableTableCell.rowHeight
+    case .mostPlayed:
+      return Self.mostPlayedRowHeight
+    case .albums, .moreLike:
+      return AlbumShelfView.preferredHeight(for: Self.shelfStyle)
     default:
       return 0.0
     }
@@ -692,36 +842,18 @@ class ArtistDetailVC: MultiSourceTableViewController {
   )
     -> CGFloat {
     switch BodySection(rawValue: indexPath.section) {
-    case .albums:
-      return AlbumCarousel.shelfHeight
-    case .popular:
-      if showsPopularShowMore, indexPath.row == popularRowsShown {
-        return 48.0
-      }
-      return PlayableTableCell.rowHeight
+    case .mostPlayed:
+      return Self.mostPlayedRowHeight
+    case .albums, .moreLike:
+      return AlbumShelfView.preferredHeight(for: Self.shelfStyle)
     default:
       return 0.0
     }
   }
 
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-    switch BodySection(rawValue: indexPath.section) {
-    case .albums:
-      // Patch 110 (3b): the carousel cell handles album taps via its onSelect;
-      // the table row itself is not selectable.
-      break
-    case .popular:
-      // Patch 110 (3a): tap the trailing "Show more" row to reveal the full list.
-      if showsPopularShowMore, indexPath.row == popularRowsShown {
-        tableView.deselectRow(at: indexPath, animated: true)
-        isPopularExpanded = true
-        tableView.reloadSections(
-          IndexSet(integer: BodySection.popular.rawValue),
-          with: .fade
-        )
-      }
-    default: break
-    }
+    // MOST PLAYED rows play through their own tap; the shelves handle their tiles. Nothing
+    // else on the page is selectable.
   }
 
   // cassette Patch 045: `updateSearchResults` override removed
@@ -735,7 +867,7 @@ class ArtistDetailVC: MultiSourceTableViewController {
     for type: NSFetchedResultsChangeType,
     newIndexPath: IndexPath?
   ) {
-    var section = 0
+    let section = 0
     switch controller {
     case albumsFetchedResultsController.fetchResultsController:
       // Patch 110 (3b): albums are one carousel row; the FRC's per-album
@@ -744,10 +876,10 @@ class ArtistDetailVC: MultiSourceTableViewController {
       scheduleAlbumsReload()
       return
     case songsFetchedResultsController.fetchResultsController:
-      // cassette: the Popular order is frozen for the presentation (see
-      // frozenPopularSongs), so ignore live FRC reorders / play-count re-sorts
-      // here — applying them would shuffle the list under the user. The order
-      // re-ranks on the next appearance via freezePopularOrder(); the
+      // cassette: the MOST PLAYED order is frozen for the presentation (see
+      // frozenMostPlayedSongs), so ignore live FRC reorders / play-count re-sorts
+      // here: applying them would shuffle the list under the user. The order
+      // re-ranks on the next appearance via freezeMostPlayedOrder(); the
       // now-playing indicator stays live through the cell's own player observer.
       return
     default:
