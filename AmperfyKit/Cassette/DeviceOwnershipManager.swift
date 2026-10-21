@@ -340,6 +340,60 @@ public final class DeviceOwnershipManager {
     return result
   }
 
+  // MARK: - On this phone (Settings > Storage)
+
+  /// One album's worth of music on this phone.
+  public struct OnPhoneAlbum: Sendable, Identifiable {
+    public var id: String { albumId }
+    public let albumId: String
+    public let name: String
+    public let artist: String
+    public let tracks: Int
+    public let bytes: Int64
+  }
+
+  /// What the hub has synced to this phone: total size and track count, and the albums,
+  /// largest first. Read from the ownership records (the music in CassetteMusic), not
+  /// Amperfy's per-account cache, which Cassette music does not live in.
+  public func onPhoneSummary() -> (bytes: Int64, tracks: Int, albums: [OnPhoneAlbum]) {
+    var result: (bytes: Int64, tracks: Int, albums: [OnPhoneAlbum]) = (0, 0, [])
+    context.performAndWait {
+      let request: NSFetchRequest<DeviceOwnershipMO> = DeviceOwnershipMO.fetchRequest()
+      guard let rows = try? context.fetch(request) else { return }
+      var bytesByTrack: [String: Int64] = [:]
+      for row in rows {
+        result.bytes += row.fileSizeBytes
+        result.tracks += 1
+        if let sid = row.subsonicTrackId, !sid.isEmpty { bytesByTrack[sid] = row.fileSizeBytes }
+      }
+      var albums: [String: (name: String, artist: String, tracks: Int, bytes: Int64)] = [:]
+      for song in ownedSongsInternal() {
+        guard let album = song.album, !album.id.isEmpty else { continue }
+        let albumId = album.id
+        let bytes = bytesByTrack[song.id] ?? 0
+        var entry = albums[albumId] ?? (
+          album.name ?? "Unknown album",
+          album.artist?.name ?? song.artist?.name ?? "",
+          0,
+          0
+        )
+        entry.tracks += 1
+        entry.bytes += bytes
+        albums[albumId] = entry
+      }
+      result.albums = albums.map {
+        OnPhoneAlbum(
+          albumId: $0.key,
+          name: $0.value.name,
+          artist: $0.value.artist,
+          tracks: $0.value.tracks,
+          bytes: $0.value.bytes
+        )
+      }.sorted { $0.bytes > $1.bytes }
+    }
+    return result
+  }
+
   // MARK: - Read-only diagnostics (sync self-check)
 
   /// A read-only snapshot of the on-device ownership vs visibility state — the

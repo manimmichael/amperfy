@@ -221,6 +221,8 @@ public class EventLogger {
     detailMessage += "\n\nError Content:\n" + error.asInfo(topic: topic).asJSONString()
 
     let shouldDisplay = displayPopup && !isBackground
+    // cassette (UX pass 2026-10-20): the banner says what failed in a sentence; the status
+    // code, server message, URL and JSON stay in the detail sheet a tap opens.
     saveAndDisplay(
       topic: topic,
       logType: isInfoError ? .info : .apiError,
@@ -228,7 +230,7 @@ public class EventLogger {
       statusCode: error.statusCode,
       logMessage: error.message,
       displayPopup: shouldDisplay,
-      popupMessage: alertMessage,
+      popupMessage: "\(topic) didn't work. Tap for details.",
       detailMessage: detailMessage
     )
   }

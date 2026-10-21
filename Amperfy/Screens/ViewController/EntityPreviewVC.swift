@@ -842,15 +842,16 @@ class EntityPreviewActionBuilder {
   }
 
   private func createShowLyricsAction(song: Song) -> UIAction? {
-    // cassette polish Part 2: lyrics UI gated behind Cassette.lyricsEnabled.
-    guard Cassette.lyricsEnabled else { return nil }
+    // cassette (UX review 2026-10-20): lyrics live in the overflow menu, and only when
+    // the hub sent a lyrics file for this song. The in-player lyrics toggle stays behind
+    // Cassette.lyricsEnabled.
     guard let playable = entityContainer as? AbstractPlayable,
           let song = playable.asSong,
           let lyricsRelFilePath = song.lyricsRelFilePath,
           let lyricsAccount = song.account
     else { return nil }
 
-    return UIAction(title: "Show Lyrics", image: .lyrics) { action in
+    return UIAction(title: "Lyrics", image: .lyrics) { action in
       self.showLyrics(lyricsRelFilePath: lyricsRelFilePath, lyricsAccount: lyricsAccount)
     }
   }

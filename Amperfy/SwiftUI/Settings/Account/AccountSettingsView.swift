@@ -130,7 +130,7 @@ struct AccountSettingsView: View {
               Alert(
                 title: Text("Resync Library"),
                 message: Text(
-                  "This will reset your local library and start syncing again from the server. Your downloaded files will remain on this device.\n\nDo you want to resync your library?"
+                  "This reads your library again from Cassette Player on your computer. The music on this phone stays.\n\nResync now?"
                 ),
                 primaryButton: .destructive(Text("Resync")) {
                   resyncLibrary(accountInfo: activeAccountInfo)

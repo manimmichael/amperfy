@@ -82,6 +82,8 @@ class SearchVC: BasicTableViewController {
   private var userButton: UIButton?
   private var userBarButtonItem: UIBarButtonItem?
   private var isSearchActive = false
+  // cassette (UX review 2026-10-20): starting points shown before anyone types.
+  private lazy var startView = makeStartView()
   private var accountObjectId: NSManagedObjectID?
   private let account: Account
   private var accountNotificationHandler: AccountNotificationHandler?
@@ -172,6 +174,7 @@ class SearchVC: BasicTableViewController {
     tableView.sectionFooterHeight = 0.0
     tableView.estimatedSectionFooterHeight = 0.0
     tableView.backgroundColor = .backgroundColor
+    tableView.tableHeaderView = startView
 
     containableAtIndexPathCallback = { indexPath in
       switch SearchSection(rawValue: indexPath.section) {
@@ -248,7 +251,7 @@ class SearchVC: BasicTableViewController {
       ? nil
       : ["All", "Downloaded"]
     configureSearchController(
-      placeholder: "Search in \"Library\"",
+      placeholder: "Search your music",
       scopeButtonTitles: scopeButtonTitles
     )
   }
@@ -769,6 +772,8 @@ class SearchVC: BasicTableViewController {
   }
 
   func updateContentUnavailable() {
+    // cassette: the starting points replace the old "No search history" page.
+    tableView.tableHeaderView = isSearchActive ? nil : startView
     if isSearchActive {
       if artists.isEmpty, albums.isEmpty, playlists.isEmpty, songs.isEmpty {
         // cassette Layer 3 Phase 3.2: in on-device-only mode search is scoped to
@@ -779,8 +784,44 @@ class SearchVC: BasicTableViewController {
         contentUnavailableConfiguration = nil
       }
     } else {
-      contentUnavailableConfiguration = searchHistory.isEmpty ? noSearchHistoryConfig : nil
+      contentUnavailableConfiguration = nil
     }
+  }
+
+  private func makeStartView() -> SearchStartView {
+    let account = account
+    let push: (UIViewController) -> () = { [weak self] vc in
+      self?.navigationController?.pushViewController(vc, animated: true)
+    }
+    return SearchStartView(starts: [
+      .init(title: "Shuffle all", icon: .shuffle) { [weak self] in self?.shuffleAll() },
+      .init(title: "Albums", icon: .album) {
+        push(AppStoryboard.Main.createAlbumsVC(account: account, style: .table, category: .all))
+      },
+      .init(title: "Playlists", icon: .playlist) {
+        push(AppStoryboard.Main.segueToPlaylists(account: account))
+      },
+      .init(title: "Genres", icon: .genre) {
+        push(AppStoryboard.Main.segueToGenres(account: account))
+      },
+      .init(title: "Radio", icon: .radio) {
+        push(AppStoryboard.Main.segueToRadios(account: account))
+      },
+    ])
+  }
+
+  /// Shuffles the music on this phone (the whole library in Server Mode), capped so a
+  /// big library does not build a queue of tens of thousands.
+  private func shuffleAll() {
+    var songs = appDelegate.storage.main.library.getSongs(for: account)
+    if CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
+      let owned = DeviceOwnershipManager(context: appDelegate.storage.main.context)
+        .fetchAllSubsonicTrackIds()
+      songs = songs.filter { owned.contains($0.id) }
+    }
+    guard !songs.isEmpty else { return }
+    let playables: [AbstractPlayable] = Array(songs.shuffled().prefix(500))
+    appDelegate.player.playShuffled(context: PlayContext(name: "All music", playables: playables))
   }
 
   // cassette Layer 3 Phase 3.2: on-device-only search empty state.

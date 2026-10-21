@@ -963,6 +963,12 @@ public class RadiosFetchedResultsController: CachedFetchedResultsController<Radi
 
 public class AlbumSongsFetchedResultsController: BasicFetchedResultsController<SongMO> {
   let album: Album
+  // cassette (UX review 2026-10-20): on the phone an album lists only the songs that
+  // are on it; the rest of the album is still on the hub. Nil in Server Mode.
+  private let ownedPredicate: NSPredicate?
+  /// Every song of the album, on this phone or not. Shown against the listed count
+  /// ("8 of 12 songs on this phone") when the two differ.
+  public let totalSongCount: Int
 
   public init(
     forAlbum album: Album,
@@ -970,11 +976,18 @@ public class AlbumSongsFetchedResultsController: BasicFetchedResultsController<S
     isGroupedInAlphabeticSections: Bool
   ) {
     self.album = album
-    let fetchRequest = SongMO.trackNumberSortedFetchRequest
-    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+    let basePredicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
       SongMO.excludeServerDeleteUncachedSongsFetchPredicate,
       coreDataCompanion.library.getFetchPredicate(forAlbum: album),
     ])
+    let countRequest = NSFetchRequest<SongMO>(entityName: "Song")
+    countRequest.predicate = basePredicate
+    self.totalSongCount = (try? coreDataCompanion.context.count(for: countRequest)) ?? 0
+    self.ownedPredicate = makeCassetteOwnershipPredicate(.song, coreDataCompanion: coreDataCompanion)
+    let fetchRequest = SongMO.trackNumberSortedFetchRequest
+    fetchRequest.predicate = NSCompoundPredicate(
+      andPredicateWithSubpredicates: [basePredicate] + [ownedPredicate].compactMap { $0 }
+    )
     fetchRequest.relationshipKeyPathsForPrefetching = SongMO.relationshipKeyPathsForPrefetching
     fetchRequest.returnsObjectsAsFaults = false
     super.init(
@@ -991,7 +1004,7 @@ public class AlbumSongsFetchedResultsController: BasicFetchedResultsController<S
         coreDataCompanion.library.getFetchPredicate(forAlbum: album),
         SongMO.getIdentifierBasedSearchPredicate(searchText: searchText),
         coreDataCompanion.library.getFetchPredicate(onlyCachedSongs: onlyCachedSongs),
-      ])
+      ] + [ownedPredicate].compactMap { $0 })
       search(predicate: predicate)
     } else {
       showAllResults()
@@ -1003,6 +1016,11 @@ public class AlbumSongsFetchedResultsController: BasicFetchedResultsController<S
 
 public class PlaylistItemsFetchedResultsController: BasicFetchedResultsController<PlaylistItemMO> {
   public let playlist: Playlist
+  // cassette (UX review 2026-10-20): on the phone a playlist lists only the songs that
+  // are on it. The playlist itself keeps every item. Nil in Server Mode.
+  private let ownedPredicate: NSPredicate?
+  /// Every item of the playlist, on this phone or not.
+  public let totalItemCount: Int
 
   public init(
     forPlaylist playlist: Playlist,
@@ -1010,8 +1028,21 @@ public class PlaylistItemsFetchedResultsController: BasicFetchedResultsControlle
     isGroupedInAlphabeticSections: Bool
   ) {
     self.playlist = playlist
+    let basePredicate = coreDataCompanion.library.getFetchPredicate(forPlaylist: playlist)
+    let countRequest = NSFetchRequest<PlaylistItemMO>(entityName: "PlaylistItem")
+    countRequest.predicate = basePredicate
+    self.totalItemCount = (try? coreDataCompanion.context.count(for: countRequest)) ?? 0
+    if CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
+      let owned = DeviceOwnershipManager(context: coreDataCompanion.context)
+        .fetchAllSubsonicTrackIds()
+      self.ownedPredicate = NSPredicate(format: "%K IN %@", #keyPath(PlaylistItemMO.playable.id), owned)
+    } else {
+      self.ownedPredicate = nil
+    }
     let fetchRequest = PlaylistItemMO.playlistOrderSortedFetchRequest
-    fetchRequest.predicate = coreDataCompanion.library.getFetchPredicate(forPlaylist: playlist)
+    fetchRequest.predicate = NSCompoundPredicate(
+      andPredicateWithSubpredicates: [basePredicate] + [ownedPredicate].compactMap { $0 }
+    )
     fetchRequest.relationshipKeyPathsForPrefetching = PlaylistItemMO
       .relationshipKeyPathsForPrefetching
     fetchRequest.returnsObjectsAsFaults = false
@@ -1027,7 +1058,7 @@ public class PlaylistItemsFetchedResultsController: BasicFetchedResultsControlle
       let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
         coreDataCompanion.library.getFetchPredicate(forPlaylist: playlist),
         coreDataCompanion.library.getFetchPredicate(onlyCachedPlaylistItems: onlyCachedSongs),
-      ])
+      ] + [ownedPredicate].compactMap { $0 })
       search(predicate: predicate)
     } else {
       showAllResults()

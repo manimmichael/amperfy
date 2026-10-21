@@ -33,6 +33,10 @@ class SyncVC: UIViewController {
   var syncFinished = false
   var account: Account!
 
+  /// One plain line for every stage of the first read. Amperfy listed its own categories
+  /// ("Syncing genres ...", "Syncing podcasts ..."), most of which a Cassette phone never has.
+  static let readingLibraryText = "Reading your library from your computer"
+
   @IBOutlet
   weak var progressBar: UIProgressView!
   @IBOutlet
@@ -136,7 +140,7 @@ class SyncVC: UIViewController {
   func skipPressed(_ sender: Any) {
     let alert = UIAlertController(
       title: "Skip Sync",
-      message: "Skipping initial sync results in an incomplete library. Missing library elements can later be synced via various search/update functionalities.",
+      message: "Skipping now leaves part of your library out until the next sync with Cassette Player on your computer.",
       preferredStyle: .alert
     )
     let skip = UIAlertAction(title: "Skip", style: .destructive, handler: { action in
@@ -191,22 +195,7 @@ extension SyncVC: SyncCallbacks {
       }
       progressLabel.isHidden = totalCount <= 0
 
-      switch parsedObjectType {
-      case .artist:
-        self.updateSyncInfo(infoText: "Syncing artists ...", percentParsed: 0.0)
-      case .album:
-        self.updateSyncInfo(infoText: "Syncing albums ...", percentParsed: 0.0)
-      case .song:
-        self.updateSyncInfo(infoText: "Syncing songs ...", percentParsed: 0.0)
-      case .playlist:
-        self.updateSyncInfo(infoText: "Syncing playlists ...", percentParsed: 0.0)
-      case .genre:
-        self.updateSyncInfo(infoText: "Syncing genres ...", percentParsed: 0.0)
-      case .podcast:
-        self.updateSyncInfo(infoText: "Syncing podcasts ...", percentParsed: 0.0)
-      case .cache:
-        self.updateSyncInfo(infoText: "Applying cache ...", percentParsed: 0.0)
-      }
+      self.updateSyncInfo(infoText: Self.readingLibraryText, percentParsed: 0.0)
     }
   }
 }

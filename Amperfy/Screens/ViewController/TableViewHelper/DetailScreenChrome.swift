@@ -191,3 +191,37 @@ final class DetailScreenChrome {
     )
   }
 }
+
+extension DetailScreenChrome {
+  /// The song count under an album or playlist title. When only part of it is on this
+  /// phone (the rest stays on the hub), it says so: "8 of 12 songs on this phone".
+  static func songCountText(onPhone: Int, total: Int) -> String {
+    if CassetteLibraryFilterProvider.shared.isOnDeviceOnly, onPhone < total {
+      return "\(onPhone) of \(total) songs on this phone"
+    }
+    return "\(total) Song\(total == 1 ? "" : "s")"
+  }
+
+  /// A quiet line under an album or playlist whose songs are only partly on this phone,
+  /// or nil when everything is here (or in Server Mode, where nothing is hidden).
+  static func onPhoneFooter(onPhone: Int, total: Int) -> UIView? {
+    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly, onPhone < total else { return nil }
+    let label = UILabel()
+    label.text = onPhone == 0
+      ? "None of these \(total) songs are on this phone yet"
+      : "\(onPhone) of \(total) songs on this phone"
+    label.font = .cassette(.metadata)
+    label.textColor = .cassette(.textSecondary)
+    label.textAlignment = .center
+    label.numberOfLines = 0
+    label.translatesAutoresizingMaskIntoConstraints = false
+    let footer = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 64))
+    footer.addSubview(label)
+    NSLayoutConstraint.activate([
+      label.leadingAnchor.constraint(equalTo: footer.leadingAnchor, constant: 16),
+      label.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -16),
+      label.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+    ])
+    return footer
+  }
+}

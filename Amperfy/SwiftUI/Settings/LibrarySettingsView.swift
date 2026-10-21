@@ -55,6 +55,13 @@ struct StorageSettingsView: View {
   var cachedPodcastEpisodesCount = 0
   @State
   var completeCacheSize = ""
+  /// On this phone: the music synced from the hub (ownership records), not Amperfy's cache.
+  @State
+  var onPhoneMusic = ""
+  @State
+  var onPhoneAlbums: [DeviceOwnershipManager.OnPhoneAlbum] = []
+  @State
+  var freeSpace = ""
   @State
   var cacheSizeLimit = ""
   @State
@@ -143,6 +150,19 @@ struct StorageSettingsView: View {
     }}
   }
 
+  /// Once per visit, not on the 1s timer: it walks every ownership record.
+  private func refreshOnPhone() {
+    let summary = DeviceOwnershipManager(context: appDelegate.storage.main.context).onPhoneSummary()
+    onPhoneMusic = summary.tracks == 0
+      ? "Nothing yet"
+      : "\(summary.bytes.asByteString) · \(summary.tracks) song\(summary.tracks == 1 ? "" : "s")"
+    onPhoneAlbums = summary.albums
+    let home = URL(fileURLWithPath: NSHomeDirectory())
+    let free = (try? home.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
+      .volumeAvailableCapacityForImportantUsage ?? 0
+    freeSpace = free > 0 ? free.asByteString : ""
+  }
+
   var body: some View {
     ZStack {
       SettingsList {
@@ -161,22 +181,41 @@ struct StorageSettingsView: View {
           }
         })
 
-        // cassette §A3/§G: download/storage language (no "cache/cached"); the
-        // absent size cap is intentional — the on-device owned library has no
-        // limit. Initial-sync status, background-sync progress, size cap,
-        // download-all and delete-cache remain off the listener-facing surface.
+        // cassette (UX pass 2026-10-20): "On this phone" reads the music the hub synced
+        // here (CassetteMusic, via the ownership records). The old "Downloaded songs" /
+        // "Storage used" rows read Amperfy's per-account cache, which Cassette music does
+        // not live in, so on an on-device phone they said almost nothing.
         SettingsSection(content: {
-          SettingsRow(title: "Downloaded songs") { SecondaryText(cachedSongCount.description) }
-          SettingsRow(title: "Storage used") {
-            SecondaryText(completeCacheSize.description)
+          SettingsRow(title: "Music") { SecondaryText(onPhoneMusic) }
+          SettingsRow(title: "Free on this phone") { SecondaryText(freeSpace) }
+          if !CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
+            SettingsRow(title: "Kept from streaming") {
+              SecondaryText(completeCacheSize.description)
+            }
           }
-        }, header: "Storage")
+        }, footer: "Choose what syncs to this phone in Cassette Player on your computer.", header: "On this phone")
+
+        if !onPhoneAlbums.isEmpty {
+          SettingsSection(content: {
+            ForEach(onPhoneAlbums) { album in
+              SettingsRow(title: album.name, orientation: .vertical) {
+                SecondaryText(
+                  [album.artist, "\(album.tracks) song\(album.tracks == 1 ? "" : "s")",
+                   album.bytes.asByteString]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " · ")
+                )
+              }
+            }
+          }, header: "Albums on this phone")
+        }
       }
     }
     .navigationTitle("Storage")
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       updateValues()
+      refreshOnPhone()
       appDelegate.userStatistics.visited(.settingsLibrary)
     }
     .onReceive(timer) { _ in

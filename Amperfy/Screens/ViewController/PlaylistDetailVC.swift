@@ -30,6 +30,15 @@ class PlaylistDetailDiffableDataSource: BasicUITableViewDiffableDataSource {
   var isMoveAllowed = false
   var isEditAllowed = true
 
+  /// The playlist position of a row. On the phone the list hides songs that are not on
+  /// it, so a row number is not a position in the playlist (UX review 2026-10-20).
+  private func playlistIndex(for indexPath: IndexPath) -> Int {
+    guard let objectID = itemIdentifier(for: indexPath),
+          let index = playlist.managedObject.items.firstIndex(where: { $0.objectID == objectID })
+    else { return indexPath.row }
+    return index
+  }
+
   override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
     // Return false if you do not want the item to be re-orderable.
     isMoveAllowed
@@ -45,8 +54,10 @@ class PlaylistDetailDiffableDataSource: BasicUITableViewDiffableDataSource {
     moveRowAt sourceIndexPath: IndexPath,
     to destinationIndexPath: IndexPath
   ) {
+    let fromIndex = playlistIndex(for: sourceIndexPath)
+    let toIndex = playlistIndex(for: destinationIndexPath)
     exectueAfterAnimation {
-      self.playlist?.movePlaylistItem(fromIndex: sourceIndexPath.row, to: destinationIndexPath.row)
+      self.playlist?.movePlaylistItem(fromIndex: fromIndex, to: toIndex)
 
       guard self.appDelegate.storage.settings.user.isOnlineMode,
             let account = self.playlist.account else { return }
@@ -66,14 +77,15 @@ class PlaylistDetailDiffableDataSource: BasicUITableViewDiffableDataSource {
     forRowAt indexPath: IndexPath
   ) {
     guard editingStyle == .delete else { return }
+    let index = playlistIndex(for: indexPath)
     exectueAfterAnimation {
-      self.playlist?.remove(at: indexPath.row)
+      self.playlist?.remove(at: index)
       guard self.appDelegate.storage.settings.user.isOnlineMode,
             let account = self.playlist.account else { return }
       Task { @MainActor in do {
         try await self.appDelegate.getMeta(account.info).librarySyncer.syncUpload(
           playlistToDeleteSong: self.playlist,
-          index: indexPath.row
+          index: index
         )
       } catch {
         self.appDelegate.eventLogger.report(topic: "Playlist Upload Entry Remove", error: error)
@@ -91,8 +103,8 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   private var fetchedResultsController: PlaylistItemsFetchedResultsController!
   let playlist: Playlist
   // Cassette fork — Layer 3 Phase 3.2 (library filtering). Owned track ids used
-  // to dim non-owned rows; playlist contents are never filtered (mixed
-  // playlists keep all items, non-owned ones skip silently on playback).
+  // to dim non-owned rows in Server Mode. On the phone the list shows only songs
+  // that are on it; the playlist itself keeps every item (UX review 2026-10-20).
   private var cassetteOwnedTrackIds: Set<String> = []
 
   private var editButton: UIBarButtonItem!
@@ -178,7 +190,12 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       action: #selector(openEditView)
     )
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
-      infoCB: { "\(self.playlist.songCount) Song\(self.playlist.songCount == 1 ? "" : "s")" },
+      infoCB: {
+        DetailScreenChrome.songCountText(
+          onPhone: self.fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0,
+          total: max(self.playlist.songCount, self.fetchedResultsController.totalItemCount)
+        )
+      },
       playContextCb: { () in self.playlistPlayContext() },
       player: appDelegate.player,
       isInfoAlwaysHidden: true,
@@ -272,6 +289,11 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
     chrome.viewIsAppearing()
+    // cassette (UX review 2026-10-20): "8 of 12 songs on this phone" under the list.
+    tableView.tableFooterView = DetailScreenChrome.onPhoneFooter(
+      onPhone: fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0,
+      total: max(playlist.songCount, fetchedResultsController.totalItemCount)
+    )
     if appDelegate.storage.settings.user.isOfflineMode {
       tableView.isEditing = false
     }

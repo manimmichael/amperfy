@@ -56,8 +56,8 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
   )
   private var hideUniformArtistSubtitle = false
   // Cassette fork — Layer 3 Phase 3.2 (library filtering). Owned track ids used
-  // to dim non-owned rows; the detail list itself is never filtered. Empty when
-  // nothing is on the phone (then every row dims, which is correct).
+  // to dim non-owned rows in Server Mode. On the phone the list itself holds only
+  // songs that are on it (AlbumSongsFetchedResultsController, UX review 2026-10-20).
   private var cassetteOwnedTrackIds: Set<String> = []
   // Cassette: re-resolve the album by id so a background regroup that re-keys or
   // purges the underlying AlbumMO can't strand this view on a deleted-object
@@ -175,7 +175,12 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     tableView.separatorStyle = .none
 
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
-      infoCB: { "\(self.album.songCount) Song\(self.album.songCount == 1 ? "" : "s")" },
+      infoCB: {
+        DetailScreenChrome.songCountText(
+          onPhone: self.fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0,
+          total: max(self.album.songCount, self.fetchedResultsController.totalSongCount)
+        )
+      },
       playContextCb: { () in self.albumPlayContext() },
       player: appDelegate.player,
       isInfoAlwaysHidden: true,
@@ -276,6 +281,11 @@ class AlbumDetailVC: SingleSnapshotFetchedResultsTableViewController<SongMO> {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
     chrome.viewIsAppearing()
+    // cassette (UX review 2026-10-20): "8 of 12 songs on this phone" under the list.
+    tableView.tableFooterView = DetailScreenChrome.onPhoneFooter(
+      onPhone: fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0,
+      total: max(album.songCount, fetchedResultsController.totalSongCount)
+    )
 
     Task { @MainActor in
       do {

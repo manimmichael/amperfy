@@ -456,6 +456,7 @@
 		50C9D70D2850759B007F18D0 /* NotificationBannerCustomization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501999DB26806B8600F72D37 /* NotificationBannerCustomization.swift */; };
 		C0FFEE01CA5E77E00000000C /* CassetteBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E00000000B /* CassetteBanner.swift */; };
 		C0FFEE01CA5E77E00000000E /* CassetteIBStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E00000000D /* CassetteIBStyle.swift */; };
+		C0FFEE01CA5E77E000000010 /* SearchStartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E00000000F /* SearchStartView.swift */; };
 		50C9D70F2850759B007F18D0 /* BasicButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5009863D2208CC1E0057A1A6 /* BasicButton.swift */; };
 		50C9D7102850759B007F18D0 /* OptionsButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5009863B2208CB650057A1A6 /* OptionsButton.swift */; };
 		50C9D7112850759B007F18D0 /* BasicTableCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50675E6C25F61163005737FD /* BasicTableCell.swift */; };
@@ -702,6 +703,7 @@
 		501999DB26806B8600F72D37 /* NotificationBannerCustomization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationBannerCustomization.swift; sourceTree = "<group>"; };
 		C0FFEE01CA5E77E00000000B /* CassetteBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteBanner.swift; sourceTree = "<group>"; };
 		C0FFEE01CA5E77E00000000D /* CassetteIBStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteIBStyle.swift; sourceTree = "<group>"; };
+		C0FFEE01CA5E77E00000000F /* SearchStartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchStartView.swift; sourceTree = "<group>"; };
 		501A7D1E26808A9D0055A51B /* podcast_episodes.xml */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; path = podcast_episodes.xml; sourceTree = "<group>"; };
 		501A7D1F26808A9D0055A51B /* podcasts.xml */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; path = podcasts.xml; sourceTree = "<group>"; };
 		501A7D2226808AC10055A51B /* PodcastsParserTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodcastsParserTest.swift; sourceTree = "<group>"; };
@@ -1957,6 +1959,7 @@
 				500B7D4621EDB0890083ED6F /* LibraryElementDetailTableHeaderView.swift */,
 				50C16C2521E7CBA500F086F0 /* GenericTableCell.xib */,
 				50C16C1D21E7A35C00F086F0 /* GenericTableCell.swift */,
+				C0FFEE01CA5E77E00000000F /* SearchStartView.swift */,
 				50C16C0B21E52BBB00F086F0 /* PlayableTableCell.xib */,
 				50BA92F721CC318D00E5901D /* PlayableTableCell.swift */,
 				50C9D695284FAA4D007F18D0 /* WaveformAnimatedView.swift */,
@@ -2761,6 +2764,7 @@
 				50C9D70D2850759B007F18D0 /* NotificationBannerCustomization.swift in Sources */,
 				C0FFEE01CA5E77E00000000C /* CassetteBanner.swift in Sources */,
 				C0FFEE01CA5E77E00000000E /* CassetteIBStyle.swift in Sources */,
+				C0FFEE01CA5E77E000000010 /* SearchStartView.swift in Sources */,
 				50BE5D9728511C3200156FC6 /* Amperfy.xcdatamodeld in Sources */,
 				5007CE4721EF6A8E00BC5CBA /* PlaylistDetailVC.swift in Sources */,
 				50AAB9F32F0154EB004A39C6 /* SeekToPlaybackTimeIntent.swift in Sources */,
