@@ -176,7 +176,7 @@ public class LibraryEntityImage: RoundedImage {
     }
   }
 
-  internal func display(image: UIImage) {
+  public func display(image: UIImage) {
     self.image = image
     entity = nil
     loadedSourcePath = nil

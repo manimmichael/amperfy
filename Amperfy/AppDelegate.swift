@@ -367,6 +367,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       isAlreadyRegisteredToPlayer = true
       player.addNotifier(notifier: self)
     }
+    RadioLiveFeed.shared.start(player: player)
   }
 
   func startManagerForNormalOperation() {
@@ -378,6 +379,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
     isAlreadyRegisteredToPlayer = true
     player.addNotifier(notifier: self)
+    RadioLiveFeed.shared.start(player: player)
   }
 
   func setAppTheme(color: UIColor) {

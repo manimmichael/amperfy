@@ -23,6 +23,7 @@ import AVFoundation
 import Foundation
 import MediaPlayer
 import os.log
+import UIKit
 
 // MARK: - WeakMusicPlayable
 
@@ -61,8 +62,55 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
   private let settings: AmperfySettings
   private let userStatistics: UserStatistics
   private var notifierList: [WeakMusicPlayable] = []
-  public private(set) var currentRadioNowPlaying: RadioNowPlayingInfo?
+  /// What the stream itself says is playing (its in-band StreamTitle).
+  private var streamNowPlaying: RadioNowPlayingInfo?
   private var lastRadioStreamTitle: String?
+  /// cassette: what the cloud says is on, and its picture (see RadioLiveInfo).
+  public private(set) var radioLive: RadioLiveInfo?
+  public private(set) var radioLiveArtwork: UIImage?
+
+  /// The station's song or show for every surface: the cloud's song first,
+  /// then the in-stream title, then the show itself (title = show, artist =
+  /// host). An in-stream title that only repeats the show's name is skipped.
+  public var currentRadioNowPlaying: RadioNowPlayingInfo? {
+    if let live = radioLive, let song = live.songTitle, !song.isEmpty {
+      return RadioNowPlayingInfo(title: song, artist: live.songArtist ?? "")
+    }
+    let show = radioLive?.show ?? ""
+    if let stream = streamNowPlaying, !stream.isEmpty,
+       show.isEmpty || stream.title.caseInsensitiveCompare(show) != .orderedSame {
+      return stream
+    }
+    if !show.isEmpty {
+      return RadioNowPlayingInfo(title: show, artist: radioLive?.host ?? "")
+    }
+    return streamNowPlaying
+  }
+
+  /// The line under it: the show (when a song leads), then when it ends and
+  /// what comes next. Nil when the cloud has nothing to add.
+  public var currentRadioDetail: String? {
+    guard let live = radioLive else { return nil }
+    let leading = currentRadioNowPlaying?.title ?? ""
+    let show = live.show.flatMap { $0.caseInsensitiveCompare(leading) == .orderedSame ? nil : $0 }
+    let parts = [show, live.whenLine].compactMap { $0 }.filter { !$0.isEmpty }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  }
+
+  /// cassette: the app's radio feed hands over what the cloud knows, for the
+  /// station at `streamUrl`. Ignored if another station is playing by now; nil
+  /// clears it.
+  public func setRadioLive(_ info: RadioLiveInfo?, artwork: UIImage?, forStreamUrl streamUrl: String?) {
+    if info != nil {
+      guard let radio = currentlyPlaying?.asRadio, radio.url == streamUrl else { return }
+    }
+    let artChanged = radioLive?.artworkURL != info?.artworkURL || (radioLiveArtwork == nil) != (artwork == nil)
+    guard info != radioLive || artChanged else { return }
+    radioLive = info
+    radioLiveArtwork = info == nil ? nil : artwork
+    notifyNowPlayingInfoChanged()
+    if artChanged { notifyArtworkChanged() }
+  }
 
   init(
     coreData: PlayerStatusPersistent,
@@ -460,17 +508,21 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
   }
 
   private func handleRadioStartIfNeeded() {
-    guard let radio = currentlyPlaying?.asRadio else {
-      if currentRadioNowPlaying != nil {
-        currentRadioNowPlaying = nil
+    guard currentlyPlaying?.asRadio != nil else {
+      if streamNowPlaying != nil || radioLive != nil {
+        streamNowPlaying = nil
         lastRadioStreamTitle = nil
+        radioLive = nil
+        radioLiveArtwork = nil
         notifyNowPlayingInfoChanged()
       }
       return
     }
 
-    currentRadioNowPlaying = nil
+    streamNowPlaying = nil
     lastRadioStreamTitle = nil
+    radioLive = nil
+    radioLiveArtwork = nil
     notifyNowPlayingInfoChanged()
   }
 
@@ -489,7 +541,7 @@ public class AudioPlayer: NSObject, BackendAudioPlayerNotifiable {
     guard let parsedInfo, !parsedInfo.isEmpty else { return }
 
     lastRadioStreamTitle = streamTitle
-    currentRadioNowPlaying = parsedInfo
+    streamNowPlaying = parsedInfo
     notifyNowPlayingInfoChanged()
   }
 

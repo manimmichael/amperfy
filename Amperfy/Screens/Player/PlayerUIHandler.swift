@@ -301,8 +301,10 @@ class PlayerUIHandler: NSObject {
           titleLabel.text = playableInfo.title
           artistLabel.text = ""
         }
-        // Show station name in album label
-        albumLabel?.text = playableInfo.title
+        // Station name in the album label, then the cloud's show and "until …
+        // then …" when it knows them (cassette 2026-10-21).
+        albumLabel?.text = [playableInfo.title, player.currentRadioDetail].compactMap { $0 }
+          .joined(separator: " · ")
         albumButton?.isEnabled = false
         albumContainerView?.isHidden = false
       } else {
@@ -328,6 +330,11 @@ class PlayerUIHandler: NSObject {
 
   func refreshArtwork(artworkImage: LibraryEntityImage) {
     if let playableInfo = player.currentlyPlaying {
+      if playableInfo.isRadio, let liveArt = player.currentRadioArtwork {
+        // cassette: the song's cover or the show's picture, from the cloud.
+        artworkImage.display(image: liveArt)
+        return
+      }
       artworkImage.display(entity: playableInfo)
     } else {
       switch player.playerMode {

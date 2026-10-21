@@ -69,6 +69,69 @@ public struct RadioNowPlayingInfo: Equatable, Sendable {
   }
 }
 
+// MARK: - RadioLiveInfo
+
+/// cassette 2026-10-21: what cassette.digital knows about the station on air,
+/// read from the station's own feed (docs/reference/CASSETTE_RADIO.md): the song
+/// or the show, the show's picture, when it ends and what comes next. The app's
+/// radio feed sets it while a registry station plays; the in-stream title still
+/// fills in where the feed names no song.
+public struct RadioLiveInfo: Equatable, Sendable {
+  public var songTitle: String?
+  public var songArtist: String?
+  public var show: String?
+  public var host: String?
+  public var until: Date?
+  /// What comes next: a show's name, or "Song · Artist" on a station that
+  /// publishes its running order.
+  public var next: String?
+  public var nextStarts: Date?
+  /// The picture to wear, by URL: the song's cover, else the show's own.
+  public var artworkURL: String?
+
+  public init(
+    songTitle: String? = nil,
+    songArtist: String? = nil,
+    show: String? = nil,
+    host: String? = nil,
+    until: Date? = nil,
+    next: String? = nil,
+    nextStarts: Date? = nil,
+    artworkURL: String? = nil
+  ) {
+    self.songTitle = songTitle
+    self.songArtist = songArtist
+    self.show = show
+    self.host = host
+    self.until = until
+    self.next = next
+    self.nextStarts = nextStarts
+    self.artworkURL = artworkURL
+  }
+
+  /// "Until 1:00 PM, then MARTELO" / "Until 1:00 PM · 3:00 PM: Drive Time" /
+  /// "Next: Waterloo Sunset · The Kinks". Times in the listener's own clock.
+  public var whenLine: String? {
+    let clock = { (d: Date) in d.formatted(date: .omitted, time: .shortened) }
+    // A feed can lag past a show's end; a time already gone drops out.
+    let now = Date()
+    let until = self.until.flatMap { $0 > now ? $0 : nil }
+    let nextStarts = self.nextStarts.flatMap { $0 > now ? $0 : nil }
+    let untilText = until.map { "Until \(clock($0))" }
+    guard let next, !next.isEmpty else { return untilText }
+    var backToBack = false
+    if let until, let nextStarts { backToBack = abs(nextStarts.timeIntervalSince(until)) < 120 }
+    let nextText: String
+    if let nextStarts, !backToBack {
+      nextText = "\(clock(nextStarts)): \(next)"
+    } else {
+      nextText = untilText == nil ? "Next: \(next)" : "then \(next)"
+    }
+    guard let untilText else { return nextText }
+    return backToBack || nextStarts == nil ? "\(untilText), \(nextText)" : "\(untilText) · \(nextText)"
+  }
+}
+
 // MARK: - RepeatMode
 
 public enum RepeatMode: Int16, CaseIterable {

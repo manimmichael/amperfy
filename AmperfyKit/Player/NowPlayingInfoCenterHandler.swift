@@ -84,7 +84,11 @@ public class NowPlayingInfoCenterHandler {
   }
 
   private func updateNowPlayingInfo(playable: AbstractPlayable) {
-    let albumTitle = playable.asSong?.album?.name ?? ""
+    // cassette: a radio's third line is the station, then the cloud's show and
+    // "until … then …" when it knows them.
+    let albumTitle = playable.isRadio
+      ? [playable.title, musicPlayer.currentRadioDetail].compactMap { $0 }.joined(separator: " · ")
+      : (playable.asSong?.album?.name ?? "")
     let nowPlaying = displayNowPlayingInfo(for: playable)
 
     // cassette (art stability): MUTATE the existing dict (like updateElapsedTime)
@@ -107,7 +111,17 @@ public class NowPlayingInfoCenterHandler {
     info[MPNowPlayingInfoPropertyPlaybackRate] =
       NSNumber(value: backendAudioPlayer.playbackRate.asDouble)
 
-    if let accountInfo = playable.account?.info {
+    if playable.isRadio, let liveArt = musicPlayer.radioLiveArtwork,
+       let liveKey = musicPlayer.radioLive?.artworkURL {
+      // cassette: the song's cover or the show's picture, from the cloud. Keyed
+      // by its URL so a new song swaps it and a repeat leaves it be; the album
+      // key is unique to it so the station's own art comes back when it clears.
+      if liveKey != currentArtworkKey || info[MPMediaItemPropertyArtwork] == nil {
+        info[MPMediaItemPropertyArtwork] = makeNowPlayingArtwork(liveArt)
+        currentArtworkKey = liveKey
+        currentArtworkAlbumKey = "radio-live:\(liveKey)"
+      }
+    } else if let accountInfo = playable.account?.info {
       let settings = storage.settings.accounts.getSetting(accountInfo).read
       // Album-first cover path; nil when no cover file is on disk (yet).
       let coverKey = playable.imagePath(setting: settings.artworkDisplayPreference)

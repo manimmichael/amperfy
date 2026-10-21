@@ -21,6 +21,7 @@
 
 import Foundation
 import MediaPlayer
+import UIKit
 
 // MARK: - StreamingMaxBitrates
 
@@ -171,6 +172,12 @@ public protocol PlayerFacade {
   var currentMusicItem: AbstractPlayable? { get }
   var currentPodcastItem: AbstractPlayable? { get }
   var currentRadioNowPlaying: RadioNowPlayingInfo? { get }
+  /// cassette: the show and "until … then …" line, and the song's or show's
+  /// picture, from the cloud while a registry station plays.
+  var currentRadioDetail: String? { get }
+  var currentRadioArtwork: UIImage? { get }
+  var currentRadioLive: RadioLiveInfo? { get }
+  func setRadioLive(_ info: RadioLiveInfo?, artwork: UIImage?, forStreamUrl streamUrl: String?)
   var contextName: String { get }
   var elapsedTime: Double { get }
   var duration: Double { get }
@@ -414,6 +421,22 @@ class PlayerFacadeImpl: PlayerFacade {
 
   var currentRadioNowPlaying: RadioNowPlayingInfo? {
     musicPlayer.currentRadioNowPlaying
+  }
+
+  var currentRadioDetail: String? {
+    musicPlayer.currentRadioDetail
+  }
+
+  var currentRadioArtwork: UIImage? {
+    musicPlayer.radioLiveArtwork
+  }
+
+  var currentRadioLive: RadioLiveInfo? {
+    musicPlayer.radioLive
+  }
+
+  func setRadioLive(_ info: RadioLiveInfo?, artwork: UIImage?, forStreamUrl streamUrl: String?) {
+    musicPlayer.setRadioLive(info, artwork: artwork, forStreamUrl: streamUrl)
   }
 
   var contextName: String {
