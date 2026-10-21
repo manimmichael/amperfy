@@ -96,6 +96,9 @@ extension CarPlaySceneDelegate {
     }
     CPNowPlayingTemplate.shared.updateNowPlayingButtons(buttons)
     CPNowPlayingTemplate.shared.isUpNextButtonEnabled = true
+    // cassette 2026-10-20 (driving pass): the artist and album line on Now Playing is a
+    // button, and it opens the playing artist's page: get around from what is on.
+    CPNowPlayingTemplate.shared.isAlbumArtistButtonEnabled = mode == .music
   }
 
   func displayNowPlaying(immediately: Bool = false, completion: @escaping (() -> ())) {
@@ -121,6 +124,23 @@ extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
   nonisolated func nowPlayingTemplateUpNextButtonTapped(_ nowPlayingTemplate: CPNowPlayingTemplate) {
     MainActor.assumeIsolated {
       self.pushTemplateIfAllowed(playerQueueSection, animated: true)
+    }
+  }
+
+  nonisolated func nowPlayingTemplateAlbumArtistButtonTapped(
+    _ nowPlayingTemplate: CPNowPlayingTemplate
+  ) {
+    MainActor.assumeIsolated {
+      guard let song = self.appDelegate.player.currentlyPlaying?.asSong else { return }
+      if let artist = song.artist,
+         let template = self.makeArtistDetailTemplate(for: artist, onlyCached: self.isOfflineMode) {
+        self.pushTemplateIfAllowed(template, animated: true)
+      } else if let album = song.album {
+        self.pushTemplateIfAllowed(
+          self.makeAlbumDetailTemplate(for: album, onlyCached: self.isOfflineMode),
+          animated: true
+        )
+      }
     }
   }
 
@@ -230,4 +250,20 @@ extension CarPlaySceneDelegate: MusicPlayable {
   func didShuffleChange() {}
   func didRepeatChange() {}
   func didPlaybackRateChange() {}
+}
+
+// MARK: - CarPlaySceneDelegate + CPSessionConfigurationDelegate
+
+extension CarPlaySceneDelegate: CPSessionConfigurationDelegate {
+  /// The car started or stopped limiting lists. Pages already on screen keep their form;
+  /// the next page opened is built for the new state (see `isDriving`).
+  nonisolated func sessionConfiguration(
+    _ sessionConfiguration: CPSessionConfiguration,
+    limitedUserInterfacesChanged limitedUserInterfaces: CPLimitableUserInterface
+  ) {
+    let driving = limitedUserInterfaces.contains(.lists)
+    MainActor.assumeIsolated {
+      DiagnosticLog.shared.log(.carplay, "CarPlay lists limited", context: ["driving": String(driving)])
+    }
+  }
 }

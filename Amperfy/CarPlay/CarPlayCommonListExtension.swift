@@ -546,33 +546,149 @@ extension CarPlaySceneDelegate {
     return section
   }
 
-  // cassette (CarPlay open-a-view): the artist detail (shuffle + all-songs + albums)
-  // as a REUSABLE template, shared by the library artist row and the Home artist tile.
+  // cassette (CarPlay open-a-view): the artist detail as a REUSABLE template, shared by
+  // the library artist row, the Home row list and Now Playing's artist button.
+  //
+  // cassette 2026-10-20 (driving pass): built to be usable at a glance. Shuffle sits in
+  // the header as a large button; then the artist's most played songs (five at most),
+  // then their albums as one row of covers (a cover plays the album). The long All Songs
+  // list is offered only while parked: when the car limits lists, it is left out.
   func makeArtistDetailTemplate(for artist: Artist, onlyCached: Bool) -> CPListTemplate? {
     guard let activeAccount else { return nil }
-    var albumItems = [CPListItem]()
     let artistPlayables = artist.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-    if !artistPlayables.isEmpty {
-      albumItems.append(createPlayShuffledListItem(playContext: PlayContext(
-        containable: artist,
-        playables: artistPlayables
-      )))
-      albumItems.append(createDetailAllSongsTemplate(for: artist, onlyCached: onlyCached))
+    var sections = [CPListSection]()
+
+    let topSongs = artistPlayables
+      .filter { $0.playCount > 0 }
+      .sorted { $0.playCount > $1.playCount }
+      .prefix(Self.artistTopSongCount)
+    if !topSongs.isEmpty {
+      let context = Array(topSongs)
+      let rows: [CPListItem] = context.enumerated().map { index, song in
+        createDetailTemplate(
+          for: song,
+          playContext: PlayContext(containable: artist, index: index, playables: context)
+        )
+      }
+      sections.append(CPListSection(items: rows, header: "Most Played", sectionIndexTitle: nil))
     }
+
     let artistAlbums = appDelegate.storage.main.library.getAlbums(
       for: activeAccount,
       whichContainsSongsWithArtist: artist,
       onlyCached: onlyCached || isOfflineMode
-    ).prefix(carPlayLeafItemLimit(reserved: albumItems.count))
-    for album in artistAlbums {
-      let listItem = createDetailTemplate(for: album, onlyCached: onlyCached)
-      albumItems.append(listItem)
+    )
+    if !artistAlbums.isEmpty {
+      sections.append(CPListSection(
+        items: [makeAlbumCoverRow(artistAlbums, onlyCached: onlyCached)],
+        header: nil,
+        sectionIndexTitle: nil
+      ))
     }
-    let template = CPListTemplate(title: artist.name, sections: [
-      CPListSection(items: albumItems),
-    ])
+
+    if !isDriving, !artistPlayables.isEmpty {
+      sections.append(CPListSection(items: [
+        createDetailAllSongsTemplate(for: artist, onlyCached: onlyCached),
+      ]))
+    }
+
+    let template = CPListTemplate(title: artist.name, sections: sections)
     template.emptyViewTitleVariants = ["Nothing by this artist on this phone"]
+    applyPlayHeader(
+      to: template,
+      image: style.artwork(
+        for: artist,
+        artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference
+      ),
+      title: artist.name,
+      subtitle: artist.subtitle,
+      play: nil,
+      shuffle: artistPlayables.isEmpty ? nil : PlayContext(
+        containable: artist,
+        playables: artistPlayables
+      )
+    )
     return template
+  }
+
+  static let artistTopSongCount = 5
+
+  /// One row of album covers. A cover plays its album from the top; the row's title opens
+  /// the albums as a plain list for browsing.
+  private func makeAlbumCoverRow(_ albums: [Album], onlyCached: Bool) -> CPListImageRowItem {
+    let shown = Array(albums.prefix(carPlayLeafItemLimit(reserved: 0)))
+    let preference = getPreference(activeAccountInfo).artworkDisplayPreference
+    let elements = shown.map { album in
+      CPListImageRowItemRowElement(
+        image: style.artwork(for: album, artworkDisplayPreference: preference, slot: .shelf),
+        title: album.name,
+        subtitle: album.year > 0 ? String(album.year) : nil
+      )
+    }
+    let row = CPListImageRowItem(text: "Albums", elements: elements, allowsMultipleLines: false)
+    row.listImageRowHandler = { [weak self] _, index, completion in
+      guard let self, index >= 0, index < shown.count else { completion(); return }
+      let album = shown[index]
+      appDelegate.player.play(context: PlayContext(
+        containable: album,
+        playables: album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
+      ))
+      displayNowPlaying { completion() }
+    }
+    row.handler = { [weak self] _, completion in
+      guard let self else { completion(); return }
+      let rows = shown.map { createDetailTemplate(for: $0, onlyCached: onlyCached) }
+      pushTemplateIfAllowed(
+        CPListTemplate(title: "Albums", sections: [CPListSection(items: rows)]),
+        animated: true
+      )
+      completion()
+    }
+    return row
+  }
+
+  /// Play and Shuffle as large buttons at the top of an album or artist page: with the
+  /// cover beside them where the car's iOS has the details header (26.4), as header
+  /// buttons otherwise. Either button plays and shows Now Playing.
+  func applyPlayHeader(
+    to template: CPListTemplate,
+    image: UIImage,
+    title: String,
+    subtitle: String?,
+    play: PlayContext?,
+    shuffle: PlayContext?
+  ) {
+    let startPlay: (PlayContext, Bool) -> () = { [weak self] context, shuffled in
+      guard let self else { return }
+      if shuffled {
+        appDelegate.player.playShuffled(context: context)
+      } else {
+        appDelegate.player.play(context: context)
+      }
+      displayNowPlaying {}
+    }
+    var actions: [(String, UIImage, PlayContext, Bool)] = []
+    if let play { actions.append(("Play", style.glyph(UIImage.play), play, false)) }
+    if let shuffle { actions.append(("Shuffle", style.glyph(UIImage.lucideShuffle), shuffle, true)) }
+    guard !actions.isEmpty else { return }
+
+    if #available(iOS 26.4, *) {
+      let buttons: [CPButton] = actions.map { title, glyph, context, shuffled in
+        let button = CPButton(image: glyph) { _ in startPlay(context, shuffled) }
+        button.title = title
+        return button
+      }
+      template.listHeader = CPListTemplateDetailsHeader(
+        thumbnail: CPThumbnailImage(image: image),
+        title: title,
+        subtitle: subtitle,
+        actionButtons: buttons
+      )
+    } else {
+      template.headerGridButtons = actions.map { title, glyph, context, shuffled in
+        CPGridButton(titleVariants: [title], image: glyph) { _ in startPlay(context, shuffled) }
+      }
+    }
   }
 
   func createDetailAllSongsTemplate(for artist: Artist, onlyCached: Bool) -> CPListItem {
@@ -661,19 +777,15 @@ extension CarPlaySceneDelegate {
     return section
   }
 
-  // cassette (CarPlay open-a-view): the album detail (shuffle row + track list) as a
-  // REUSABLE template, so the library album row AND the Home album tile open the same
-  // view instead of the Home tile auto-playing.
+  // cassette (CarPlay open-a-view): the album detail as a REUSABLE template, so the library
+  // album row and the Home row list open the same view.
+  //
+  // cassette 2026-10-20 (driving pass): Play and Shuffle are large header buttons above
+  // the track list instead of a Shuffle row inside it.
   func makeAlbumDetailTemplate(for album: Album, onlyCached: Bool) -> CPListTemplate {
     var songItems = [CPListItem]()
     let albumPlayables = album.playables.filterCached(dependigOn: onlyCached || isOfflineMode)
-    if !albumPlayables.isEmpty {
-      songItems.append(createPlayShuffledListItem(playContext: PlayContext(
-        containable: album,
-        playables: albumPlayables
-      )))
-    }
-    let albumSongs = albumPlayables.prefix(carPlayLeafItemLimit(reserved: songItems.count))
+    let albumSongs = albumPlayables.prefix(carPlayLeafItemLimit(reserved: 0))
     for (index, song) in albumSongs.enumerated() {
       let listItem = createDetailTemplate(
         for: song,
@@ -686,6 +798,21 @@ extension CarPlaySceneDelegate {
       CPListSection(items: songItems),
     ])
     template.emptyViewTitleVariants = ["No songs from this album on this phone"]
+    let context = albumPlayables.isEmpty ? nil : PlayContext(
+      containable: album,
+      playables: albumPlayables
+    )
+    applyPlayHeader(
+      to: template,
+      image: style.artwork(
+        for: album,
+        artworkDisplayPreference: getPreference(activeAccountInfo).artworkDisplayPreference
+      ),
+      title: album.name,
+      subtitle: album.subtitle,
+      play: context,
+      shuffle: context
+    )
     return template
   }
 

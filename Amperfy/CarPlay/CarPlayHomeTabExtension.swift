@@ -34,8 +34,50 @@ extension CarPlaySceneDelegate {
   /// two album shelves have data only because the CarPlay `HomeManager` was
   /// created with `buildsAlbumShelves: true`. Empty shelves (e.g. Recently Played
   /// Albums before any album play) are hidden by the guard in `createHomeImageRows`.
+  ///
+  /// cassette 2026-10-20 (driving pass): Recent leads (the row people actually use, with
+  /// the Resume item at its head, since CarPlay has no Resume card), then Radio, the most
+  /// natural thing to play while driving, then Playlists, Newest Albums and Artists.
   private var carPlayHomeSections: [HomeSection] {
-    [.recentlyPlayedAlbums, .newestAlbums, .yourPlaylists, .recentlyPlayedArtists]
+    [.recent, .radios, .yourPlaylists, .newestAlbums, .recentlyPlayedArtists]
+  }
+
+  /// The items a CarPlay Home row shows. Recent carries the Resume item first.
+  private func carPlayItems(_ section: HomeSection) -> [HomeItem]? {
+    guard let sharedHome else { return nil }
+    guard section == .recent else { return sharedHome.data[section] }
+    let items = (sharedHome.data[.resume] ?? []) + (sharedHome.data[.recent] ?? [])
+    return items
+  }
+
+  private func carPlayTitle(_ section: HomeSection) -> String {
+    switch section {
+    case .radios: return "Radio"
+    case .yourPlaylists: return "Playlists"
+    case .recentlyPlayedArtists: return "Artists"
+    default: return section.title
+    }
+  }
+
+  /// A Home tile plays straight away and shows Now Playing (founder, 2026-10-20: one tap
+  /// to music behind the wheel). An album plays from the top, an artist shuffled. Browsing
+  /// stays one tap away on the row's title.
+  private func playFromHome(_ containable: PlayableContainable) {
+    let onlyCached = isOfflineMode
+    if let album = containable as? Album {
+      appDelegate.player.play(context: PlayContext(
+        containable: album,
+        playables: album.playables.filterCached(dependigOn: onlyCached)
+      ))
+    } else if let artist = containable as? Artist {
+      appDelegate.player.playShuffled(context: PlayContext(
+        containable: artist,
+        playables: artist.playables.filterCached(dependigOn: onlyCached)
+      ))
+    } else {
+      appDelegate.player.play(context: PlayContext(containable: containable))
+    }
+    displayNowPlaying {}
   }
 
   func updateHomeSections() {
@@ -44,7 +86,7 @@ extension CarPlaySceneDelegate {
     // the full `session.homeRowData` / `sharedHome.data` dicts would always differ on
     // the unrendered `.resume` key and permanently defeat this early-out.
     let renderedNow = carPlayHomeSections.map { session.homeRowData[$0] ?? [] }
-    let requestedNow = carPlayHomeSections.map { sharedHome.data[$0] ?? [] }
+    let requestedNow = carPlayHomeSections.map { carPlayItems($0) ?? [] }
     guard renderedNow != requestedNow else {
       return
     }
@@ -70,20 +112,20 @@ extension CarPlaySceneDelegate {
   }
 
   func createHomeImageRows() -> [CPListImageRowItem] {
-    guard let sharedHome else { return [] }
+    guard sharedHome != nil else { return [] }
     var imageRows = [CPListImageRowItem]()
     for section in carPlayHomeSections {
       // cassette: hide-when-empty on CarPlay (mirrors HomeVC Patch 036 at
       // HomeVC.swift:399). Skip shelves with no items and clear any stale
       // rendered snapshot so `updateHomeSections`' change-detection settles
       // rather than rebuilding on every callback while the shelf stays empty.
-      guard let sectionItems = sharedHome.data[section], !sectionItems.isEmpty else {
+      guard let sectionItems = carPlayItems(section), !sectionItems.isEmpty else {
         session.homeRowData[section] = []
         continue
       }
       if let row = session.homeImageRows[section] {
         let alreadyCreatedData = session.homeRowData[section]
-        let requestedData = sharedHome.data[section]
+        let requestedData = carPlayItems(section)
         if alreadyCreatedData !=
           requestedData {
           let imageRowElements = createHomeRowImageElements(section: section)
@@ -99,9 +141,9 @@ extension CarPlaySceneDelegate {
   }
 
   func createHomeRow(section: HomeSection) -> CPListImageRowItem? {
-    guard let sharedHome else { return nil }
+    guard sharedHome != nil else { return nil }
     let alreadyCreatedData = session.homeRowData[section]
-    let requestedData = sharedHome.data[section]
+    let requestedData = carPlayItems(section)
     if alreadyCreatedData ==
       requestedData {
       return session.homeImageRows[section]
@@ -109,7 +151,7 @@ extension CarPlaySceneDelegate {
 
     let imageRowElements = createHomeRowImageElements(section: section)
     let row = CPListImageRowItem(
-      text: section.title,
+      text: carPlayTitle(section),
       elements: imageRowElements,
       allowsMultipleLines: false
     )
@@ -138,30 +180,10 @@ extension CarPlaySceneDelegate {
       let renderedItems = session.homeRowData[section] ?? []
       guard index >= 0, index < renderedItems.count else { completion(); return }
       let tappedID = renderedItems[index].stableID
-      let liveItem = sharedHome.data[section]?.first { $0.stableID == tappedID }
+      let liveItem = carPlayItems(section)?.first { $0.stableID == tappedID }
       let selectedPlayable = (liveItem ?? renderedItems[index]).playableContainable
       Task { @MainActor in
-        // cassette (CarPlay open-a-view): a Home tile tap OPENS the item's detail
-        // view (album track list / artist / playlist) — same as the library rows —
-        // instead of auto-playing. Playback happens when the user taps a track or
-        // Shuffle inside. Anything without a detail view falls back to play().
-        if let album = selectedPlayable as? Album {
-          self.pushTemplateIfAllowed(
-            self.makeAlbumDetailTemplate(for: album, onlyCached: isOfflineMode),
-            animated: true
-          )
-        } else if let artist = selectedPlayable as? Artist,
-                  let template = self.makeArtistDetailTemplate(
-                    for: artist,
-                    onlyCached: isOfflineMode
-                  ) {
-          self.pushTemplateIfAllowed(template, animated: true)
-        } else if let playlist = selectedPlayable as? Playlist {
-          self.pushPlaylistDetail(playlist)
-        } else {
-          self.appDelegate.player.play(context: PlayContext(containable: selectedPlayable))
-          self.displayNowPlaying {}
-        }
+        self.playFromHome(selectedPlayable)
         completion()
       }
     }
@@ -169,10 +191,10 @@ extension CarPlaySceneDelegate {
   }
 
   func createHomeRowImageElements(section: HomeSection) -> [CPListImageRowItemRowElement] {
-    guard let sharedHome else { return [] }
+    guard sharedHome != nil else { return [] }
 
     let alreadyCreatedData = session.homeRowData[section]
-    let requestedData = sharedHome.data[section]
+    let requestedData = carPlayItems(section)
     if alreadyCreatedData ==
       requestedData {
       return session.homeImageRows[section]?.elements as? [CPListImageRowItemRowElement] ?? []
@@ -243,7 +265,7 @@ extension CarPlaySceneDelegate {
   /// walk in downloadFinishedSuccessful because the rows carry userInfo. Built at push time as a
   /// snapshot of the shelf, like the grid was.
   func makeHomeShelfListTemplate(section: HomeSection) -> CPListTemplate {
-    let items = (sharedHome?.data[section] ?? []).prefix(carPlayLeafItemLimit(reserved: 0))
+    let items = (carPlayItems(section) ?? []).prefix(carPlayLeafItemLimit(reserved: 0))
     var rows = [CPListItem]()
     for item in items {
       let containable = item.playableContainable
@@ -259,7 +281,7 @@ extension CarPlaySceneDelegate {
         rows.append(makePlayContainableRow(containable))
       }
     }
-    let template = CPListTemplate(title: section.title, sections: [CPListSection(items: rows)])
+    let template = CPListTemplate(title: carPlayTitle(section), sections: [CPListSection(items: rows)])
     template.emptyViewTitleVariants = ["Nothing here yet"]
     return template
   }

@@ -155,6 +155,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
       appDelegate.player.addNotifier(notifier: self)
       CPNowPlayingTemplate.shared.add(self)
       self.interfaceController = interfaceController
+      sessionConfiguration = CPSessionConfiguration(delegate: self)
       // cassette (JOB 1, BUG-337): record what this head unit reports at connect, and the
       // browse budget the app derived from it, so the diagnostics export can answer whether
       // the car draws what it reports (section 8.3 of the BUG-337 spec).
@@ -422,6 +423,13 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   }
 
   var session = SessionState()
+
+  /// cassette 2026-10-20 (driving pass): what the car allows right now. When it limits
+  /// lists (the car is moving), pages are built in their short form.
+  var sessionConfiguration: CPSessionConfiguration?
+  var isDriving: Bool {
+    sessionConfiguration?.limitedUserInterfaces.contains(.lists) ?? false
+  }
 
   lazy var artistsSection = {
     let template = CPListTemplate(title: "Artists", sections: [
