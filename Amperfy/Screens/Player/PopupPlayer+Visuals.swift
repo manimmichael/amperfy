@@ -173,13 +173,22 @@ extension PopupPlayerVC {
       // image arrived later, so the task ran with a nil image and the soft blur
       // never came back.) The downsample + blur still run off-main (Patch 114).
       Task { @MainActor [weak self] in
-        let thumb = await Task.detached(priority: .utility) {
-          AmbientSourceDecoder.thumbnail(contentsOfFile: artworkPath, maxPixelSize: 600)
+        let (thumb, tintKey) = await Task.detached(priority: .utility) { () -> (UIImage?, String) in
+          // phone-taste: the colour cache key is the cover path plus the file's date. A
+          // re-downloaded or re-picked cover is written to the SAME path, so a path-only
+          // key would keep the old record's colour until the app restarts. The date is
+          // read before the decode, so a file swapped mid-read is re-read next time.
+          let modified = (try? FileManager.default.attributesOfItem(atPath: artworkPath))?[
+            .modificationDate
+          ] as? Date
+          let key = modified.map { "\(artworkPath)#\($0.timeIntervalSince1970)" } ?? artworkPath
+          let image = AmbientSourceDecoder.thumbnail(contentsOfFile: artworkPath, maxPixelSize: 600)
+          return (image, key)
         }.value
         guard let thumb else { return }
         // phone-taste: the record's colour, read from this same thumbnail off the main
-        // thread and cached by cover path, so a repeat refresh of one cover reads nothing.
-        let tint = await CoverTint.resolve(image: thumb, key: artworkPath)
+        // thread and cached by cover file, so a repeat refresh of one cover reads nothing.
+        let tint = await CoverTint.resolve(image: thumb, key: tintKey)
         guard let self else { return }
         // Staleness guard: only apply if the live track's cover is still this
         // one (a newer track may have started while we decoded).

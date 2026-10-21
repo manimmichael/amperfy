@@ -214,14 +214,19 @@ class PlayerUIHandler: NSObject {
 
   func refreshShuffleButton(shuffleButton: UIButton) {
     // phone-taste (live-state-orange): Shuffle on is live state, so its glyph lights orange
-    // on a clear ground in every player; off, it is a quiet ink2 glyph.
+    // on a clear ground in every player. Off, the popup glyph is a quiet ink2; the mini
+    // players keep today's ink so it matches the repeat toggle beside it.
     var config = UIButton.Configuration.playerShuffle(isOn: player.isShuffle)
     switch style {
     case .miniPlayeriOS, .miniPlayerMac:
-      // The mini players keep their own glyph size (sizes there are a separate pass).
+      // The mini players keep their own glyph size and off colour (restyling them is a
+      // separate pass); only Shuffle on changes, to orange.
       let medium = UIImage.SymbolConfiguration(scale: .medium)
       config.preferredSymbolConfigurationForImage = medium
       config.image = .shuffle.withConfiguration(medium)
+      if !player.isShuffle {
+        config.baseForegroundColor = UIColor.cassette(.textPrimary)
+      }
       shuffleButton.configuration = config
       shuffleButton.backgroundColor = .clear
     case .popupPlayer:
