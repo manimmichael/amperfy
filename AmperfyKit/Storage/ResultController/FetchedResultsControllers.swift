@@ -59,6 +59,96 @@ func makeCassetteOwnershipPredicate(
   return NSPredicate(format: "id IN %@", ids)
 }
 
+// MARK: - CassetteOnPhoneIds
+
+/// What is on this phone, as the Subsonic ids of its songs and of their albums and artists,
+/// read in one pass (phone-taste: a genre page's three lists share one read instead of each
+/// fetching every owned song with its relationships on the main thread).
+public struct CassetteOnPhoneIds: Sendable {
+  public let songs: Set<String>
+  public let albums: Set<String>
+  public let artists: Set<String>
+
+  /// The ids of what is on this phone, or nil in Server Mode (no narrowing). One fetch of
+  /// the ownership rows, then one fetch of the distinct album and artist ids of those songs
+  /// (dictionary results, so no song is materialised). Falls back to the ownership
+  /// manager's own reads if that fetch fails.
+  public static func read(coreDataCompanion: CoreDataCompanion) -> CassetteOnPhoneIds? {
+    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return nil }
+    let context = coreDataCompanion.context
+    let manager = DeviceOwnershipManager(context: context)
+    let songs = manager.fetchAllSubsonicTrackIds()
+    guard !songs.isEmpty else { return CassetteOnPhoneIds(songs: [], albums: [], artists: []) }
+    var rows: [NSDictionary]?
+    context.performAndWait {
+      let request = NSFetchRequest<NSDictionary>(entityName: "Song")
+      request.resultType = .dictionaryResultType
+      request.predicate = NSPredicate(format: "id IN %@", songs)
+      request.propertiesToFetch = [
+        Self.keyPathDescription("albumId", keyPath: "album.id"),
+        Self.keyPathDescription("artistId", keyPath: "artist.id"),
+      ]
+      request.returnsDistinctResults = true
+      rows = try? context.fetch(request)
+    }
+    guard let rows else {
+      return CassetteOnPhoneIds(
+        songs: songs,
+        albums: manager.fetchOwnedAlbumIds(),
+        artists: manager.fetchOwnedArtistIds()
+      )
+    }
+    var albums = Set<String>()
+    var artists = Set<String>()
+    for row in rows {
+      if let id = row["albumId"] as? String, !id.isEmpty { albums.insert(id) }
+      if let id = row["artistId"] as? String, !id.isEmpty { artists.insert(id) }
+    }
+    return CassetteOnPhoneIds(songs: songs, albums: albums, artists: artists)
+  }
+
+  private static func keyPathDescription(_ name: String, keyPath: String) -> NSExpressionDescription {
+    let description = NSExpressionDescription()
+    description.name = name
+    description.expression = NSExpression(forKeyPath: keyPath)
+    description.expressionResultType = .stringAttributeType
+    return description
+  }
+
+  func predicate(_ scope: CassetteOwnedScope) -> NSPredicate {
+    switch scope {
+    case .song: return NSPredicate(format: "id IN %@", songs)
+    case .album: return NSPredicate(format: "id IN %@", albums)
+    case .artist: return NSPredicate(format: "id IN %@", artists)
+    case .genre: return NSPredicate(value: false)
+    }
+  }
+}
+
+// MARK: - CassetteOnPhoneSource
+
+/// How a genre-page list learns what is on the phone (phone-taste).
+public enum CassetteOnPhoneSource: Sendable {
+  /// Read it when the list is built (the default, for a list on its own).
+  case readNow
+  /// Ids the page already read once for all of its lists; nil in Server Mode.
+  case shared(CassetteOnPhoneIds?)
+
+  /// The predicate to AND into the list, or nil in Server Mode.
+  func predicate(_ scope: CassetteOwnedScope, coreDataCompanion: CoreDataCompanion) -> NSPredicate? {
+    switch self {
+    case .readNow:
+      // Songs need only the ownership rows; albums and artists take the one-pass read.
+      if scope == .song || scope == .genre {
+        return makeCassetteOwnershipPredicate(scope, coreDataCompanion: coreDataCompanion)
+      }
+      return CassetteOnPhoneIds.read(coreDataCompanion: coreDataCompanion)?.predicate(scope)
+    case let .shared(ids):
+      return ids?.predicate(scope)
+    }
+  }
+}
+
 // MARK: - ArtistElementSortType
 
 public enum ArtistElementSortType: Int, Sendable, Codable {
@@ -413,14 +503,17 @@ public class GenreArtistsFetchedResultsController: BasicFetchedResultsController
   /// predicates; nil in Server Mode.
   private let onPhonePredicate: NSPredicate?
 
+  /// `onPhone`: what is on the phone, read here by default; a page that builds all three
+  /// genre lists reads it once and shares it (`.shared`).
   public init(
     for genre: Genre,
     coreDataCompanion: CoreDataCompanion,
-    isGroupedInAlphabeticSections: Bool
+    isGroupedInAlphabeticSections: Bool,
+    onPhone onPhoneSource: CassetteOnPhoneSource = .readNow
   ) {
     self.genre = genre
     // phone-taste: on the phone, only the artists on it (nil, so no change, in Server Mode).
-    let onPhone = makeCassetteOwnershipPredicate(.artist, coreDataCompanion: coreDataCompanion)
+    let onPhone = onPhoneSource.predicate(.artist, coreDataCompanion: coreDataCompanion)
     self.onPhonePredicate = onPhone
     let fetchRequest = ArtistMO.alphabeticSortedFetchRequest
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
@@ -465,14 +558,17 @@ public class GenreAlbumsFetchedResultsController: BasicFetchedResultsController<
   /// predicates; nil in Server Mode.
   private let onPhonePredicate: NSPredicate?
 
+  /// `onPhone`: what is on the phone, read here by default; a page that builds all three
+  /// genre lists reads it once and shares it (`.shared`).
   public init(
     for genre: Genre,
     coreDataCompanion: CoreDataCompanion,
-    isGroupedInAlphabeticSections: Bool
+    isGroupedInAlphabeticSections: Bool,
+    onPhone onPhoneSource: CassetteOnPhoneSource = .readNow
   ) {
     self.genre = genre
     // phone-taste: on the phone, only the albums on it (nil, so no change, in Server Mode).
-    let onPhone = makeCassetteOwnershipPredicate(.album, coreDataCompanion: coreDataCompanion)
+    let onPhone = onPhoneSource.predicate(.album, coreDataCompanion: coreDataCompanion)
     self.onPhonePredicate = onPhone
     let fetchRequest = AlbumMO.alphabeticSortedFetchRequest
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
@@ -517,15 +613,18 @@ public class GenreSongsFetchedResultsController: BasicFetchedResultsController<S
   /// predicates; nil in Server Mode.
   private let onPhonePredicate: NSPredicate?
 
+  /// `onPhone`: what is on the phone, read here by default; a page that builds all three
+  /// genre lists reads it once and shares it (`.shared`).
   public init(
     for genre: Genre,
     coreDataCompanion: CoreDataCompanion,
-    isGroupedInAlphabeticSections: Bool
+    isGroupedInAlphabeticSections: Bool,
+    onPhone onPhoneSource: CassetteOnPhoneSource = .readNow
   ) {
     self.genre = genre
     // phone-taste: on the phone, only the songs on it (nil, so no change, in Server Mode).
     // Play-all and song-row playback follow, since getContextSongs reads this predicate.
-    let onPhone = makeCassetteOwnershipPredicate(.song, coreDataCompanion: coreDataCompanion)
+    let onPhone = onPhoneSource.predicate(.song, coreDataCompanion: coreDataCompanion)
     self.onPhonePredicate = onPhone
     let fetchRequest = SongMO.alphabeticSortedFetchRequest
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
@@ -553,20 +652,6 @@ public class GenreSongsFetchedResultsController: BasicFetchedResultsController<S
     } else {
       showAllResults()
     }
-  }
-}
-
-// MARK: - Listed counts (genre page)
-
-extension BasicFetchedResultsController {
-  /// How many objects the controller lists with no search applied: a count of its init
-  /// predicate, so a genre page on the phone counts only what is on the phone
-  /// (phone-taste: the genre page's counts match its lists, not the hub's whole library).
-  public var listedCount: Int {
-    let request = fetchResultsController.fetchRequest.copy() as! NSFetchRequest<ResultType>
-    request.predicate = defaultPredicate
-    request.relationshipKeyPathsForPrefetching = nil
-    return (try? coreDataCompanion.context.count(for: request)) ?? 0
   }
 }
 

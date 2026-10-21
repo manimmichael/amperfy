@@ -132,6 +132,19 @@ struct SearchTopResult {
   }
 }
 
+// MARK: - SearchArtistTile
+
+/// One circle on the ARTISTS shelf, on the main context.
+struct SearchArtistTile {
+  let artist: Artist
+  /// The artist's own photo is on disk (`hasOwnPhotoOnDisk`), so the circle shows it.
+  let showsPhoto: Bool
+  /// Otherwise one of their records on the phone stands in, as the mock draws; with none,
+  /// the generated artist placeholder (never the artist's shared artwork, which can be
+  /// someone else's face).
+  let coverAlbum: Album?
+}
+
 // MARK: - SearchVC
 
 class SearchVC: BasicTableViewController {
@@ -139,7 +152,7 @@ class SearchVC: BasicTableViewController {
 
   private var diffableDataSource: SearchDiffableDataSource?
   fileprivate var searchHistory: [SearchHistoryItem] = []
-  fileprivate var artists: [Artist] = []
+  fileprivate var artists: [SearchArtistTile] = []
   fileprivate var albums: [Album] = []
   fileprivate var playlists: [Playlist] = []
   fileprivate var songs: [Song] = []
@@ -153,6 +166,8 @@ class SearchVC: BasicTableViewController {
   private var playCounts: SearchMatcher.PlayCounts?
   /// What the GENRES grid shows now, so an unchanged summary does not rebuild it.
   private var genreSignature: [String]?
+  /// The keyboard shortcut activated search; focus the field once it is presented.
+  private var focusFieldWhenPresented = false
 
   private var optionsButton: UIBarButtonItem = .createOptionsBarButton()
   private var isSearchActive = false
@@ -349,11 +364,30 @@ class SearchVC: BasicTableViewController {
     }
   }
 
+  /// The keyboard shortcut and Siri "search" (TabBarVC.displaySearch). The tab no longer
+  /// activates search when it is selected (phone-taste: the start page rests with the
+  /// keyboard down), so this activates the search controller itself and then focuses the
+  /// field: on the next turn of the main queue and again once the field is presented,
+  /// since focusing a field that is not active yet can leave the start page up with no
+  /// keyboard.
   public func activateSearchBar() {
-    if isViewLoaded {
-      // activate searchBar
+    guard isViewLoaded else { return }
+    if searchController.isActive {
       searchController.searchBar.becomeFirstResponder()
+      return
     }
+    focusFieldWhenPresented = true
+    searchController.isActive = true
+    DispatchQueue.main.async { [weak self] in
+      self?.searchController.searchBar.becomeFirstResponder()
+    }
+  }
+
+  @objc
+  func didPresentSearchController(_ searchController: UISearchController) {
+    guard focusFieldWhenPresented else { return }
+    focusFieldWhenPresented = false
+    searchController.searchBar.becomeFirstResponder()
   }
 
   override func configureSearchController(
@@ -483,7 +517,9 @@ class SearchVC: BasicTableViewController {
   }
 
   /// A play context holding only what this phone can play (OneTapPlay's rule), so a
-  /// long-press or swipe Play never queues music that is not here.
+  /// long-press or swipe Play, and the swipe queue actions (through OnPhoneContainable),
+  /// never queue music that is not here. Long-press Play Next / Add to Queue / Add to
+  /// Playlist still read the shared menu builder's own list (reported for integration).
   private static func onPhonePlayContext(_ containable: PlayableContainable) -> PlayContext {
     if containable is Song { return PlayContext(containable: containable) }
     return PlayContext(
@@ -521,8 +557,10 @@ class SearchVC: BasicTableViewController {
             isBackground: true
           )
         }
+        // The queue swipes read the context's container, so it is the container as
+        // seen through the phone (only its songs that are here).
         completionHandler(SwipeActionContext(
-          containable: container,
+          containable: OnPhoneContainable(container),
           playContext: Self.onPhonePlayContext(container)
         ))
       }
@@ -543,7 +581,7 @@ class SearchVC: BasicTableViewController {
           )
         }
         completionHandler(SwipeActionContext(
-          containable: playlist,
+          containable: OnPhoneContainable(playlist),
           playContext: Self.onPhonePlayContext(playlist)
         ))
       }
@@ -611,7 +649,10 @@ class SearchVC: BasicTableViewController {
         withIdentifier: SearchArtistShelfCell.reuseIdentifier,
         for: indexPath
       ) as! SearchArtistShelfCell
-      cell.configure(artists: artists) { [weak self] artist in self?.open(artist) }
+      cell.configure(
+        artists: artists,
+        theme: appDelegate.storage.settings.accounts.getSetting(account.info).read.themePreference
+      ) { [weak self] artist in self?.open(artist) }
       return cell
     case .entity:
       switch resolve(row, at: indexPath) {
@@ -796,6 +837,8 @@ class SearchVC: BasicTableViewController {
     var playlistsIDs = [NSManagedObjectID]()
     var songsIDs = [NSManagedObjectID]()
     var top: SearchTopPick?
+    /// Per shelf artist, the records that can stand in for a missing photo, best first.
+    var artistCoverIDs = [NSManagedObjectID: [NSManagedObjectID]]()
     var owned: SearchOwnedIDs?
     var playCounts: SearchMatcher.PlayCounts?
   }
@@ -918,6 +961,12 @@ class SearchVC: BasicTableViewController {
             ownedAlbumIds: nil,
             ownedSongIds: nil
           )
+          result.artistCoverIDs = SearchMatcher.artistCoverIDs(
+            for: rankedArtists.prefix(SearchMatcher.artistLimit),
+            shown: rankedAlbums,
+            ownedAlbumIds: nil,
+            ownedSongIds: nil
+          )
           return result
         }
         self.applySearchResult(searchResult, for: searchText)
@@ -953,6 +1002,15 @@ class SearchVC: BasicTableViewController {
     artists = searchResult.artistsIDs
       .compactMap { (try? context.existingObject(with: $0)) as? ArtistMO }
       .map { Artist(managedObject: $0) }
+      .map { artist in
+        let showsPhoto = artist.hasOwnPhotoOnDisk
+        return SearchArtistTile(
+          artist: artist,
+          showsPhoto: showsPhoto,
+          coverAlbum: showsPhoto ? nil :
+            firstCoverAlbum(searchResult.artistCoverIDs[artist.managedObject.objectID] ?? [])
+        )
+      }
     albums = searchResult.albumsIDs
       .compactMap { (try? context.existingObject(with: $0)) as? AlbumMO }
       .map { Album(managedObject: $0) }
@@ -974,15 +1032,7 @@ class SearchVC: BasicTableViewController {
   private func resolveTop(_ pick: SearchTopPick?) -> SearchTopResult? {
     guard let pick else { return nil }
     let context = appDelegate.storage.main.context
-    let setting = appDelegate.storage.settings.accounts.getSetting(account.info).read
-      .artworkDisplayPreference
-    let candidates = pick.coverAlbumIDs
-      .compactMap { (try? context.existingObject(with: $0)) as? AlbumMO }
-      .map { Album(managedObject: $0) }
-    let coverAlbum = candidates.first { album in
-      guard let path = album.imagePath(setting: setting) else { return false }
-      return FileManager.default.fileExists(atPath: path)
-    } ?? candidates.first
+    let coverAlbum = firstCoverAlbum(pick.coverAlbumIDs)
     if pick.isArtist {
       guard let artistMO = (try? context.existingObject(with: pick.objectID)) as? ArtistMO
       else { return nil }
@@ -997,6 +1047,21 @@ class SearchVC: BasicTableViewController {
     else { return nil }
     let album = Album(managedObject: albumMO)
     return SearchTopResult(kind: .album(album), coverAlbum: coverAlbum ?? album, showsPhoto: false)
+  }
+
+  /// The first of `ids` whose cover is on disk, else the first of them (its cover may
+  /// still arrive), on the main context.
+  private func firstCoverAlbum(_ ids: [NSManagedObjectID]) -> Album? {
+    let context = appDelegate.storage.main.context
+    let setting = appDelegate.storage.settings.accounts.getSetting(account.info).read
+      .artworkDisplayPreference
+    let candidates = ids
+      .compactMap { (try? context.existingObject(with: $0)) as? AlbumMO }
+      .map { Album(managedObject: $0) }
+    return candidates.first { album in
+      guard let path = album.imagePath(setting: setting) else { return false }
+      return FileManager.default.fileExists(atPath: path)
+    } ?? candidates.first
   }
 
   func updateContentUnavailable() {
@@ -1349,6 +1414,12 @@ enum SearchMatcher {
       ownedAlbumIds: owned?.albums,
       ownedSongIds: owned?.songs
     )
+    result.artistCoverIDs = artistCoverIDs(
+      for: rankedArtists.prefix(artistLimit),
+      shown: rankedAlbums,
+      ownedAlbumIds: owned?.albums,
+      ownedSongIds: owned?.songs
+    )
     result.owned = owned
     result.playCounts = counts
     return result
@@ -1356,8 +1427,7 @@ enum SearchMatcher {
 
   /// The top result: the first artist whose name starts with the query (ignoring case and
   /// accents), else the first album, else none. An artist's card is lit by their records
-  /// on the phone, those among the album results first; an artist with no album of their
-  /// own (a featured artist) by the records their songs here are on.
+  /// on the phone (see `coverAlbumIDs`).
   static func topPick(
     artists: [Artist],
     albums: [Album],
@@ -1371,29 +1441,15 @@ enum SearchMatcher {
     if let artist = artists.first(where: {
       $0.name.range(of: needle, options: [.anchored, .caseInsensitive, .diacriticInsensitive]) != nil
     }) {
-      let shown = albums.filter { $0.artist?.id == artist.id }
-      let others = artist.albums
-        .filter { ownedAlbumIds?.contains($0.id) ?? true }
-        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-      var seen = Set<String>()
-      var coverIDs = [NSManagedObjectID]()
-      for album in shown + others where seen.insert(album.id).inserted {
-        coverIDs.append(album.managedObject.objectID)
-        if coverIDs.count == 3 { break }
-      }
-      if coverIDs.isEmpty {
-        for song in artist.songs.compactMap(\.asSong)
-          where ownedSongIds?.contains(song.id) ?? true {
-          guard let album = song.album, !album.id.isEmpty,
-                seen.insert(album.id).inserted else { continue }
-          coverIDs.append(album.managedObject.objectID)
-          if coverIDs.count == 3 { break }
-        }
-      }
       return SearchTopPick(
         isArtist: true,
         objectID: artist.managedObject.objectID,
-        coverAlbumIDs: coverIDs
+        coverAlbumIDs: coverAlbumIDs(
+          for: artist,
+          shown: albums,
+          ownedAlbumIds: ownedAlbumIds,
+          ownedSongIds: ownedSongIds
+        )
       )
     }
     if let album = albums.first {
@@ -1404,6 +1460,59 @@ enum SearchMatcher {
       )
     }
     return nil
+  }
+
+  /// Up to three of an artist's records on the phone, best first: those among the album
+  /// results, then their other albums here by name; an artist with no album of their own
+  /// (a featured artist) gets the records their songs here are on. They light the top card
+  /// and stand in for an artist with no photo of their own, as the mock draws.
+  static func coverAlbumIDs(
+    for artist: Artist,
+    shown albums: [Album],
+    ownedAlbumIds: Set<String>?,
+    ownedSongIds: Set<String>?
+  )
+    -> [NSManagedObjectID] {
+    let shown = albums.filter { $0.artist?.id == artist.id }
+    let others = artist.albums
+      .filter { ownedAlbumIds?.contains($0.id) ?? true }
+      .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    var seen = Set<String>()
+    var coverIDs = [NSManagedObjectID]()
+    for album in shown + others where seen.insert(album.id).inserted {
+      coverIDs.append(album.managedObject.objectID)
+      if coverIDs.count == 3 { return coverIDs }
+    }
+    if coverIDs.isEmpty {
+      for song in artist.songs.compactMap(\.asSong)
+        where ownedSongIds?.contains(song.id) ?? true {
+        guard let album = song.album, !album.id.isEmpty,
+              seen.insert(album.id).inserted else { continue }
+        coverIDs.append(album.managedObject.objectID)
+        if coverIDs.count == 3 { break }
+      }
+    }
+    return coverIDs
+  }
+
+  /// `coverAlbumIDs` for each artist on the shelf.
+  static func artistCoverIDs(
+    for artists: ArraySlice<Artist>,
+    shown albums: [Album],
+    ownedAlbumIds: Set<String>?,
+    ownedSongIds: Set<String>?
+  )
+    -> [NSManagedObjectID: [NSManagedObjectID]] {
+    var covers = [NSManagedObjectID: [NSManagedObjectID]]()
+    for artist in artists {
+      covers[artist.managedObject.objectID] = coverAlbumIDs(
+        for: artist,
+        shown: albums,
+        ownedAlbumIds: ownedAlbumIds,
+        ownedSongIds: ownedSongIds
+      )
+    }
+    return covers
   }
 
   private static func playCounts(library: LibraryStorage, account: Account, since: Date) -> PlayCounts {
@@ -1767,13 +1876,14 @@ final class SearchTopResultCell: UITableViewCell {
 final class SearchArtistShelfCell: UITableViewCell, UICollectionViewDataSource,
   UICollectionViewDelegate {
   static let reuseIdentifier = "SearchArtistShelfCell"
-  private static let diameter: CGFloat = 104
+  fileprivate static let diameter: CGFloat = 104
   private static let spacing: CGFloat = 12
   private static let sideInset: CGFloat = 20
   /// The circle, the 8pt gap and one name line, with a little air.
   static let rowHeight: CGFloat = diameter + 8 + 24
 
-  private var artists: [Artist] = []
+  private var artists: [SearchArtistTile] = []
+  private var theme: ThemePreference = .defaultValue
   private var onSelect: ((Artist) -> ())?
 
   private lazy var collectionView: UICollectionView = {
@@ -1790,8 +1900,8 @@ final class SearchArtistShelfCell: UITableViewCell, UICollectionViewDataSource,
     collectionView.dataSource = self
     collectionView.delegate = self
     collectionView.register(
-      ArtistCircleCollectionCell.self,
-      forCellWithReuseIdentifier: ArtistCircleCollectionCell.typeName
+      SearchArtistCircleCell.self,
+      forCellWithReuseIdentifier: SearchArtistCircleCell.reuseIdentifier
     )
     collectionView.translatesAutoresizingMaskIntoConstraints = false
     return collectionView
@@ -1815,8 +1925,13 @@ final class SearchArtistShelfCell: UITableViewCell, UICollectionViewDataSource,
     fatalError("init(coder:) has not been implemented")
   }
 
-  func configure(artists: [Artist], onSelect: @escaping (Artist) -> ()) {
+  func configure(
+    artists: [SearchArtistTile],
+    theme: ThemePreference,
+    onSelect: @escaping (Artist) -> ()
+  ) {
     self.artists = artists
+    self.theme = theme
     self.onSelect = onSelect
     collectionView.reloadData()
     collectionView.setContentOffset(.zero, animated: false)
@@ -1832,21 +1947,112 @@ final class SearchArtistShelfCell: UITableViewCell, UICollectionViewDataSource,
   )
     -> UICollectionViewCell {
     let cell = collectionView.dequeueReusableCell(
-      withReuseIdentifier: ArtistCircleCollectionCell.typeName,
+      withReuseIdentifier: SearchArtistCircleCell.reuseIdentifier,
       for: indexPath
-    ) as! ArtistCircleCollectionCell
+    ) as! SearchArtistCircleCell
     // Names stay plain (no lit letters on rows tonight; see SearchHighlight).
-    cell.display(
-      artist: artists[indexPath.item],
-      showsPlayOverlay: false,
-      metrics: .compact(diameter: Self.diameter),
-      attributedName: nil
-    )
+    cell.display(artists[indexPath.item], theme: theme)
     return cell
   }
 
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
     guard indexPath.item < artists.count else { return }
-    onSelect?(artists[indexPath.item])
+    onSelect?(artists[indexPath.item].artist)
+  }
+}
+
+// MARK: - SearchArtistCircleCell
+
+/// One artist on the ARTISTS shelf, laid out as `ArtistCircleCollectionCell`'s compact
+/// tile (a 104pt circle, the name centred 8pt under it in one line). Its own cell because
+/// the circle follows the top card's photo rule, which the shared cell does not: the
+/// artist's own photo only when `hasOwnPhotoOnDisk` (a shared artwork row can carry someone
+/// else's face), else one of their records on the phone, as drawn, else the generated
+/// artist placeholder.
+final class SearchArtistCircleCell: UICollectionViewCell {
+  static let reuseIdentifier = "SearchArtistCircleCell"
+
+  private lazy var artworkView: EntityImageView = {
+    let view = EntityImageView(frame: CGRect(
+      x: 0,
+      y: 0,
+      width: SearchArtistShelfCell.diameter,
+      height: SearchArtistShelfCell.diameter
+    ))
+    view.shape = .circle
+    view.isUserInteractionEnabled = false
+    view.translatesAutoresizingMaskIntoConstraints = false
+    return view
+  }()
+
+  private let placeholderView: UIImageView = {
+    let imageView = UIImageView()
+    imageView.translatesAutoresizingMaskIntoConstraints = false
+    imageView.contentMode = .scaleAspectFill
+    imageView.layer.cornerRadius = SearchArtistShelfCell.diameter / 2
+    imageView.layer.masksToBounds = true
+    imageView.isHidden = true
+    return imageView
+  }()
+
+  private let nameLabel: UILabel = {
+    let label = UILabel()
+    label.translatesAutoresizingMaskIntoConstraints = false
+    label.font = UIFont.cassette(.miniTitle)
+    label.textColor = UIColor.cassette(.textPrimary)
+    label.textAlignment = .center
+    label.numberOfLines = 1
+    label.lineBreakMode = .byTruncatingTail
+    return label
+  }()
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    contentView.backgroundColor = .clear
+    contentView.addSubview(artworkView)
+    contentView.addSubview(placeholderView)
+    contentView.addSubview(nameLabel)
+    let diameter = SearchArtistShelfCell.diameter
+    NSLayoutConstraint.activate([
+      artworkView.topAnchor.constraint(equalTo: contentView.topAnchor),
+      artworkView.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+      artworkView.widthAnchor.constraint(equalToConstant: diameter),
+      artworkView.heightAnchor.constraint(equalToConstant: diameter),
+      placeholderView.topAnchor.constraint(equalTo: artworkView.topAnchor),
+      placeholderView.bottomAnchor.constraint(equalTo: artworkView.bottomAnchor),
+      placeholderView.leadingAnchor.constraint(equalTo: artworkView.leadingAnchor),
+      placeholderView.trailingAnchor.constraint(equalTo: artworkView.trailingAnchor),
+      nameLabel.topAnchor.constraint(equalTo: artworkView.bottomAnchor, constant: 8),
+      nameLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+      nameLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+      nameLabel.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor),
+    ])
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  func display(_ tile: SearchArtistTile, theme: ThemePreference) {
+    nameLabel.text = tile.artist.name
+    accessibilityLabel = tile.artist.name
+    isAccessibilityElement = true
+    accessibilityTraits = .button
+    if tile.showsPhoto {
+      showArtwork(of: tile.artist, theme: theme)
+    } else if let coverAlbum = tile.coverAlbum {
+      showArtwork(of: coverAlbum, theme: theme)
+    } else {
+      artworkView.isHidden = true
+      placeholderView.image = UIImage.getGeneratedArtwork(theme: theme, artworkType: .artist)
+      placeholderView.isHidden = false
+    }
+  }
+
+  private func showArtwork(of container: PlayableContainable, theme: ThemePreference) {
+    placeholderView.isHidden = true
+    artworkView.isHidden = false
+    artworkView.shape = .circle
+    artworkView.display(theme: theme, container: container)
   }
 }

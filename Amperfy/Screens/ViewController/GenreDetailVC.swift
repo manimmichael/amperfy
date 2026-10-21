@@ -57,24 +57,17 @@ class GenreDetailVC: MultiSourceTableViewController {
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()
 
-    artistsFetchedResultsController = GenreArtistsFetchedResultsController(
-      for: genre,
-      coreDataCompanion: appDelegate.storage.main,
-      isGroupedInAlphabeticSections: false
+    makeFetchedResultsControllers()
+    setFetchedResultsDelegates(self)
+    // phone-taste: the three lists bake what is on the phone into their queries, so they
+    // are rebuilt when that changes (an album arrives or is removed from this phone) or
+    // Server Mode flips, as the library lists are.
+    appDelegate.notificationHandler.register(
+      self,
+      selector: #selector(libraryFilterChanged),
+      name: CassetteLibraryFilterProvider.filterChangedNotification,
+      object: nil
     )
-    artistsFetchedResultsController.delegate = self
-    albumsFetchedResultsController = GenreAlbumsFetchedResultsController(
-      for: genre,
-      coreDataCompanion: appDelegate.storage.main,
-      isGroupedInAlphabeticSections: false
-    )
-    albumsFetchedResultsController.delegate = self
-    songsFetchedResultsController = GenreSongsFetchedResultsController(
-      for: genre,
-      coreDataCompanion: appDelegate.storage.main,
-      isGroupedInAlphabeticSections: false
-    )
-    songsFetchedResultsController.delegate = self
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.register(nibName: GenericTableCell.typeName)
     tableView.register(nibName: PlayableTableCell.typeName)
@@ -98,12 +91,7 @@ class GenreDetailVC: MultiSourceTableViewController {
         let counts = self.listedCounts
         return "\(counts.artists) Artist\(counts.artists == 1 ? "" : "s") \(CommonString.oneMiddleDot) \(counts.albums) Album\(counts.albums == 1 ? "" : "s") \(CommonString.oneMiddleDot) \(counts.songs) Song\(counts.songs == 1 ? "" : "s")"
       },
-      playContextCb: { () in PlayContext(
-        containable: self.genre,
-        playables: self.songsFetchedResultsController
-          .getContextSongs(onlyCachedSongs: self.appDelegate.storage.settings.user.isOfflineMode) ??
-          []
-      ) },
+      playContextCb: { () in PlayContext(containable: self.genre, playables: self.listedSongs()) },
       player: appDelegate.player,
       isInfoAlwaysHidden: true
     )
@@ -119,7 +107,12 @@ class GenreDetailVC: MultiSourceTableViewController {
 
     optionsButton = UIBarButtonItem.createOptionsBarButton()
     optionsButton.menu = UIMenu.lazyMenu {
-      EntityPreviewActionBuilder(container: self.genre, on: self).createMenuActions()
+      // phone-taste: the shared builder plays and queues `genre.playables`, every song the
+      // hub has in the genre. On the phone the menu reads the page's own list instead.
+      if CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
+        return self.onPhoneOptionsMenuActions()
+      }
+      return EntityPreviewActionBuilder(container: self.genre, on: self).createMenuActions()
     }
     navigationItem.rightBarButtonItem = optionsButton
 
@@ -191,8 +184,10 @@ class GenreDetailVC: MultiSourceTableViewController {
               isBackground: true
             )
           }
+          // The queue swipes read the context's container, so it is the artist as
+          // seen through the phone.
           completionHandler(SwipeActionContext(
-            containable: artist,
+            containable: OnPhoneContainable(artist),
             playContext: Self.onPhonePlayContext(artist)
           ))
         }
@@ -216,8 +211,10 @@ class GenreDetailVC: MultiSourceTableViewController {
               isBackground: true
             )
           }
+          // The queue swipes read the context's container, so it is the album as
+          // seen through the phone.
           completionHandler(SwipeActionContext(
-            containable: album,
+            containable: OnPhoneContainable(album),
             playContext: Self.onPhonePlayContext(album)
           ))
         }
@@ -240,9 +237,7 @@ class GenreDetailVC: MultiSourceTableViewController {
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
-    artistsFetchedResultsController?.delegate = self
-    albumsFetchedResultsController?.delegate = self
-    songsFetchedResultsController?.delegate = self
+    setFetchedResultsDelegates(self)
 
     Task { @MainActor in
       do {
@@ -266,8 +261,58 @@ class GenreDetailVC: MultiSourceTableViewController {
     }
   }
 
+  /// The three lists, built over one read of what is on the phone (nil in Server Mode)
+  /// instead of each list reading every owned song on its own.
+  private func makeFetchedResultsControllers() {
+    let main = appDelegate.storage.main
+    let onPhone = CassetteOnPhoneSource.shared(CassetteOnPhoneIds.read(coreDataCompanion: main))
+    artistsFetchedResultsController = GenreArtistsFetchedResultsController(
+      for: genre,
+      coreDataCompanion: main,
+      isGroupedInAlphabeticSections: false,
+      onPhone: onPhone
+    )
+    albumsFetchedResultsController = GenreAlbumsFetchedResultsController(
+      for: genre,
+      coreDataCompanion: main,
+      isGroupedInAlphabeticSections: false,
+      onPhone: onPhone
+    )
+    songsFetchedResultsController = GenreSongsFetchedResultsController(
+      for: genre,
+      coreDataCompanion: main,
+      isGroupedInAlphabeticSections: false,
+      onPhone: onPhone
+    )
+  }
+
+  /// The lists follow changes while the page is on screen (self) and stop when it leaves
+  /// (nil).
+  private func setFetchedResultsDelegates(_ delegate: NSFetchedResultsControllerDelegate?) {
+    artistsFetchedResultsController?.delegate = delegate
+    albumsFetchedResultsController?.delegate = delegate
+    songsFetchedResultsController?.delegate = delegate
+  }
+
+  /// What is on the phone changed (an album arrived, or was removed from this phone) or
+  /// Server Mode flipped. The lists baked the old set into their queries, so they are
+  /// rebuilt and re-run, and the counts and Play follow them.
+  @objc
+  private func libraryFilterChanged() {
+    guard isViewLoaded else { return }
+    setFetchedResultsDelegates(nil)
+    makeFetchedResultsControllers()
+    if viewIfLoaded?.window != nil {
+      setFetchedResultsDelegates(self)
+    }
+    updateSearchResults(for: searchController)
+    detailOperationsView?.refresh()
+  }
+
   /// phone-taste: count what the page lists. On the phone the three lists hold only what
-  /// is on it, so the counts come from them; Server Mode keeps the hub's counts.
+  /// is on it, so the counts are their sizes, taken while no search narrows them (a search
+  /// inside the page keeps the counts of the whole page); Server Mode keeps the hub's
+  /// counts.
   private func refreshListedCounts() {
     guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly,
           let artistsFetchedResultsController,
@@ -277,15 +322,87 @@ class GenreDetailVC: MultiSourceTableViewController {
       listedCounts = (genre.artistCount, genre.albumCount, genre.songCount)
       return
     }
-    listedCounts = (
-      artistsFetchedResultsController.listedCount,
-      albumsFetchedResultsController.listedCount,
-      songsFetchedResultsController.listedCount
-    )
+    guard !artistsFetchedResultsController.isSearchActive,
+          !albumsFetchedResultsController.isSearchActive,
+          !songsFetchedResultsController.isSearchActive,
+          let artists = artistsFetchedResultsController.fetchedObjects,
+          let albums = albumsFetchedResultsController.fetchedObjects,
+          let songs = songsFetchedResultsController.fetchedObjects
+    else { return }
+    listedCounts = (artists.count, albums.count, songs.count)
+  }
+
+  /// The page's songs as the header's Play takes them: on the phone, only the songs on
+  /// it (the song list's own query).
+  private func listedSongs() -> [AbstractPlayable] {
+    songsFetchedResultsController
+      .getContextSongs(onlyCachedSongs: appDelegate.storage.settings.user.isOfflineMode) ?? []
+  }
+
+  /// phone-taste: the options menu on the phone. Every action takes the page's own list of
+  /// songs on the phone (`listedSongs`), never `genre.playables`, which is every song the
+  /// hub has in the genre. Same actions and wording as the shared menu for a genre.
+  private func onPhoneOptionsMenuActions() -> [UIMenuElement] {
+    let settings = appDelegate.storage.settings.user
+    var playActions: [UIMenuElement] = [
+      UIAction(title: "Play", image: .play) { _ in
+        self.withListedSongs { songs in
+          self.appDelegate.player.play(context: PlayContext(containable: self.genre, playables: songs))
+        }
+      },
+    ]
+    if settings.isPlayerShuffleButtonEnabled {
+      playActions.append(UIAction(title: "Shuffle", image: .shuffle) { _ in
+        self.withListedSongs { songs in
+          self.appDelegate.player
+            .playShuffled(context: PlayContext(containable: self.genre, playables: songs))
+        }
+      })
+    }
+    var actions: [UIMenuElement] = [
+      UIMenu(options: .displayInline, children: playActions),
+      UIMenu(title: "Music Queue", image: .listBullet, children: [
+        UIAction(title: "Insert Context Queue", image: .contextQueueInsert) { _ in
+          self.withListedSongs { self.appDelegate.player.insertContextQueue(playables: $0) }
+        },
+        UIAction(title: "Append Context Queue", image: .contextQueueAppend) { _ in
+          self.withListedSongs { self.appDelegate.player.appendContextQueue(playables: $0) }
+        },
+        UIAction(title: "Insert User Queue", image: .userQueueInsert) { _ in
+          self.withListedSongs { self.appDelegate.player.insertUserQueue(playables: $0) }
+        },
+        UIAction(title: "Append User Queue", image: .userQueueAppend) { _ in
+          self.withListedSongs { self.appDelegate.player.appendUserQueue(playables: $0) }
+        },
+      ]),
+    ]
+    if settings.isOnlineMode {
+      actions.append(UIMenu(options: .displayInline, children: [
+        UIAction(title: "Add to Playlist", image: .playlistPlus) { _ in
+          self.withListedSongs { songs in
+            let selectPlaylistVC = AppStoryboard.Main
+              .segueToPlaylistSelector(account: self.account, itemsToAdd: songs.filterSongs())
+            self.present(UINavigationController(rootViewController: selectPlaylistVC), animated: true)
+          }
+        },
+      ]))
+    }
+    return actions
+  }
+
+  /// Runs `action` with the page's songs on the phone, read when the action is chosen;
+  /// nothing happens when there are none.
+  private func withListedSongs(_ action: ([AbstractPlayable]) -> ()) {
+    let songs = listedSongs()
+    guard !songs.isEmpty else { return }
+    action(songs)
   }
 
   /// A row's play context with only the songs this phone can play (OneTapPlay's rule), so
-  /// a long-press or swipe Play never queues music that is not here.
+  /// a long-press or swipe Play never starts music that is not here. The swipe queue
+  /// actions get the same through OnPhoneContainable; long-press Play Next / Add to Queue /
+  /// Add to Playlist still read the shared menu builder's own list (reported for
+  /// integration).
   private static func onPhonePlayContext(_ containable: PlayableContainable) -> PlayContext {
     PlayContext(containable: containable, index: 0, playables: OneTapPlay.playables(of: containable))
   }
@@ -307,9 +424,7 @@ class GenreDetailVC: MultiSourceTableViewController {
 
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
-    artistsFetchedResultsController?.delegate = nil
-    albumsFetchedResultsController?.delegate = nil
-    songsFetchedResultsController?.delegate = nil
+    setFetchedResultsDelegates(nil)
   }
 
   func convertIndexPathToPlayContext(songIndexPath: IndexPath) -> PlayContext? {
@@ -496,6 +611,8 @@ class GenreDetailVC: MultiSourceTableViewController {
       albumsFetchedResultsController.showAllResults()
       songsFetchedResultsController.showAllResults()
     }
+    refreshListedCounts()
+    refreshGenreMetadataLine()
     tableView.reloadData()
   }
 

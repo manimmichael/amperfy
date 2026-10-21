@@ -539,3 +539,65 @@ extension UIContentUnavailableConfiguration {
     cassetteNoResults(title: "No results on this phone", body: nil)
   }
 }
+
+// MARK: - OnPhoneContainable
+
+/// phone-taste: an album, artist or playlist seen through the phone. Its `playables` are
+/// only what this phone can play (OneTapPlay's rule, read once when it is made); everything
+/// else is the container's own. A row's swipe hands this to `SwipeActionContext`, whose
+/// queue and download cases read `containable.playables`, so a swipe on Search or a genre
+/// page never queues a song that is not on the phone.
+struct OnPhoneContainable: PlayableContainable {
+  let base: PlayableContainable
+  let playables: [AbstractPlayable]
+
+  @MainActor
+  init(_ base: PlayableContainable) {
+    self.base = base
+    self.playables = OneTapPlay.playables(of: base)
+  }
+
+  var id: String { base.id }
+  var name: String { base.name }
+  var subtitle: String? { base.subtitle }
+  var subsubtitle: String? { base.subsubtitle }
+  func infoDetails(for api: ServerApiType?, details: DetailInfoType) -> [String] {
+    base.infoDetails(for: api, details: details)
+  }
+
+  func info(for api: ServerApiType?, details: DetailInfoType) -> String {
+    base.info(for: api, details: details)
+  }
+
+  var playContextType: PlayerMode { base.playContextType }
+  var account: Account? { base.account }
+  var isRateable: Bool { base.isRateable }
+  var isDownloadAvailable: Bool { base.isDownloadAvailable }
+  @MainActor
+  func getArtworkCollection(theme: ThemePreference) -> ArtworkCollection {
+    base.getArtworkCollection(theme: theme)
+  }
+
+  @MainActor
+  func fetchFromServer(
+    storage: PersistentStorage,
+    librarySyncer: LibrarySyncer,
+    playableDownloadManager: DownloadManageable
+  ) async throws {
+    try await base.fetchFromServer(
+      storage: storage,
+      librarySyncer: librarySyncer,
+      playableDownloadManager: playableDownloadManager
+    )
+  }
+
+  var isFavoritable: Bool { base.isFavoritable }
+  var isFavorite: Bool { base.isFavorite }
+  @MainActor
+  func remoteToggleFavorite(syncer: LibrarySyncer) async throws {
+    try await base.remoteToggleFavorite(syncer: syncer)
+  }
+
+  func playedViaContext() { base.playedViaContext() }
+  var containerIdentifier: PlayableContainerIdentifier { base.containerIdentifier }
+}
