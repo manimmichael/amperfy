@@ -5,7 +5,9 @@
 //  Cassette: the phone's music seen through what the person has been playing lately
 //  (UX review 2026-10-20). Gathers, from Core Data and the cached mood tags, what
 //  ListeningShelves needs for More Like Lately and the Lately mix: the songs on this
-//  phone with their tags, the lately profile, and what was played recently. Cached for a
+//  phone with their tags, the lately profile (the cloud's shared one, from every device,
+//  when the phone has it; else built from this phone's plays), and what was played
+//  recently. Cached for a
 //  few minutes, because Home recomputes on every play and pause.
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -41,19 +43,20 @@ public enum LatelyLibrary {
   }
 
   private static let cacheLifetime: TimeInterval = 5 * 60
-  private static var cached: (at: Date, accountID: String, tagCount: Int, snapshot: Snapshot?)?
+  private static var cached: (at: Date, accountID: String, tagCount: Int, profileSize: Int, snapshot: Snapshot?)?
 
   /// The snapshot for this account, or nil when there are no mood tags yet or nothing
   /// recent to build a profile from.
   public static func snapshot(storage: PersistentStorage, account: Account, now: Date = Date()) -> Snapshot? {
     let tags = LibraryMoods.shared.byLocalID
     let accountID = account.managedObject.objectID.uriRepresentation().absoluteString
+    let profileSize = LibraryMoods.shared.sharedProfile.count
     if let cached, cached.accountID == accountID, cached.tagCount == tags.count,
-       now.timeIntervalSince(cached.at) < cacheLifetime {
+       cached.profileSize == profileSize, now.timeIntervalSince(cached.at) < cacheLifetime {
       return cached.snapshot
     }
     let snapshot = build(storage: storage, account: account, tags: tags, now: now)
-    cached = (now, accountID, tags.count, snapshot)
+    cached = (now, accountID, tags.count, profileSize, snapshot)
     return snapshot
   }
 
@@ -97,11 +100,10 @@ public enum LatelyLibrary {
       if let albumID = song.album?.id, !albumID.isEmpty { albumsPlayedRecently.insert(albumID) }
       if date >= recentSongCutoff { songsPlayedRecently.insert(song.id) }
     }
-    let profile = ListeningShelves.latelyProfile(
-      plays: plays,
-      tagsForSong: { tagsBySongID[$0] },
-      now: now
-    )
+    let shared = LibraryMoods.shared.sharedProfile
+    let profile = shared.isEmpty
+      ? ListeningShelves.latelyProfile(plays: plays, tagsForSong: { tagsBySongID[$0] }, now: now)
+      : shared
     guard !profile.isEmpty else { return nil }
 
     var albumsByID = [String: Album]()

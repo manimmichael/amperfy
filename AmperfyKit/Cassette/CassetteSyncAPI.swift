@@ -768,6 +768,14 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     return byLocalID
   }
 
+  /// The shared "lately" profile from every device's plays (GET /api/sync/taste-lately),
+  /// keyed by the same tokens ListeningShelves uses (`mood:<m>`, `energy:<e>`, ...).
+  public func getLatelyProfile() async throws -> [String: Double] {
+    struct Response: Decodable { let profile: [String: Double] }
+    let data = try await get(path: "/api/sync/taste-lately")
+    return try JSONDecoder().decode(Response.self, from: data).profile
+  }
+
   /// Keep the albums holding these songs off this phone (the phone just removed them).
   /// The server resolves the albums from the hub's library index and stops sending
   /// them here until they are sent back from the device page in Cassette Player.

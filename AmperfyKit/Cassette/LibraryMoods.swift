@@ -7,6 +7,10 @@
 //  GET /api/sync/library-moods at most twice a day and kept in a small file, so Home can
 //  match moods offline and on launch without waiting on the network.
 //
+//  It also keeps the shared lately profile (GET /api/sync/taste-lately), built in the
+//  cloud from every device's plays, so the Mac's listening shapes the phone's rows too.
+//  LatelyLibrary falls back to the phone's own plays when there is none.
+//
 //  This program is free software: you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License as published by
 //  the Free Software Foundation, either version 3 of the License, or
@@ -58,11 +62,17 @@ public final class LibraryMoods {
 
   public private(set) var byLocalID: [String: LibraryMoodTags] = [:]
   public var hasTags: Bool { !byLocalID.isEmpty }
+  /// The cloud's lately profile, or empty when it has not been fetched.
+  public private(set) var sharedProfile: ListeningShelves.TagVector = [:]
 
   private init() {
     if let data = try? Data(contentsOf: Self.fileURL),
        let cached = try? JSONDecoder().decode([String: LibraryMoodTags].self, from: data) {
       byLocalID = cached
+    }
+    if let data = try? Data(contentsOf: Self.profileURL),
+       let cached = try? JSONDecoder().decode(ListeningShelves.TagVector.self, from: data) {
+      sharedProfile = cached
     }
   }
 
@@ -71,6 +81,16 @@ public final class LibraryMoods {
   public func refreshIfDue(force: Bool = false) async {
     let last = UserDefaults.standard.object(forKey: Self.lastFetchKey) as? Date ?? .distantPast
     guard force || Date().timeIntervalSince(last) > Self.refreshInterval else { return }
+    if let profile = try? await CassetteSyncAPI.shared.getLatelyProfile() {
+      sharedProfile = profile
+      if let data = try? JSONEncoder().encode(profile) {
+        try? FileManager.default.createDirectory(
+          at: Self.profileURL.deletingLastPathComponent(),
+          withIntermediateDirectories: true
+        )
+        try? data.write(to: Self.profileURL, options: .atomic)
+      }
+    }
     do {
       let fresh = try await CassetteSyncAPI.shared.getLibraryMoods()
       UserDefaults.standard.set(Date(), forKey: Self.lastFetchKey)
@@ -87,6 +107,10 @@ public final class LibraryMoods {
     } catch {
       print("Cassette moods: fetch failed - \(error.localizedDescription)")
     }
+  }
+
+  private static var profileURL: URL {
+    fileURL.deletingLastPathComponent().appendingPathComponent("lately-profile.json")
   }
 
   private static var fileURL: URL {
