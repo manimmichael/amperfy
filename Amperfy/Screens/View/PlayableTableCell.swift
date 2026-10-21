@@ -1086,15 +1086,14 @@ class PlayableTableCell: BasicTableCell {
   #endif
 }
 
-
-
-// MARK: - Long-press overflow
+// MARK: UIContextMenuInteractionDelegate
 
 extension PlayableTableCell: UIContextMenuInteractionDelegate {
   func contextMenuInteraction(
     _ interaction: UIContextMenuInteraction,
     configurationForMenuAtLocation location: CGPoint
-  ) -> UIContextMenuConfiguration? {
+  )
+    -> UIContextMenuConfiguration? {
     guard let playable = playable,
           let rootView = rootView,
           playContextCb != nil,
@@ -1105,7 +1104,7 @@ extension PlayableTableCell: UIContextMenuInteractionDelegate {
     // Same shape as the retired optionsButton menu: no-arg PlayContext look-up.
     let playContext = { [weak self] () -> PlayContext? in
       guard let self else { return nil }
-      return self.playContextCb?(self)
+      return playContextCb?(self)
     }
     return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
       UIMenu(
@@ -1142,7 +1141,7 @@ enum CassetteTrackSubtitle {
     for pattern in [featInfixPattern, featParenPattern] {
       guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
       else { continue }
-      let range = NSRange(track.startIndex..<track.endIndex, in: track)
+      let range = NSRange(track.startIndex ..< track.endIndex, in: track)
       guard let match = regex.firstMatch(in: track, options: [], range: range),
             match.numberOfRanges >= 4,
             let primaryRange = Range(match.range(at: 1), in: track),
@@ -1168,4 +1167,3 @@ enum CassetteTrackSubtitle {
       == b.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
   }
 }
-

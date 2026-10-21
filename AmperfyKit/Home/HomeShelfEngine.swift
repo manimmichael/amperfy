@@ -18,7 +18,7 @@
 
 import Foundation
 
-// MARK: - Contract types (Codable so the fixtures decode into them)
+// MARK: - ShelfAlbum
 
 public struct ShelfAlbum: Codable {
   public let key: String
@@ -31,13 +31,24 @@ public struct ShelfAlbum: Codable {
   public let lastPlayedAt: Int64?
   public let addedAt: Int64?
 
-  public init(key: String, title: String, artist: String, genre: String?, trackCount: Int,
-              playedTrackCount: Int, totalPlays: Int, lastPlayedAt: Int64?, addedAt: Int64?) {
+  public init(
+    key: String,
+    title: String,
+    artist: String,
+    genre: String?,
+    trackCount: Int,
+    playedTrackCount: Int,
+    totalPlays: Int,
+    lastPlayedAt: Int64?,
+    addedAt: Int64?
+  ) {
     self.key = key; self.title = title; self.artist = artist; self.genre = genre
     self.trackCount = trackCount; self.playedTrackCount = playedTrackCount
     self.totalPlays = totalPlays; self.lastPlayedAt = lastPlayedAt; self.addedAt = addedAt
   }
 }
+
+// MARK: - ShelfArtist
 
 public struct ShelfArtist: Codable {
   public let key: String
@@ -49,13 +60,23 @@ public struct ShelfArtist: Codable {
   public let lastPlayedAt: Int64?
   public let addedAt: Int64?
 
-  public init(key: String, name: String, genre: String?, trackCount: Int, albumCount: Int,
-              totalPlays: Int, lastPlayedAt: Int64?, addedAt: Int64?) {
+  public init(
+    key: String,
+    name: String,
+    genre: String?,
+    trackCount: Int,
+    albumCount: Int,
+    totalPlays: Int,
+    lastPlayedAt: Int64?,
+    addedAt: Int64?
+  ) {
     self.key = key; self.name = name; self.genre = genre; self.trackCount = trackCount
     self.albumCount = albumCount; self.totalPlays = totalPlays
     self.lastPlayedAt = lastPlayedAt; self.addedAt = addedAt
   }
 }
+
+// MARK: - ShelfPlaylist
 
 public struct ShelfPlaylist: Codable {
   public let key: String
@@ -67,6 +88,8 @@ public struct ShelfPlaylist: Codable {
   }
 }
 
+// MARK: - ShelfInput
+
 public struct ShelfInput: Codable {
   public let albums: [ShelfAlbum]
   public let artists: [ShelfArtist]
@@ -75,20 +98,46 @@ public struct ShelfInput: Codable {
   public let now: Int64
   public let seed: String
 
-  public init(albums: [ShelfAlbum], artists: [ShelfArtist], playlists: [ShelfPlaylist],
-              recentArtistKeys: [String]?, now: Int64, seed: String) {
+  public init(
+    albums: [ShelfAlbum],
+    artists: [ShelfArtist],
+    playlists: [ShelfPlaylist],
+    recentArtistKeys: [String]?,
+    now: Int64,
+    seed: String
+  ) {
     self.albums = albums; self.artists = artists; self.playlists = playlists
     self.recentArtistKeys = recentArtistKeys; self.now = now; self.seed = seed
   }
 }
 
+// MARK: - RecentKind
+
 public enum RecentKind: String, Codable { case album, artist, playlist }
+
+// MARK: - AlbumReason
+
 public enum AlbumReason: String, Codable { case forgotten, deepcut, rekindle, fill }
+
+// MARK: - ArtistReason
+
 public enum ArtistReason: String, Codable { case added, cold, affinity, recency, fill }
 
+// MARK: - RecentPick
+
 public struct RecentPick: Codable, Equatable { public let kind: RecentKind; public let key: String }
-public struct AlbumPick: Codable, Equatable { public let key: String; public let reason: AlbumReason }
-public struct ArtistPick: Codable, Equatable { public let key: String; public let reason: ArtistReason }
+
+// MARK: - AlbumPick
+
+public struct AlbumPick: Codable,
+  Equatable { public let key: String; public let reason: AlbumReason }
+
+// MARK: - ArtistPick
+
+public struct ArtistPick: Codable,
+  Equatable { public let key: String; public let reason: ArtistReason }
+
+// MARK: - HomeShelves
 
 public struct HomeShelves: Codable, Equatable {
   public let resume: RecentPick?
@@ -97,7 +146,7 @@ public struct HomeShelves: Codable, Equatable {
   public let artists: [ArtistPick]
 }
 
-// MARK: - Configuration (mirrors config.ts; the one place to tune)
+// MARK: - ShelfConfig
 
 public struct ShelfConfig: Sendable {
   public struct Albums: Sendable {
@@ -109,16 +158,19 @@ public struct ShelfConfig: Sendable {
     public let turnoverDays: Int
     public let forgottenPerSecondary: Int
   }
+
   public struct Artists: Sendable {
     public let coldDays: Int
     public let turnoverDays: Int
     public let affinityRecentDays: Int
     public let blendCycle: [String]
   }
+
   public struct Recent: Sendable {
     public let max: Int
     public let splitResume: Bool
   }
+
   public let targetCount: Int
   public let carouselCap: Int
   public let albums: Albums
@@ -129,10 +181,21 @@ public struct ShelfConfig: Sendable {
 public let HOME_SHELF_CONFIG = ShelfConfig(
   targetCount: 10,
   carouselCap: 12,
-  albums: .init(deepCutMinTracks: 3, deepCutPlayedMin: 1, deepCutPlayedMax: 2,
-                rekindleMinPlays: 5, coldDays: 60, turnoverDays: 7, forgottenPerSecondary: 3),
-  artists: .init(coldDays: 60, turnoverDays: 7, affinityRecentDays: 30,
-                 blendCycle: ["added", "cold", "affinity"]),
+  albums: .init(
+    deepCutMinTracks: 3,
+    deepCutPlayedMin: 1,
+    deepCutPlayedMax: 2,
+    rekindleMinPlays: 5,
+    coldDays: 60,
+    turnoverDays: 7,
+    forgottenPerSecondary: 3
+  ),
+  artists: .init(
+    coldDays: 60,
+    turnoverDays: 7,
+    affinityRecentDays: 30,
+    blendCycle: ["added", "cold", "affinity"]
+  ),
   recent: .init(max: 12, splitResume: true)
 )
 
@@ -185,7 +248,11 @@ private func rankedBefore(_ a: ShelfArtist, _ b: ShelfArtist) -> Bool {
 
 // MARK: - Recent shelf (recent.ts)
 
-private func buildRecent(_ input: ShelfInput, _ cfg: ShelfConfig) -> (resume: RecentPick?, recent: [RecentPick]) {
+private func buildRecent(
+  _ input: ShelfInput,
+  _ cfg: ShelfConfig
+)
+  -> (resume: RecentPick?, recent: [RecentPick]) {
   let eligibleArtists = Set(input.recentArtistKeys ?? [])
   struct Dated { let kind: RecentKind; let key: String; let at: Int64 }
   var merged: [Dated] = []
@@ -219,8 +286,14 @@ private func buildRecent(_ input: ShelfInput, _ cfg: ShelfConfig) -> (resume: Re
 
 // MARK: - Albums shelf (albums.ts)
 
-public func buildAlbums(_ albums: [ShelfAlbum], _ cfg: ShelfConfig, _ now: Int64,
-                         _ seed: String, _ exclude: Set<String>) -> [AlbumPick] {
+public func buildAlbums(
+  _ albums: [ShelfAlbum],
+  _ cfg: ShelfConfig,
+  _ now: Int64,
+  _ seed: String,
+  _ exclude: Set<String>
+)
+  -> [AlbumPick] {
   let c = cfg.albums
   let eligible = albums.filter { !exclude.contains($0.key) }
 
@@ -232,17 +305,24 @@ public func buildAlbums(_ albums: [ShelfAlbum], _ cfg: ShelfConfig, _ now: Int64
 
   let forgotten = rotatedDaily(
     eligible.filter { $0.lastPlayedAt == nil && $0.totalPlays == 0 }.sorted(by: byOldestAdded),
-    seed, now)
+    seed, now
+  )
   let deep = rotatedDaily(
     eligible.filter {
       $0.trackCount >= c.deepCutMinTracks &&
-      $0.playedTrackCount >= c.deepCutPlayedMin &&
-      $0.playedTrackCount <= c.deepCutPlayedMax
-    }, seed, now)
+        $0.playedTrackCount >= c.deepCutPlayedMin &&
+        $0.playedTrackCount <= c.deepCutPlayedMax
+    }, seed, now
+  )
   let rekindle = rotatedDaily(
-    eligible.filter { $0.totalPlays >= c.rekindleMinPlays && isOlderThanDays($0.lastPlayedAt, now, c.coldDays) }
-      .sorted { $0.totalPlays > $1.totalPlays },
-    seed, now)
+    eligible.filter { $0.totalPlays >= c.rekindleMinPlays && isOlderThanDays(
+      $0.lastPlayedAt,
+      now,
+      c.coldDays
+    ) }
+    .sorted { $0.totalPlays > $1.totalPlays },
+    seed, now
+  )
 
   var picked: [AlbumPick] = []
   var used = Set<String>()
@@ -257,14 +337,14 @@ public func buildAlbums(_ albums: [ShelfAlbum], _ cfg: ShelfConfig, _ now: Int64
   }
   func nextUnused(_ pool: [ShelfAlbum], _ from: Int) -> Int {
     var i = from
-    while i < pool.count && used.contains(pool[i].key) { i += 1 }
+    while i < pool.count, used.contains(pool[i].key) { i += 1 }
     return i
   }
 
   while picked.count < cfg.carouselCap {
     var progressed = false
     var n = 0
-    while n < c.forgottenPerSecondary && picked.count < cfg.carouselCap {
+    while n < c.forgottenPerSecondary, picked.count < cfg.carouselCap {
       fi = nextUnused(forgotten, fi)
       if push(fi < forgotten.count ? forgotten[fi] : nil, .forgotten) {
         fi += 1; progressed = true
@@ -301,7 +381,12 @@ public func buildAlbums(_ albums: [ShelfAlbum], _ cfg: ShelfConfig, _ now: Int64
 
 // MARK: - Artists shelf (artists.ts)
 
-public func buildArtists(_ input: ShelfInput, _ cfg: ShelfConfig, _ exclude: Set<String>) -> [ArtistPick] {
+public func buildArtists(
+  _ input: ShelfInput,
+  _ cfg: ShelfConfig,
+  _ exclude: Set<String>
+)
+  -> [ArtistPick] {
   let c = cfg.artists
   let now = input.now
   let eligible = input.artists.filter { !exclude.contains($0.key) }
@@ -340,22 +425,27 @@ public func buildArtists(_ input: ShelfInput, _ cfg: ShelfConfig, _ exclude: Set
       let aa = a.addedAt ?? 0, ba = b.addedAt ?? 0
       if aa != ba { return aa > ba }
       return a.key < b.key
-    }, input.seed, now)
+    }, input.seed, now
+  )
 
   let added = rotatedDaily(
     eligible.filter { $0.lastPlayedAt == nil && !matchesTaste($0) }.sorted { a, b in
       let aa = a.addedAt ?? 0, ba = b.addedAt ?? 0
       if aa != ba { return aa > ba }
       return a.key < b.key
-    }, input.seed, now)
+    }, input.seed, now
+  )
 
   let cold = rotatedDaily(
     eligible.filter {
-      $0.lastPlayedAt != nil && isOlderThanDays($0.lastPlayedAt, now, c.coldDays) && !matchesTaste($0)
+      $0
+        .lastPlayedAt != nil && isOlderThanDays($0.lastPlayedAt, now, c.coldDays) &&
+        !matchesTaste($0)
     }.sorted { a, b in
       if a.totalPlays != b.totalPlays { return a.totalPlays > b.totalPlays }
       return a.key < b.key
-    }, input.seed, now)
+    }, input.seed, now
+  )
 
   let pools: [String: [ShelfArtist]] = ["added": added, "cold": cold, "affinity": affinity]
   var ptr: [String: Int] = ["added": 0, "cold": 0, "affinity": 0]
@@ -365,7 +455,7 @@ public func buildArtists(_ input: ShelfInput, _ cfg: ShelfConfig, _ exclude: Set
   func takeFrom(_ reason: String) -> Bool {
     let pool = pools[reason] ?? []
     var i = ptr[reason] ?? 0
-    while i < pool.count && used.contains(pool[i].key) { i += 1 }
+    while i < pool.count, used.contains(pool[i].key) { i += 1 }
     ptr[reason] = i + 1
     guard i < pool.count else { return false }
     let a = pool[i]
@@ -375,7 +465,7 @@ public func buildArtists(_ input: ShelfInput, _ cfg: ShelfConfig, _ exclude: Set
   }
 
   var guardN = 0
-  while picked.count < cfg.carouselCap && guardN < 10_000 {
+  while picked.count < cfg.carouselCap, guardN < 10_000 {
     guardN += 1
     var progressed = false
     for reason in c.blendCycle {
@@ -397,7 +487,11 @@ public func buildArtists(_ input: ShelfInput, _ cfg: ShelfConfig, _ exclude: Set
 
 // MARK: - Orchestrator (index.ts)
 
-public func buildHomeShelves(_ input: ShelfInput, config cfg: ShelfConfig = HOME_SHELF_CONFIG) -> HomeShelves {
+public func buildHomeShelves(
+  _ input: ShelfInput,
+  config cfg: ShelfConfig = HOME_SHELF_CONFIG
+)
+  -> HomeShelves {
   let (resume, recent) = buildRecent(input, cfg)
   var excludeAlbums = Set<String>()
   var excludeArtists = Set<String>()

@@ -13,11 +13,10 @@
 //  identical to apps/cassette/src/lib/home-shelves/fixtures.json (the canonical).
 //
 
-import XCTest
 @testable import AmperfyKit
+import XCTest
 
 final class HomeShelfConformanceTests: XCTestCase {
-
   private struct Fixtures: Codable {
     let contractVersion: Int
     let scenarios: [Scenario]
@@ -31,7 +30,9 @@ final class HomeShelfConformanceTests: XCTestCase {
   private func loadFixtures() throws -> Fixtures {
     let bundle = Bundle(for: type(of: self))
     guard let url = bundle.url(forResource: "home-shelves-fixtures", withExtension: "json") else {
-      XCTFail("home-shelves-fixtures.json not in the test bundle — add it to AmperfyKitTests → Copy Bundle Resources")
+      XCTFail(
+        "home-shelves-fixtures.json not in the test bundle — add it to AmperfyKitTests → Copy Bundle Resources"
+      )
       throw NSError(domain: "HomeShelfConformance", code: 1)
     }
     let data = try Data(contentsOf: url)
@@ -51,7 +52,7 @@ final class HomeShelfConformanceTests: XCTestCase {
       XCTAssertEqual(
         got, scenario.expected,
         "\"\(scenario.name)\" drifted from the web golden fixture. If this is an " +
-        "intentional algorithm change, regenerate fixtures.json and update every platform."
+          "intentional algorithm change, regenerate fixtures.json and update every platform."
       )
     }
   }

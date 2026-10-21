@@ -980,8 +980,10 @@ public final class IntentExecutor {
       // replaced at natural aspect and finally fill the circle.
       let squareHealPending = artistImageSquareHealPending
       let artistImageBroken = onDeviceOnly
-        ? (job.artistImageUrl != nil
-          && (squareHealPending || onDeviceArtistPhotoMissing(subsonicIds: job.subsonicIds)))
+        ? (
+          job.artistImageUrl != nil
+            && (squareHealPending || onDeviceArtistPhotoMissing(subsonicIds: job.subsonicIds))
+        )
         : (
           artistImageSourceMigrationPending
             || squareHealPending

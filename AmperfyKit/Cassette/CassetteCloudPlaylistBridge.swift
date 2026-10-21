@@ -20,6 +20,8 @@ import Foundation
 import os.log
 import UIKit
 
+// MARK: - CassetteCloudPlaylistBridge
+
 @MainActor
 public enum CassetteCloudPlaylistBridge {
   private static let log = OSLog(subsystem: "digital.cassette", category: "cloud-playlists")
@@ -101,17 +103,17 @@ public enum CassetteCloudPlaylistBridge {
   }
 
   /// Bundled PNG for curated web presets (SVG on site; phones can't paint SVG).
-  nonisolated public static func bundledPresetCoverImage(forCoverUrl urlString: String) -> UIImage? {
+  nonisolated public static func bundledPresetCoverImage(forCoverUrl urlString: String)
+    -> UIImage? {
     guard let name = bundledPresetAssetName(forCoverUrl: urlString) else { return nil }
     return UIImage(named: name, in: Bundle(for: EntityImageView.self), compatibleWith: nil)
   }
 
   nonisolated public static func bundledPresetAssetName(forCoverUrl urlString: String) -> String? {
-    guard
-      let regex = try? NSRegularExpression(
-        pattern: #"playlist-covers/(preset-\d+)\.(?:svg|png)"#,
-        options: .caseInsensitive
-      ),
+    guard let regex = try? NSRegularExpression(
+      pattern: #"playlist-covers/(preset-\d+)\.(?:svg|png)"#,
+      options: .caseInsensitive
+    ),
       let match = regex.firstMatch(
         in: urlString,
         range: NSRange(urlString.startIndex..., in: urlString)
@@ -178,7 +180,11 @@ public enum CassetteCloudPlaylistBridge {
 
   /// The playlist's picked cover already on disk, IF it was materialized for this
   /// exact url — so a cold/offline launch renders it with no network.
-  nonisolated public static func materializedCoverImage(for playlistId: String, url: String) -> UIImage? {
+  nonisolated public static func materializedCoverImage(
+    for playlistId: String,
+    url: String
+  )
+    -> UIImage? {
     guard UserDefaults.standard.string(forKey: materializedUrlKey(playlistId)) == url,
           let file = coverFileURL(playlistId),
           let data = try? Data(contentsOf: file),
@@ -285,11 +291,12 @@ public enum CassetteCloudPlaylistBridge {
     mbid: String?,
     storage: PersistentStorage,
     account: Account
-  ) -> Song? {
+  )
+    -> Song? {
     let ownership = DeviceOwnershipManager(context: storage.main.context)
     let owned =
       (mbid.flatMap { try? ownership.fetchOne(mbid: $0) })
-      ?? (try? ownership.fetchOne(cassetteLocalId: cassetteLocalId))
+        ?? (try? ownership.fetchOne(cassetteLocalId: cassetteLocalId))
     guard let owned, let subsonicId = owned.subsonicTrackId else { return nil }
     return storage.main.library.getSong(for: account, id: subsonicId)
   }
@@ -368,7 +375,7 @@ public enum CassetteCloudPlaylistBridge {
           let ownership = DeviceOwnershipManager(context: asyncCompanion.context)
           let owned =
             (item.mbid.flatMap { try? ownership.fetchOne(mbid: $0) })
-            ?? (try? ownership.fetchOne(cassetteLocalId: item.cassetteLocalId))
+              ?? (try? ownership.fetchOne(cassetteLocalId: item.cassetteLocalId))
           guard let owned, let sid = owned.subsonicTrackId,
                 let song = asyncCompanion.library.getSong(for: account, id: sid)
           else { continue }
@@ -420,7 +427,7 @@ public enum CassetteCloudPlaylistBridge {
         let ownership = DeviceOwnershipManager(context: asyncCompanion.context)
         let owned =
           (item.mbid.flatMap { try? ownership.fetchOne(mbid: $0) })
-          ?? (try? ownership.fetchOne(cassetteLocalId: item.cassetteLocalId))
+            ?? (try? ownership.fetchOne(cassetteLocalId: item.cassetteLocalId))
         guard let owned, let sid = owned.subsonicTrackId,
               let song = asyncCompanion.library.getSong(for: account, id: sid)
         else { continue }
@@ -676,14 +683,16 @@ public enum CassetteCloudPlaylistBridge {
   }
 }
 
+// MARK: - HubImportSong
+
 /// Sendable song identity collected inside a Core Data perform for hub import.
 private struct HubImportSong: Sendable {
   let localId: String
   let index: Int
 }
 
-private extension String {
-  var htmlUnescaped: String {
+extension String {
+  fileprivate var htmlUnescaped: String {
     replacingOccurrences(of: "&amp;", with: "&")
       .replacingOccurrences(of: "&lt;", with: "<")
       .replacingOccurrences(of: "&gt;", with: ">")
