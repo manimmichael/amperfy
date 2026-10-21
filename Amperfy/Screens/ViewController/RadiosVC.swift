@@ -143,6 +143,22 @@ final class RadioCatalog {
     bySlug[slug]
   }
 
+  /// The stations most like `station`. A catalog from a deploy that predates the lists (a
+  /// cloud or cached copy) has none, so the copy bundled with this build fills in.
+  func similarSlugs(for station: RadioCatalogStation) -> [String] {
+    station.similar ?? bundledSimilar[station.slug] ?? []
+  }
+
+  private lazy var bundledSimilar: [String: [String]] = {
+    guard let payload = try? JSONDecoder().decode(
+      RadioCatalogPayload.self,
+      from: Data(Self.bundledJSON.utf8)
+    ) else { return [:] }
+    var out: [String: [String]] = [:]
+    for s in payload.stations { if let similar = s.similar { out[s.slug] = similar } }
+    return out
+  }()
+
   @discardableResult
   private func adopt(data: Data) -> Bool {
     guard let payload = try? JSONDecoder().decode(RadioCatalogPayload.self, from: data),

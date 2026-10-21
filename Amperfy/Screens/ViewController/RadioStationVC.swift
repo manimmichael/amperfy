@@ -189,7 +189,7 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
       object: nil
     )
 
-    showSimilar(station.similar?.compactMap { RadioCatalog.shared.station(slug: $0) } ?? [])
+    showSimilar(RadioCatalog.shared.similarSlugs(for: station).compactMap { RadioCatalog.shared.station(slug: $0) })
     loadArt()
   }
 
