@@ -229,6 +229,12 @@ struct CoverGlowRecipe {
   var alpha: CGFloat
   /// The warm scrim laid over the glow.
   var scrim: Scrim
+  /// How much of the glow square, measured up from its bottom edge, fades out to nothing
+  /// (0 keeps a hard edge). The mock's glow is a CSS blur, which softens its own edges; the
+  /// app's pre-blurred tiny is drawn into a clipped square, so on a tall page its bottom
+  /// edge showed as a hard line where the scrim had not yet gone opaque (founder,
+  /// 2026-10-21). The fade eases out, so there is no visible start either.
+  var bottomFade: CGFloat = 0
 
   /// Album, artist and playlist pages (`.albumPage::after`): the glow rises above the hero
   /// and the scrim reaches the solid page at the host's bottom edge.
@@ -241,7 +247,8 @@ struct CoverGlowRecipe {
       (.surfaceSunken, 0.2, 0),
       (.surfaceBase, 0.55, 0.45),
       (.surfaceBase, 1.0, 1.0),
-    ])
+    ]),
+    bottomFade: 0.35
   )
 
   /// The Home Resume card (`.resume .ambient`, `.resume::after`).
@@ -288,6 +295,18 @@ struct CoverGlowRecipe {
     )
   }
 
+  /// The glow's own alpha mask, top to bottom: opaque, then easing out over the bottom
+  /// `bottomFade` of the square (a smoothstep, so neither end of the fade shows as a line).
+  /// nil when there is no fade.
+  var bottomFadeStops: [(alpha: CGFloat, location: CGFloat)]? {
+    guard bottomFade > 0 else { return nil }
+    let start = 1 - min(bottomFade, 1)
+    return [0, 0.25, 0.5, 0.75, 1].map { t in
+      let eased = t * t * (3 - 2 * t)
+      return (alpha: 1 - eased, location: start + (1 - start) * t)
+    }
+  }
+
   /// The scrim's gradient, or nil for `.none`.
   var gradient: (stops: [Stop], horizontal: Bool)? {
     switch scrim {
@@ -317,6 +336,8 @@ final class CoverGlowView: UIView {
   }()
 
   private let scrimLayer = CAGradientLayer()
+  /// The glow's soft bottom edge (`recipe.bottomFade`); unused when the recipe has none.
+  private let fadeMask = CAGradientLayer()
   /// The key of the cover being shown (or loading). A newer `show` or `clear` replaces
   /// the token, so a late load for a reused cell is dropped.
   private var currentKey: String?
@@ -329,6 +350,13 @@ final class CoverGlowView: UIView {
     clipsToBounds = false
     backgroundColor = .clear
     addSubview(glowImageView)
+    if let stops = recipe.bottomFadeStops {
+      fadeMask.colors = stops.map { UIColor.black.withAlphaComponent($0.alpha).cgColor }
+      fadeMask.locations = stops.map { NSNumber(value: Double($0.location)) }
+      fadeMask.startPoint = CGPoint(x: 0.5, y: 0)
+      fadeMask.endPoint = CGPoint(x: 0.5, y: 1)
+      glowImageView.layer.mask = fadeMask
+    }
     if recipe.gradient != nil {
       layer.addSublayer(scrimLayer)
       applyScrimColors()
@@ -349,6 +377,7 @@ final class CoverGlowView: UIView {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     scrimLayer.frame = bounds
+    fadeMask.frame = glowImageView.bounds
     CATransaction.commit()
   }
 
@@ -473,6 +502,19 @@ struct CoverGlowLayer: View {
             .scaledToFill()
             .frame(width: frame.width, height: frame.height)
             .clipped()
+            .mask {
+              if let stops = recipe.bottomFadeStops {
+                LinearGradient(
+                  stops: stops.map {
+                    Gradient.Stop(color: .black.opacity($0.alpha), location: $0.location)
+                  },
+                  startPoint: .top,
+                  endPoint: .bottom
+                )
+              } else {
+                Rectangle()
+              }
+            }
             .opacity(recipe.alpha)
             .position(x: frame.midX, y: frame.midY)
             .transition(.opacity)
