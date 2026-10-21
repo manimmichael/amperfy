@@ -1292,14 +1292,16 @@ class HomeManager: NSObject {
       taken.formUnion(mix.songs.map(\.id))
     }
 
-    // The mood mixes, the ones this part of the day suits first.
+    // The mood mixes, the ones this part of the day suits first. Each song may only join the
+    // one it fits best (its home), so the six stay apart whatever the time of day.
     let favored = Set(lately.songPlays.map(\.songID))
+    let homes = ListeningShelves.moodHomes(mixSongs)
     for moodKey in ListeningShelves.moodMixOrder(for: daypart) {
       guard let mood = ListeningShelves.moodMixes.first(where: { $0.key == moodKey }) else { continue }
       var moodRNG = ListeningShelves.DailyGenerator(day: now, key: "mood|\(mood.key)", calendar: calendar)
       let ids = ListeningShelves.moodMix(
         mood,
-        songs: mixSongs,
+        songs: mixSongs.filter { homes[$0.songID] == mood.key },
         favored: favored,
         excluding: taken,
         using: &moodRNG

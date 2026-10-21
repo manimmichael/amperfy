@@ -40,9 +40,18 @@ public struct LibraryMoodTags: Codable, Sendable, Equatable {
   /// The song's sound (its subgenres, else its record's), nil from a server or a cache
   /// from before sound (BUG-498).
   public let subgenres: [String]?
+  /// What the song is for (road_trip, workout, winding_down...), nil from an older server or
+  /// cache. Only the mood playlists read it.
+  public let scenarios: [String]?
 
   public var vector: ListeningShelves.TagVector {
-    ListeningShelves.tagVector(moods: moods, energy: energy, valence: valence, sound: subgenres ?? [])
+    ListeningShelves.tagVector(
+      moods: moods,
+      energy: energy,
+      valence: valence,
+      sound: subgenres ?? [],
+      scenarios: scenarios ?? []
+    )
   }
 }
 
@@ -53,10 +62,11 @@ struct LibraryMoodsResponse: Decodable {
     let energy: String?
     let valence: String?
     let subgenres: [String]?
+    let scenarios: [String]?
 
     enum CodingKeys: String, CodingKey {
       case cassetteLocalId = "cassette_local_id"
-      case moods, energy, valence, subgenres
+      case moods, energy, valence, subgenres, scenarios
     }
   }
 
@@ -70,7 +80,8 @@ public final class LibraryMoods {
   private static let refreshInterval: TimeInterval = 12 * 3600
   private static let lastFetchKey = "cassette.libraryMoods.lastFetchAt"
   /// Bumped when the payload grows, so a phone holding an older cache fetches at once instead
-  /// of waiting out the twelve hours (2: each song's sound and the profile's, BUG-498). Set
+  /// of waiting out the twelve hours (2: each song's sound and scenarios, and the profile's
+  /// sound, BUG-498). Set
   /// only once a fetch actually carries the new fields; until then the phone asks again
   /// hourly (a phone can be built before the server it talks to is deployed).
   private static let formatKey = "cassette.libraryMoods.format"

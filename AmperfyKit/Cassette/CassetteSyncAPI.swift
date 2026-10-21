@@ -1035,7 +1035,8 @@ public final class CassetteSyncAPI: @unchecked Sendable {
         moods: track.moods,
         energy: track.energy,
         valence: track.valence,
-        subgenres: track.subgenres
+        subgenres: track.subgenres,
+        scenarios: track.scenarios
       )
     }
     return byLocalID

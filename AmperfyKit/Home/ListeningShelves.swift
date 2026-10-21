@@ -200,7 +200,8 @@ public enum ListeningShelves {
     moods: [String],
     energy: String?,
     valence: String?,
-    sound: [String] = []
+    sound: [String] = [],
+    scenarios: [String] = []
   )
     -> TagVector {
     var v = TagVector()
@@ -208,10 +209,14 @@ public enum ListeningShelves {
     if let energy, !energy.isEmpty { v["energy:\(energy)", default: 0] += 0.5 }
     if let valence, !valence.isEmpty { v["valence:\(valence)", default: 0] += 0.5 }
     for s in sound where !s.isEmpty { v["\(soundPrefix)\(s)"] = 1 }
+    for s in scenarios where !s.isEmpty { v["\(scenarioPrefix)\(s)"] = 1 }
     return v
   }
 
   static let soundPrefix = "sound:"
+  /// What a song is for (road_trip, workout, winding_down...): only the mood playlists read
+  /// it (`MoodMix`); every likeness leaves it out.
+  static let scenarioPrefix = "scenario:"
 
   public static func add(_ v: TagVector, into acc: inout TagVector, weight: Double = 1) {
     for (k, x) in v { acc[k, default: 0] += x * weight }
@@ -240,7 +245,7 @@ public enum ListeningShelves {
         if k.hasPrefix(ListeningShelves.soundPrefix) {
           sound += x * x
           total += x
-        } else {
+        } else if !k.hasPrefix(ListeningShelves.scenarioPrefix) {
           mood += x * x
         }
       }
@@ -295,7 +300,11 @@ public enum ListeningShelves {
     var moodDot = 0.0, soundDot = 0.0
     for k in small.keys {
       guard let y = large.tags[k] else { continue }
-      if k.hasPrefix(soundPrefix) { soundDot += small.tags[k]! * y } else { moodDot += small.tags[k]! * y }
+      if k.hasPrefix(soundPrefix) {
+        soundDot += small.tags[k]! * y
+      } else if !k.hasPrefix(scenarioPrefix) {
+        moodDot += small.tags[k]! * y
+      }
     }
     let mood = a.moodNorm > 0 && b.moodNorm > 0 ? rounded(moodDot / (a.moodNorm * b.moodNorm)) : 0
     let sound = a.soundNorm > 0 && b.soundNorm > 0 ? rounded(soundDot / (a.soundNorm * b.soundNorm)) : nil
@@ -631,14 +640,23 @@ extension ListeningShelves {
     }
 
     var moodVector: TagVector { tags.filter { $0.key.hasPrefix("mood:") } }
+    var scenarios: Set<String> { Self.values(of: ListeningShelves.scenarioPrefix, in: tags) }
+    var sounds: Set<String> { Self.values(of: ListeningShelves.soundPrefix, in: tags) }
+
+    private static func values(of prefix: String, in tags: TagVector) -> Set<String> {
+      Set(tags.keys.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) })
+    }
 
     private static func value(of prefix: String, in tags: TagVector) -> String? {
       tags.keys.first { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }
     }
   }
 
-  /// A mood mix: which songs may join (energy, valence, moods that rule a song out) and the
-  /// moods it is after. Keys and colours are the app's mood doors (MoodDoors.swift).
+  /// A mood mix: which songs may join (energy, valence, moods that rule a song out), the
+  /// moods it is after, and what sets it apart from the other five: the scenarios it is for
+  /// and the sounds it lives in (the founder, 2026-10-21: six playlists on mood words alone
+  /// came out as two groups of three, the bright ones sharing up to 92% of their songs).
+  /// Keys and colours are the app's mood doors (MoodDoors.swift).
   public struct MoodMix: Sendable {
     public let key: String
     public let title: String
@@ -647,6 +665,10 @@ extension ListeningShelves {
     let valences: Set<String>?
     let target: TagVector
     let avoid: Set<String>
+    /// Scenarios (scenarios.ts SONG_SCENARIOS) a song can be for to belong here.
+    let scenarios: Set<String>
+    /// Subgenres (taxonomy.ts SUBGENRES, lowercased) a song can sound like to belong here.
+    let sounds: Set<String>
 
     init(
       key: String,
@@ -655,7 +677,9 @@ extension ListeningShelves {
       energies: Set<String>?,
       valences: Set<String>?,
       moods: [String: Double],
-      avoid: Set<String>
+      avoid: Set<String>,
+      scenarios: Set<String>,
+      sounds: Set<String>
     ) {
       self.key = key
       self.title = title
@@ -666,10 +690,27 @@ extension ListeningShelves {
       for (mood, weight) in moods { target["mood:\(mood)"] = weight }
       self.target = target
       self.avoid = avoid
+      self.scenarios = scenarios
+      self.sounds = sounds
     }
 
-    /// How well a song's moods fit, 0 to 1, or nil when the song may not join at all.
+    /// How well a song belongs, or nil when it may not join at all. It must pass the energy,
+    /// valence and avoid gates and fit the moods (0 to 1); then, when the song carries a
+    /// scenario or a sound at all, one of them must be this mix's (its anchor), and each
+    /// adds to the fit: a scenario 0.25, a sound 0.15. A song with neither (tags from a
+    /// server before them) is judged on its moods, as before.
     func fit(_ song: MixSong) -> Double? {
+      guard let moodFit = moodFit(song) else { return nil }
+      let songScenarios = song.scenarios, songSounds = song.sounds
+      if songScenarios.isEmpty, songSounds.isEmpty { return moodFit }
+      let forThis = !songScenarios.isDisjoint(with: scenarios)
+      let soundsLikeThis = !songSounds.isDisjoint(with: sounds)
+      guard forThis || soundsLikeThis else { return nil }
+      return ListeningShelves.rounded(moodFit + (forThis ? 0.25 : 0) + (soundsLikeThis ? 0.15 : 0))
+    }
+
+    /// The gates and the mood fit alone.
+    func moodFit(_ song: MixSong) -> Double? {
       if let energies {
         guard let energy = song.energy, energies.contains(energy) else { return nil }
       }
@@ -702,7 +743,12 @@ extension ListeningShelves {
         "uplifting": 1, "joyful": 1, "playful": 0.8, "confident": 0.7, "defiant": 0.5,
         "romantic": 0.4, "wistful": 0.4,
       ],
-      avoid: ["somber", "mournful", "despairing", "eerie", "lonely"]
+      avoid: ["somber", "mournful", "despairing", "eerie", "lonely"],
+      scenarios: ["road_trip", "driving_at_night", "summer_anthem", "nostalgia_throwback"],
+      sounds: [
+        "indie rock", "folk rock", "americana", "country rock", "alternative rock", "power pop",
+        "pop rock", "classic rock", "soft rock", "britpop",
+      ]
     ),
     MoodMix(
       key: "get-pumped",
@@ -715,7 +761,15 @@ extension ListeningShelves {
         "confident": 1, "empowering": 1, "urgent": 0.8, "rebellious": 0.8, "aggressive": 0.7,
         "cathartic": 0.6, "playful": 0.5,
       ],
-      avoid: ["tender", "peaceful", "serene", "somber", "mournful", "lonely", "melancholic"]
+      avoid: ["tender", "peaceful", "serene", "somber", "mournful", "lonely", "melancholic"],
+      scenarios: [
+        "workout", "hype_pump_up", "motivation", "empowerment", "confidence", "protest_defiance",
+        "victory_lap", "pregame",
+      ],
+      sounds: [
+        "pop punk", "punk rock", "emo", "post-punk", "garage rock", "hard rock", "post-hardcore",
+        "hardcore punk", "grunge", "folk punk", "alternative metal",
+      ]
     ),
     MoodMix(
       key: "focus",
@@ -730,6 +784,14 @@ extension ListeningShelves {
       avoid: [
         "aggressive", "intense", "urgent", "anxious", "defiant", "rebellious", "tense",
         "euphoric", "playful", "cathartic", "despairing",
+        // Songs that pull at you are not focus music.
+        "melancholic", "vulnerable", "bittersweet", "lonely", "mournful",
+      ],
+      scenarios: ["studying_focus", "chill_background", "meditation", "coding"],
+      sounds: [
+        "post-rock", "ambient techno", "downtempo", "modern classical", "neoclassical",
+        "minimalism", "contemporary classical", "new age", "lo-fi hip-hop", "chamber folk",
+        "idm", "electronica", "cool jazz",
       ]
     ),
     MoodMix(
@@ -745,6 +807,13 @@ extension ListeningShelves {
       avoid: [
         "aggressive", "intense", "urgent", "anxious", "tense", "energetic", "euphoric",
         "defiant", "rebellious", "restless",
+        // A sad low-energy song is not winding down.
+        "brooding", "haunting", "eerie", "melancholic", "despairing", "mournful",
+      ],
+      scenarios: ["winding_down", "sunday_morning", "falling_asleep", "rainy_day"],
+      sounds: [
+        "indie folk", "acoustic folk", "chamber folk", "chamber pop", "vocal jazz",
+        "traditional pop", "soft rock", "bedroom pop", "slowcore",
       ]
     ),
     MoodMix(
@@ -757,7 +826,12 @@ extension ListeningShelves {
         "brooding": 1, "haunting": 1, "mysterious": 1, "melancholic": 1, "dreamy": 0.8,
         "lonely": 0.8, "wistful": 0.6, "eerie": 0.6, "vulnerable": 0.6, "somber": 0.5,
       ],
-      avoid: ["playful", "joyful", "euphoric", "triumphant", "uplifting", "empowering"]
+      avoid: ["playful", "joyful", "euphoric", "triumphant", "uplifting", "empowering"],
+      scenarios: ["driving_at_night", "crying_alone", "processing_grief", "comedown"],
+      sounds: [
+        "trip-hop", "dream pop", "synth-pop", "darkwave", "art pop", "downtempo", "shoegaze",
+        "art rock", "electropop", "synthwave", "gothic rock", "slowcore",
+      ]
     ),
     MoodMix(
       key: "feel-good",
@@ -769,7 +843,15 @@ extension ListeningShelves {
         "playful": 1, "hopeful": 1, "joyful": 1, "euphoric": 1, "uplifting": 1,
         "romantic": 0.6, "confident": 0.6, "triumphant": 0.6, "energetic": 0.5,
       ],
-      avoid: ["somber", "melancholic", "mournful", "despairing", "brooding", "haunting", "eerie"]
+      avoid: ["somber", "melancholic", "mournful", "despairing", "brooding", "haunting", "eerie"],
+      scenarios: [
+        "party", "singalong_karaoke", "celebration", "getting_ready", "summer_anthem", "new_love",
+        "first_dance", "pregame",
+      ],
+      sounds: [
+        "indie pop", "dance-pop", "funk", "disco", "power pop", "synth-pop", "electropop",
+        "britpop", "neo-soul", "soul", "bedroom pop",
+      ]
     ),
   ]
 
@@ -782,6 +864,35 @@ extension ListeningShelves {
     case .evening: return ["feel-good", "road-trip", "wind-down", "late-night", "get-pumped", "focus"]
     case .late: return ["late-night", "wind-down", "focus", "feel-good", "road-trip", "get-pumped"]
     }
+  }
+
+  /// Each song's one mood playlist: of the mixes it may join, the one it fits best relative
+  /// to how well that mix's songs fit in general (its median), so a playlist with a generous
+  /// pool does not take every shared song. Ties go to the mix listed first in `moodMixes`.
+  /// Replaces first come, first served in row order, which made what each playlist got
+  /// depend on the time of day.
+  public static func moodHomes(_ songs: [MixSong]) -> [String: String] {
+    var fits = [String: [String: Double]]()
+    var median = [String: Double]()
+    for mood in moodMixes {
+      var byID = [String: Double]()
+      for song in songs {
+        if let fit = mood.fit(song) { byID[song.songID] = fit }
+      }
+      fits[mood.key] = byID
+      let sorted = byID.values.sorted()
+      if !sorted.isEmpty { median[mood.key] = sorted[sorted.count / 2] }
+    }
+    var homes = [String: (key: String, ratio: Double)]()
+    for mood in moodMixes {
+      guard let middle = median[mood.key], middle > 0 else { continue }
+      for (id, fit) in fits[mood.key] ?? [:] {
+        let ratio = rounded(fit / middle)
+        if let current = homes[id], current.ratio >= ratio { continue }
+        homes[id] = (mood.key, ratio)
+      }
+    }
+    return homes.mapValues(\.key)
   }
 
   public static func daypart(of date: Date, calendar: Calendar = .current) -> Daypart {
