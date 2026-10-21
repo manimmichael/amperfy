@@ -133,6 +133,9 @@ struct SettingsView: View {
             downloadQuality = DevicePagesModel.downloadQualityLabel(storage: appDelegate.storage)
             devices.settingsAppeared()
           }
+          .onDisappear {
+            devices.pageDisappeared()
+          }
       }
     #endif
   }
@@ -174,7 +177,7 @@ struct SettingsView: View {
           HubRow(model: devices)
           ResyncRow(model: devices)
         } header: {
-          SettingsHead(shout: "YOUR MAC", answer: devices.macState.word)
+          SettingsHead(shout: "YOUR MAC", answer: devices.macState.answer)
         }
       }
 

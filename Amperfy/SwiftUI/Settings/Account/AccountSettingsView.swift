@@ -67,6 +67,16 @@ struct AccountSettingsView: View {
     AppDelegate.mainSceneDelegate?.window?.rootViewController?.present(syncVC, animated: true)
   }
 
+  /// Whether a Cassette account still resyncs here: only on Mac Catalyst, where the
+  /// Settings root has no YOUR MAC group to carry the lighter resync.
+  private static var keepsResyncForCassette: Bool {
+    #if targetEnvironment(macCatalyst)
+      return true
+    #else
+      return false
+    #endif
+  }
+
   /// cassette: a Cassette-paired account's Subsonic login is a `cassette-*`
   /// machine credential the desktop Player mints AND manages automatically at
   /// pairing. The stock "Update Password" screen is LOCAL-ONLY — it changes
@@ -118,13 +128,16 @@ struct AccountSettingsView: View {
             }
           }
 
-          // Phone-taste: a Cassette account resyncs from the YOUR MAC group on the Settings
-          // root (the Mac rescans, the music keeps playing). This full re-read, which stops
-          // playback and rebuilds the app, stays only for generic Subsonic accounts.
-          if !isCassetteAccount(activeAccountInfo) {
+          // Phone-taste: on iOS a Cassette account resyncs from the YOUR MAC group on the
+          // Settings root (the Mac rescans, the music keeps playing). This full re-read, which
+          // stops playback and rebuilds the app, stays for generic Subsonic accounts, and on
+          // Mac Catalyst, whose Settings has no YOUR MAC group.
+          if !isCassetteAccount(activeAccountInfo) || Self.keepsResyncForCassette {
             SettingsSection {
-              SettingsButtonRow(title: "Update Password") {
-                withPopupAnimation { isPwUpdateDialogVisible = true }
+              if !isCassetteAccount(activeAccountInfo) {
+                SettingsButtonRow(title: "Update Password") {
+                  withPopupAnimation { isPwUpdateDialogVisible = true }
+                }
               }
               SettingsButtonRow(title: "Resync Library") {
                 isShowResyncLibraryAlert = true

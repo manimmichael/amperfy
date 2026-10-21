@@ -128,6 +128,9 @@ extension UIViewController {
     // switcher and no "Add Account" (the multi-account plumbing stays for upstream parity).
     if appDelegate.storage.settings.accounts.active != nil {
       CassetteMenuAvatar.prefetch()
+      // The Mac's heartbeat, so the first open has its state word. The tab roots build this
+      // menu once at launch; the three share one request.
+      Task { _ = await CassetteSyncStatus.refreshMacSummary(maxAge: 300) }
       // Deferred and uncached, so the Mac's state is read each time the menu opens; it
       // completes at once, so the menu never shows a loading row.
       let whoRow = UIDeferredMenuElement.uncached { [weak self] completion in
@@ -185,9 +188,9 @@ extension UIViewController {
   }
 
   /// The avatar menu's top row: your name, "<Mac> · in sync / syncing / out of reach"
-  /// under it, your own avatar, at full strength. Offline or signed out reads "out of
-  /// reach": with no token the sync pass never runs, and without a network the Mac cannot
-  /// be reached. A tap opens Settings.
+  /// under it (just the Mac's name until its heartbeat has been read), your own avatar, at
+  /// full strength. Offline or signed out reads "out of reach": with no token the sync pass
+  /// never runs, and without a network the Mac cannot be reached. A tap opens Settings.
   private func cassetteWhoAction() -> UIAction {
     let name = CassetteSyncAPI.accountName ?? CassetteSyncAPI.accountEmail ?? "You"
     let serverUrl = appDelegate.storage.settings.accounts.activeSetting.read
@@ -199,8 +202,9 @@ extension UIViewController {
       hubName: CassetteSyncStatus.displayHubName(serverUrl: serverUrl),
       state: state
     )
-    // The hub's heartbeat, fresh for the next open (throttled; the poll refreshes it too).
-    Task { _ = await CassetteSyncStatus.refreshMacSummary(maxAge: 600) }
+    // The hub's heartbeat, fresh for the next open (one request at a time, at most one a
+    // minute; never from the sync poll).
+    Task { _ = await CassetteSyncStatus.refreshMacSummary(maxAge: 300) }
     let action = UIAction(
       title: name,
       image: CassetteMenuAvatar.image(),

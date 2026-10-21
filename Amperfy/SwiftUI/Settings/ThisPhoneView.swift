@@ -123,11 +123,15 @@ import SwiftUI
         Text("It stays on your Mac.")
       }
       .onAppear {
+        model.pageAppeared()
         downloadQuality = DevicePagesModel.downloadQualityLabel(storage: appDelegate.storage)
         freeSpace = Self.freeSpace()
         guard !didOpen else { return }
         didOpen = true
         model.phonePageOpened()
+      }
+      .onDisappear {
+        model.pageDisappeared()
       }
     }
 

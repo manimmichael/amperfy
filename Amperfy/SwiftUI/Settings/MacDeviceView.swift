@@ -73,9 +73,13 @@ import SwiftUI
       .navigationTitle("")
       .navigationBarTitleDisplayMode(.inline)
       .onAppear {
+        model.pageAppeared()
         guard !didOpen else { return }
         didOpen = true
         model.macPageOpened()
+      }
+      .onDisappear {
+        model.pageDisappeared()
       }
       .task(id: lead?.coverPath) { await loadLead() }
     }
@@ -132,11 +136,14 @@ import SwiftUI
             .shadow(color: Color.black.opacity(0.5), radius: 9, x: 0, y: 2)
             .padding(.bottom, 8)
             .accessibilityAddTraits(.isHeader)
-          Text(model.macState.word)
-            .cassetteText(.answer)
-            .foregroundStyle(tint.textColor)
-            .padding(.top, 6)
-            .padding(.bottom, 10)
+          // No word until the Mac's heartbeat has been read: never a guessed "in sync".
+          if let answer = model.macState.answer {
+            Text(answer)
+              .cassetteText(.answer)
+              .foregroundStyle(tint.textColor)
+              .padding(.top, 6)
+              .padding(.bottom, 10)
+          }
           if let meta {
             Text(meta)
               .cassetteText(.meta)
@@ -156,16 +163,6 @@ import SwiftUI
 
     // MARK: Card
 
-    /// Albums on this phone over the Mac's albums (less the ones kept off this phone, once
-    /// the device payload says how many). nil when the Mac's total is unknown.
-    private var coverage: (have: Int, of: Int)? {
-      guard let mac = model.mac, mac.mac != nil, mac.albums > 0 else { return nil }
-      let have = model.phone?.albums.count ?? 0
-      let keptOff = model.device?.keptOffAlbums.count ?? 0
-      let of = max(1, mac.albums - keptOff)
-      return (have, of)
-    }
-
     private var scopeLabel: String? {
       guard let scope = model.device?.scope else { return nil }
       return scope == "selective" ? "Selective" : "Everything"
@@ -174,7 +171,9 @@ import SwiftUI
     /// The card's rows, in order; a hairline sits between each pair.
     private var cardRows: [AnyView] {
       var rows: [AnyView] = []
-      if let coverage {
+      // Counted by the cloud on both sides (the phone groups albums its own way), so it
+      // shows once this phone's payload is in.
+      if let coverage = model.coverage {
         rows.append(AnyView(CoverageMeter(have: coverage.have, of: coverage.of)))
       }
       // Read-only: the sync scope is account-wide; the phone has no control for it yet.

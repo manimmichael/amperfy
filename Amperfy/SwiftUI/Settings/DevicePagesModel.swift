@@ -9,7 +9,8 @@
 //  What is on the phone comes from the ownership records (DeviceOwnershipManager), read
 //  off the main thread. What the Mac has comes from the cloud's live device endpoints
 //  (CassetteSyncAPI.getMacSummary / getThisDeviceSummary), fetched once per page open,
-//  never on the 30s poll. The server's album keys never equal a phone album id, so every
+//  never from the sync poll. The model listens for library and sync changes only while one
+//  of its pages is on screen. The server's album keys never equal a phone album id, so every
 //  server row goes through `resolveLocalAlbum` before it can show a local cover or play.
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -64,6 +65,22 @@ import UIKit
     }
   }
 
+  // MARK: - StripPick
+
+  /// A strip album found off the main thread: its id and the cover on disk.
+  private struct StripPick: Sendable {
+    let albumId: String
+    let coverPath: String
+  }
+
+  // MARK: - PhoneRead
+
+  /// One phone read, done off the main thread.
+  private struct PhoneRead: Sendable {
+    let summary: DevicePagesModel.PhoneSummary
+    let strip: [StripPick]
+  }
+
   // MARK: - DevicePagesModel
 
   @MainActor
@@ -76,6 +93,8 @@ import UIKit
 
     /// The newest arrivals with a cover, for the Settings strip.
     static let stripLimit = 14
+    /// How many of the newest arrivals the strip looks through for covers on disk.
+    private static let stripScanLimit = 120
 
     // MARK: On this phone
 
@@ -92,7 +111,7 @@ import UIKit
     @Published
     private(set) var mac: CassetteMacSummary? = CassetteSyncAPI.cachedMacSummary
     @Published
-    private(set) var macState: CassetteSyncStatus.MacState = .inSync
+    private(set) var macState: CassetteSyncStatus.MacState = .unknown
     /// NEW ON YOUR MAC: the Mac's newest albums that are on this phone (or, with no payload,
     /// the phone's own newest arrivals).
     @Published
@@ -115,10 +134,21 @@ import UIKit
     private(set) var puttingBack: Set<String> = []
     @Published
     private(set) var putBackFailed = false
+    /// Albums put back during this visit (by group key). The device payload in hand still
+    /// lists them as kept off, so they are left out until a payload read after the put-back
+    /// replaces it.
+    private var putBackKeys: Set<String> = []
 
     private var subscriptions: Set<AnyCancellable> = []
+    /// Pages of this model on screen right now (the Settings root, the Mac page, This Phone).
+    private var visiblePages = 0
+    private var stopListeningTask: Task<(), Never>?
     /// Cover paths by local album id, for the This Phone rows (cleared with each phone read).
     private var coverPaths: [String: String?] = [:]
+    /// The active account and its artwork choice, read once per phone read (each settings
+    /// read decodes them again).
+    private var cachedAccount: Account?
+    private var cachedArtworkPreference: ArtworkDisplayPreference?
     private var phoneGeneration = 0
     private var deviceGeneration = 0
     private var didRefreshMacThisSession = false
@@ -129,6 +159,36 @@ import UIKit
 
     init() {
       recomputeMacState()
+    }
+
+    // MARK: Listening
+
+    /// One of this model's pages appeared. It listens for library and sync changes only
+    /// while a page is on screen, and catches up on what changed while none was.
+    func pageAppeared() {
+      visiblePages += 1
+      stopListeningTask?.cancel()
+      stopListeningTask = nil
+      guard subscriptions.isEmpty else { return }
+      subscribe()
+      if phone != nil { reloadPhone() }
+      macSummaryChanged()
+    }
+
+    /// One of this model's pages went away. A push or a pop leaves none showing for a
+    /// moment, so listening stops only once none has been back for two seconds.
+    func pageDisappeared() {
+      visiblePages = max(0, visiblePages - 1)
+      guard visiblePages == 0 else { return }
+      stopListeningTask?.cancel()
+      stopListeningTask = Task { [weak self] in
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        guard let self, !Task.isCancelled, self.visiblePages == 0 else { return }
+        self.subscriptions.removeAll()
+      }
+    }
+
+    private func subscribe() {
       let center = NotificationCenter.default
       center.publisher(for: CassetteLibraryFilterProvider.filterChangedNotification)
         .receive(on: RunLoop.main)
@@ -154,6 +214,7 @@ import UIKit
 
     /// The Settings root appeared: read the phone, and the Mac's heartbeat once per sheet.
     func settingsAppeared() {
+      pageAppeared()
       if phone == nil { reloadPhone() }
       recomputeMacState()
       guard !didRefreshMacThisSession else { return }
@@ -180,35 +241,47 @@ import UIKit
     // MARK: The phone
 
     /// Re-read the ownership summary off the main thread (the walk covers every owned
-    /// song), then resolve the strip and the shelves on main.
+    /// song), and find the strip's covers there too (a look at each album's cover file).
+    /// Then the strip's few albums and the shelves resolve on main.
     func reloadPhone() {
       phoneGeneration += 1
       let generation = phoneGeneration
       let storage = delegate.storage
+      cachedAccount = nil
+      cachedArtworkPreference = nil
+      let info = storage.settings.accounts.active
+      let stripLimit = Self.stripLimit
+      let scanLimit = Self.stripScanLimit
       Task {
-        let summary = try? await storage.async.performAndGet { companion in
-          DeviceOwnershipManager(context: companion.context).onPhoneSummary()
+        let read = try? await storage.async.performAndGet { companion -> PhoneRead in
+          let summary = DeviceOwnershipManager(context: companion.context).onPhoneSummary()
+          var strip: [StripPick] = []
+          if let info {
+            let account = companion.library.getAccount(info: info)
+            let newest = summary.albums.sorted { $0.arrivedAt > $1.arrivedAt }.prefix(scanLimit)
+            for entry in newest {
+              // What `imagePath(setting:)` returns (it reads the artwork's file and ignores
+              // the setting), without its main-actor hop.
+              guard let path = companion.library.getAlbum(
+                for: account,
+                id: entry.albumId,
+                isDetailFaultResolution: false
+              )?.artwork?.imagePath else { continue }
+              strip.append(StripPick(albumId: entry.albumId, coverPath: path))
+              if strip.count == stripLimit { break }
+            }
+          }
+          return PhoneRead(summary: summary, strip: strip)
         }
-        guard let summary, generation == self.phoneGeneration else { return }
+        guard let read, generation == self.phoneGeneration else { return }
         self.coverPaths = [:]
-        self.phone = summary
-        self.stripAlbums = self.resolveStrip(summary)
+        self.phone = read.summary
+        self.stripAlbums = read.strip.compactMap { pick in
+          self.localAlbum(id: pick.albumId).flatMap { self.deviceAlbum($0, coverPath: pick.coverPath) }
+        }
         self.rebuildNewOnMac()
         self.rebuildKeptOff()
       }
-    }
-
-    private func resolveStrip(_ summary: PhoneSummary) -> [DeviceAlbum] {
-      var result: [DeviceAlbum] = []
-      for entry in summary.albums.sorted(by: { $0.arrivedAt > $1.arrivedAt }) {
-        guard let album = localAlbum(id: entry.albumId),
-              let item = deviceAlbum(album),
-              item.coverPath != nil
-        else { continue }
-        result.append(item)
-        if result.count == Self.stripLimit { break }
-      }
-      return result
     }
 
     // MARK: The Mac
@@ -291,7 +364,8 @@ import UIKit
         guard let album = resolveLocalAlbum(
           groupKey: item.groupKey,
           localCoverTrackId: item.localCoverTrackId,
-          albumName: item.albumName
+          albumName: item.albumName,
+          artistName: item.artistName
         ),
           onPhoneIds.contains(album.id),
           seen.insert(album.id).inserted,
@@ -318,27 +392,46 @@ import UIKit
       deviceGeneration += 1
       let generation = deviceGeneration
       guard CassetteSyncAPI.bearerToken != nil else { return }
+      // Put-backs already confirmed: this read began after them, so it speaks for them.
+      let settled = putBackKeys
       let fresh = try? await CassetteSyncAPI.shared.getThisDeviceSummary()
       guard generation == deviceGeneration else { return }
       device = fresh
+      if fresh != nil { putBackKeys.subtract(settled) }
       putBackFailed = false
       rebuildKeptOff()
     }
 
+    /// The device payload's kept-off albums, less the ones put back since it was read.
+    private var currentKeptOff: [CassetteDeviceSummary.KeptOffAlbum] {
+      (device?.keptOffAlbums ?? []).filter { !putBackKeys.contains($0.groupKey) }
+    }
+
+    /// KEPT OFF's tiles. A kept-off album is not on this phone, so it is looked up only by
+    /// its exact keys, never by name (a name match would be some other record).
     private func rebuildKeptOff() {
-      guard let device else {
-        keptOff = []
-        return
-      }
-      keptOff = device.keptOffAlbums.map { row in
+      keptOff = currentKeptOff.map { row in
         let album = resolveLocalAlbum(
           groupKey: row.groupKey,
           localCoverTrackId: row.localCoverTrackId,
           albumName: row.albumName,
-          onPhoneOnly: false
+          artistName: row.artistName,
+          onPhoneOnly: false,
+          matchByName: false
         )
         return KeptOffTile(row: row, coverPath: album.flatMap { coverPath(of: $0) })
       }
+    }
+
+    /// The Mac page's coverage, counted in the cloud's own album grouping on both sides:
+    /// the albums with songs on this phone, over the Mac's albums less the ones kept off
+    /// this phone. nil until both the Mac and this phone's payloads are in.
+    var coverage: (have: Int, of: Int)? {
+      guard let mac, mac.mac != nil, mac.albums > 0,
+            let have = device?.onPhoneAlbumCount
+      else { return nil }
+      let of = max(1, mac.albums - currentKeptOff.count)
+      return (min(have, of), of)
     }
 
     /// Put an album back on this phone: clear its exclusion marks, drop the tile, and report
@@ -349,6 +442,7 @@ import UIKit
       putBackFailed = false
       do {
         try await CassetteSyncAPI.shared.putBack(targetIds: tile.row.excludeTargetIds)
+        putBackKeys.insert(tile.id)
         keptOff.removeAll { $0.id == tile.id }
         Task { await IntentExecutor.shared.reportInventoryNow() }
       } catch {
@@ -385,8 +479,20 @@ import UIKit
     // MARK: Resolving albums
 
     private var account: Account? {
+      if let cachedAccount { return cachedAccount }
       guard let info = delegate.storage.settings.accounts.active else { return nil }
-      return delegate.storage.main.library.getAccount(info: info)
+      let account = delegate.storage.main.library.getAccount(info: info)
+      cachedAccount = account
+      return account
+    }
+
+    private var artworkPreference: ArtworkDisplayPreference? {
+      if let cachedArtworkPreference { return cachedArtworkPreference }
+      guard let info = delegate.storage.settings.accounts.active else { return nil }
+      let preference = delegate.storage.settings.accounts.getSetting(info).read
+        .artworkDisplayPreference
+      cachedArtworkPreference = preference
+      return preference
     }
 
     func localAlbum(id: String) -> Album? {
@@ -407,20 +513,22 @@ import UIKit
     }
 
     func coverPath(of album: Album) -> String? {
-      guard let info = delegate.storage.settings.accounts.active else { return nil }
-      let preference = delegate.storage.settings.accounts.getSetting(info).read
-        .artworkDisplayPreference
+      guard let preference = artworkPreference else { return nil }
       return album.imagePath(setting: preference)
     }
 
     private func deviceAlbum(_ album: Album) -> DeviceAlbum? {
+      deviceAlbum(album, coverPath: coverPath(of: album))
+    }
+
+    private func deviceAlbum(_ album: Album, coverPath: String?) -> DeviceAlbum? {
       guard !album.id.isEmpty else { return nil }
       return DeviceAlbum(
         id: album.id,
         album: album,
         name: album.name,
         artist: album.artist?.name ?? "",
-        coverPath: coverPath(of: album)
+        coverPath: coverPath
       )
     }
 
@@ -429,14 +537,17 @@ import UIKit
     ///    the song id): exact;
     /// 2. a non-catalog key, which is the phone's own album key with U+0000 where the phone
     ///    has U+001F;
-    /// 3. a unique case-insensitive name match among the albums on this phone.
+    /// 3. with `matchByName`, the one album on this phone with the same title AND artist
+    ///    (case-insensitive), so another artist's "Greatest Hits" never stands in.
     /// With `onPhoneOnly`, a result counts only when the album has songs on this phone (the
     /// owned album set, the same one `fetchOwnedAlbumIds` reads).
     func resolveLocalAlbum(
       groupKey: String,
       localCoverTrackId: String?,
       albumName: String,
-      onPhoneOnly: Bool = true
+      artistName: String,
+      onPhoneOnly: Bool = true,
+      matchByName: Bool = true
     )
       -> Album? {
       guard let account else { return nil }
@@ -461,8 +572,13 @@ import UIKit
           return album
         }
       }
-      let wanted = albumName.lowercased()
-      let matches = (phone?.albums ?? []).filter { $0.name.lowercased() == wanted }
+      guard matchByName else { return nil }
+      let wantedAlbum = albumName.lowercased()
+      let wantedArtist = artistName.lowercased()
+      guard !wantedAlbum.isEmpty, !wantedArtist.isEmpty else { return nil }
+      let matches = (phone?.albums ?? []).filter {
+        $0.name.lowercased() == wantedAlbum && $0.artist.lowercased() == wantedArtist
+      }
       if matches.count == 1, let album = accept(localAlbum(id: matches[0].albumId)) {
         return album
       }

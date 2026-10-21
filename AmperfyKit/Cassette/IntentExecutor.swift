@@ -224,9 +224,6 @@ public final class IntentExecutor {
     // short throttle (not once-per-launch): the payload is tiny and these are
     // things a person expects to sync promptly. Best-effort, off the critical path.
     await refreshAccountIfDue()
-    // The hub's own heartbeat, for "in sync / out of reach" (Settings, the avatar menu):
-    // a heavy server read, so at most every 10 minutes, and never in the pass's way.
-    Task { _ = await CassetteSyncStatus.refreshMacSummary(maxAge: 600) }
     for intent in intents {
       await executeIntent(intent)
     }

@@ -132,6 +132,9 @@ public enum CassetteSyncStatus {
     case syncing
     case outOfReach
     case notPaired
+    /// No heartbeat in hand that speaks for now (none fetched yet, or too old): no word is
+    /// shown until the cloud answers. Never read as "in sync".
+    case unknown
 
     public var word: String {
       switch self {
@@ -139,40 +142,59 @@ public enum CassetteSyncStatus {
       case .syncing: return "syncing"
       case .outOfReach: return "out of reach"
       case .notPaired: return "not paired"
+      case .unknown: return ""
       }
+    }
+
+    /// The word to show, or nil when there is nothing true to say yet.
+    public var answer: String? {
+      self == .unknown ? nil : word
     }
   }
 
   /// The hub heartbeats every few minutes while it runs; older than this, it is out of reach.
   public static let heartbeatWindow: TimeInterval = 15 * 60
-  /// A cached heartbeat older than this says nothing about now, so it is not used.
+  /// How long a fetched "it was already out of reach" answer stands without a newer fetch.
   private static let heartbeatTrust: TimeInterval = 30 * 60
 
   /// The Mac's state, checked in order: not paired; the phone cannot sync at all (no token
-  /// or no network); albums waiting and the hub did not answer; albums arriving; the hub's
-  /// own heartbeat (GET /api/player/devices/mac, cached) older than 15 minutes; else in sync.
+  /// or no network); albums waiting and the hub did not answer; albums arriving; then the
+  /// hub's own heartbeat (GET /api/player/devices/mac, cached, see `heartbeatState`).
   /// `canSync` is "a bearer token is present and the network is up".
   public static func macState(isPaired: Bool, canSync: Bool, now: Date = Date()) -> MacState {
     guard isPaired else { return .notPaired }
     guard canSync else { return .outOfReach }
     if pendingAlbums > 0, !isHubReachable { return .outOfReach }
     if isActive || pendingAlbums > 0 { return .syncing }
-    if let fetchedAt = CassetteSyncAPI.cachedMacSummaryFetchedAt,
-       now.timeIntervalSince(fetchedAt) < heartbeatTrust,
-       let summary = CassetteSyncAPI.cachedMacSummary {
-      guard let mac = summary.mac else { return .outOfReach }
-      guard let seen = mac.lastSeenDate, now.timeIntervalSince(seen) < heartbeatWindow else {
-        return .outOfReach
-      }
-    }
-    return .inSync
+    return heartbeatState(now: now)
   }
 
-  /// The avatar menu's line under the person's name: "Michaels MacBook Pro · in sync", or
-  /// "Not paired to a computer".
+  /// What the cached heartbeat proves about now:
+  /// - in sync: the hub was seen within the last 15 minutes;
+  /// - out of reach: when the cloud was last asked (under 30 minutes ago), the hub had
+  ///   already been silent for 15 minutes or more, or no hub was registered;
+  /// - unknown otherwise: nothing fetched, a payload that does not decode, or a heartbeat
+  ///   that was fresh when fetched but is too old now to speak for the present.
+  static func heartbeatState(now: Date) -> MacState {
+    guard let fetchedAt = CassetteSyncAPI.cachedMacSummaryFetchedAt,
+          let summary = CassetteSyncAPI.cachedMacSummary
+    else { return .unknown }
+    let isRecentFetch = now.timeIntervalSince(fetchedAt) < heartbeatTrust
+    guard let seen = summary.mac?.lastSeenDate else {
+      return isRecentFetch ? .outOfReach : .unknown
+    }
+    if now.timeIntervalSince(seen) < heartbeatWindow { return .inSync }
+    if isRecentFetch, fetchedAt.timeIntervalSince(seen) >= heartbeatWindow { return .outOfReach }
+    return .unknown
+  }
+
+  /// The avatar menu's line under the person's name: "Michaels MacBook Pro · in sync",
+  /// just the Mac's name until its state is known, or "Not paired to a computer".
   public static func menuLine(hubName: String?, state: MacState) -> String {
     if state == .notPaired { return "Not paired to a computer" }
-    return "\(hubName ?? "Your computer") · \(state.word)"
+    let hub = hubName ?? "Your computer"
+    guard let answer = state.answer else { return hub }
+    return "\(hub) · \(answer)"
   }
 
   /// The hub's name for display: from the paired LAN address, else from the hostname the
@@ -193,9 +215,10 @@ public enum CassetteSyncStatus {
 
   /// The Mac summary, refreshed from the cloud when the cached copy is older than `maxAge`.
   /// One request at a time, and (unless `force`, after Resync Library) at most one attempt a
-  /// minute, so the poll, Settings and the Mac page share it. Never throws: on a failure the
-  /// cached copy (or nil) comes back. Posts `.cassetteMacSummaryChanged` when a fresh copy
-  /// lands.
+  /// minute, so the avatar menu, Settings and the Mac page share it. Only something a person
+  /// opened calls this, never the sync poll: a heavy server read must not run unattended.
+  /// Never throws: on a failure the cached copy (or nil) comes back. Posts
+  /// `.cassetteMacSummaryChanged` when a fresh copy lands.
   @discardableResult
   public static func refreshMacSummary(
     maxAge: TimeInterval,
@@ -648,9 +671,17 @@ public struct CassetteDeviceSummary: Sendable, Decodable {
   /// "lossless" | "high" | "efficient".
   public let downloadQualityTier: String?
   public let keptOffAlbums: [KeptOffAlbum]
+  /// How many of the Mac's albums the cloud counts on this phone (at least one song here,
+  /// not kept off), grouped as the Mac summary's `albums` total is. nil when not sent.
+  public let onPhoneAlbumCount: Int?
 
   enum CodingKeys: String, CodingKey {
-    case scope, downloadQualityTier, keptOffAlbums
+    case scope, downloadQualityTier, keptOffAlbums, onPhoneAlbums
+  }
+
+  /// One element of an array that is only counted.
+  private struct Skipped: Decodable {
+    init(from decoder: Decoder) throws {}
   }
 
   public init(from decoder: Decoder) throws {
@@ -658,6 +689,7 @@ public struct CassetteDeviceSummary: Sendable, Decodable {
     self.scope = try c.decodeIfPresent(String.self, forKey: .scope) ?? "everything"
     self.downloadQualityTier = try c.decodeIfPresent(String.self, forKey: .downloadQualityTier)
     self.keptOffAlbums = try c.decodeIfPresent([KeptOffAlbum].self, forKey: .keptOffAlbums) ?? []
+    self.onPhoneAlbumCount = try c.decodeIfPresent([Skipped].self, forKey: .onPhoneAlbums)?.count
   }
 }
 
@@ -1025,8 +1057,8 @@ public final class CassetteSyncAPI: @unchecked Sendable {
 
   /// The paired hub, as the web's Mac page reads it: heartbeat, last full sync, totals and
   /// newest albums. The payload is cached (see `cachedMacSummary`). A heavy server read
-  /// (it builds the library card set), so it runs once per page open and on a slow
-  /// throttle from the poll (`CassetteSyncStatus.refreshMacSummary`), never every poll.
+  /// (it builds the library card set), so it runs only when a person opens something that
+  /// shows it (`CassetteSyncStatus.refreshMacSummary`), never from the sync poll.
   public func getMacSummary() async throws -> CassetteMacSummary {
     let data = try await get(path: "/api/player/devices/mac", timeout: 45)
     let summary = try JSONDecoder().decode(CassetteMacSummary.self, from: data)
