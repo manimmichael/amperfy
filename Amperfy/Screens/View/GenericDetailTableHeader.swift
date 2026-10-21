@@ -815,7 +815,6 @@ class GenericDetailTableHeader: UIView {
           lineHeightMultiple: 1.05
         )
         answerLabel.numberOfLines = entityContainer is Album ? 2 : 3
-        answerLabel.textAlignment = .natural
         answerLabel.isHidden = false
         answerLabel.isUserInteractionEnabled = lineIsLink
         answerLabel.accessibilityTraits = lineIsLink ? .link : .staticText
@@ -901,12 +900,16 @@ class GenericDetailTableHeader: UIView {
       contentColumn.setCustomSpacing(CassetteTheme.Spacing.lg, after: infoLabel)
     }
 
-    // phone-taste: the lit styles read left-aligned under a centred cover.
+    // phone-taste: the lit styles read left-aligned under a centred cover. Their labels
+    // carry natural alignment in their attributed text (with the line height), so the
+    // label-wide alignment is only set for the classic header.
     let centred = isCompactWidth && !layout.isLit
     let textAlignment: NSTextAlignment = centred ? .center : .left
-    titleLabel.textAlignment = layout.isLit ? .natural : textAlignment
+    if !layout.isLit {
+      titleLabel.textAlignment = textAlignment
+      infoLabel.textAlignment = textAlignment
+    }
     nameTextField.textAlignment = textAlignment
-    infoLabel.textAlignment = layout.isLit ? .natural : textAlignment
     descriptionLabel.textAlignment = centred ? .center : .natural
     subtitleButton.contentHorizontalAlignment = centred ? .center : .leading
 
