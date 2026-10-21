@@ -152,23 +152,25 @@ final class LibraryContainerVC: UIViewController {
   private func applyTitleButtonAppearance(button: UIButton, label: String) {
     var config = UIButton.Configuration.cassetteBare()
     var titleContainer = AttributeContainer()
-    titleContainer.font = UIFont.cassette(.sectionTitle)
-    titleContainer.foregroundColor = CassetteTheme.UIColors.ink
+    // phone-taste: the inline nav-title face (Barlow SemiBold 18, the mock's `.navTitle`),
+    // the same as every other inline title and Home's.
+    titleContainer.font = UIFont.cassette(.navTitle)
+    titleContainer.foregroundColor = UIColor.cassette(.textPrimary)
     config.attributedTitle = AttributedString(label, attributes: titleContainer)
-    config.image = UIImage(systemName: "chevron.down")
+    config.image = CassetteIcon.chevronDown.symbolImage
     config.imagePlacement = .trailing
     config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-      pointSize: 12,
+      pointSize: CassetteIconSize.row.rawValue,
       weight: .semibold
     )
-    config.imagePadding = 6
-    config.baseForegroundColor = CassetteTheme.UIColors.ink
-    // cassette Polish 2 (C4/H): Barlow Condensed Bold at 22pt has a tall
-    // bounding box; with zero vertical insets + sizeToFit the glyph tops were
-    // clipped in the nav titleView. Give the line vertical breathing room.
+    config.imagePadding = 4
+    config.baseForegroundColor = UIColor.cassette(.textPrimary)
+    // cassette Polish 2 (C4/H): Barlow Condensed has a tall bounding box; with
+    // zero vertical insets + sizeToFit the glyph tops were clipped in the nav
+    // titleView. Give the line vertical breathing room.
     config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)
     button.configuration = config
-    button.tintColor = CassetteTheme.UIColors.ink
+    button.tintColor = UIColor.cassette(.textPrimary)
     // Force the button to size itself so the chevron sits next to
     // the title rather than centered awkwardly.
     button.sizeToFit()
