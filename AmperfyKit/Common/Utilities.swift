@@ -210,6 +210,48 @@ extension String {
     }
   }
 
+  /// The Library grid's letters in order: "#" first, then A to Z (phone-taste LETTERS).
+  public static let libraryLetters: [String] = ["#"] + uppercaseAsciiLetters.map { String($0) }
+
+  /// The characters a title may open with that the library's sort ignores.
+  private static let librarySortKeyLeadingMarks: Set<Character> = [
+    "\"", "\u{201C}", "\u{201D}", "'", "\u{2018}", "\u{2019}",
+    "(", "[", "{", "<", "\u{00A1}", "\u{00BF}", ".",
+  ]
+
+  /// The library's sort key, ported from the phone-taste mock (data.ts sortKey): the title
+  /// without leading whitespace, quotes, brackets or inverted marks, then without a leading
+  /// "The ". "The Bends" sorts as "Bends", "(What's the Story)" as "What's the Story)".
+  /// Computed in memory for the Library grid; nothing stored is read or rewritten, so
+  /// `sectionInitial` and every saved section key stay as they are.
+  public var librarySortKey: String {
+    let marks = Self.librarySortKeyLeadingMarks
+    var key = Substring(self).drop { $0.isWhitespace || marks.contains($0) }
+    if key.prefix(3).lowercased() == "the", let next = key.dropFirst(3).first,
+       next.isWhitespace {
+      key = key.dropFirst(3).drop { $0.isWhitespace }
+    }
+    return String(key)
+  }
+
+  /// The letter a title files under in the Library grid (data.ts letterOf): the first
+  /// character of `librarySortKey` with accents and case folded, so "Átta" is A. Anything
+  /// that does not fold to A to Z (digits, symbols, other scripts, Ø) is "#".
+  public var libraryLetter: String {
+    Self.libraryLetter(forSortKey: librarySortKey)
+  }
+
+  /// `libraryLetter` for a key already made by `librarySortKey`. The key is not stripped
+  /// again: "The (What)" keys as "(What)" and files under "#", as the mock does.
+  public static func libraryLetter(forSortKey key: String) -> String {
+    guard let first = key.first else { return "#" }
+    let folded = String(first).folding(options: .diacriticInsensitive, locale: nil)
+      .uppercased()
+    guard let scalar = folded.unicodeScalars.first,
+          scalar.value >= 0x41, scalar.value <= 0x5A else { return "#" }
+    return String(Character(scalar))
+  }
+
   public static var uppercaseAsciiLetters: String {
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
   }

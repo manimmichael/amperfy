@@ -321,4 +321,53 @@ class UtilitiesTest: XCTestCase {
     XCTAssertEqual(CarPlayLimits(reportedItems: 4, reportedSections: 1).leafItems(reserved: 9), 0)
     XCTAssertEqual(CarPlayLimits(reportedItems: 4, reportedSections: 1).browseItems, 4)
   }
+
+  // MARK: Library letters (phone-taste data.ts sortKey / letterOf)
+
+  func testLibrarySortKey() {
+    XCTAssertEqual("The Bends".librarySortKey, "Bends")
+    XCTAssertEqual("the bends".librarySortKey, "bends")
+    XCTAssertEqual("THE  Bends".librarySortKey, "Bends")
+    XCTAssertEqual(
+      "(What's the Story) Morning Glory?".librarySortKey,
+      "What's the Story) Morning Glory?"
+    )
+    XCTAssertEqual("  \u{201C}Heroes\u{201D}".librarySortKey, "Heroes\u{201D}")
+    XCTAssertEqual("\u{00BF}Por qu\u{00E9}?".librarySortKey, "Por qu\u{00E9}?")
+    XCTAssertEqual("...And Justice for All".librarySortKey, "And Justice for All")
+    // Only a whole leading word "The" goes, once, after the marks.
+    XCTAssertEqual("Theory of Machines".librarySortKey, "Theory of Machines")
+    XCTAssertEqual("The".librarySortKey, "The")
+    XCTAssertEqual("The (What)".librarySortKey, "(What)")
+    XCTAssertEqual("".librarySortKey, "")
+  }
+
+  func testLibraryLetter() {
+    XCTAssertEqual("The Bends".libraryLetter, "B")
+    XCTAssertEqual("(What's the Story) Morning Glory?".libraryLetter, "W")
+    XCTAssertEqual("\u{00C1}tta".libraryLetter, "A")
+    XCTAssertEqual("A\u{0301}tta".libraryLetter, "A")
+    XCTAssertEqual("\u{00E9}l\u{00E9}gie".libraryLetter, "E")
+    XCTAssertEqual("blue".libraryLetter, "B")
+    XCTAssertEqual("1999".libraryLetter, "#")
+    XCTAssertEqual("\u{6771}\u{4EAC}".libraryLetter, "#")
+    XCTAssertEqual("\u{0416}\u{0438}\u{0437}\u{043D}\u{044C}".libraryLetter, "#")
+    XCTAssertEqual("!!!".libraryLetter, "#")
+    XCTAssertEqual("".libraryLetter, "#")
+    // The key is not stripped twice: "The (What)" keys as "(What)", which is "#".
+    XCTAssertEqual("The (What)".libraryLetter, "#")
+    // Foundation's diacritic folding leaves these letters alone (they have no
+    // decomposition), so they land in "#", the same as the mock's NFD rule.
+    XCTAssertEqual("\u{00D8}stergaard".libraryLetter, "#")
+    XCTAssertEqual("\u{00F8}".libraryLetter, "#")
+    XCTAssertEqual("\u{00C6}on".libraryLetter, "#")
+    XCTAssertEqual("\u{0141}\u{00F3}d\u{017A}".libraryLetter, "#")
+  }
+
+  func testLibraryLetters() {
+    XCTAssertEqual(String.libraryLetters.count, 27)
+    XCTAssertEqual(String.libraryLetters.first, "#")
+    XCTAssertEqual(String.libraryLetters[1], "A")
+    XCTAssertEqual(String.libraryLetters.last, "Z")
+  }
 }
