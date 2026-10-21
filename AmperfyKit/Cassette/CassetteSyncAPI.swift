@@ -752,6 +752,18 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     _ = try await send(method: "PUT", path: "/api/sync/intents/\(id)", json: body)
   }
 
+  /// Keep the albums holding these songs off this phone (the phone just removed them).
+  /// The server resolves the albums from the hub's library index and stops sending
+  /// them here until they are sent back from the device page in Cassette Player.
+  public func keepOffThisPhone(cassetteLocalIds: [String]) async throws {
+    guard !cassetteLocalIds.isEmpty else { return }
+    _ = try await send(
+      method: "POST",
+      path: "/api/sync/marks/exclude",
+      json: ["device_id": Self.deviceId, "cassette_local_ids": cassetteLocalIds]
+    )
+  }
+
   /// Differential device-inventory report. `added` entries are upserted,
   /// `removed` localIds are deleted, for this device.
   public func reportDeviceInventory(

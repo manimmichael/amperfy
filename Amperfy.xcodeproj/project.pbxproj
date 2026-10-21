@@ -548,6 +548,7 @@
 		CA55E0E0000000140000CAFE /* HomeShelfEventMO+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E0000000040000CAFE /* HomeShelfEventMO+CoreDataProperties.swift */; };
 		CA55E0E1000000110000CAFE /* CassetteFileStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000010000CAFE /* CassetteFileStorage.swift */; };
 		CA55E0E1000000120000CAFE /* DeviceOwnershipManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000020000CAFE /* DeviceOwnershipManager.swift */; };
+		C0FFEE01CA5E77E000000012 /* PhoneRemoval.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E000000011 /* PhoneRemoval.swift */; };
 		CA55E0E1000000130000CAFE /* CassetteSyncAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000030000CAFE /* CassetteSyncAPI.swift */; };
 		CA55E0E1000000140000CAFE /* CassetteTransferSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000040000CAFE /* CassetteTransferSession.swift */; };
 		CA55E0E1000000150000CAFE /* IntentExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55E0E1000000050000CAFE /* IntentExecutor.swift */; };
@@ -1219,6 +1220,7 @@
 		CA55E0E0000000550000CAFE /* Amperfy v55.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Amperfy v55.xcdatamodel"; sourceTree = "<group>"; };
 		CA55E0E1000000010000CAFE /* CassetteFileStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteFileStorage.swift; sourceTree = "<group>"; };
 		CA55E0E1000000020000CAFE /* DeviceOwnershipManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceOwnershipManager.swift; sourceTree = "<group>"; };
+		C0FFEE01CA5E77E000000011 /* PhoneRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneRemoval.swift; sourceTree = "<group>"; };
 		CA55E0E1000000030000CAFE /* CassetteSyncAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteSyncAPI.swift; sourceTree = "<group>"; };
 		CA55E0E1000000040000CAFE /* CassetteTransferSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CassetteTransferSession.swift; sourceTree = "<group>"; };
 		CA55E0E1000000050000CAFE /* IntentExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentExecutor.swift; sourceTree = "<group>"; };
@@ -2301,6 +2303,7 @@
 			children = (
 				CA55E0E1000000010000CAFE /* CassetteFileStorage.swift */,
 				CA55E0E1000000020000CAFE /* DeviceOwnershipManager.swift */,
+				C0FFEE01CA5E77E000000011 /* PhoneRemoval.swift */,
 				CA55E0EA0000000A0000CAFE /* AlbumRegrouper.swift */,
 				CA55E0E1000000030000CAFE /* CassetteSyncAPI.swift */,
 				CA55E0E1000000230000CAFE /* CassetteCloudPlaylistBridge.swift */,
@@ -2981,6 +2984,7 @@
 				CA55E0E0000000140000CAFE /* HomeShelfEventMO+CoreDataProperties.swift in Sources */,
 				CA55E0E1000000110000CAFE /* CassetteFileStorage.swift in Sources */,
 				CA55E0E1000000120000CAFE /* DeviceOwnershipManager.swift in Sources */,
+				C0FFEE01CA5E77E000000012 /* PhoneRemoval.swift in Sources */,
 				CA55E0EA0000001A0000CAFE /* AlbumRegrouper.swift in Sources */,
 				CA55E0E1000000190000CAFE /* DiagnosticEntry.swift in Sources */,
 				CA55E0E10000001A0000CAFE /* DiagnosticLog.swift in Sources */,

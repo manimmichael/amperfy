@@ -157,6 +157,12 @@ class EntityPreviewActionBuilder {
        entityContainer.playables.hasCachedItems {
       elementHandlingActions.append(createDeleteCacheAction())
     }
+    // cassette (UX review 2026-10-20): the phone's own way to drop an album. Files go
+    // now; the album stays on the computer and is kept off this phone until it is sent
+    // back from the device page in Cassette Player (PhoneRemoval).
+    if CassetteLibraryFilterProvider.shared.isOnDeviceOnly, let album = entityContainer as? Album {
+      elementHandlingActions.append(createRemoveFromPhoneAction(album: album))
+    }
     if isDeleteOnServer {
       elementHandlingActions.append(createDeleteOnServerAction())
     }
@@ -774,6 +780,29 @@ class EntityPreviewActionBuilder {
         // do nothing
       }))
       self.rootView.present(alert, animated: true, completion: nil)
+    }
+  }
+
+  private func createRemoveFromPhoneAction(album: Album) -> UIAction {
+    UIAction(title: "Remove from This Phone", image: .trash, attributes: .destructive) { _ in
+      let alert = UIAlertController(
+        title: "Remove \u{201C}\(album.name)\u{201D} from this phone?",
+        message: "It stays on your computer and in your library. To put it back on this phone, send it back from this phone's page in Cassette Player.",
+        preferredStyle: .alert
+      )
+      alert.addAction(UIAlertAction(title: "Remove", style: .destructive) { _ in
+        PhoneRemoval.remove(
+          songIds: Set(album.playables.map(\.id)),
+          context: self.appDelegate.storage.main.context
+        )
+        if self.rootView is AlbumDetailVC {
+          self.rootView.navigationController?.popViewController(animated: true)
+        } else {
+          self.reloadRootView()
+        }
+      })
+      alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+      self.rootView.present(alert, animated: true)
     }
   }
 

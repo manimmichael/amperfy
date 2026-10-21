@@ -169,6 +169,9 @@ public final class IntentExecutor {
     var pollDidWork = false
     artworkDidWorkThisPass = false
     defer { lastPollDidWork = pollDidWork || artworkDidWorkThisPass }
+    // Albums removed on this phone: tell the cloud to keep them off it before this
+    // pass reports inventory, or the reconcile that report triggers re-adds them.
+    await PhoneRemoval.sendPending()
 
     // One-time: clear artwork state poisoned by the retired synthetic paths, so the
     // backfills below can actually heal those albums instead of skipping them as

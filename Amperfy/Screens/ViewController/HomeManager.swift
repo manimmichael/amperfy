@@ -601,15 +601,16 @@ class HomeManager: NSObject {
     // fresh library with no play history (first-run fallback only) there
     // is nothing to resume, so the card hides.
     //
-    // cassette (Resume on-device gate): in the default on-device-only mode the
-    // phone shows only downloaded content, so the Resume card must not point at
-    // an album that's been removed from the device. We pick the first container
-    // in the recency-ordered `merged` list that is still on-device, falling
-    // through to the next owned one (and hiding the card entirely if none
-    // remain). In Server Mode the gate is bypassed — Resume shows the
-    // most-recent container regardless of local ownership, unchanged behavior.
+    // cassette (BUG-436): a phone shows only what is on it. Play history is the
+    // same everywhere (it lives in the account), but an album, artist or playlist
+    // with nothing on this phone has no music and no art here, so it drops out of
+    // Resume and Recent alike. That includes the album of a queued song that is not
+    // on the phone. Server Mode keeps everything.
     let hasPlayHistory = hasLiveAlbum || !entries.isEmpty
-    if hasPlayHistory, let resumeIndex = firstResumeEligibleIndex(in: merged) {
+    let isOnPhone = makeOnPhoneCheck()
+    merged.removeAll { !isOnPhone($0) }
+    if hasPlayHistory, !merged.isEmpty {
+      let resumeIndex = 0
       let resumeContainer = merged[resumeIndex]
       // Section-scoped HomeItem identity already makes Resume vs a shelf a
       // distinct item, so a container moving between them is a delete+insert
@@ -631,34 +632,22 @@ class HomeManager: NSObject {
     notifySnapshot()
   }
 
-  /// cassette (Resume on-device gate): index of the first container in the
-  /// recency-ordered list that may surface as the Resume card.
-  ///
-  /// In Server Mode the head is always eligible (catalog-wide), so this is just
-  /// `0` when the list is non-empty. In the default on-device-only mode it
-  /// returns the first container whose content is still on the device, so a
-  /// removed album falls through to the next owned one (or the card hides when
-  /// nothing owned remains).
-  ///
-  /// The owned-album / owned-artist id sets are resolved ONCE here — not per
-  /// container — so this is one Core Data pass per recompute, not one per item.
-  /// Albums and Artists are gated by their owned-id sets; Playlists (and any
-  /// other container type) are treated as eligible because device-ownership is
-  /// tracked per track, not per playlist — gating them here would surprise-hide
-  /// a playlist whose tracks are partially on-device, so we leave the existing
-  /// behavior for those.
-  private func firstResumeEligibleIndex(in merged: [PlayableContainable]) -> Int? {
-    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else {
-      return merged.isEmpty ? nil : 0
-    }
+  /// cassette (BUG-436): whether a Home item has anything on this phone. Albums and
+  /// artists by their owned-id sets, playlists by holding at least one song that is
+  /// here (a partly synced playlist stays, and lists only its songs on the phone).
+  /// The id sets are resolved once per call, not per item. Always true in Server Mode.
+  private func makeOnPhoneCheck() -> (PlayableContainable) -> Bool {
+    guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else { return { _ in true } }
     let ownership = DeviceOwnershipManager(context: storage.main.context)
     let ownedAlbumIds = ownership.fetchOwnedAlbumIds()
     let ownedArtistIds = ownership.fetchOwnedArtistIds()
-    return merged.firstIndex { container in
+    let ownedTrackIds = ownership.fetchAllSubsonicTrackIds()
+    return { container in
       if let album = container as? Album { return ownedAlbumIds.contains(album.id) }
       if let artist = container as? Artist { return ownedArtistIds.contains(artist.id) }
-      // Non-album/artist containers (e.g. playlists): ownership is per-track,
-      // not per-container, so don't hide them — keep prior behavior.
+      if let playlist = container as? Playlist {
+        return playlist.managedObject.items.contains { ownedTrackIds.contains($0.playable.id) }
+      }
       return true
     }
   }
@@ -677,9 +666,10 @@ class HomeManager: NSObject {
     // local playlist — otherwise map to two identical HomeItems in one section,
     // a duplicate diffable identifier that hard-crashes applySnapshot (SIGTRAP).
     var seenPlaylistIDs = Set<String>()
+    let isOnPhone = makeOnPhoneCheck()
     data[.yourPlaylists] = playlistMOs
       .compactMap { Playlist(library: storage.main.library, managedObject: $0) }
-      .filter { seenPlaylistIDs.insert(Self.stableID(for: $0)).inserted }
+      .filter { isOnPhone($0) && seenPlaylistIDs.insert(Self.stableID(for: $0)).inserted }
       .prefix(Self.shelfCarouselCap)
       .map { HomeItem(
         section: .yourPlaylists,
