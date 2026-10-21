@@ -207,6 +207,14 @@ class LibraryElementDetailTableHeaderView: UIView {
     if let artist = config?.favoriteEntity as? Artist {
       return current.artist == artist || current.album?.artist == artist
     }
+    // phone-taste: a playlist's Play pauses while that playlist plays. Its play context
+    // carries the playlist's name; the song check keeps two playlists that share a name
+    // apart.
+    if let playlist = config?.favoriteEntity as? Playlist,
+       let player = config?.player {
+      return player.contextName == playlist.name
+        && playlist.playables.contains { $0.id == current.id }
+    }
     return false
   }
 

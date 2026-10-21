@@ -107,19 +107,31 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   // that are on it; the playlist itself keeps every item (UX review 2026-10-20).
   private var cassetteOwnedTrackIds: Set<String> = []
 
-  private var editButton: UIBarButtonItem!
   var detailOperationsView: GenericDetailTableHeader?
-  /// The shared detail-page frame (Wave 3). The hero stays below the bar: this screen has
-  /// pull-to-refresh, whose spinner would sit under a transparent bar at the top edge.
+  /// The shared detail-page frame (Wave 3). phone-taste: the cover sits up top between the
+  /// back and more buttons, as on the album page. There is no pull-to-refresh: the page
+  /// re-syncs on every appear. Edit lives in the more menu.
   private lazy var chrome = DetailScreenChrome(
     host: self,
-    placement: .belowBar,
+    placement: .underBar,
     menu: { [weak self] in
       guard let self else { return [] }
-      return EntityPreviewActionBuilder(container: playlist, on: self).createMenuActions()
+      var actions = EntityPreviewActionBuilder(container: playlist, on: self).createMenuActions()
+      if appDelegate.storage.settings.user.isOnlineMode, !playlist.isSmartPlaylist {
+        actions.append(UIAction(title: "Edit") { [weak self] _ in
+          self?.openEditView()
+        })
+      }
+      return actions
     },
     playContext: { [weak self] in self?.playlistPlayContext() }
   )
+  /// phone-taste: the footer under the songs (the on-phone line, then MORE LIKE).
+  private var recordFooter: DetailRecordFooter?
+  /// MORE LIKE <playlist>: albums on the phone, not in the playlist, whose moods match it.
+  private var moreLikeAlbums: [Album] = []
+  /// Looks for a picked cover the hero is still downloading (bounded).
+  private var coverRetryCount = 0
 
   init(account: Account, playlist: Playlist) {
     self.playlist = playlist
@@ -156,10 +168,6 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     chrome.prepareBeforeLoad()
     super.viewDidLoad()
 
-    #if !targetEnvironment(macCatalyst)
-      refreshControl = UIRefreshControl()
-    #endif
-
     appDelegate.userStatistics.visited(.playlistDetail)
     cassetteOwnedTrackIds = DeviceOwnershipManager(
       context: appDelegate.storage.main.context
@@ -181,14 +189,9 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     tableView.sectionHeaderHeight = 0.0
     tableView.estimatedSectionHeaderHeight = 0.0
     tableView.backgroundColor = .backgroundColor
+    // No row separators (the album page's clean block).
+    tableView.separatorStyle = .none
 
-    // Use a single button, two buttons don't work on catalyst
-    editButton = UIBarButtonItem(
-      title: "Edit",
-      style: .plain,
-      target: self,
-      action: #selector(openEditView)
-    )
     let playShuffleInfoConfig = PlayShuffleInfoConfiguration(
       infoCB: {
         DetailScreenChrome.songCountText(
@@ -206,16 +209,32 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       rootView: self,
       tableView: tableView,
       playShuffleInfoConfig: playShuffleInfoConfig,
-      extendsUnderNavigationBar: chrome.extendsUnderNavigationBar
+      extendsUnderNavigationBar: chrome.extendsUnderNavigationBar,
+      heroStyle: .room
     )
     detailOperationsView = GenericDetailTableHeader
       .createTableHeader(configuration: detailHeaderConfig)
+    refreshDescriptionLine()
     refreshPlaylistMetadataLine()
     chrome.install(header: detailOperationsView, title: playlist.name)
-    refreshControl?.addTarget(
+    // phone-taste: lit by the playlist's own cover (the person's pick, else its preset;
+    // never album art). The MORE LIKE answer follows the cover's colour when it lands.
+    chrome.observeArtworkDownloads(account: account)
+    chrome.relight = { [weak self] in self?.lightUpFromCover() }
+    chrome.onTintChanged = { [weak self] tint in
+      self?.recordFooter?.setAnswerColor(tint.text)
+    }
+    NotificationCenter.default.addObserver(
       self,
-      action: #selector(Self.handleRefresh),
-      for: UIControl.Event.valueChanged
+      selector: #selector(moodIndexChanged),
+      name: .cassetteMoodIndexReady,
+      object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(moodIndexChanged),
+      name: .cassetteLibraryMoodsChanged,
+      object: nil
     )
 
     snapshotDidChange = { [weak self] in
@@ -289,15 +308,15 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
     chrome.viewIsAppearing()
-    // cassette (UX review 2026-10-20): "8 of 12 songs on this phone" under the list.
-    tableView.tableFooterView = DetailScreenChrome.onPhoneFooter(
-      onPhone: fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0,
-      total: max(playlist.songCount, fetchedResultsController.totalItemCount)
-    )
+    coverRetryCount = 0
+    lightUpFromCover()
+    // cassette (UX review 2026-10-20): "8 of 12 songs on this phone" under the list, then
+    // MORE LIKE (phone-taste).
+    recomputeMoreLike()
+    rebuildFooter()
     if appDelegate.storage.settings.user.isOfflineMode {
       tableView.isEditing = false
     }
-    refreshBarButtons()
     Task { @MainActor in
       do {
         try await playlist.fetch(
@@ -309,26 +328,137 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       } catch {
         self.appDelegate.eventLogger.report(topic: "Playlist Sync", error: error)
       }
+      self.refreshDescriptionLine()
       self.refreshPlaylistMetadataLine()
       self.detailOperationsView?.refresh()
       self.refreshEmptyState()
+      self.lightUpFromCover()
+      self.recomputeMoreLike()
+      self.rebuildFooter()
     }
   }
 
+  deinit {
+    NotificationCenter.default.removeObserver(self)
+  }
+
   // Patch 026: playlist metadata line. Year doesn't apply for playlists,
-  // so we surface scope: "14 songs · 56m". Counts and duration are skipped
-  // when missing. cassette: leading type noun dropped, matching the other
-  // detail pages.
+  // so we surface scope. phone-taste: "12 songs · 74 min" (the header sets it in tracked
+  // capitals; minutes stay minutes past an hour). On the phone it counts the songs on the
+  // phone, which is what the list shows; Server Mode keeps the playlist's own totals.
+  // Parts are skipped when missing.
   private func refreshPlaylistMetadataLine() {
+    let count: Int
+    let seconds: Int
+    if CassetteLibraryFilterProvider.shared.isOnDeviceOnly {
+      let playables = (fetchedResultsController?.fetchResultsController.fetchedObjects ?? [])
+        .compactMap { ($0 as? PlaylistItemMO).map { AbstractPlayable(managedObject: $0.playable) } }
+      count = playables.count
+      seconds = playables.reduce(0) { $0 + $1.duration }
+    } else {
+      count = playlist.songCount
+      seconds = playlist.duration
+    }
     var parts: [String] = []
-    if playlist.songCount > 0 {
-      parts.append("\(playlist.songCount) song\(playlist.songCount == 1 ? "" : "s")")
+    if count > 0 {
+      parts.append("\(count) song\(count == 1 ? "" : "s")")
     }
-    if playlist.duration > 0 {
-      parts.append(playlist.duration.asDurationShortString)
+    let minutes = Int((Double(seconds) / 60).rounded())
+    if minutes > 0 {
+      parts.append("\(minutes) min")
     }
-    detailOperationsView?.metadataOverride = parts.joined(separator: " · ")
+    detailOperationsView?.metadataOverride = parts.joined(separator: " \(CommonString.oneMiddleDot) ")
     chrome.setTitle(playlist.name)
+  }
+
+  /// The playlist's own description under its name, verbatim, in the answer voice. None
+  /// (or a generated mixtape's instruction line) shows no line.
+  private func refreshDescriptionLine() {
+    detailOperationsView?.answerLine = CassetteCloudPlaylistBridge.storedDescription(for: playlist.id)
+  }
+
+  /// Light the page from the playlist's own cover: the person's pick, else its preset.
+  /// Never the playlist's imagePath or an album mosaic. A pick the hero is still
+  /// downloading is looked for again a few times.
+  private func lightUpFromCover() {
+    let id = playlist.id
+    let url = CassetteCloudPlaylistBridge.storedCoverUrl(for: id)
+    let image = CassetteCloudPlaylistBridge.localCoverImage(for: id)
+    chrome.lightUp(
+      image: image,
+      key: "playlist:\(id)|\(url ?? "preset")|\(image == nil ? "pending" : "ready")"
+    )
+    if image == nil, url != nil, coverRetryCount < 3 {
+      coverRetryCount += 1
+      DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+        self?.lightUpFromCover()
+      }
+    }
+  }
+
+  // MARK: - MORE LIKE (phone-taste)
+
+  @objc
+  private func moodIndexChanged() {
+    let before = moreLikeAlbums.map(\.id)
+    recomputeMoreLike()
+    guard moreLikeAlbums.map(\.id) != before else { return }
+    rebuildFooter()
+  }
+
+  /// Albums on the phone whose songs' moods match this playlist's songs on the phone, none
+  /// with a song in the playlist, one per artist, at most eight. Empty (the shelf hides)
+  /// until the mood index is ready; it never builds on the main thread here.
+  private func recomputeMoreLike() {
+    guard let index = LatelyLibrary.moodIndexIfReady(storage: appDelegate.storage, account: account)
+    else {
+      moreLikeAlbums = []
+      return
+    }
+    let onPhoneSongIDs = Set(
+      (fetchedResultsController?.fetchResultsController.fetchedObjects ?? [])
+        .compactMap { ($0 as? PlaylistItemMO)?.playable.id }
+    )
+    var profile = ListeningShelves.TagVector()
+    for candidate in index.songCandidates where onPhoneSongIDs.contains(candidate.songID) {
+      ListeningShelves.add(candidate.tags, into: &profile)
+    }
+    let excluding = Set(playlist.playables.compactMap { $0.asSong?.album?.id })
+    let ids = ListeningShelves.moreLike(
+      profile: profile,
+      albums: index.albumCandidates,
+      excluding: excluding,
+      minMatch: 0.7,
+      perArtist: 1,
+      limit: 8
+    )
+    moreLikeAlbums = ids.compactMap { index.albumsByID[$0] }
+  }
+
+  /// The footer: the on-phone line, then MORE LIKE <playlist>.
+  private func rebuildFooter() {
+    let shelf = DetailShelfBlock(
+      shout: "More like",
+      answer: playlist.name,
+      albums: moreLikeAlbums,
+      onSelect: { [weak self] album in
+        guard let self else { return }
+        navigationController?.pushViewController(
+          AppStoryboard.Main.segueToAlbumDetail(account: account, album: album),
+          animated: true
+        )
+      },
+      onPlay: { album in OneTapPlay.play(album) }
+    )
+    let footer = DetailScreenChrome.makeRecordFooter(
+      width: tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width,
+      onPhone: fetchedResultsController.fetchResultsController.fetchedObjects?.count ?? 0,
+      total: max(playlist.songCount, fetchedResultsController.totalItemCount),
+      shelves: [shelf],
+      answerColor: chrome.tint.text
+    )
+    recordFooter = footer
+    tableView.tableFooterView = footer
   }
 
   /// cassette Patch 020: Cassette-flavored "Empty playlist" state.
@@ -339,27 +469,12 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
       : nil
   }
 
+  /// phone-taste: no explainer line, just the title.
   private static let emptyPlaylistConfig: UIContentUnavailableConfiguration = .cassetteEmpty(
     image: CassetteIcon.playlist.uiImage,
     title: "Empty playlist",
-    body: "Add songs from any artist or album."
+    body: nil
   )
-
-  func refreshBarButtons() {
-    var edititingBarButton: UIBarButtonItem? = nil
-
-    if appDelegate.storage.settings.user.isOnlineMode {
-      edititingBarButton = editButton
-      edititingBarButton?.title = "Edit"
-      edititingBarButton?.style = .plain
-      if playlist.isSmartPlaylist {
-        edititingBarButton?.isEnabled = false
-      }
-    }
-
-    // Overflow, then the collapsed play (hidden until the hero collapses), then Edit.
-    chrome.setExtraTrailingItems([edititingBarButton].compactMap { $0 })
-  }
 
   func convertIndexPathToPlayContext(songIndexPath: IndexPath) -> PlayContext? {
     guard let songs = fetchedResultsController
@@ -374,8 +489,8 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
     return convertIndexPathToPlayContext(songIndexPath: IndexPath(row: indexPath.row, section: 0))
   }
 
-  @objc
-  private func openEditView(sender: UIBarButtonItem) {
+  /// The playlist editor, from the more menu's Edit.
+  private func openEditView() {
     let playlistDetailVC = AppStoryboard.Main.segueToPlaylistEdit(
       account: account,
       playlist: playlist
@@ -412,18 +527,4 @@ class PlaylistDetailVC: SingleSnapshotFetchedResultsTableViewController<Playlist
   // so this override only ran when ancestral lifecycle hooks
   // (e.g. BasicTableViewController.viewIsAppearing) called through.
   // The base no-op covers that path.
-
-  @objc
-  func handleRefresh(refreshControl: UIRefreshControl) {
-    Task { @MainActor in
-      do {
-        try await self.appDelegate.getMeta(self.account.info).librarySyncer
-          .syncDown(playlist: playlist)
-      } catch {
-        self.appDelegate.eventLogger.report(topic: "Playlist Sync", error: error)
-      }
-      self.detailOperationsView?.refresh()
-      self.refreshControl?.endRefreshing()
-    }
-  }
 }

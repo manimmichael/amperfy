@@ -39,6 +39,54 @@ public enum CassetteCloudPlaylistBridge {
     "cassette.cloudPlaylistCoverUrl." + playlistId
   }
 
+  nonisolated private static func descriptionKey(_ playlistId: String) -> String {
+    "cassette.cloudPlaylistDescription." + playlistId
+  }
+
+  /// The playlist's own description from the last cloud sync, shown verbatim under its
+  /// name (phone-taste). nil when it has none, or when it is a generated mixtape's
+  /// instruction line (see `personDescription`).
+  nonisolated public static func storedDescription(for playlistId: String) -> String? {
+    guard !playlistId.isEmpty,
+          let text = UserDefaults.standard.string(forKey: descriptionKey(playlistId)),
+          !text.isEmpty
+    else { return nil }
+    return text
+  }
+
+  /// UserDefaults only, safe inside a background Core Data perform. nil removes it.
+  nonisolated private static func storeDescription(_ description: String?, for playlistId: String) {
+    guard !playlistId.isEmpty else { return }
+    if let text = personDescription(description) {
+      UserDefaults.standard.set(text, forKey: descriptionKey(playlistId))
+    } else {
+      UserDefaults.standard.removeObject(forKey: descriptionKey(playlistId))
+    }
+  }
+
+  /// The description a person wrote, trimmed; nil when empty. The web's mixtape
+  /// generators save an instruction line as the description ("... hit Rebuild for a
+  /// different take.", "... tap Smart Mixtape again for a new take."), which is not the
+  /// person's words and points at buttons the phone does not have, so it counts as none.
+  nonisolated static func personDescription(_ description: String?) -> String? {
+    guard let text = description?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty
+    else { return nil }
+    let lowered = text.lowercased()
+    if lowered.hasSuffix("for a different take.") || lowered.hasSuffix("for a new take.") {
+      return nil
+    }
+    return text
+  }
+
+  /// The derived preset as the cover URL the web would send (`derived_cover_url`), for a
+  /// playlist whose sync response left it out.
+  nonisolated static func derivedPresetCoverUrl(forPlaylistId playlistId: String) -> String? {
+    guard let name = derivedPresetAssetName(forPlaylistId: playlistId) else { return nil }
+    // "playlist-cover-preset-07" -> ".../playlist-covers/preset-07.png"
+    let slug = name.replacingOccurrences(of: "playlist-cover-", with: "")
+    return "https://cassette.digital/playlist-covers/\(slug).png"
+  }
+
   public static func storedItemIds(for playlistId: String) -> [String] {
     UserDefaults.standard.stringArray(forKey: itemIdsKey(playlistId)) ?? []
   }
@@ -266,6 +314,7 @@ public enum CassetteCloudPlaylistBridge {
         }
         asyncCompanion.library.deletePlaylist(pl)
         storeCoverUrl(nil, for: pl.id)
+        storeDescription(nil, for: pl.id)
         UserDefaults.standard.removeObject(forKey: itemIdsKey(pl.id))
       }
 
@@ -280,8 +329,14 @@ public enum CassetteCloudPlaylistBridge {
         playlist.name = remote.name
         playlist.updateChangeDate()
         // cassette (cover unification): the user's own pick wins; else the server's
-        // deterministic preset (rendered from the bundled asset — local + offline).
-        storeCoverUrl(remote.coverImageUrl ?? remote.derivedCoverUrl, for: remote.id)
+        // deterministic preset (rendered from the bundled asset — local + offline);
+        // else the same preset derived here, so a response without it never clears it.
+        storeCoverUrl(
+          remote.coverImageUrl ?? remote.derivedCoverUrl
+            ?? derivedPresetCoverUrl(forPlaylistId: remote.id),
+          for: remote.id
+        )
+        storeDescription(remote.description, for: remote.id)
 
         // Rebuild items from resolved songs.
         playlist.removeAllItems()
@@ -327,7 +382,15 @@ public enum CassetteCloudPlaylistBridge {
       )
       playlistAsync.name = remote.name
       // cassette (cover unification): user pick wins; else the server preset (bundled).
-      storeCoverUrl(remote.coverImageUrl ?? remote.derivedCoverUrl, for: remote.id)
+      // phone-taste: the detail response omits derived_cover_url (the web's [id] route
+      // passes no derived cover), so the preset is derived here rather than cleared; a
+      // deleted playlist is still cleared by the list sync.
+      storeCoverUrl(
+        remote.coverImageUrl ?? remote.derivedCoverUrl
+          ?? derivedPresetCoverUrl(forPlaylistId: remote.id),
+        for: remote.id
+      )
+      storeDescription(remote.description, for: remote.id)
       playlistAsync.removeAllItems()
       var itemIds: [String] = []
       let items = (remote.items ?? []).filter { $0.removedAt == nil }
@@ -447,6 +510,7 @@ public enum CassetteCloudPlaylistBridge {
     try await CassetteSyncAPI.shared.deletePlaylist(id: id)
     UserDefaults.standard.removeObject(forKey: itemIdsKey(id))
     storeCoverUrl(nil, for: id)
+    storeDescription(nil, for: id)
   }
 
   // MARK: - One-shot hub Subsonic → cloud import
