@@ -2994,6 +2994,11 @@ public class LibraryStorage: PlayableFileCachable {
     return songMOs?.compactMap { Song(managedObject: $0) } ?? [Song]()
   }
 
+  /// Cassette: songs by id, in one fetch (the made-for-you playlists, MadeForYouStore).
+  public func getSongsByID(for account: Account, ids: Set<String>) -> [String: Song] {
+    getSongsDict(account: account, ids: ids)
+  }
+
   private func getSongsDict(account: Account, ids: Set<String>) -> [String: Song] {
     let songs = getSongs(account: account, ids: ids)
 

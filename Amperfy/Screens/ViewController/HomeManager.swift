@@ -1027,8 +1027,13 @@ class HomeManager: NSObject {
     data[.fromYourMixes] = items(Self.heardInPassing(entries, now: now), .fromYourMixes, capped: false)
     // Uncapped: cascadeSofterRows trims it against On Repeat, then caps it.
     data[.aroundNow] = items(ListeningShelves.aroundNow(plays, now: now), .aroundNow, capped: false)
+    // The made-for-you playlists come from the cloud (MadeForYouStore), the same set every
+    // device plays; the phone's own recipe only stands in when it holds none for this moment.
+    let fromCloud = applyMadeForYouFeed(now: now, isOnPhone: isOnPhone)
     updateLatelyShelves(lately, now: now, isOnPhone: isOnPhone)
-    updateMadeForYouMixes(songPlays: songPlays, lately: lately, now: now, isOnPhone: isOnPhone)
+    if !fromCloud {
+      updateMadeForYouMixes(songPlays: songPlays, lately: lately, now: now, isOnPhone: isOnPhone)
+    }
   }
 
   /// From Your Mixes: records you heard one or two songs of in the last two weeks, most
@@ -1156,6 +1161,8 @@ class HomeManager: NSObject {
         )
       }
 
+    // The cloud's Lately when it is held (applyMadeForYouFeed); the rest is the stand-in.
+    guard !mixesFromCloud else { return }
     // The mix is drawn again only when what it is drawn from changed (see LatelyMixKey);
     // otherwise it stays, minus songs that have left the phone.
     if latelyMix != nil, let drawnFrom = latelyMixKey, !drawnFrom.isOutdated(by: key) {
@@ -1189,6 +1196,7 @@ class HomeManager: NSObject {
 
   /// Replace the Lately mix (`songs` nil: no mix) and remember what it was drawn from.
   private func setLatelyMix(_ songs: [AbstractPlayable]?, key: LatelyMixKey?) {
+    guard !mixesFromCloud else { return }
     latelyMixKey = key
     guard let songs else {
       latelyMix = nil
@@ -1199,7 +1207,7 @@ class HomeManager: NSObject {
 
   /// Keep the current mix, dropping songs that are no longer on the phone.
   private func keepLatelyMix(isOnPhone: OnPhoneCheck) {
-    guard let current = latelyMix, isOnPhone.owned != nil else { return }
+    guard !mixesFromCloud, let current = latelyMix, isOnPhone.owned != nil else { return }
     let kept = current.songs.filter { isOnPhone.contains($0) }
     guard kept.count != current.songs.count else { return }
     publishLatelyMix(kept)
@@ -1259,6 +1267,86 @@ class HomeManager: NSObject {
   private static let listeningPlayFetchLimit = 5000
 
   // MARK: - Made for you (founder, 2026-10-21)
+
+  /// Whether Lately and the other made-for-you playlists are the cloud's (MadeForYouStore).
+  private var mixesFromCloud = false
+  /// What the cloud's set was last laid out from: its day, part of the day, revision and
+  /// the songs on the phone. The same again keeps the playlists as they are.
+  private var appliedFeedSignature: String?
+
+  /// Lays out the cloud's made-for-you playlists for this moment (Lately first, then the
+  /// rest in its order) from the songs on the phone, and asks for a fresher set when one is
+  /// due. A playlist under 15 songs on the phone is left out (Lately shows with any).
+  /// Returns false when no set for this moment is held: the phone's own recipe stands in.
+  private func applyMadeForYouFeed(now: Date, isOnPhone: OnPhoneCheck) -> Bool {
+    let store = MadeForYouStore.shared
+    Task { await store.refreshIfDue(now: now) }
+    guard let feed = store.feed(for: now) else {
+      if mixesFromCloud {
+        mixesFromCloud = false
+        appliedFeedSignature = nil
+        latelyMixKey = nil
+        otherMixesKey = nil
+      }
+      return false
+    }
+    let signature = "\(feed.day)|\(feed.slot)|\(store.revision)|\(isOnPhone.owned?.trackIds.count ?? -1)"
+    if mixesFromCloud, signature == appliedFeedSignature { return true }
+    mixesFromCloud = true
+    appliedFeedSignature = signature
+
+    // cassette_local_id -> the song on this phone, newest download first when an id repeats
+    var songIDByLocalID = [String: String]()
+    for row in (try? DeviceOwnershipManager(context: storage.main.context).fetchAll()) ?? [] {
+      let localID: String? = row.cassetteLocalId
+      guard let localID, let songID = row.subsonicTrackId, songIDByLocalID[localID] == nil else { continue }
+      songIDByLocalID[localID] = songID
+    }
+    let wanted = Set(feed.mixes.flatMap { $0.songs.compactMap { songIDByLocalID[$0] } })
+    let songsByID = storage.main.library.getSongsByID(for: account, ids: wanted)
+    var latelySongs: [AbstractPlayable] = []
+    var latelySubtitle: String?
+    var others = [MadeForYouMix]()
+    for mix in feed.mixes {
+      let songs: [AbstractPlayable] = mix.songs
+        .compactMap { songIDByLocalID[$0].flatMap { songsByID[$0] } }
+        .filter {
+          isOnPhone.contains($0) && !$0.playableManagedObject.isDeleted
+            && $0.playableManagedObject.managedObjectContext != nil
+        }
+      let kind: MadeForYouMix.Kind
+      switch mix.kind {
+      case "lately":
+        latelySongs = songs
+        latelySubtitle = mix.subtitle
+        continue
+      case "daypart": kind = .daypart
+      case "been-a-while": kind = .beenAWhile
+      case "mood": kind = .mood(key: String(mix.id.dropFirst("mood:".count)), hexColor: mix.color ?? "#6B5A44")
+      default: continue
+      }
+      guard songs.count >= ListeningShelves.madeMixMinSongs else { continue }
+      others.append(MadeForYouMix(
+        kind: kind,
+        title: mix.title,
+        subtitle: mix.subtitle,
+        songs: songs,
+        leadAlbums: leadAlbums(for: songs),
+        coverVariant: mix.cover?.variant
+      ))
+    }
+    latelyDescription = latelySubtitle
+    if latelySongs.isEmpty {
+      if latelyMix != nil {
+        latelyMix = nil
+        latelyMixGeneration += 1
+      }
+    } else {
+      publishLatelyMix(latelySongs)
+    }
+    setOtherMixes(others)
+    return true
+  }
 
   /// The playlists made for you after Lately: this part of the day, Been a While, then the
   /// mood mixes in the order this part of the day suits them. Each is seeded by the day, so

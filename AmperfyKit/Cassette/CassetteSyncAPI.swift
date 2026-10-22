@@ -1042,6 +1042,14 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     return byLocalID
   }
 
+  /// This part of the day's made-for-you playlists, made in the cloud for every device
+  /// (GET /api/sync/made-for-you): `timeZone` is the listener's, whose day and hour pick them.
+  public func getMadeForYou(timeZone: String) async throws -> MadeForYouFeed {
+    let tz = timeZone.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "UTC"
+    let data = try await get(path: "/api/sync/made-for-you?tz=\(tz)")
+    return try JSONDecoder().decode(MadeForYouFeed.self, from: data)
+  }
+
   /// The shared "lately" profile from every device's plays (GET /api/sync/taste-lately),
   /// keyed by the same tokens ListeningShelves uses (`mood:<m>`, `energy:<e>`, ...), with
   /// the plays' sound (`sound:<subgenre>`, sent apart as `sound`) added in.
