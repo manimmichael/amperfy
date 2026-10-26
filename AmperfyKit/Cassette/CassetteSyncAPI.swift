@@ -1053,6 +1053,14 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     return try JSONDecoder().decode(MadeForYouFeed.self, from: data)
   }
 
+  /// This part of the day's Put something on row (GET /api/sync/put-something-on): each
+  /// activity's own playlist when the library is deep enough for it, and its stations.
+  public func getPutSomethingOn(timeZone: String) async throws -> PutSomethingOnFeed {
+    let tz = timeZone.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "UTC"
+    let data = try await get(path: "/api/sync/put-something-on?tz=\(tz)")
+    return try JSONDecoder().decode(PutSomethingOnFeed.self, from: data)
+  }
+
   /// The shared "lately" profile from every device's plays (GET /api/sync/taste-lately),
   /// keyed by the same tokens ListeningShelves uses (`mood:<m>`, `energy:<e>`, ...), with
   /// the plays' sound (`sound:<subgenre>`, sent apart as `sound`) added in.

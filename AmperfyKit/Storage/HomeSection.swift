@@ -76,6 +76,10 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   // made-for-you playlists), a nudge to go deeper. Ordinal 20. Took over the one idea in
   // Recent that no other row carried.
   case fromYourMixes
+  // cassette 2026-10-26: Put something on (founder: "its own row under Resume"). One tile per
+  // thing a person might be doing, answered by their own playlist or a live station
+  // (AmperfyKit/Cassette/PutSomethingOn.swift). Header-only like .moodDoors. Ordinal 21.
+  case putSomethingOn
 
   // cassette redesign (Surface 4): Resume leads the Home IA again - a
   // single full-width card sourced from the lastPlayedDate FRCs.
@@ -86,6 +90,8 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   // CarPlay keeps its own list (CarPlayHomeTabExtension.carPlayHomeSections).
   public static let defaultValue: [HomeSection] = [
     .resume,
+    // cassette 2026-10-26: one tap to something that fits what you are doing.
+    .putSomethingOn,
     // cassette 2026-10-20: what you are into now, and what you play at this time.
     .onRepeat,
     .aroundNow,
@@ -147,6 +153,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .aroundNow: return ListeningShelves.aroundNowTitle(now: Date())
     case .moreLikeLately: return "More Like Lately"
     case .fromYourMixes: return "From Your Mixes"
+    case .putSomethingOn: return "Put Something On"
     }
   }
 
@@ -177,6 +184,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .aroundNow: return false
     case .moreLikeLately: return false
     case .fromYourMixes: return false
+    case .putSomethingOn: return false
     }
   }
 }

@@ -272,7 +272,8 @@ class HomeManager: NSObject {
   /// Moves whenever any made-for-you playlist's songs or pictures change, and only then,
   /// so Home redraws that row only when there is something new to draw.
   var madeForYouSignature: [Int] {
-    [latelyMix?.generation ?? -1, otherMixesGeneration]
+    // Put something on's playlists leave this row, so a change there redraws it too
+    [latelyMix?.generation ?? -1, otherMixesGeneration, putSomethingOnGeneration]
   }
 
   /// The made-for-you playlists after Lately.
@@ -1030,6 +1031,7 @@ class HomeManager: NSObject {
     // The made-for-you playlists come from the cloud (MadeForYouStore), the same set every
     // device plays; the phone's own recipe only stands in when it holds none for this moment.
     let fromCloud = applyMadeForYouFeed(now: now, isOnPhone: isOnPhone)
+    updatePutSomethingOn(now: now, isOnPhone: isOnPhone)
     updateLatelyShelves(lately, now: now, isOnPhone: isOnPhone)
     if !fromCloud {
       updateMadeForYouMixes(songPlays: songPlays, lately: lately, now: now, isOnPhone: isOnPhone)
@@ -1295,13 +1297,7 @@ class HomeManager: NSObject {
     mixesFromCloud = true
     appliedFeedSignature = signature
 
-    // cassette_local_id -> the song on this phone, newest download first when an id repeats
-    var songIDByLocalID = [String: String]()
-    for row in (try? DeviceOwnershipManager(context: storage.main.context).fetchAll()) ?? [] {
-      let localID: String? = row.cassetteLocalId
-      guard let localID, let songID = row.subsonicTrackId, songIDByLocalID[localID] == nil else { continue }
-      songIDByLocalID[localID] = songID
-    }
+    let songIDByLocalID = songIDsByLocalID()
     let wanted = Set(feed.mixes.flatMap { $0.songs.compactMap { songIDByLocalID[$0] } })
     let songsByID = storage.main.library.getSongsByID(for: account, ids: wanted)
     var latelySongs: [AbstractPlayable] = []
@@ -1520,6 +1516,134 @@ class HomeManager: NSObject {
       songs: songs,
       leadAlbums: leadAlbums(for: songs)
     )
+  }
+
+  /// cassette_local_id -> the song on this phone, newest download first when an id repeats.
+  /// The cloud's playlists name songs by cassette_local_id.
+  private func songIDsByLocalID() -> [String: String] {
+    var songIDByLocalID = [String: String]()
+    for row in (try? DeviceOwnershipManager(context: storage.main.context).fetchAll()) ?? [] {
+      let localID: String? = row.cassetteLocalId
+      guard let localID, let songID = row.subsonicTrackId, songIDByLocalID[localID] == nil else { continue }
+      songIDByLocalID[localID] = songID
+    }
+    return songIDByLocalID
+  }
+
+  // MARK: - Put something on
+
+  /// cassette 2026-10-26: one Put something on tile (PutSomethingOnFeed): the person's own
+  /// playlist when the phone holds enough of it, else the first of the activity's stations the
+  /// hub holds.
+  struct PutSomethingOnTile {
+    enum Answer {
+      /// `coverVariant`: the drawn cover of a made-for-you mood playlist for the day, else nil.
+      case playlist(songs: [AbstractPlayable], coverVariant: String?)
+      /// The station that answers (`info` is the cloud's word on it), and every one of the
+      /// activity's stations the hub holds, in order, so Next tunes along them.
+      case station(Radio, all: [Radio], info: PutSomethingOnFeed.Station)
+    }
+
+    /// "focus", "rainy-day", ...
+    let key: String
+    let title: String
+    let hexColor: String
+    /// The made-for-you playlist this tile stands for ("mood:focus"), or nil.
+    let mixId: String?
+    let answer: Answer
+
+    /// What a tile plays, for telling a changed row from the same one.
+    fileprivate var signature: String {
+      switch answer {
+      case let .playlist(songs, cover): return "\(key)|\(cover ?? "")|" + songs.map(\.id).joined(separator: ",")
+      case let .station(radio, all, _): return "\(key)|\(radio.id)|" + all.map(\.id).joined(separator: ",")
+      }
+    }
+  }
+
+  /// The Put something on row, in the cloud's order. Empty: the row is not shown.
+  private(set) var putSomethingOnTiles: [PutSomethingOnTile] = []
+  /// Moves only when a tile changes, so Home redraws the row only then.
+  private(set) var putSomethingOnGeneration = 0
+  /// What the row was last laid out from: the cloud's day, part of the day and revision, the
+  /// songs on the phone and the hub's stations. The same again keeps the tiles as they are.
+  private var appliedPutSomethingOnSignature: String?
+
+  /// The made-for-you playlists Put something on shows ("mood:focus"): that row leaves them
+  /// out, so a playlist shows once on Home.
+  var putSomethingOnMixIDs: Set<String> {
+    Set(putSomethingOnTiles.compactMap(\.mixId))
+  }
+
+  /// The made-for-you row's playlists: all of them, less those Put something on shows.
+  var madeForYouRowMixes: [MadeForYouMix] {
+    let shownAbove = putSomethingOnMixIDs
+    return madeForYouMixes.filter { !shownAbove.contains($0.id) }
+  }
+
+  /// Lays out the cloud's Put something on row for this moment, and asks for a fresher one
+  /// when it is due. An activity plays its own playlist when 15 of its songs are on the phone
+  /// (the made-for-you rule), else the first of its stations the hub holds; with neither it is
+  /// left out.
+  private func updatePutSomethingOn(now: Date, isOnPhone: OnPhoneCheck) {
+    let store = PutSomethingOnStore.shared
+    Task { await store.refreshIfDue(now: now) }
+    let radios = storage.main.library.getRadios(for: account)
+    guard let feed = store.feed(for: now) else {
+      appliedPutSomethingOnSignature = nil
+      setPutSomethingOnTiles([])
+      return
+    }
+    let signature = "\(feed.day)|\(feed.slot)|\(store.revision)|\(isOnPhone.owned?.trackIds.count ?? -1)|\(radios.count)"
+    guard signature != appliedPutSomethingOnSignature else { return }
+    appliedPutSomethingOnSignature = signature
+
+    let songIDByLocalID = songIDsByLocalID()
+    let wanted = Set(feed.activities.flatMap { ($0.playlist?.songs ?? []).compactMap { songIDByLocalID[$0] } })
+    let songsByID = storage.main.library.getSongsByID(for: account, ids: wanted)
+    let radioByURL = Dictionary(
+      radios.map { (RadioCatalog.normalize($0.url), $0) },
+      uniquingKeysWith: { first, _ in first }
+    )
+    var tiles = [PutSomethingOnTile]()
+    for activity in feed.activities {
+      if let playlist = activity.playlist {
+        let songs: [AbstractPlayable] = playlist.songs
+          .compactMap { songIDByLocalID[$0].flatMap { songsByID[$0] } }
+          .filter {
+            isOnPhone.contains($0) && !$0.playableManagedObject.isDeleted
+              && $0.playableManagedObject.managedObjectContext != nil
+          }
+        if songs.count >= ListeningShelves.madeMixMinSongs {
+          tiles.append(PutSomethingOnTile(
+            key: activity.key,
+            title: activity.title,
+            hexColor: activity.color,
+            mixId: activity.mixId,
+            answer: .playlist(songs: songs, coverVariant: playlist.cover?.variant)
+          ))
+          continue
+        }
+      }
+      let held = activity.stations.compactMap { station in
+        radioByURL[RadioCatalog.normalize(station.streamUrl)].map { (station, $0) }
+      }
+      guard let lead = held.first else { continue }
+      tiles.append(PutSomethingOnTile(
+        key: activity.key,
+        title: activity.title,
+        hexColor: activity.color,
+        mixId: activity.mixId,
+        answer: .station(lead.1, all: held.map(\.1), info: lead.0)
+      ))
+    }
+    setPutSomethingOnTiles(tiles)
+  }
+
+  private func setPutSomethingOnTiles(_ tiles: [PutSomethingOnTile]) {
+    guard tiles.map(\.signature) != putSomethingOnTiles.map(\.signature) else { return }
+    putSomethingOnTiles = tiles
+    putSomethingOnGeneration += 1
   }
 
   /// Store the made-for-you playlists after Lately; the generation moves only when one

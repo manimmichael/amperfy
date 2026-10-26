@@ -16,6 +16,7 @@
 		C0FFEE01CA5E77E000000014 /* ListeningShelves.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E000000013 /* ListeningShelves.swift */; };
 		C0FFEE01CA5E77E000000018 /* LibraryMoods.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E000000017 /* LibraryMoods.swift */; };
 		C0FFEE01CA5E77E000000042 /* MadeForYou.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E000000041 /* MadeForYou.swift */; };
+		C0FFEE01CA5E77E000000044 /* PutSomethingOn.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E000000043 /* PutSomethingOn.swift */; };
 		C0FFEE01CA5E77E000000016 /* LatelyLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E000000015 /* LatelyLibrary.swift */; };
 		5005938928E2D4EF008C8DF6 /* CommonCollectionSectionHeader.xib in Resources */ = {isa = PBXBuildFile; fileRef = 5005938828E2D4EF008C8DF6 /* CommonCollectionSectionHeader.xib */; };
 		5005938B28E2D4FB008C8DF6 /* CommonCollectionSectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5005938A28E2D4FB008C8DF6 /* CommonCollectionSectionHeader.swift */; };
@@ -543,6 +544,7 @@
 		63DCDB7A2C674B5D00522F68 /* SettingsSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63DCDB792C674B5D00522F68 /* SettingsSceneDelegate.swift */; };
 		641708592C13BF5100BA2619 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 641708582C13BF5100BA2619 /* Haptics.swift */; };
 		83A757819071977362D25C2F /* MoodDoorRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8869E388C9628CE20FADAE /* MoodDoorRow.swift */; };
+		C0FFEE01CA5E77E000000046 /* PutSomethingOnRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01CA5E77E000000045 /* PutSomethingOnRow.swift */; };
 		8DE488341404A4275A1C3020 /* ArtistCircleCollectionCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D7D8806CBF78E2B38817681 /* ArtistCircleCollectionCell.swift */; };
 		C0A1B0032EEE000000000003 /* MacWindowHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A1B0022EEE000000000002 /* MacWindowHelper.swift */; };
 		CA1100AC0BABE0000000BEEF /* AlbumCarousel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA1100AC0BABE0000000FEED /* AlbumCarousel.swift */; };
@@ -651,6 +653,7 @@
 
 /* Begin PBXFileReference section */
 		0E8869E388C9628CE20FADAE /* MoodDoorRow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MoodDoorRow.swift; sourceTree = "<group>"; };
+		C0FFEE01CA5E77E000000045 /* PutSomethingOnRow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PutSomethingOnRow.swift; sourceTree = "<group>"; };
 		24BADE729248DB7916A6185F /* MoodDoors.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MoodDoors.swift; sourceTree = "<group>"; };
 		256157FBDC1FDF2EAF577851 /* MoodDoorsHeaderView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MoodDoorsHeaderView.swift; sourceTree = "<group>"; };
 		3557CBE43996FBDA91123169 /* MoodDoorArt.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MoodDoorArt.swift; sourceTree = "<group>"; };
@@ -659,6 +662,7 @@
 		C0FFEE01CA5E77E000000013 /* ListeningShelves.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ListeningShelves.swift; path = AmperfyKit/Home/ListeningShelves.swift; sourceTree = "<group>"; };
 		C0FFEE01CA5E77E000000017 /* LibraryMoods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LibraryMoods.swift; path = AmperfyKit/Cassette/LibraryMoods.swift; sourceTree = "<group>"; };
 		C0FFEE01CA5E77E000000041 /* MadeForYou.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MadeForYou.swift; path = AmperfyKit/Cassette/MadeForYou.swift; sourceTree = "<group>"; };
+		C0FFEE01CA5E77E000000043 /* PutSomethingOn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PutSomethingOn.swift; path = AmperfyKit/Cassette/PutSomethingOn.swift; sourceTree = "<group>"; };
 		C0FFEE01CA5E77E000000015 /* LatelyLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LatelyLibrary.swift; path = AmperfyKit/Home/LatelyLibrary.swift; sourceTree = "<group>"; };
 		4D4E80DE1B5D5CCA34E33817 /* MixtapePreviewSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MixtapePreviewSheet.swift; sourceTree = "<group>"; };
 		5A7E5C0E1A2B3C4D5E6F7081 /* ShareSongSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareSongSheet.swift; sourceTree = "<group>"; };
@@ -1577,6 +1581,7 @@
 				C0FFEE01CA5E77E000000013 /* ListeningShelves.swift */,
 				C0FFEE01CA5E77E000000017 /* LibraryMoods.swift */,
 				C0FFEE01CA5E77E000000041 /* MadeForYou.swift */,
+				C0FFEE01CA5E77E000000043 /* PutSomethingOn.swift */,
 				C0FFEE01CA5E77E000000015 /* LatelyLibrary.swift */,
 				508385E621C5965B00C4BB32 /* Amperfy */,
 				50C9D606284FA847007F18D0 /* AmperfyKit */,
@@ -2334,6 +2339,7 @@
 				4D4E80DE1B5D5CCA34E33817 /* MixtapePreviewSheet.swift */,
 				D3F4AEF3FE005C41818E8BEE /* MoodDoorTile.swift */,
 				0E8869E388C9628CE20FADAE /* MoodDoorRow.swift */,
+				C0FFEE01CA5E77E000000045 /* PutSomethingOnRow.swift */,
 				3557CBE43996FBDA91123169 /* MoodDoorArt.swift */,
 			);
 			name = Mixtape;
@@ -2861,6 +2867,7 @@
 				5A7E5C0E1A2B3C4D5E6F7082 /* ShareSongSheet.swift in Sources */,
 				3B8D129D12068FA7E72180FF /* MoodDoorTile.swift in Sources */,
 				83A757819071977362D25C2F /* MoodDoorRow.swift in Sources */,
+				C0FFEE01CA5E77E000000046 /* PutSomethingOnRow.swift in Sources */,
 				54B093A83670B9A232FA0202 /* MoodDoorsHeaderView.swift in Sources */,
 				104CAEAB8E0617219AE3F9A9 /* MoodDoorArt.swift in Sources */,
 			);
@@ -3088,6 +3095,7 @@
 				C0FFEE01CA5E77E000000014 /* ListeningShelves.swift in Sources */,
 				C0FFEE01CA5E77E000000018 /* LibraryMoods.swift in Sources */,
 				C0FFEE01CA5E77E000000042 /* MadeForYou.swift in Sources */,
+				C0FFEE01CA5E77E000000044 /* PutSomethingOn.swift in Sources */,
 				C0FFEE01CA5E77E000000016 /* LatelyLibrary.swift in Sources */,
 				50C9D6D9284FAB88007F18D0 /* EmbeddedArtworkExtractor.swift in Sources */,
 				CA55F011000000170000CAFE /* CassetteFont.swift in Sources */,

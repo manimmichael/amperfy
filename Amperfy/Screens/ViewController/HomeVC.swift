@@ -52,6 +52,8 @@ final class HomeVC: UICollectionViewController {
   /// The Lately mix generation the Mood row was last drawn with (see applySnapshot).
   /// What the made-for-you row was last drawn from (HomeManager.madeForYouSignature).
   private var appliedMadeForYouSignature: [Int]?
+  /// What the Put something on row was last drawn from (HomeManager.putSomethingOnGeneration).
+  private var appliedPutSomethingOnGeneration: Int?
 
   // MARK: - Init
 
@@ -394,7 +396,8 @@ final class HomeVC: UICollectionViewController {
     // cassette: .moodDoors is header-only (zero HomeItems — see
     // HomeSection.swift) — a near-zero item group, all real height comes
     // from the boundary header that hosts MoodDoorRow's SwiftUI content.
-    if section == .moodDoors {
+    // Put something on is built the same way (PutSomethingOnRow), with the same tile.
+    if section == .moodDoors || section == .putSomethingOn {
       let itemSize = NSCollectionLayoutSize(
         widthDimension: .fractionalWidth(1.0),
         heightDimension: .absolute(1)
@@ -503,6 +506,11 @@ final class HomeVC: UICollectionViewController {
       MoodDoorsHeaderView.self,
       forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
       withReuseIdentifier: MoodDoorsHeaderView.reuseID
+    )
+    collectionView.register(
+      PutSomethingOnHeaderView.self,
+      forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
+      withReuseIdentifier: PutSomethingOnHeaderView.reuseID
     )
   }
 
@@ -617,10 +625,20 @@ final class HomeVC: UICollectionViewController {
         // The row never builds a mix or a mood index itself; a tile's picture opens it.
         moodHeader.configure(
           parentViewController: self,
-          mixes: sharedHome.madeForYouMixes,
+          mixes: sharedHome.madeForYouRowMixes,
           onOpen: { [weak self] mix in self?.openMadeForYou(mix) }
         )
         return moodHeader
+      }
+
+      if snapshotSection == .putSomethingOn {
+        guard let putHeader = collectionView.dequeueReusableSupplementaryView(
+          ofKind: kind,
+          withReuseIdentifier: PutSomethingOnHeaderView.reuseID,
+          for: indexPath
+        ) as? PutSomethingOnHeaderView, let self else { return nil }
+        putHeader.configure(parentViewController: self, tiles: sharedHome.putSomethingOnTiles)
+        return putHeader
       }
 
       guard let header = collectionView.dequeueReusableSupplementaryView(
@@ -746,7 +764,13 @@ final class HomeVC: UICollectionViewController {
         // HomeManager keeps (built from the mood index LatelyLibrary builds off the main
         // thread). Never call LatelyLibrary.snapshot here: on a cache miss it builds the
         // index on the main thread, and this also runs from the sync banner and beta paths.
-        guard !sharedHome.madeForYouMixes.isEmpty else { continue }
+        guard !sharedHome.madeForYouRowMixes.isEmpty else { continue }
+        snapshot.appendSections([section])
+        continue
+      }
+      // cassette 2026-10-26: Put something on is header-only too, shown when it has a tile.
+      if section == .putSomethingOn {
+        guard !sharedHome.putSomethingOnTiles.isEmpty else { continue }
         snapshot.appendSections([section])
         continue
       }
@@ -780,6 +804,14 @@ final class HomeVC: UICollectionViewController {
       snapshot.reloadSections([.moodDoors])
     }
     appliedMadeForYouSignature = madeForYouSignature
+    // The same for Put something on: redraw it only when a tile changed.
+    let putSomethingOnGeneration = sharedHome.putSomethingOnGeneration
+    if putSomethingOnGeneration != appliedPutSomethingOnGeneration,
+       snapshot.sectionIdentifiers.contains(.putSomethingOn),
+       current.sectionIdentifiers.contains(.putSomethingOn) {
+      snapshot.reloadSections([.putSomethingOn])
+    }
+    appliedPutSomethingOnGeneration = putSomethingOnGeneration
     // cassette (CarPlay off-window crash): never run the animated diff while Home is
     // off-window (CarPlay is the active scene). An animated apply against a collection
     // view that is not in any window is the production SIGTRAP; a non-animated apply

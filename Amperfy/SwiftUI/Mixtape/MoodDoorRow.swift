@@ -284,7 +284,13 @@ enum MixCoverCache {
   /// had a cover version).
   static func address(for mix: HomeManager.MadeForYouMix) -> URL? {
     guard case let .mood(key, _) = mix.kind, let variant = mix.coverVariant else { return nil }
-    return URL(string: "\(base)/api/covers/mix/\(key)?variant=\(variant)&s=\(pixelSize)")
+    return address(key: key, variant: variant)
+  }
+
+  /// A mood mix's cover address by its key and the day's variant (Put something on's Focus
+  /// and Wind down tiles are those mixes).
+  static func address(key: String, variant: String) -> URL? {
+    URL(string: "\(base)/api/covers/mix/\(key)?variant=\(variant)&s=\(pixelSize)")
   }
 
   /// The cover already decoded in memory.
