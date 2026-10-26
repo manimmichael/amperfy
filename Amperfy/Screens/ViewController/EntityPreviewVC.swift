@@ -179,8 +179,8 @@ class EntityPreviewActionBuilder {
       menuActions.append(UIMenu(options: .displayInline, children: elementHandlingActions))
     }
     // cassette: its own group near the end of the menu, where Apple Music keeps Share Song…
-    if isShareSong {
-      menuActions.append(UIMenu(options: .displayInline, children: [createShareSongAction()]))
+    if isShareSong, let song = (entityContainer as? AbstractPlayable)?.asSong {
+      menuActions.append(UIMenu(options: .displayInline, children: [createShareSongElement(songId: song.id)]))
     }
     if appDelegate.storage.settings.user.isShowDetailedInfo {
       menuActions.append(createCopyIdToClipboardAction())
@@ -543,8 +543,31 @@ class EntityPreviewActionBuilder {
     }
   }
 
-  private func createShareSongAction() -> UIAction {
-    UIAction(title: "Share Song…", image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
+  /// Share Song…, greyed out with the reason when the song has no video to send. When that isn't
+  /// known yet it is asked as the menu opens (ShareSongAvailability), the way Apple's menus load an item.
+  private func createShareSongElement(songId: String) -> UIMenuElement {
+    if let known = ShareSongAvailability.shared.known(songId) {
+      return createShareSongAction(shareable: known)
+    }
+    return UIDeferredMenuElement.uncached { [weak self] completion in
+      Task { @MainActor in
+        guard let self, let song = (self.entityContainer as? AbstractPlayable)?.asSong else {
+          completion([])
+          return
+        }
+        let answer = await ShareSongAvailability.shared.check(song)
+        completion([self.createShareSongAction(shareable: answer ?? true)])
+      }
+    }
+  }
+
+  private func createShareSongAction(shareable: Bool) -> UIAction {
+    UIAction(
+      title: "Share Song…",
+      subtitle: shareable ? nil : "No video to share yet",
+      image: UIImage(systemName: "square.and.arrow.up"),
+      attributes: shareable ? [] : .disabled
+    ) { [weak self] _ in
       guard let self,
             let song = (entityContainer as? AbstractPlayable)?.asSong
       else { return }

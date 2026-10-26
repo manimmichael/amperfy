@@ -1518,9 +1518,9 @@ public final class CassetteSyncAPI: @unchecked Sendable {
 
   // MARK: HTTP plumbing
 
-  private func get(path: String, timeout: TimeInterval = 20) async throws -> Data {
+  private func get(path: String, timeout: TimeInterval = 20, base: String = CassetteSyncAPI.apiBase) async throws -> Data {
     guard let token = Self.bearerToken else { throw CassetteSyncError.notAuthenticated }
-    guard let url = URL(string: Self.apiBase + path) else { throw CassetteSyncError.badURL }
+    guard let url = URL(string: base + path) else { throw CassetteSyncError.badURL }
     var request = URLRequest(url: url)
     request.httpMethod = "GET"
     request.timeoutInterval = timeout
@@ -1592,11 +1592,37 @@ public final class CassetteSyncAPI: @unchecked Sendable {
 
   // MARK: - Song shares
 
-  /// POST /api/share/song: save a song share and get back the link to send (CASSETTE_SHARING.md).
-  /// Pass every identity on hand; the server finds the catalog song through this person's own copy
-  /// first. The server checks first that one of the song's videos still plays, so a link never goes
-  /// out to nothing: a miss comes back as `ok: false` with a reason, before anything is sent.
+  /// GET /api/share/song: can this song be sent right now (CASSETTE_SHARING.md)? Asked before Share is
+  /// offered, so a song with no video that plays is greyed out instead of failing after a note is
+  /// written. Pass every identity on hand; the server finds the catalog song through this person's own
+  /// copy first. Saves nothing.
+  public func checkSongShare(
+    cassetteLocalId: String?,
+    mbid: String?,
+    subsonicTrackId: String?
+  ) async throws
+    -> Bool {
+    struct Answer: Decodable { let shareable: Bool }
+    var query = URLComponents()
+    query.queryItems = [
+      ("subsonic_track_id", subsonicTrackId),
+      ("cassette_local_id", cassetteLocalId),
+      ("mbid", mbid),
+    ].compactMap { name, value in value.map { URLQueryItem(name: name, value: $0) } }
+    let data = try await get(
+      path: "/api/share/song?" + (query.percentEncodedQuery ?? ""),
+      timeout: 8,
+      base: Self.wwwBase
+    )
+    return try JSONDecoder().decode(Answer.self, from: data).shareable
+  }
+
+  /// POST /api/share/song: save a song share (CASSETTE_SHARING.md). `id` is the 8-character code this
+  /// phone already put in the link it handed Apple's share sheet; saving the same code again for the
+  /// same song updates its note and start (Add a Note, or a retry). The server checks the song's video
+  /// again first, so a link never goes out to nothing.
   public func createSongShare(
+    id: String,
     cassetteLocalId: String?,
     mbid: String?,
     subsonicTrackId: String?,
@@ -1605,6 +1631,7 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   ) async throws
     -> CassetteSongShareResult {
     let body: [String: Any] = [
+      "id": id,
       "cassette_local_id": cassetteLocalId as Any? ?? NSNull(),
       "mbid": mbid as Any? ?? NSNull(),
       "subsonic_track_id": subsonicTrackId as Any? ?? NSNull(),
@@ -1866,23 +1893,20 @@ public struct CassetteMixtapeArt: Sendable, Codable {
 
 // MARK: - CassetteMixtapeResponse
 
+/// The answer to createSongShare: saved, or why not.
+public struct CassetteSongShareResult: Sendable, Decodable {
+  public let ok: Bool
+  /// "not_in_catalog", "no_video", "not_visible", "not_found" or "taken" when ok is false.
+  public let reason: String?
+  public let url: String?
+  /// "Listen to <song> by <artist> on Cassette".
+  public let title: String?
+  public let text: String?
+}
+
 /// The response shape ALL THREE generators (generate/radio/door) return.
 /// Ephemeral — nothing is saved server-side until `saveMixtape` posts this
 /// exact shape back to /api/mixtape/save.
-/// The answer to createSongShare: the link to send, or why there is nothing to send.
-public struct CassetteSongShareResult: Sendable, Decodable {
-  public let ok: Bool
-  /// "not_in_catalog", "no_video", "not_visible" or "not_found" when ok is false.
-  public let reason: String?
-  public let url: String?
-  /// "Listen to <song> by <artist> on Cassette", the share sheet's title.
-  public let title: String?
-  public let text: String?
-  /// With a "no_video" miss: the album's own link, so the sender can send the album instead.
-  public let albumUrl: String?
-  public let albumTitle: String?
-}
-
 public struct CassetteMixtapeResponse: Sendable, Decodable {
   public let name: String
   public let description: String?

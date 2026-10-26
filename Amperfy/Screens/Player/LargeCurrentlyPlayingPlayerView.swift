@@ -515,11 +515,32 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     titleLabel.accessibilityLabel = mixedCaseTitle.text
     refreshStationRow()
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
-    favoriteButton.isHidden = rootView?.player.currentlyPlaying?.asSong == nil ||
-      !appDelegate.storage.settings.user.isOnlineMode
+    let song = rootView?.player.currentlyPlaying?.asSong
+    favoriteButton.isHidden = song == nil || !appDelegate.storage.settings.user.isOnlineMode
+    if let song, !favoriteButton.isHidden { refreshShareKey(for: song) }
     // cassette Patch 054 (Phase I): refreshRating call removed; popup
     // rating view deleted.
     display(element: displayElement)
+  }
+
+  /// Share greys out for a song with no video to send, known before anyone presses it
+  /// (ShareSongAvailability asks once per song).
+  private func refreshShareKey(for song: Song) {
+    let songId = song.id
+    let known = ShareSongAvailability.shared.known(songId)
+    showShareKey(shareable: known ?? true)
+    guard known == nil else { return }
+    Task { @MainActor [weak self] in
+      let answer = await ShareSongAvailability.shared.check(song)
+      guard let self, self.rootView?.player.currentlyPlaying?.asSong?.id == songId else { return }
+      self.showShareKey(shareable: answer ?? true)
+    }
+  }
+
+  private func showShareKey(shareable: Bool) {
+    favoriteButton.isEnabled = shareable
+    favoriteButton.alpha = shareable ? 1 : 0.35
+    favoriteButton.accessibilityHint = shareable ? nil : "No video to share yet"
   }
 
   @objc
