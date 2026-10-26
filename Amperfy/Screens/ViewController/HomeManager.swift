@@ -1556,7 +1556,7 @@ class HomeManager: NSObject {
     fileprivate var signature: String {
       switch answer {
       case let .playlist(songs, cover): return "\(key)|\(cover ?? "")|" + songs.map(\.id).joined(separator: ",")
-      case let .station(radio, all, _): return "\(key)|\(radio.id)|" + all.map(\.id).joined(separator: ",")
+      case let .station(radio, all, info): return "\(key)|\(radio.id)|\(info.show ?? "")|" + all.map(\.id).joined(separator: ",")
       }
     }
   }

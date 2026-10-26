@@ -129,11 +129,13 @@ private struct PutSomethingOnTileView: View {
     return false
   }
 
-  /// "30 songs", or the station's name.
+  /// "30 songs", the station's name, or a live station's name and the show on now.
   private var answerLine: String {
     switch tile.answer {
     case let .playlist(songs, _): return "\(songs.count) songs"
-    case let .station(_, _, info): return info.name
+    case let .station(_, _, info):
+      guard let show = info.show, !show.isEmpty else { return info.name }
+      return "\(info.name) · \(show)"
     }
   }
 

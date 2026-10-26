@@ -48,6 +48,8 @@ public struct PutSomethingOnFeed: Codable, Sendable, Equatable {
     public let streamUrl: String
     public let image: String?
     public let accent: String
+    /// The show on now, when a live station answers (its profile says the show fits).
+    public let show: String?
   }
 
   public struct Activity: Codable, Sendable, Equatable {
