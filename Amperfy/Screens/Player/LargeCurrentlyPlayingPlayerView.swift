@@ -174,14 +174,8 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     // cassette: favorites removed. The artwork-row favorite button is kept in the
     // nib (its outlet + constraints anchor the options button) but permanently
     // hidden and no longer wired to any action. The per-track overflow
-    // (optionsButton) stays in this row.
+    // (optionsButton) stays in this row, and Share Song… lives inside it (CASSETTE_SHARING.md).
     favoriteButton.isHidden = true
-    // cassette (CASSETTE_SHARING.md): that slot, directly left of "•••", is the share key now: Apple's
-    // share glyph, shown while a song plays (never a radio stream). refresh() shows or hides it.
-    favoriteButton.setImage(UIImage(systemName: "square.and.arrow.up"), for: .normal)
-    favoriteButton.tintColor = optionsButton.tintColor
-    favoriteButton.accessibilityLabel = "Share Song"
-    favoriteButton.addTarget(self, action: #selector(shareCurrentSong), for: .touchUpInside)
     titleLabel.applyAmperfyStyle()
     albumLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
@@ -515,38 +509,16 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     titleLabel.accessibilityLabel = mixedCaseTitle.text
     refreshStationRow()
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
-    let song = rootView?.player.currentlyPlaying?.asSong
-    favoriteButton.isHidden = song == nil || !appDelegate.storage.settings.user.isOnlineMode
-    if let song, !favoriteButton.isHidden { refreshShareKey(for: song) }
+    // Share Song… in the ••• menu greys out for a song with no video. Asked as the song comes up
+    // (ShareSongAvailability, once per song), so the menu already knows when it opens.
+    if let song = rootView?.player.currentlyPlaying?.asSong,
+       appDelegate.storage.settings.user.isOnlineMode,
+       ShareSongAvailability.shared.known(song.id) == nil {
+      Task { @MainActor in _ = await ShareSongAvailability.shared.check(song) }
+    }
     // cassette Patch 054 (Phase I): refreshRating call removed; popup
     // rating view deleted.
     display(element: displayElement)
-  }
-
-  /// Share greys out for a song with no video to send, known before anyone presses it
-  /// (ShareSongAvailability asks once per song).
-  private func refreshShareKey(for song: Song) {
-    let songId = song.id
-    let known = ShareSongAvailability.shared.known(songId)
-    showShareKey(shareable: known ?? true)
-    guard known == nil else { return }
-    Task { @MainActor [weak self] in
-      let answer = await ShareSongAvailability.shared.check(song)
-      guard let self, self.rootView?.player.currentlyPlaying?.asSong?.id == songId else { return }
-      self.showShareKey(shareable: answer ?? true)
-    }
-  }
-
-  private func showShareKey(shareable: Bool) {
-    favoriteButton.isEnabled = shareable
-    favoriteButton.alpha = shareable ? 1 : 0.35
-    favoriteButton.accessibilityHint = shareable ? nil : "No video to share yet"
-  }
-
-  @objc
-  private func shareCurrentSong() {
-    guard let rootView, let song = rootView.player.currentlyPlaying?.asSong else { return }
-    rootView.presentShareSong(song)
   }
 
   func refreshArtwork() {
