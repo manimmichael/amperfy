@@ -176,6 +176,12 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     // hidden and no longer wired to any action. The per-track overflow
     // (optionsButton) stays in this row.
     favoriteButton.isHidden = true
+    // cassette (CASSETTE_SHARING.md): that slot, directly left of "•••", is the share key now: Apple's
+    // share glyph, shown while a song plays (never a radio stream). refresh() shows or hides it.
+    favoriteButton.setImage(UIImage(systemName: "square.and.arrow.up"), for: .normal)
+    favoriteButton.tintColor = optionsButton.tintColor
+    favoriteButton.accessibilityLabel = "Share Song"
+    favoriteButton.addTarget(self, action: #selector(shareCurrentSong), for: .touchUpInside)
     titleLabel.applyAmperfyStyle()
     albumLabel.applyAmperfyStyle()
     artistLabel.applyAmperfyStyle()
@@ -509,9 +515,17 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
     titleLabel.accessibilityLabel = mixedCaseTitle.text
     refreshStationRow()
     rootView?.refreshOptionButton(button: optionsButton, rootView: rootView)
+    favoriteButton.isHidden = rootView?.player.currentlyPlaying?.asSong == nil ||
+      !appDelegate.storage.settings.user.isOnlineMode
     // cassette Patch 054 (Phase I): refreshRating call removed; popup
     // rating view deleted.
     display(element: displayElement)
+  }
+
+  @objc
+  private func shareCurrentSong() {
+    guard let rootView, let song = rootView.player.currentlyPlaying?.asSong else { return }
+    rootView.presentShareSong(song)
   }
 
   func refreshArtwork() {

@@ -706,6 +706,9 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   public static let shared = CassetteSyncAPI()
 
   private static let apiBase = "https://cassette.digital"
+  /// The www host, for a POST whose body must arrive: the bare domain 307s to www, and a redirect
+  /// can lose the body on the way (HTTPDiagnosticUploader.swift posts here for the same reason).
+  private static let wwwBase = "https://www.cassette.digital"
   private let log = OSLog(subsystem: "Amperfy", category: "CassetteSyncAPI")
 
   // Ephemeral session with the auth-preserving delegate so the bearer
@@ -1535,9 +1538,9 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     )
   }
 
-  private func send(method: String, path: String, body: Data) async throws -> Data {
+  private func send(method: String, path: String, body: Data, base: String = CassetteSyncAPI.apiBase) async throws -> Data {
     guard let token = Self.bearerToken else { throw CassetteSyncError.notAuthenticated }
-    guard let url = URL(string: Self.apiBase + path) else { throw CassetteSyncError.badURL }
+    guard let url = URL(string: base + path) else { throw CassetteSyncError.badURL }
     var request = URLRequest(url: url)
     request.httpMethod = method
     request.timeoutInterval = 20
@@ -1585,6 +1588,36 @@ public final class CassetteSyncAPI: @unchecked Sendable {
       throw CassetteSyncError.http(http.statusCode)
     }
     return data
+  }
+
+  // MARK: - Song shares
+
+  /// POST /api/share/song: save a song share and get back the link to send (CASSETTE_SHARING.md).
+  /// Pass every identity on hand; the server finds the catalog song through this person's own copy
+  /// first. The server checks first that one of the song's videos still plays, so a link never goes
+  /// out to nothing: a miss comes back as `ok: false` with a reason, before anything is sent.
+  public func createSongShare(
+    cassetteLocalId: String?,
+    mbid: String?,
+    subsonicTrackId: String?,
+    note: String?,
+    startSeconds: Int?
+  ) async throws
+    -> CassetteSongShareResult {
+    let body: [String: Any] = [
+      "cassette_local_id": cassetteLocalId as Any? ?? NSNull(),
+      "mbid": mbid as Any? ?? NSNull(),
+      "subsonic_track_id": subsonicTrackId as Any? ?? NSNull(),
+      "note": note as Any? ?? NSNull(),
+      "start_seconds": startSeconds as Any? ?? NSNull(),
+    ]
+    let data = try await send(
+      method: "POST",
+      path: "/api/share/song",
+      body: try JSONSerialization.data(withJSONObject: body),
+      base: Self.wwwBase
+    )
+    return try JSONDecoder().decode(CassetteSongShareResult.self, from: data)
   }
 
   // MARK: - Mixtape
@@ -1836,6 +1869,20 @@ public struct CassetteMixtapeArt: Sendable, Codable {
 /// The response shape ALL THREE generators (generate/radio/door) return.
 /// Ephemeral — nothing is saved server-side until `saveMixtape` posts this
 /// exact shape back to /api/mixtape/save.
+/// The answer to createSongShare: the link to send, or why there is nothing to send.
+public struct CassetteSongShareResult: Sendable, Decodable {
+  public let ok: Bool
+  /// "not_in_catalog", "no_video", "not_visible" or "not_found" when ok is false.
+  public let reason: String?
+  public let url: String?
+  /// "Listen to <song> by <artist> on Cassette", the share sheet's title.
+  public let title: String?
+  public let text: String?
+  /// With a "no_video" miss: the album's own link, so the sender can send the album instead.
+  public let albumUrl: String?
+  public let albumTitle: String?
+}
+
 public struct CassetteMixtapeResponse: Sendable, Decodable {
   public let name: String
   public let description: String?

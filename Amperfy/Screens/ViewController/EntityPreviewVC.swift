@@ -77,6 +77,9 @@ class EntityPreviewActionBuilder {
   /// then open the mixtape preview sheet (never auto-plays). Same online-only
   /// gating as the retired Instant Mix, which this replaces in spirit.
   private var isStartMixtape = false
+  /// cassette: "Share Song…" (CASSETTE_SHARING.md): the share sheet, then Apple's share sheet. Songs only,
+  /// never a radio stream or a podcast; it needs the network, because the link is saved in the cloud.
+  private var isShareSong = false
 
   init(
     container: PlayableContainable,
@@ -174,6 +177,10 @@ class EntityPreviewActionBuilder {
     }
     if !elementHandlingActions.isEmpty {
       menuActions.append(UIMenu(options: .displayInline, children: elementHandlingActions))
+    }
+    // cassette: its own group near the end of the menu, where Apple Music keeps Share Song…
+    if isShareSong {
+      menuActions.append(UIMenu(options: .displayInline, children: [createShareSongAction()]))
     }
     if appDelegate.storage.settings.user.isShowDetailedInfo {
       menuActions.append(createCopyIdToClipboardAction())
@@ -275,6 +282,7 @@ class EntityPreviewActionBuilder {
     // the radio API answers 404 otherwise.
     isStartMixtape = appDelegate.storage.settings.user.isOnlineMode &&
       CassetteBetaAccess.isBetaTester
+    isShareSong = appDelegate.storage.settings.user.isOnlineMode
   }
 
   private func configureFor(podcastEpisode: PodcastEpisode) {
@@ -532,6 +540,15 @@ class EntityPreviewActionBuilder {
       Task { @MainActor in
         await self.createAndPresentMixtape(from: song)
       }
+    }
+  }
+
+  private func createShareSongAction() -> UIAction {
+    UIAction(title: "Share Song…", image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
+      guard let self,
+            let song = (entityContainer as? AbstractPlayable)?.asSong
+      else { return }
+      rootView.presentShareSong(song)
     }
   }
 

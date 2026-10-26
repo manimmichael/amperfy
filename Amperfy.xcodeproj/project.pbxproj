@@ -589,6 +589,7 @@
 		CA55F012000000170000CAFE /* CassetteTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55F012000000070000CAFE /* CassetteTheme.swift */; };
 		CA55F013000000010000CAFE /* LibraryFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA55F013000000020000CAFE /* LibraryFilter.swift */; };
 		F7EDC5D07EF272F1D43080B5 /* MixtapePreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D4E80DE1B5D5CCA34E33817 /* MixtapePreviewSheet.swift */; };
+		5A7E5C0E1A2B3C4D5E6F7082 /* ShareSongSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A7E5C0E1A2B3C4D5E6F7081 /* ShareSongSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -660,6 +661,7 @@
 		C0FFEE01CA5E77E000000041 /* MadeForYou.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MadeForYou.swift; path = AmperfyKit/Cassette/MadeForYou.swift; sourceTree = "<group>"; };
 		C0FFEE01CA5E77E000000015 /* LatelyLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LatelyLibrary.swift; path = AmperfyKit/Home/LatelyLibrary.swift; sourceTree = "<group>"; };
 		4D4E80DE1B5D5CCA34E33817 /* MixtapePreviewSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MixtapePreviewSheet.swift; sourceTree = "<group>"; };
+		5A7E5C0E1A2B3C4D5E6F7081 /* ShareSongSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareSongSheet.swift; sourceTree = "<group>"; };
 		5002565625E69DC700674CE1 /* SpinnerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpinnerViewController.swift; sourceTree = "<group>"; };
 		5003D8F62678DD39006946BF /* SsAlbumParserPreCreatedArtistsTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SsAlbumParserPreCreatedArtistsTest.swift; sourceTree = "<group>"; };
 		50048F9427590FAD0087EDFB /* PlayerDownloadPreparationHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerDownloadPreparationHandler.swift; sourceTree = "<group>"; };
@@ -2279,6 +2281,7 @@
 				50791E7D28D363CA006CE6E5 /* Basics */,
 				50791E8228D36EAD006CE6E5 /* Settings */,
 				664024E6E757466CD5457EA6 /* Mixtape */,
+				5A7E5C0E1A2B3C4D5E6F7083 /* Share */,
 			);
 			path = SwiftUI;
 			sourceTree = "<group>";
@@ -2313,6 +2316,15 @@
 				5086F8822239A2B700546F5A /* ScrobbleSyncer.swift */,
 			);
 			path = Player;
+			sourceTree = "<group>";
+		};
+		5A7E5C0E1A2B3C4D5E6F7083 /* Share */ = {
+			isa = PBXGroup;
+			children = (
+				5A7E5C0E1A2B3C4D5E6F7081 /* ShareSongSheet.swift */,
+			);
+			name = Share;
+			path = Share;
 			sourceTree = "<group>";
 		};
 		664024E6E757466CD5457EA6 /* Mixtape */ = {
@@ -2846,6 +2858,7 @@
 				50DE29EB2B8FCEB700ABA78E /* LibraryNavigatorConfigurator.swift in Sources */,
 				00B67F44CBFBBD335E338CC8 /* MoodDoors.swift in Sources */,
 				F7EDC5D07EF272F1D43080B5 /* MixtapePreviewSheet.swift in Sources */,
+				5A7E5C0E1A2B3C4D5E6F7082 /* ShareSongSheet.swift in Sources */,
 				3B8D129D12068FA7E72180FF /* MoodDoorTile.swift in Sources */,
 				83A757819071977362D25C2F /* MoodDoorRow.swift in Sources */,
 				54B093A83670B9A232FA0202 /* MoodDoorsHeaderView.swift in Sources */,
