@@ -457,6 +457,8 @@ struct RadioLiveMatch: Decodable, Sendable {
   let albumSlug: String
   let title: String
   let artistName: String
+  /// The record's artist's page on the web, when they have one (servers from 2026-10-28).
+  let artistSlug: String?
   let coverUrl: String?
   /// Newer servers only; the large picture for the player.
   let coverFullUrl: String?

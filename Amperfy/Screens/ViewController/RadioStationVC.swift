@@ -9,9 +9,17 @@
 //  The web's /radio/<slug> shows the same things from the same route
 //  (GET /api/radio/station/<slug>, apps/cassette/src/lib/radio/station-page.ts). The page
 //  opens at once from the registry copy the app carries (name, art, about, similar), and
-//  the live parts fill in from the cloud, refreshed every 30 seconds while it is on
-//  screen. Save is the web's save (RadioSaved). Lit like the record pages: the station's
-//  mark (or its word picture) is the glow and the colour of the headings' answers.
+//  the live parts fill in from the cloud, read again every 30 seconds while it is on
+//  screen and as soon as the radio hears the song change, paused or playing, so the log
+//  keeps moving and never falls back to the song that was on when the page opened. Save
+//  is the web's save (RadioSaved). Lit like the record pages: the station's mark (or its
+//  word picture) is the glow and the colour of the headings' answers.
+//
+//  2026-10-28 (the founder, on the Mac's station panel, carried here): each thing said
+//  once. The line under the name says the network, the city and Live, so About holds the
+//  station's sentence and no longer repeats where it's from. Every song in the log, and
+//  the one on now, leads onto Cassette: a tap opens its record (or looks for it when we
+//  don't have it), a long press offers the record, the artist, a search and a copy.
 //
 
 import AmperfyKit
@@ -37,6 +45,13 @@ struct RadioStationPagePayload: Decodable {
     let coverUrl: String?
     let comment: String?
     let playedAt: String?
+    /// The record on Cassette it came from (recent plays, servers from 2026-10-28).
+    let match: RadioLiveMatch?
+
+    /// One song, however the station spelled its case or spacing.
+    var key: String {
+      "\(artist.trimmingCharacters(in: .whitespaces).lowercased())\u{0}\(title.trimmingCharacters(in: .whitespaces).lowercased())"
+    }
   }
 
   struct Live: Decodable {
@@ -55,7 +70,7 @@ struct RadioStationPagePayload: Decodable {
 // MARK: - RadioStationVC
 
 @MainActor
-final class RadioStationVC: UIViewController, UIScrollViewDelegate {
+final class RadioStationVC: UIViewController, UIScrollViewDelegate, MusicPlayable {
   private static let artSide: CGFloat = 240
   private static let gutter = CassetteHeading.sideInset
   private static let refreshEvery: TimeInterval = 30
@@ -89,7 +104,6 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
   private let savePill = UIButton(configuration: .plain())
 
   private let onAirBlock = UIStackView()
-  private let recentBlock = UIStackView()
   private let similarBlock = UIStackView()
   private var headings: [(label: UILabel, shout: String, answer: String?)] = []
   private var similar: [RadioCatalogStation] = []
@@ -110,6 +124,13 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
 
   private var refreshTimer: Timer?
   private var loadedOnce = false
+  /// The last answers the cloud gave; a miss keeps them up.
+  private var live: RadioStationPagePayload.Live?
+  private var recent: [RadioStationPagePayload.Track] = []
+  /// The song the radio last heard on this station, to read the page again when it changes.
+  private var heardKey: String?
+  /// What On air last drew, so a read that changes nothing leaves it (and an open menu) alone.
+  private var drawn: String?
 
   init(account: Account, station: RadioCatalogStation) {
     self.account = account
@@ -165,13 +186,10 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
     ])
 
     buildHero()
-    for block in [onAirBlock, recentBlock] {
-      block.axis = .vertical
-      block.spacing = 12
-      block.isHidden = true
-    }
+    onAirBlock.axis = .vertical
+    onAirBlock.spacing = 12
+    onAirBlock.isHidden = true
     stack.addArrangedSubview(onAirBlock)
-    stack.addArrangedSubview(recentBlock)
     stack.addArrangedSubview(buildAbout())
     similarBlock.axis = .vertical
     stack.addArrangedSubview(similarBlock)
@@ -197,6 +215,7 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
         object: nil
       )
     }
+    appDelegate.player.addNotifier(notifier: self)
 
     showSimilar(RadioCatalog.shared.similarSlugs(for: station).compactMap { RadioCatalog.shared.station(slug: $0) })
     loadArt()
@@ -209,9 +228,12 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
     playerStateChanged()
     refreshLive()
     refreshTimer?.invalidate()
-    refreshTimer = Timer.scheduledTimer(withTimeInterval: Self.refreshEvery, repeats: true) { [weak self] _ in
+    // .common, so a read still lands while a finger is on the page.
+    let timer = Timer(timeInterval: Self.refreshEvery, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.refreshLive() }
     }
+    RunLoop.main.add(timer, forMode: .common)
+    refreshTimer = timer
     Task { await RadioSaved.shared.refresh() }
   }
 
@@ -381,7 +403,29 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
   private func playerStateChanged() {
     guard radio != nil else { return }
     LibraryElementDetailTableHeaderView.setPlayPill(playPill, state: isThisStationPlaying ? .stop : .play)
+    drawLive()
   }
+
+  // MusicPlayable: the radio heard the song change on this station, so read the page again
+  // now rather than at the next half minute.
+  func didNowPlayingInfoChange() {
+    let key = heardSong()?.key
+    guard key != heardKey else { return }
+    heardKey = key
+    drawLive()
+    if key != nil { refreshLive() }
+  }
+
+  func didStartPlayingFromBeginning() {}
+  func didStartPlaying() {}
+  func didPause() {}
+  func didStopPlaying() {}
+  func didElapsedTimeChange() {}
+  func didPlaylistChange() {}
+  func didArtworkChange() {}
+  func didShuffleChange() {}
+  func didRepeatChange() {}
+  func didPlaybackRateChange() {}
 
   /// `+ SAVE` / `✓ SAVED`, the one save mark.
   private func applySaveState() {
@@ -478,8 +522,13 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
       lines: 0
     ))
     if let about = station.about {
+      // The longer story waits behind More, as Apple's own pages fold a long description.
+      let more = UIStackView()
+      more.axis = .vertical
+      more.spacing = 14
+      more.isHidden = true
       for paragraph in about.text.components(separatedBy: "\n\n") where !paragraph.isEmpty {
-        body.addArrangedSubview(Self.label(paragraph, font: .cassette(.body), color: .cassette(.textSecondary), lines: 0))
+        more.addArrangedSubview(Self.label(paragraph, font: .cassette(.body), color: .cassette(.textSecondary), lines: 0))
       }
       let credit = UIButton(configuration: .plain())
       credit.configuration?.contentInsets = .zero
@@ -490,12 +539,26 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
       ))
       credit.contentHorizontalAlignment = .leading
       credit.addAction(UIAction { _ in Self.open(about.url) }, for: .primaryActionTriggered)
-      body.addArrangedSubview(credit)
+      more.addArrangedSubview(credit)
+
+      let reveal = UIButton(configuration: .plain())
+      reveal.configuration?.contentInsets = .zero
+      reveal.configuration?.attributedTitle = AttributedString(NSAttributedString.cassette(
+        "More",
+        .metadata,
+        color: .cassette(.textPrimary)
+      ))
+      reveal.contentHorizontalAlignment = .leading
+      reveal.addAction(UIAction { [weak reveal, weak more] _ in
+        more?.isHidden = false
+        reveal?.isHidden = true
+      }, for: .primaryActionTriggered)
+      body.addArrangedSubview(reveal)
+      body.addArrangedSubview(more)
     }
 
-    var facts: [(String, String)] = [("Network", station.sourceLabel)]
-    if !station.cityLabels.isEmpty { facts.append(("From", station.cityLabels.joined(separator: ", "))) }
-    facts.append(("On air", station.isLive ? "Real shows and hosts" : "One sound, around the clock"))
+    // The line under the name already says the network and where it's from.
+    var facts: [(String, String)] = [("On air", station.isLive ? "Real shows and hosts" : "One sound, around the clock")]
     if !station.genres.isEmpty { facts.append(("Plays", station.genres.joined(separator: ", "))) }
     for (key, value) in facts {
       let k = Self.label(key.uppercased(), font: .cassette(.metadata), color: .cassette(.textTertiary))
@@ -565,13 +628,15 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
     Task { @MainActor [weak self] in
       var request = URLRequest(url: url)
       request.timeoutInterval = 10
+      request.cachePolicy = .reloadIgnoringLocalCacheData
       if let (data, response) = try? await URLSession.shared.data(for: request),
          (response as? HTTPURLResponse)?.statusCode == 200,
          let payload = try? JSONDecoder().decode(RadioStationPagePayload.self, from: data) {
         guard let self else { return }
         loadedOnce = true
-        showLive(payload.live)
-        showRecent(payload.recent ?? [])
+        live = payload.live
+        recent = payload.recent ?? []
+        drawLive()
         if let server = payload.similar, !server.isEmpty { showSimilar(server) }
         return
       }
@@ -587,164 +652,261 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate {
     else { return }
     var request = URLRequest(url: url)
     request.timeoutInterval = 10
+    request.cachePolicy = .reloadIgnoringLocalCacheData
     guard let (data, response) = try? await URLSession.shared.data(for: request),
           (response as? HTTPURLResponse)?.statusCode == 200,
           let live = try? JSONDecoder().decode(RadioStationPagePayload.Live.self, from: data)
     else { return }
-    showLive(live)
+    self.live = live
+    drawLive()
   }
 
-  private func showLive(_ live: RadioStationPagePayload.Live?) {
+  /// The song the radio itself hears on this station while it plays (the cloud's song, else
+  /// the stream's own title), fresher than the page's last read. Nil when it isn't playing
+  /// here, or when all it knows is the show.
+  private func heardSong() -> RadioStationPagePayload.Track? {
+    guard isThisStationPlaying, let info = appDelegate.player.currentRadioNowPlaying, !info.title.isEmpty else { return nil }
+    let cloud = appDelegate.player.currentRadioLive
+    let isSong = !(cloud?.songTitle ?? "").isEmpty ||
+      info.title.caseInsensitiveCompare(cloud?.show ?? "") != .orderedSame
+    guard isSong else { return nil }
+    let match = cloud?.albumSlug.map {
+      RadioLiveMatch(
+        albumSlug: $0,
+        title: cloud?.albumTitle ?? "",
+        artistName: info.artist,
+        artistSlug: nil,
+        coverUrl: nil,
+        coverFullUrl: nil
+      )
+    }
+    return RadioStationPagePayload.Track(
+      artist: info.artist,
+      title: info.title,
+      album: nil,
+      coverUrl: cloud?.artworkURL,
+      comment: nil,
+      playedAt: nil,
+      match: match
+    )
+  }
+
+  /// On air: the show, then the song on now and the songs before it, newest first, then
+  /// what comes next. Tuned in, the radio's own song leads (it keeps itself fresh); else,
+  /// or until it has one, the page's.
+  private func drawLive() {
+    let page = live?.track
+    let heard = heardSong()
+    // The page's copy of the same song carries its cover and its record.
+    let now = heard.flatMap { h in page?.key == h.key ? page : h } ?? page
+    let show = live?.show
+    // The radio can hear a new song before the page catches up: never the song on now twice.
+    let log = recent.filter { $0.key != now?.key }.prefix(10)
+    let next: String? = {
+      if let n = live?.next?.first {
+        let at = Self.clock(n.starts).map { " at \($0)" } ?? ""
+        let name = [n.name, n.host].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        return "Next\(at): \(name)"
+      }
+      if let song = live?.nextTracks?.first { return "Next: \(song.title) · \(song.artist)" }
+      return nil
+    }()
+
+    let signature = [
+      [show?.name, show?.host, show?.until, show?.image].map { $0 ?? "" }.joined(separator: "|"),
+      [now?.key, now?.match?.albumSlug, now?.coverUrl].map { $0 ?? "" }.joined(separator: "|"),
+      // "12 min ago" moves too, so it counts as a change.
+      log.map { [$0.key, Self.ago($0.playedAt, now: Date()), $0.match?.albumSlug].map { $0 ?? "" }.joined(separator: "|") }
+        .joined(separator: "/"),
+      next ?? "",
+    ].joined(separator: "\n")
+    guard signature != drawn else { return }
+    drawn = signature
+
     onAirBlock.arrangedSubviews.forEach { $0.removeFromSuperview() }
     headings.removeAll { $0.shout == "On air" }
-    guard let live, live.show != nil || live.track != nil else {
+    guard show != nil || now != nil || !log.isEmpty else {
       onAirBlock.isHidden = true
       return
     }
     onAirBlock.isHidden = false
     onAirBlock.addArrangedSubview(heading("On air"))
 
-    let text = UIStackView()
-    text.axis = .vertical
-    text.spacing = 4
-    if let show = live.show {
-      let line = [show.name, show.host].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-      text.addArrangedSubview(Self.label(line, font: .cassette(.rowTitle), color: .cassette(.textPrimary), lines: 2))
-      if let until = Self.clock(show.until) {
-        text.addArrangedSubview(Self.label("Until \(until)", font: .cassette(.metadata), color: .cassette(.textTertiary)))
-      }
-    }
-    if let track = live.track {
-      let title = Self.label(track.title, font: .cassette(live.show == nil ? .rowTitle : .body), color: .cassette(.textPrimary), lines: 2)
-      text.addArrangedSubview(title)
-      text.addArrangedSubview(Self.label(
-        [track.artist, track.album].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "),
-        font: .cassette(.cardSubtitle),
-        color: .cassette(.textSecondary),
-        lines: 2
-      ))
-    }
-    if let match = live.match {
-      // The record we carry: its page in the app, or the person's own copy (RecordOpener).
-      let see = UIButton(configuration: .plain())
-      see.configuration?.contentInsets = .zero
-      see.configuration?.attributedTitle = AttributedString(NSAttributedString.cassette(
-        "Go to \(match.title)",
-        .metadata,
-        color: .cassette(.textPrimary)
-      ))
-      see.configuration?.image = CassetteIcon.chevronRight.uiImage(size: .small)
-      see.configuration?.imagePlacement = .trailing
-      see.configuration?.imagePadding = 4
-      see.configuration?.baseForegroundColor = .cassette(.textPrimary)
-      see.contentHorizontalAlignment = .leading
-      see.addAction(UIAction { [weak self] _ in
-        guard let self else { return }
-        let cover = [match.coverFullUrl, match.coverUrl].compactMap { $0 }.first { !$0.isEmpty }
-        RecordOpener.open(
-          albumSlug: match.albumSlug,
-          title: match.title,
-          placeholder: cover.flatMap { RadioArtLoader.shared.cachedImage(for: $0) },
-          account: account
-        ) { [weak self] vc in
-          self?.navigationController?.pushViewController(vc, animated: true)
-        }
-      }, for: .primaryActionTriggered)
-      text.addArrangedSubview(see)
-    }
-    if let next = live.next?.first {
-      let at = Self.clock(next.starts).map { " at \($0)" } ?? ""
-      let name = [next.name, next.host].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-      text.addArrangedSubview(Self.label("Next\(at): \(name)", font: .cassette(.metadata), color: .cassette(.textTertiary), lines: 2))
-    } else if let song = live.nextTracks?.first {
-      text.addArrangedSubview(Self.label("Next: \(song.title) · \(song.artist)", font: .cassette(.metadata), color: .cassette(.textTertiary), lines: 2))
-    }
-
-    let dot = UIView()
-    dot.backgroundColor = CassetteTheme.UIColors.orange
-    dot.layer.cornerRadius = 4
-    dot.translatesAutoresizingMaskIntoConstraints = false
-    let picture = UIImageView()
-    picture.contentMode = .scaleAspectFill
-    picture.clipsToBounds = true
-    picture.layer.cornerRadius = CassetteRadius.small
-    picture.backgroundColor = .cassette(.surfaceElevated)
-    picture.translatesAutoresizingMaskIntoConstraints = false
-    picture.isHidden = true
-    if let src = RadioLiveMatch.art(match: live.match, songCover: live.track?.coverUrl, showImage: live.show?.image) {
-      Task { @MainActor [weak picture] in
-        guard let image = await RadioArtLoader.shared.image(for: src) else { return }
-        picture?.image = image
-        picture?.isHidden = false
-      }
-    }
-
-    let row = UIView()
-    text.translatesAutoresizingMaskIntoConstraints = false
-    for v in [dot, picture, text] { row.addSubview(v) }
-    NSLayoutConstraint.activate([
-      dot.widthAnchor.constraint(equalToConstant: 8),
-      dot.heightAnchor.constraint(equalToConstant: 8),
-      dot.leadingAnchor.constraint(equalTo: row.leadingAnchor),
-      dot.topAnchor.constraint(equalTo: row.topAnchor, constant: 8),
-      text.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 10),
-      text.topAnchor.constraint(equalTo: row.topAnchor),
-      text.bottomAnchor.constraint(lessThanOrEqualTo: row.bottomAnchor),
-      text.trailingAnchor.constraint(equalTo: picture.leadingAnchor, constant: -12),
-      picture.trailingAnchor.constraint(equalTo: row.trailingAnchor),
-      picture.topAnchor.constraint(equalTo: row.topAnchor),
-      picture.widthAnchor.constraint(equalToConstant: 72),
-      picture.heightAnchor.constraint(equalToConstant: 72),
-      picture.bottomAnchor.constraint(lessThanOrEqualTo: row.bottomAnchor),
-    ])
-    onAirBlock.addArrangedSubview(inset(row))
-  }
-
-  private func showRecent(_ plays: [RadioStationPagePayload.Track]) {
-    recentBlock.arrangedSubviews.forEach { $0.removeFromSuperview() }
-    headings.removeAll { $0.shout == "Recently played" }
-    guard !plays.isEmpty else {
-      recentBlock.isHidden = true
-      return
-    }
-    recentBlock.isHidden = false
-    recentBlock.addArrangedSubview(heading("Recently played"))
     let list = UIStackView()
     list.axis = .vertical
     list.spacing = 12
-    let now = Date()
-    for play in plays.prefix(10) {
-      let cover = UIImageView()
-      cover.contentMode = .scaleAspectFill
-      cover.clipsToBounds = true
-      cover.layer.cornerRadius = 3
-      cover.backgroundColor = .cassette(.surfaceElevated)
-      cover.translatesAutoresizingMaskIntoConstraints = false
-      cover.widthAnchor.constraint(equalToConstant: 44).isActive = true
-      cover.heightAnchor.constraint(equalToConstant: 44).isActive = true
-      if let src = play.coverUrl, !src.isEmpty {
-        Task { @MainActor [weak cover] in
-          cover?.image = await RadioArtLoader.shared.image(for: src)
+    if let show { list.addArrangedSubview(showRow(show)) }
+    if let now {
+      let cover = RadioLiveMatch.art(match: now.match, songCover: now.coverUrl, showImage: nil) ?? station.image
+      list.addArrangedSubview(songRow(now, cover: cover, isNow: true, at: Date()))
+    }
+    let clockNow = Date()
+    for play in log {
+      list.addArrangedSubview(songRow(play, cover: play.coverUrl ?? play.match?.coverUrl, isNow: false, at: clockNow))
+    }
+    if let next {
+      list.addArrangedSubview(Self.label(next, font: .cassette(.metadata), color: .cassette(.textTertiary), lines: 2))
+    }
+    onAirBlock.addArrangedSubview(inset(list))
+  }
+
+  private static func picture(side: CGFloat, radius: CGFloat, src: String?) -> UIImageView {
+    let picture = UIImageView()
+    picture.contentMode = .scaleAspectFill
+    picture.clipsToBounds = true
+    picture.layer.cornerRadius = radius
+    picture.backgroundColor = .cassette(.surfaceElevated)
+    picture.translatesAutoresizingMaskIntoConstraints = false
+    picture.widthAnchor.constraint(equalToConstant: side).isActive = true
+    picture.heightAnchor.constraint(equalToConstant: side).isActive = true
+    if let src, !src.isEmpty {
+      if let cached = RadioArtLoader.shared.cachedImage(for: src) {
+        picture.image = cached
+      } else {
+        Task { @MainActor [weak picture] in
+          picture?.image = await RadioArtLoader.shared.image(for: src)
         }
       }
-      let lines = UIStackView(arrangedSubviews: [
-        Self.label(play.title, font: .cassette(.miniTitle), color: .cassette(.textPrimary)),
-        Self.label(play.artist, font: .cassette(.cardSubtitle), color: .cassette(.textSecondary)),
-      ])
-      lines.axis = .vertical
-      lines.spacing = 2
-      let when = Self.label(Self.ago(play.playedAt, now: now) ?? "", font: .cassette(.caption), color: .cassette(.textTertiary))
-      when.setContentHuggingPriority(.required, for: .horizontal)
-      when.setContentCompressionResistancePriority(.required, for: .horizontal)
-      let row = UIStackView(arrangedSubviews: [cover, lines, when])
-      row.axis = .horizontal
-      row.alignment = .center
-      row.spacing = 12
-      row.isAccessibilityElement = true
-      row.accessibilityLabel = "\(play.title), \(play.artist)"
-      list.addArrangedSubview(row)
     }
-    recentBlock.addArrangedSubview(inset(list))
+    return picture
+  }
+
+  /// The show on now, its host and when it ends.
+  private func showRow(_ show: RadioStationPagePayload.Show) -> UIView {
+    let lines = UIStackView(arrangedSubviews: [
+      Self.label(show.name, font: .cassette(.rowTitle), color: .cassette(.textPrimary), lines: 2),
+    ])
+    lines.axis = .vertical
+    lines.spacing = 2
+    let detail = [show.host.flatMap { $0.isEmpty ? nil : "with \($0)" }, Self.clock(show.until).map { "until \($0)" }]
+      .compactMap { $0 }.joined(separator: " · ")
+    if !detail.isEmpty {
+      lines.addArrangedSubview(Self.label(detail, font: .cassette(.cardSubtitle), color: .cassette(.textSecondary), lines: 2))
+    }
+    var parts: [UIView] = []
+    if let image = show.image, !image.isEmpty {
+      parts.append(Self.picture(side: 44, radius: CassetteRadius.small, src: image))
+    }
+    parts.append(lines)
+    let row = UIStackView(arrangedSubviews: parts)
+    row.axis = .horizontal
+    row.alignment = .center
+    row.spacing = 12
+    row.isAccessibilityElement = true
+    row.accessibilityLabel = ["On air", show.name, detail].filter { !$0.isEmpty }.joined(separator: ", ")
+    return row
+  }
+
+  /// A song the station played, or the one on now: a way onto Cassette.
+  private func songRow(
+    _ song: RadioStationPagePayload.Track,
+    cover: String?,
+    isNow: Bool,
+    at now: Date
+  ) -> UIView {
+    let lines = UIStackView(arrangedSubviews: [
+      Self.label(song.title, font: .cassette(.miniTitle), color: .cassette(.textPrimary)),
+      Self.label(song.artist, font: .cassette(.cardSubtitle), color: .cassette(.textSecondary)),
+    ])
+    lines.axis = .vertical
+    lines.spacing = 2
+    // Orange is live state: the song on now says so where the others say when.
+    let when = Self.label(
+      isNow ? "Now" : Self.ago(song.playedAt, now: now) ?? "",
+      font: .cassette(.caption),
+      color: isNow ? CassetteTheme.UIColors.orange : .cassette(.textTertiary)
+    )
+    when.setContentHuggingPriority(.required, for: .horizontal)
+    when.setContentCompressionResistancePriority(.required, for: .horizontal)
+    let content = UIStackView(arrangedSubviews: [Self.picture(side: 44, radius: 3, src: cover), lines, when])
+    content.axis = .horizontal
+    content.alignment = .center
+    content.spacing = 12
+
+    let row = RadioSongRow(content: content)
+    row.addAction(UIAction { [weak self] _ in self?.open(song) }, for: .primaryActionTriggered)
+    row.menu = { [weak self] in self?.menu(for: song) }
+    row.isAccessibilityElement = true
+    row.accessibilityTraits = .button
+    row.accessibilityLabel = [isNow ? "On now" : nil, song.title, song.artist].compactMap { $0 }.joined(separator: ", ")
+    row.accessibilityHint = song.match.map { "Opens \($0.title) on Cassette" } ?? "Looks for it on Cassette"
+    return row
+  }
+
+  // MARK: Onto Cassette
+
+  /// A tap: the record when we have it, else a search for the song.
+  private func open(_ song: RadioStationPagePayload.Track) {
+    if let match = song.match {
+      openRecord(match)
+    } else {
+      lookFor("\(song.artist) \(song.title)")
+    }
+  }
+
+  /// A long press: the record and the artist when we have them, then a search and a copy.
+  private func menu(for song: RadioStationPagePayload.Track) -> UIMenu {
+    var groups: [UIMenuElement] = []
+    if let match = song.match {
+      groups.append(UIMenu(options: .displayInline, children: [
+        UIAction(title: "Go to the Record", image: CassetteIcon.album.symbolImage) { [weak self] _ in
+          MainActor.assumeIsolated { self?.openRecord(match) }
+        },
+        UIAction(title: "Go to the Artist", image: CassetteIcon.artist.symbolImage) { [weak self] _ in
+          MainActor.assumeIsolated { self?.openArtist(match) }
+        },
+      ]))
+    }
+    groups.append(UIMenu(options: .displayInline, children: [
+      UIAction(title: "Look for It on Cassette", image: CassetteIcon.search.symbolImage) { [weak self] _ in
+        MainActor.assumeIsolated { self?.lookFor("\(song.artist) \(song.title)") }
+      },
+      UIAction(title: "Copy Song and Artist", image: UIImage(systemName: "doc.on.doc")) { _ in
+        UIPasteboard.general.string = "\(song.title) - \(song.artist)"
+      },
+    ]))
+    return UIMenu(children: groups)
+  }
+
+  private func push(_ vc: UIViewController) {
+    navigationController?.pushViewController(vc, animated: true)
+  }
+
+  /// The person's own copy when their library has it, else the record's page (RecordOpener).
+  private func openRecord(_ match: RadioLiveMatch) {
+    let cover = [match.coverFullUrl, match.coverUrl].compactMap { $0 }.first { !$0.isEmpty }
+    RecordOpener.open(
+      albumSlug: match.albumSlug,
+      title: match.title,
+      placeholder: cover.flatMap { RadioArtLoader.shared.cachedImage(for: $0) },
+      account: account
+    ) { [weak self] vc in
+      self?.push(vc)
+    }
+  }
+
+  /// The artist in the person's library when they have them, else their page on Cassette,
+  /// else a search for the name.
+  private func openArtist(_ match: RadioLiveMatch) {
+    if let artist = appDelegate.storage.main.library.getArtistByExactName(for: account, name: match.artistName) {
+      push(AppStoryboard.Main.segueToArtistDetail(account: account, artist: artist))
+    } else if let slug = match.artistSlug, !slug.isEmpty {
+      let path = slug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? slug
+      push(CassetteWebPageVC(path: "/artist/\(path)", title: match.artistName, placeholder: nil))
+    } else {
+      lookFor(match.artistName)
+    }
+  }
+
+  /// Cassette's search, the site's, inside the app (the phone's own search is the library).
+  private func lookFor(_ query: String) {
+    var parts = URLComponents()
+    parts.path = "/search"
+    parts.queryItems = [URLQueryItem(name: "q", value: String(query.prefix(80)))]
+    // A "+" in a name must reach the site as a plus, not a space.
+    parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+    guard let path = parts.string else { return }
+    push(CassetteWebPageVC(path: path, title: "Search", placeholder: nil))
   }
 
   // MARK: Time
@@ -792,5 +954,48 @@ extension RadioStationVC: UICollectionViewDataSource, UICollectionViewDelegate {
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
     let s = similar[indexPath.item]
     navigationController?.pushViewController(RadioStationVC(account: account, station: s), animated: true)
+  }
+}
+
+// MARK: - RadioSongRow
+
+/// A song row that leads somewhere: a tap is its action, a long press Apple's context menu.
+@MainActor
+final class RadioSongRow: UIControl {
+  var menu: (() -> UIMenu?)?
+  private let content: UIView
+
+  init(content: UIView) {
+    self.content = content
+    super.init(frame: .zero)
+    content.isUserInteractionEnabled = false
+    content.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(content)
+    NSLayoutConstraint.activate([
+      content.topAnchor.constraint(equalTo: topAnchor),
+      content.bottomAnchor.constraint(equalTo: bottomAnchor),
+      content.leadingAnchor.constraint(equalTo: leadingAnchor),
+      content.trailingAnchor.constraint(equalTo: trailingAnchor),
+    ])
+    // UIControl's own context menu: a long press, with Apple's lift and haptic.
+    isContextMenuInteractionEnabled = true
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override var isHighlighted: Bool {
+    didSet { content.alpha = isHighlighted ? 0.5 : 1 }
+  }
+
+  override func contextMenuInteraction(
+    _ interaction: UIContextMenuInteraction,
+    configurationForMenuAtLocation location: CGPoint
+  )
+    -> UIContextMenuConfiguration? {
+    guard let menu else { return nil }
+    return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in menu() }
   }
 }
