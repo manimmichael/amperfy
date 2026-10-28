@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C45E7A022F00000000C0FFEE /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = C45E7A012F00000000C0FFEE /* PrivacyInfo.xcprivacy */; };
 		00B67F44CBFBBD335E338CC8 /* MoodDoors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24BADE729248DB7916A6185F /* MoodDoors.swift */; };
 		104CAEAB8E0617219AE3F9A9 /* MoodDoorArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3557CBE43996FBDA91123169 /* MoodDoorArt.swift */; };
 		3B8D129D12068FA7E72180FF /* MoodDoorTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F4AEF3FE005C41818E8BEE /* MoodDoorTile.swift */; };
@@ -878,6 +879,7 @@
 		508385E921C5965B00C4BB32 /* LoginVC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginVC.swift; sourceTree = "<group>"; };
 		508385EC21C5965B00C4BB32 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		508385EE21C5965E00C4BB32 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C45E7A012F00000000C0FFEE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		508385F321C5965E00C4BB32 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		5083861921C827E600C4BB32 /* AuthParserDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthParserDelegate.swift; sourceTree = "<group>"; };
 		5083861B21C828E200C4BB32 /* AmpacheXmlServerApi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmpacheXmlServerApi.swift; sourceTree = "<group>"; };
@@ -1622,6 +1624,7 @@
 				508AA5792B6A3D7E00BE8117 /* CarPlay */,
 				508EBB522850CB070053D9F0 /* Intents */,
 				508385F321C5965E00C4BB32 /* Info.plist */,
+				C45E7A012F00000000C0FFEE /* PrivacyInfo.xcprivacy */,
 				5078AFB32B44AE260038FD17 /* AppIntentVocabulary.plist */,
 				50ACAF1327B277B50039913C /* Amperfy.entitlements */,
 				641708582C13BF5100BA2619 /* Haptics.swift */,
@@ -2546,6 +2549,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C45E7A022F00000000C0FFEE /* PrivacyInfo.xcprivacy in Resources */,
 				502E56BD27561C2700638BD2 /* UserQueueSectionHeader.xib in Resources */,
 				50A30E502B73DFE500722894 /* PlayerControlView.xib in Resources */,
 				5078AFB42B44AE260038FD17 /* AppIntentVocabulary.plist in Resources */,
@@ -3344,7 +3348,7 @@
 				CODE_SIGN_ENTITLEMENTS = Amperfy/Amperfy.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = RJ96LRVLDN;
 				INFOPLIST_FILE = Amperfy/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -3352,8 +3356,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.1.1;
-				"MARKETING_VERSION[sdk=macosx*]" = 2.1.1;
+				MARKETING_VERSION = 0.1.0;
+				"MARKETING_VERSION[sdk=macosx*]" = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = digital.cassette.player;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -3384,7 +3388,7 @@
 				CODE_SIGN_ENTITLEMENTS = Amperfy/Amperfy.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = RJ96LRVLDN;
 				INFOPLIST_FILE = Amperfy/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -3392,8 +3396,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.1.1;
-				"MARKETING_VERSION[sdk=macosx*]" = 2.1.1;
+				MARKETING_VERSION = 0.1.0;
+				"MARKETING_VERSION[sdk=macosx*]" = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = digital.cassette.player;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
