@@ -88,6 +88,9 @@ public final class PlaylistMO: NSManagedObject {
     let fetchRequest: NSFetchRequest<PlaylistMO> = PlaylistMO.fetchRequest()
     fetchRequest.sortDescriptors = [
       NSSortDescriptor(key: #keyPath(PlaylistMO.lastPlayedDate), ascending: false),
+      // cassette (One Home): then the last edited, the cloud's own order for playlists
+      // never played
+      NSSortDescriptor(key: #keyPath(PlaylistMO.changeDate), ascending: false),
       NSSortDescriptor(
         key: #keyPath(PlaylistMO.name),
         ascending: true,

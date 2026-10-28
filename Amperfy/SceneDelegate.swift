@@ -327,6 +327,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     os_log("sceneWillEnterForeground", log: self.log, type: .info)
     DiagnosticLog.shared.log(.lifecycle, "will enter foreground")
     AmperKit.shared.threadPerformanceMonitor.isInForeground = true
+    // One Home: back at the front (or just opened), ask the cloud for Home again.
+    Task { @MainActor in await HomeStore.shared.refresh() }
   }
 
   func sceneDidEnterBackground(_ scene: UIScene) {

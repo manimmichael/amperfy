@@ -268,6 +268,8 @@ public class ScrobbleSyncer {
       for entry in syncedEntries { entry.cloudSyncedAt = now }
       storage.main.saveContext()
       os_log("Cloud play sync: %d play(s) reported", log: self.log, type: .info, plays.count)
+      // One Home: the cloud now knows these plays, so ask for Home again (On Repeat, Resume).
+      Task { await HomeStore.shared.refresh() }
     } catch {
       // Leave rows unsynced; retried on the next completed play / launch.
       os_log(

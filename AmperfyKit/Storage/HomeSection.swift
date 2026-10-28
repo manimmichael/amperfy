@@ -76,43 +76,36 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
   // made-for-you playlists), a nudge to go deeper. Ordinal 20. Took over the one idea in
   // Recent that no other row carried.
   case fromYourMixes
-  // cassette 2026-10-26: Put something on (founder: "its own row under Resume"). One tile per
-  // thing a person might be doing, answered by their own playlist or a live station
-  // (AmperfyKit/Cassette/PutSomethingOn.swift). Header-only like .moodDoors. Ordinal 21.
+  // cassette 2026-10-26: Put something on (founder: "its own row under Resume"). REMOVED from
+  // Home 2026-10-28 (One Home, founder). The case stays, unused, so saved `homeSections`
+  // that name ordinal 21 still decode.
   case putSomethingOn
+  // cassette 2026-10-28 (One Home): the reaching row, the one shelf the moment picked (Loud
+  // ones, Deep dive, Nostalgia, ...). Deep dive draws its record as one big card. Ordinal 22.
+  case reach
+  // cassette 2026-10-28 (One Home): the way to every shelf made today, at the end of Home.
+  // Header-only. Ordinal 23.
+  case allShelves
 
   // cassette redesign (Surface 4): Resume leads the Home IA again - a
   // single full-width card sourced from the lastPlayedDate FRCs.
   //
-  // phone-taste (approved phone mock, 2026-10-20): the mock's rows come straight under
-  // Resume, in the mock's order: ON REPEAT, the time-of-day row, MOOD, MORE LIKE. The
-  // rows the mock does not draw stay below them until the founder decides on them.
-  // CarPlay keeps its own list (CarPlayHomeTabExtension.carPlayHomeSections).
+  // cassette 2026-10-28 (One Home): the cloud makes Home (GET /api/sync/home) and the phone
+  // and the car draw its rows in its order. This list is only the phone's stand-in, drawn
+  // while no answer has ever been held, in the same line-up as far as the phone's own rows
+  // go: Resume, On Repeat, around now, made for you, your playlists, Radio, one reaching row
+  // (More Like Lately, else Albums: HomeManager clears Albums while More Like has rows),
+  // From Your Mixes, Artists.
   public static let defaultValue: [HomeSection] = [
     .resume,
-    // cassette 2026-10-26: one tap to something that fits what you are doing.
-    .putSomethingOn,
-    // cassette 2026-10-20: what you are into now, and what you play at this time.
     .onRepeat,
     .aroundNow,
-    // phone-taste: the approved mock puts Mood right after the time-of-day row (it
-    // used to sit below Playlists).
     .moodDoors,
-    // cassette 2026-10-21: Recent left Home (founder): On Repeat is the way back to what
-    // you have been playing, Resume holds the last thing, the Playlists and Artists rows
-    // carry the playlists and artists you played. Its one new idea, records you heard a
-    // song or two of, is this row. CarPlay keeps its Recent list.
-    .fromYourMixes,
-    .moreLikeLately,
-    // cassette: "Albums" is the from-your-collection shelf (`.forgottenAlbums`,
-    // retitled). It sits right after More Like Lately so it fills that slot whenever
-    // More Like is empty (HomeManager clears Albums while More Like has rows). The old
-    // played->newest "Albums" row (`.recentlyAdded`) is retired from Home.
-    .forgottenAlbums,
-    // cassette 2026-10-13: the dial on Home - stations ranked by what you
-    // listen to and what you own (HomeManager.updateRadios).
-    .radios,
     .yourPlaylists,
+    .radios,
+    .moreLikeLately,
+    .forgottenAlbums,
+    .fromYourMixes,
     .recentlyPlayedArtists,
   ]
 
@@ -154,6 +147,8 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .moreLikeLately: return "More Like Lately"
     case .fromYourMixes: return "From Your Mixes"
     case .putSomethingOn: return "Put Something On"
+    case .reach: return "Shelf"
+    case .allShelves: return "All Shelves"
     }
   }
 
@@ -185,6 +180,8 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .moreLikeLately: return false
     case .fromYourMixes: return false
     case .putSomethingOn: return false
+    case .reach: return false
+    case .allShelves: return false
     }
   }
 }

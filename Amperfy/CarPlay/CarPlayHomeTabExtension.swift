@@ -43,33 +43,19 @@ enum CarMoodTile: Equatable {
 // MARK: - CarPlaySceneDelegate + Home
 
 extension CarPlaySceneDelegate {
-  /// cassette (CarPlay feel-good, Jobs 1.2/1.3): CarPlay Home is album-forward —
-  /// two album shelves lead, then Playlists, then Artists. Resume is omitted (an
-  /// iOS-only full-width hero card) and the heterogeneous "Recent" shelf is
-  /// dropped in favor of the explicit album shelves. This is a CarPlay-LOCAL
-  /// section list; it never mutates `HomeSection.defaultValue`, so iOS Home (a
-  /// separate `HomeManager` instance with its own render loop) is unaffected. The
-  /// two album shelves have data only because the CarPlay `HomeManager` was
-  /// created with `buildsAlbumShelves: true`. Empty shelves (e.g. Recently Played
-  /// Albums before any album play) are hidden by the guard in `createHomeImageRows`.
-  ///
-  /// cassette 2026-10-20 (driving pass): Recent leads (the row people actually use, with
-  /// the Resume item at its head, since CarPlay has no Resume card), then Radio, the most
-  /// natural thing to play while driving, then Playlists, Newest Albums and Artists.
-  /// On Repeat and Around This Time follow Recent (the phone's own play log).
-  ///
-  /// phone-taste: Mood sits between On Repeat and the time-of-day row, as in the car mock.
-  private var carPlayHomeSections: [HomeSection] {
-    [
-      .recent,
-      .onRepeat,
-      .moodDoors,
-      .aroundNow,
-      .radios,
-      .yourPlaylists,
-      .newestAlbums,
-      .recentlyPlayedArtists,
-    ]
+  /// One Home (founder, 2026-10-28): the car draws the cloud's Home, the same rows in the same
+  /// order and under the same names as the phone, from the one CloudHome the phone's Home
+  /// reads, each row holding what the phone holds. Resume has no card in the car: it rides as
+  /// the first tile of On Repeat. All shelves is a plain row at the end. (This replaced the
+  /// car's own row list and its own HomeManager, which had drifted from the phone since 10-21.)
+  private var carPlayHomeRows: [HomeSection] {
+    guard let cloudHome else { return [] }
+    var sections = [HomeSection]()
+    for row in cloudHome.rows {
+      let section = row.section == .resume ? HomeSection.onRepeat : row.section
+      if !sections.contains(section) { sections.append(section) }
+    }
+    return sections
   }
 
   /// The Lately tile needs four covers for its picture (the mock shows it at four or more).
@@ -77,21 +63,61 @@ extension CarPlaySceneDelegate {
   /// A mood mix's drawn cover is decoded this large for the car (its biggest slot at 3x).
   private static let drawnCoverPixels = 480
 
-  /// The items a CarPlay Home row shows. Recent carries the Resume item first.
+  /// The items a CarPlay Home row shows. On Repeat carries Resume's record first.
   private func carPlayItems(_ section: HomeSection) -> [HomeItem]? {
-    guard let sharedHome else { return nil }
-    guard section == .recent else { return sharedHome.data[section] }
-    let items = (sharedHome.data[.resume] ?? []) + (sharedHome.data[.recent] ?? [])
-    return items
+    guard let cloudHome else { return nil }
+    func items(_ source: HomeSection) -> [HomeItem] {
+      guard let row = cloudHome.row(source) else { return [] }
+      if source == .reach, let shelf = row.shelf {
+        guard CloudHome.isDrawable(shelf) else { return [] }
+        var tiles = [HomeItem]()
+        if !shelf.isDeepDive, let mix = shelf.mix, let art = mix.leadAlbums.first ?? shelf.albums.first {
+          tiles.append(HomeItem(section: section, stableID: "mix-\(mix.id)", playableContainable: art, mixID: mix.id))
+        }
+        return tiles + shelf.albums.prefix(shelf.isDeepDive ? 1 : 12).map {
+          HomeItem(section: section, stableID: HomeManager.stableID(for: $0), playableContainable: $0)
+        }
+      }
+      return row.items.map {
+        HomeItem(section: section, stableID: HomeManager.stableID(for: $0), playableContainable: $0)
+      }
+    }
+    guard section == .onRepeat else { return items(section) }
+    let resume = items(.resume)
+    let shown = Set(resume.map(\.stableID))
+    return resume + items(.onRepeat).filter { !shown.contains($0.stableID) }
   }
 
+  /// A row's name as the car shows it: the cloud's two voices in one line, in title case
+  /// ("From Your Mixes", "On Repeat Lately").
   private func carPlayTitle(_ section: HomeSection) -> String {
-    switch section {
-    case .radios: return "Radio"
-    case .yourPlaylists: return "Playlists"
-    case .recentlyPlayedArtists: return "Artists"
-    default: return section.title
-    }
+    guard let row = cloudHome?.row(section) ?? (section == .onRepeat ? cloudHome?.row(.resume) : nil)
+    else { return section.title }
+    return Self.titleCase([row.shout, row.answer].filter { !$0.isEmpty }.joined(separator: " "))
+  }
+
+  private static let smallWords: Set<String> = ["a", "an", "and", "at", "by", "for", "in", "of", "on", "the", "to"]
+
+  static func titleCase(_ text: String) -> String {
+    text.split(separator: " ").enumerated().map { index, word in
+      let lower = word.lowercased()
+      if index > 0, smallWords.contains(lower) { return lower }
+      return word.prefix(1).uppercased() + word.dropFirst()
+    }.joined(separator: " ")
+  }
+
+  /// The made-for-you row's playlists from the cloud: Lately, and the rest in its order.
+  private var carLatelyMix: HomeManager.MadeForYouMix? {
+    cloudHome?.row(.moodDoors)?.mixes.first { $0.kind == .lately }
+  }
+
+  private var carOtherMixes: [HomeManager.MadeForYouMix] {
+    cloudHome?.row(.moodDoors)?.mixes.filter { $0.kind != .lately } ?? []
+  }
+
+  /// The reaching row's Nostalgia mix, by its id.
+  private func carReachMix(_ id: String) -> HomeManager.MadeForYouMix? {
+    cloudHome?.row(.reach)?.shelf?.mix.flatMap { $0.id == id ? $0 : nil }
   }
 
   /// A Home tile plays straight away and shows Now Playing (founder, 2026-10-20: one tap
@@ -119,25 +145,30 @@ extension CarPlaySceneDelegate {
   }
 
   func updateHomeSections() {
-    guard interfaceController != nil, sharedHome != nil else { return }
-    // cassette: compare only the sections CarPlay actually renders. Comparing
-    // the full `session.homeRowData` / `sharedHome.data` dicts would always differ on
-    // the unrendered `.resume` key and permanently defeat this early-out.
-    let renderedNow = carPlayHomeSections.map { session.homeRowData[$0] ?? [] }
-    let requestedNow = carPlayHomeSections.map { carPlayItems($0) ?? [] }
+    guard interfaceController != nil, let cloudHome else { return }
+    // cassette: compare only the sections CarPlay actually renders.
+    let sections = carPlayHomeRows
+    let renderedNow = sections.map { session.homeRowData[$0] ?? [] }
+    let requestedNow = sections.map { carPlayItems($0) ?? [] }
     // phone-taste: the Mood row is not made of HomeItems, so its signature is compared too;
-    // and the time-of-day row can change its title while its albums stay the same.
-    let aroundTitle = carPlayTitle(.aroundNow)
+    // One Home: and the rows' order and names (the cloud renames the time-of-day row and
+    // the reaching row during the day), and how many shelves All shelves holds.
+    let layout = sections.map { "\($0.rawValue)=\(carPlayTitle($0))" }.joined(separator: "|")
+      + "|shelves=\(cloudHome.shelves.count)"
     guard renderedNow != requestedNow
       || moodSignature() != session.moodSignature
-      || aroundTitle != session.aroundTitle
+      || layout != session.homeLayout
     else {
       return
     }
-    let homeRows = createHomeImageRows()
-    session.aroundTitle = aroundTitle
+    var homeRows: [CPListTemplateItem] = createHomeImageRows()
+    if let allShelves = makeAllShelvesRow() { homeRows.append(allShelves) }
+    session.homeLayout = layout
     let homeSection = CPListSection(items: homeRows, header: nil, sectionIndexTitle: nil)
     homeTab.updateSections([homeSection])
+    homeTab.emptyViewTitleVariants = HomeStore.shared.answer == nil
+      ? ["Home arrives once your phone is online"]
+      : ["Nothing of Home is on this phone yet"]
     pruneHomeArtworkIndex()
   }
 
@@ -157,9 +188,11 @@ extension CarPlaySceneDelegate {
   }
 
   func createHomeImageRows() -> [CPListImageRowItem] {
-    guard sharedHome != nil else { return [] }
+    guard cloudHome != nil else { return [] }
     var imageRows = [CPListImageRowItem]()
-    for section in carPlayHomeSections {
+    for section in carPlayHomeRows {
+      // All shelves is a plain row after the image rows (makeAllShelvesRow).
+      if section == .allShelves { continue }
       // phone-taste: the Mood row has no HomeItems by design (HomeSection.moodDoors), so it
       // is built before the empty-shelf guard below, which would always hide it.
       if section == .moodDoors {
@@ -195,7 +228,7 @@ extension CarPlaySceneDelegate {
   }
 
   func createHomeRow(section: HomeSection) -> CPListImageRowItem? {
-    guard sharedHome != nil else { return nil }
+    guard cloudHome != nil else { return nil }
     let alreadyCreatedData = session.homeRowData[section]
     let requestedData = carPlayItems(section)
     if alreadyCreatedData ==
@@ -226,7 +259,7 @@ extension CarPlaySceneDelegate {
     row.listImageRowHandler = { [weak self] item, index, completion in
       guard let self else { completion(); return }
       // Resolve the tap against the snapshot that backs the *visible* elements,
-      // not the live shelf data: recomputeAllShelves() rebuilds sharedHome.data
+      // not the live shelf data: CloudHome rebuilds its rows
       // on every play/pause/stop and FRC change, so re-indexing it can hit nil
       // or the wrong item (the dead tap). That snapshot is session.homeRowData[section]
       // (kept in lockstep with row.elements). Match by stableID, preferring the
@@ -234,6 +267,13 @@ extension CarPlaySceneDelegate {
       let renderedItems = session.homeRowData[section] ?? []
       guard index >= 0, index < renderedItems.count else { completion(); return }
       let tappedID = renderedItems[index].stableID
+      // One Home: Nostalgia's mix among the reaching row's records plays as a playlist.
+      if let mixID = renderedItems[index].mixID {
+        Task { @MainActor in
+          self.playReachMix(mixID, completion: completion)
+        }
+        return
+      }
       let liveItem = carPlayItems(section)?.first { $0.stableID == tappedID }
       let selectedPlayable = (liveItem ?? renderedItems[index]).playableContainable
       Task { @MainActor in
@@ -245,7 +285,7 @@ extension CarPlaySceneDelegate {
   }
 
   func createHomeRowImageElements(section: HomeSection) -> [CPListImageRowItemRowElement] {
-    guard sharedHome != nil else { return [] }
+    guard cloudHome != nil else { return [] }
 
     let alreadyCreatedData = session.homeRowData[section]
     let requestedData = carPlayItems(section)
@@ -258,6 +298,11 @@ extension CarPlaySceneDelegate {
     var imageRowElements = [CPListImageRowItemRowElement]()
     let items = requestedData ?? []
     for item in items {
+      // One Home: Nostalgia's mix, as the Made for You row draws a record playlist.
+      if let mixID = item.mixID, let mix = carReachMix(mixID) {
+        imageRowElements.append(makeReachMixElement(mix))
+        continue
+      }
       // phone-taste: a station is dressed from the radio catalog (its own name, its network
       // or "Live", its logo or a word picture in its colour). Checked before the library
       // entity cast, which a Radio also passes, and never registered for artwork updates.
@@ -327,10 +372,15 @@ extension CarPlaySceneDelegate {
   /// walk in downloadFinishedSuccessful because the rows carry userInfo. Built at push time as a
   /// snapshot of the shelf, like the grid was.
   func makeHomeShelfListTemplate(section: HomeSection) -> CPListTemplate {
-    let items = (carPlayItems(section) ?? []).prefix(carPlayLeafItemLimit(reserved: 0))
+    // One Home: within the car's browse budget (24), like every other list a row opens.
+    let items = (carPlayItems(section) ?? []).prefix(carPlayBrowseItemBudget)
     var rows = [CPListItem]()
     for item in items {
       let containable = item.playableContainable
+      if let mixID = item.mixID {
+        if let mix = carReachMix(mixID) { rows.append(makeReachMixRow(mix)) }
+        continue
+      }
       if let album = containable as? Album {
         rows.append(createDetailTemplate(for: album, onlyCached: isOfflineMode))
       } else if let artist = containable as? Artist {
@@ -378,10 +428,11 @@ extension CarPlaySceneDelegate {
   /// decoded here.
   func moodSignature() -> String {
     var parts = [String]()
-    if let mix = sharedHome?.latelyMix, !mix.songs.isEmpty {
+    if let mix = carLatelyMix, !mix.songs.isEmpty {
       parts.append("lately:" + mix.leadAlbums.map(\.id).joined(separator: ","))
     }
-    for mix in sharedHome?.otherMixes ?? [] {
+    parts.append("title:" + carPlayTitle(.moodDoors))
+    for mix in carOtherMixes {
       parts.append("\(mix.id)=\(mix.title):" + mix.leadAlbums.map(\.id).joined(separator: ","))
       // A mood mix's drawn cover, and whether it has landed (the tile swaps it in).
       if let address = MixCoverCache.address(for: mix) {
@@ -402,6 +453,7 @@ extension CarPlaySceneDelegate {
       let elements = session.moodTiles.map { makeMoodElement($0) }
       if let row = session.moodRow {
         row.elements = elements
+        row.text = carPlayTitle(.moodDoors)
       } else if !elements.isEmpty {
         session.moodRow = createMoodRow(elements: elements)
       }
@@ -429,11 +481,11 @@ extension CarPlaySceneDelegate {
       }
       return covers.count >= Self.latelyCoverCount ? Array(covers.prefix(Self.latelyCoverCount)) : nil
     }
-    if let mix = sharedHome?.latelyMix, !mix.songs.isEmpty, let covers = fourCovers(mix.leadAlbums) {
+    if let mix = carLatelyMix, !mix.songs.isEmpty, let covers = fourCovers(mix.leadAlbums) {
       tiles.append(.lately)
       coversByTile["lately"] = covers
     }
-    for mix in sharedHome?.otherMixes ?? [] {
+    for mix in carOtherMixes {
       if case let .mood(_, hexColor) = mix.kind {
         tiles.append(.mix(id: mix.id, title: mix.title, hexColor: hexColor))
         // Its drawn cover when it is on disk (never fetched here); its colour and name until then.
@@ -478,7 +530,7 @@ extension CarPlaySceneDelegate {
   }
 
   private func createMoodRow(elements: [CPListImageRowItemRowElement]) -> CPListImageRowItem {
-    let row = CPListImageRowItem(text: "Made for You", elements: elements, allowsMultipleLines: false)
+    let row = CPListImageRowItem(text: carPlayTitle(.moodDoors), elements: elements, allowsMultipleLines: false)
     // The title opens the tiles as a plain list (the same art at row size).
     row.handler = { [weak self] _, completion in
       guard let self else { completion(); return }
@@ -518,7 +570,7 @@ extension CarPlaySceneDelegate {
       }
       return item
     }
-    let template = CPListTemplate(title: "Made for You", sections: [CPListSection(items: rows)])
+    let template = CPListTemplate(title: carPlayTitle(.moodDoors), sections: [CPListSection(items: rows)])
     template.emptyViewTitleVariants = ["Nothing here yet"]
     return template
   }
@@ -537,7 +589,7 @@ extension CarPlaySceneDelegate {
   /// One of Home's other made-for-you playlists, played at once from the songs still on the
   /// phone.
   private func playMix(id: String, title: String, completion: @escaping () -> ()) {
-    let mix = sharedHome?.otherMixes.first(where: { $0.id == id })
+    let mix = carOtherMixes.first(where: { $0.id == id })
     let songs = OneTapPlay.playables(mix?.songs ?? [])
     guard !songs.isEmpty else {
       presentCarAlert("\(title) has nothing on this phone right now", completion: completion)
@@ -550,7 +602,7 @@ extension CarPlaySceneDelegate {
   /// The Lately mix Home built with the tile (songs on this phone matching recent listening),
   /// played at once.
   private func playLately(completion: @escaping () -> ()) {
-    let songs = OneTapPlay.playables(sharedHome?.latelyMix?.songs ?? [])
+    let songs = OneTapPlay.playables(carLatelyMix?.songs ?? [])
     guard !songs.isEmpty else {
       presentCarAlert("Not enough music on this phone matches lately yet", completion: completion)
       return
@@ -606,6 +658,120 @@ extension CarPlaySceneDelegate {
     let alert = CPAlertTemplate(titleVariants: [message], actions: [ok])
     interfaceController.presentTemplate(alert, animated: true) { _, _ in }
     completion()
+  }
+}
+
+// MARK: - The reaching row and All shelves (One Home)
+
+extension CarPlaySceneDelegate {
+  /// Nostalgia's mix as a tile: its records with its name across them (as the Made for You
+  /// row draws a record playlist).
+  fileprivate func makeReachMixElement(_ mix: HomeManager.MadeForYouMix) -> CPListImageRowItemRowElement {
+    CPListImageRowItemRowElement(image: reachMixArt(mix, slot: .shelf), title: mix.title, subtitle: "Mix")
+  }
+
+  fileprivate func makeReachMixRow(_ mix: HomeManager.MadeForYouMix) -> CPListItem {
+    let item = CPListItem(
+      text: mix.title,
+      detailText: "Mix",
+      image: reachMixArt(mix, slot: .row),
+      accessoryImage: nil,
+      accessoryType: .none
+    )
+    item.handler = { [weak self] _, completion in
+      guard let self else { completion(); return }
+      Task { @MainActor in self.playReachMix(mix.id, completion: completion) }
+    }
+    return item
+  }
+
+  private func reachMixArt(_ mix: HomeManager.MadeForYouMix, slot: CarPlayStyle.Slot) -> UIImage {
+    let preference = getPreference(activeAccountInfo).artworkDisplayPreference
+    let covers = mix.leadAlbums.compactMap {
+      LibraryEntityImage.coverImage(libraryEntity: $0, artworkDisplayPreference: preference, useCache: false)
+    }
+    return style.mosaicArt(covers: Array(covers.prefix(Self.latelyCoverCount)), word: mix.title, slot: slot)
+  }
+
+  /// The reaching row's mix, played at once from the songs still on the phone.
+  fileprivate func playReachMix(_ id: String, completion: @escaping () -> ()) {
+    guard let mix = carReachMix(id) else { completion(); return }
+    let songs = OneTapPlay.playables(mix.songs)
+    guard !songs.isEmpty else {
+      presentCarAlert("\(mix.title) has nothing on this phone right now", completion: completion)
+      return
+    }
+    appDelegate.player.play(context: PlayContext(name: mix.title, playables: songs))
+    displayNowPlaying { completion() }
+  }
+
+  /// The way to every shelf made today, a plain row after Home's image rows; nil when today
+  /// has no shelf the phone holds records of.
+  func makeAllShelvesRow() -> CPListItem? {
+    guard let cloudHome, cloudHome.row(.allShelves)?.isFilled == true else { return nil }
+    let item = CPListItem(
+      text: carPlayTitle(.allShelves),
+      detailText: nil,
+      image: nil,
+      accessoryImage: nil,
+      accessoryType: .disclosureIndicator
+    )
+    item.handler = { [weak self] _, completion in
+      guard let self else { completion(); return }
+      Task { @MainActor in
+        self.pushTemplateIfAllowed(self.makeAllShelvesTemplate(), animated: true)
+        completion()
+      }
+    }
+    return item
+  }
+
+  /// Today's shelves, the one on Home first: a shelf opens as a list of its records.
+  private func makeAllShelvesTemplate() -> CPListTemplate {
+    let preference = getPreference(activeAccountInfo).artworkDisplayPreference
+    let shelves = (cloudHome?.shelves ?? []).prefix(carPlayBrowseItemBudget)
+    let rows: [CPListItem] = shelves.map { shelf in
+      let title = Self.titleCase([shelf.shout, shelf.answer].filter { !$0.isEmpty }.joined(separator: " "))
+      let cover = shelf.albums.first.flatMap {
+        LibraryEntityImage.coverImage(libraryEntity: $0, artworkDisplayPreference: preference, useCache: false)
+      }
+      let count = shelf.albums.count == 1 ? "1 record" : "\(shelf.albums.count) records"
+      let item = CPListItem(
+        text: title,
+        detailText: shelf.onHome ? "On Home" : (shelf.mix == nil ? count : "A mix and \(count)"),
+        image: style.artwork(cover, kind: .album, name: title, slot: .row),
+        accessoryImage: nil,
+        accessoryType: .disclosureIndicator
+      )
+      let shelfID = shelf.id
+      item.handler = { [weak self] _, completion in
+        guard let self else { completion(); return }
+        Task { @MainActor in
+          if let template = self.makeShelfTemplate(id: shelfID) {
+            self.pushTemplateIfAllowed(template, animated: true)
+          }
+          completion()
+        }
+      }
+      return item
+    }
+    let template = CPListTemplate(title: carPlayTitle(.allShelves), sections: [CPListSection(items: rows)])
+    template.emptyViewTitleVariants = ["No shelves today"]
+    return template
+  }
+
+  /// One shelf's records (Nostalgia's mix first), within the car's browse budget.
+  private func makeShelfTemplate(id: String) -> CPListTemplate? {
+    guard let shelf = cloudHome?.shelves.first(where: { $0.id == id }) else { return nil }
+    var rows = [CPListItem]()
+    if let mix = shelf.mix { rows.append(makeReachMixRow(mix)) }
+    for album in shelf.albums.prefix(max(0, carPlayBrowseItemBudget - rows.count)) {
+      rows.append(createDetailTemplate(for: album, onlyCached: isOfflineMode))
+    }
+    let title = Self.titleCase([shelf.shout, shelf.answer].filter { !$0.isEmpty }.joined(separator: " "))
+    let template = CPListTemplate(title: title, sections: [CPListSection(items: rows)])
+    template.emptyViewTitleVariants = ["Nothing here yet"]
+    return template
   }
 }
 

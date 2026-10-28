@@ -52,8 +52,12 @@ final class HomeVC: UICollectionViewController {
   /// The Lately mix generation the Mood row was last drawn with (see applySnapshot).
   /// What the made-for-you row was last drawn from (HomeManager.madeForYouSignature).
   private var appliedMadeForYouSignature: [Int]?
-  /// What the Put something on row was last drawn from (HomeManager.putSomethingOnGeneration).
-  private var appliedPutSomethingOnGeneration: Int?
+  /// The made-for-you row's name it was last drawn under (One Home: the cloud names it).
+  private var appliedMadeForYouHeading: String?
+  /// Whether the reaching row was last laid out as Deep dive's big card (see applySnapshot).
+  private var appliedReachIsDeepDive: Bool?
+  /// Each row's name as last drawn ("SHOUT|answer"), so a renamed row gets its header redrawn.
+  private var shownHeadings: [HomeSection: String] = [:]
 
   // MARK: - Init
 
@@ -228,6 +232,8 @@ final class HomeVC: UICollectionViewController {
     Task { @MainActor in
       setCheckingForUpdates(true)
       await IntentExecutor.shared.convergeAndRefresh()
+      // One Home: a pull asks the cloud for Home now.
+      await HomeStore.shared.refresh()
       // convergeAndRefresh only reconciles the LIBRARY. Also fold in plays made on
       // the user's OTHER devices so Recent catches up — otherwise cross-device
       // recency only lands on Home-appear / app-foreground, and a track just played
@@ -374,11 +380,18 @@ final class HomeVC: UICollectionViewController {
   private func makeLayout() -> UICollectionViewCompositionalLayout {
     UICollectionViewCompositionalLayout { [weak self] sectionIndex, _ in
       let section = self?.dataSource.snapshot().sectionIdentifiers.element(at: sectionIndex)
-      return Self.sectionLayout(for: section)
+      return Self.sectionLayout(
+        for: section,
+        reachIsDeepDive: self?.sharedHome.reachShelf?.isDeepDive ?? false
+      )
     }
   }
 
-  private static func sectionLayout(for section: HomeSection?) -> NSCollectionLayoutSection? {
+  private static func sectionLayout(
+    for section: HomeSection?,
+    reachIsDeepDive: Bool = false
+  )
+    -> NSCollectionLayoutSection? {
     guard let section else { return nil }
 
     // cassette Patch 025 / Polish 2 (A2): top inset is 0 (the SectionHeaderView
@@ -396,8 +409,8 @@ final class HomeVC: UICollectionViewController {
     // cassette: .moodDoors is header-only (zero HomeItems — see
     // HomeSection.swift) — a near-zero item group, all real height comes
     // from the boundary header that hosts MoodDoorRow's SwiftUI content.
-    // Put something on is built the same way (PutSomethingOnRow), with the same tile.
-    if section == .moodDoors || section == .putSomethingOn {
+    // One Home: All shelves is header-only too, its heading and chevron the whole row.
+    if section == .moodDoors || section == .allShelves {
       let itemSize = NSCollectionLayoutSize(
         widthDimension: .fractionalWidth(1.0),
         heightDimension: .absolute(1)
@@ -417,10 +430,10 @@ final class HomeVC: UICollectionViewController {
       )
       sectionLayout.supplementariesFollowContentInsets = false
       // phone-taste: 28 above the heading, the heading, 12, a 150pt tile with its name and
-      // song count under it (as an album tile), 2.
+      // song count under it (as an album tile), 2. All shelves is the heading alone.
       let headerSize = NSCollectionLayoutSize(
         widthDimension: .fractionalWidth(1.0),
-        heightDimension: .estimated(272)
+        heightDimension: .estimated(section == .allShelves ? CassetteHeading.tableHeaderHeight : 272)
       )
       let header = NSCollectionLayoutBoundarySupplementaryItem(
         layoutSize: headerSize,
@@ -428,6 +441,28 @@ final class HomeVC: UICollectionViewController {
         alignment: .top
       )
       header.pinToVisibleBounds = false
+      header.zIndex = 1
+      sectionLayout.boundarySupplementaryItems = [header]
+      return sectionLayout
+    }
+
+    // One Home: Deep dive's one record is a big card across the page (the sketch's 358pt
+    // cover on a 390pt phone), under its heading. It sizes itself from its width.
+    if section == .reach, reachIsDeepDive {
+      let itemSize = NSCollectionLayoutSize(
+        widthDimension: .fractionalWidth(1.0),
+        heightDimension: .estimated(440)
+      )
+      let item = NSCollectionLayoutItem(layoutSize: itemSize)
+      let group = NSCollectionLayoutGroup.vertical(layoutSize: itemSize, subitems: [item])
+      let sectionLayout = NSCollectionLayoutSection(group: group)
+      sectionLayout.contentInsets = contentInsets
+      sectionLayout.supplementariesFollowContentInsets = false
+      let header = NSCollectionLayoutBoundarySupplementaryItem(
+        layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .estimated(44)),
+        elementKind: UICollectionView.elementKindSectionHeader,
+        alignment: .top
+      )
       header.zIndex = 1
       sectionLayout.boundarySupplementaryItems = [header]
       return sectionLayout
@@ -507,11 +542,12 @@ final class HomeVC: UICollectionViewController {
       forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
       withReuseIdentifier: MoodDoorsHeaderView.reuseID
     )
+    // One Home: Deep dive's big card, and Nostalgia's mix among the reaching row's records.
     collectionView.register(
-      PutSomethingOnHeaderView.self,
-      forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
-      withReuseIdentifier: PutSomethingOnHeaderView.reuseID
+      DeepDiveCardCell.self,
+      forCellWithReuseIdentifier: DeepDiveCardCell.typeName
     )
+    collectionView.register(ReachMixCell.self, forCellWithReuseIdentifier: ReachMixCell.typeName)
   }
 
   // MARK: - Data Source
@@ -560,9 +596,35 @@ final class HomeVC: UICollectionViewController {
               player.seek(toSecond: Double(resumeTrack.playProgress))
             }
           } else {
-            OneTapPlay.play(containable)
+            // One Home: a record last played on another device picks up at the song it
+            // was on there.
+            OneTapPlay.play(containable, startingAt: sharedHome.resumeStartSong)
           }
         }
+        return cell
+      }
+      if section == .reach, let mixID = item.mixID {
+        let cell = collectionView.dequeueReusableCell(
+          withReuseIdentifier: ReachMixCell.typeName,
+          for: indexPath
+        ) as! ReachMixCell
+        if let mix = sharedHome.reachMix(id: mixID) {
+          cell.display(
+            mix: mix,
+            open: { [weak self] in self?.openMadeForYou(mix) },
+            play: { MoodDoorRow.play(mix) }
+          )
+        }
+        return cell
+      }
+      if section == .reach, sharedHome.reachShelf?.isDeepDive == true,
+         let album = item.playableContainable as? Album {
+        let cell = collectionView.dequeueReusableCell(
+          withReuseIdentifier: DeepDiveCardCell.typeName,
+          for: indexPath
+        ) as! DeepDiveCardCell
+        cell.display(album: album)
+        cell.onPlayTapped = { OneTapPlay.play(album) }
         return cell
       }
       if let radio = item.playableContainable as? Radio {
@@ -623,22 +685,15 @@ final class HomeVC: UICollectionViewController {
         ) as? MoodDoorsHeaderView, let self else { return nil }
         // phone-taste: the made-for-you tiles show and play the playlists HomeManager keeps.
         // The row never builds a mix or a mood index itself; a tile's picture opens it.
+        let heading = Self.heading(for: .moodDoors, cloud: sharedHome.cloudHeadings[.moodDoors])
         moodHeader.configure(
           parentViewController: self,
-          mixes: sharedHome.madeForYouRowMixes,
+          mixes: sharedHome.madeForYouMixes,
+          shout: heading.shout,
+          answer: heading.answer,
           onOpen: { [weak self] mix in self?.openMadeForYou(mix) }
         )
         return moodHeader
-      }
-
-      if snapshotSection == .putSomethingOn {
-        guard let putHeader = collectionView.dequeueReusableSupplementaryView(
-          ofKind: kind,
-          withReuseIdentifier: PutSomethingOnHeaderView.reuseID,
-          for: indexPath
-        ) as? PutSomethingOnHeaderView, let self else { return nil }
-        putHeader.configure(parentViewController: self, tiles: sharedHome.putSomethingOnTiles)
-        return putHeader
       }
 
       guard let header = collectionView.dequeueReusableSupplementaryView(
@@ -649,8 +704,9 @@ final class HomeVC: UICollectionViewController {
       else {
         return nil
       }
-      // phone-taste: every row title in two voices, the shout and its answer.
-      let heading = Self.heading(for: snapshotSection)
+      // phone-taste: every row title in two voices, the shout and its answer. One Home: the
+      // cloud's names, drawn as they come.
+      let heading = Self.heading(for: snapshotSection, cloud: self?.sharedHome.cloudHeadings[snapshotSection])
       header.configure(shout: heading.shout, answer: heading.answer)
       // cassette Patch 035: every shelf is deterministic now; no
       // refresh button surfaces on any header.
@@ -658,7 +714,8 @@ final class HomeVC: UICollectionViewController {
       header.setRefreshHandler(nil)
       // cassette Patch 042: header tap navigates Playlists / Albums /
       // Artists into the matching Library category. Resume + Recent stay
-      // presentational (handler nil → chevron hides).
+      // presentational (handler nil → chevron hides). One Home: the reaching row and the
+      // All shelves link open All shelves.
       header.tapHandler = self?.tapHandler(for: snapshotSection)
       return header
     }
@@ -670,9 +727,14 @@ final class HomeVC: UICollectionViewController {
   /// Rows the mock does not draw get the shout alone.
   private static func heading(
     for section: HomeSection,
+    cloud: (shout: String, answer: String)? = nil,
     now: Date = Date()
   )
     -> (shout: String, answer: String?) {
+    // One Home: the cloud names every row it sends (no reason line under any of them).
+    if let cloud {
+      return (cloud.shout.uppercased(), cloud.answer.isEmpty ? nil : cloud.answer)
+    }
     switch section {
     case .onRepeat: return ("ON REPEAT", "lately")
     case .aroundNow: return (ListeningShelves.aroundNowTitle(now: now).uppercased(), "around now")
@@ -697,6 +759,15 @@ final class HomeVC: UICollectionViewController {
     navigationController?.navigationBar.prefersLargeTitles = false
   }
 
+  /// One Home: every shelf made today.
+  private func openAllShelves() {
+    navigationController?.pushViewController(
+      AllShelvesVC(account: account, cloudHome: sharedHome.cloudHome),
+      animated: true
+    )
+    navigationController?.navigationBar.prefersLargeTitles = false
+  }
+
   // MARK: - Resume
 
   /// The player's current song when it belongs to `container`: the same album, a song in
@@ -712,6 +783,9 @@ final class HomeVC: UICollectionViewController {
   /// cassette Patch 042: returns the handler that fires when the
   /// shelf header is tapped, or nil if the header is presentational.
   private func tapHandler(for section: HomeSection) -> (() -> ())? {
+    if section == .reach || section == .allShelves {
+      return { [weak self] in self?.openAllShelves() }
+    }
     let category: LibraryDisplayType
     switch section {
     case .yourPlaylists: category = .playlists
@@ -764,13 +838,14 @@ final class HomeVC: UICollectionViewController {
         // HomeManager keeps (built from the mood index LatelyLibrary builds off the main
         // thread). Never call LatelyLibrary.snapshot here: on a cache miss it builds the
         // index on the main thread, and this also runs from the sync banner and beta paths.
-        guard !sharedHome.madeForYouRowMixes.isEmpty else { continue }
+        guard !sharedHome.madeForYouMixes.isEmpty else { continue }
         snapshot.appendSections([section])
         continue
       }
-      // cassette 2026-10-26: Put something on is header-only too, shown when it has a tile.
-      if section == .putSomethingOn {
-        guard !sharedHome.putSomethingOnTiles.isEmpty else { continue }
+      // One Home: the All shelves link is header-only too, shown when today has a shelf
+      // the phone holds records of.
+      if section == .allShelves {
+        guard sharedHome.allShelvesCount > 0 else { continue }
         snapshot.appendSections([section])
         continue
       }
@@ -798,26 +873,44 @@ final class HomeVC: UICollectionViewController {
     // generation moves only when its songs or its covers do, so a play, a pause or a cache
     // expiry never snaps the row back to its start.
     let madeForYouSignature = sharedHome.madeForYouSignature
-    if madeForYouSignature != appliedMadeForYouSignature,
+    let madeForYouHeading = sharedHome.cloudHeadings[.moodDoors].map { "\($0.shout)|\($0.answer)" } ?? ""
+    if madeForYouSignature != appliedMadeForYouSignature || madeForYouHeading != appliedMadeForYouHeading,
        snapshot.sectionIdentifiers.contains(.moodDoors),
        current.sectionIdentifiers.contains(.moodDoors) {
       snapshot.reloadSections([.moodDoors])
     }
     appliedMadeForYouSignature = madeForYouSignature
-    // The same for Put something on: redraw it only when a tile changed.
-    let putSomethingOnGeneration = sharedHome.putSomethingOnGeneration
-    if putSomethingOnGeneration != appliedPutSomethingOnGeneration,
-       snapshot.sectionIdentifiers.contains(.putSomethingOn),
-       current.sectionIdentifiers.contains(.putSomethingOn) {
-      snapshot.reloadSections([.putSomethingOn])
+    appliedMadeForYouHeading = madeForYouHeading
+    // One Home: the cloud renames rows during the day (the time-of-day row, the reaching
+    // row's shelf), and a header is only redrawn when its section is reloaded.
+    func headingKey(_ section: HomeSection) -> String {
+      let heading = Self.heading(for: section, cloud: sharedHome.cloudHeadings[section])
+      return "\(heading.shout)|\(heading.answer ?? "")"
     }
-    appliedPutSomethingOnGeneration = putSomethingOnGeneration
+    let renamed = snapshot.sectionIdentifiers.filter { section in
+      section != .moodDoors && section != .resume && current.sectionIdentifiers.contains(section)
+        && shownHeadings[section] != nil && headingKey(section) != shownHeadings[section]
+    }
+    if !renamed.isEmpty { snapshot.reloadSections(renamed) }
+    for section in snapshot.sectionIdentifiers {
+      shownHeadings[section] = headingKey(section)
+    }
+    // The reaching row turning into Deep dive's big card (or back) is a new layout and new
+    // cells, even for a record it keeps.
+    let reachIsDeepDive = sharedHome.reachShelf?.isDeepDive ?? false
+    let relayout = appliedReachIsDeepDive != nil && appliedReachIsDeepDive != reachIsDeepDive
+    appliedReachIsDeepDive = reachIsDeepDive
+    if relayout, snapshot.sectionIdentifiers.contains(.reach), current.sectionIdentifiers.contains(.reach),
+       !renamed.contains(.reach) {
+      snapshot.reloadSections([.reach])
+    }
     // cassette (CarPlay off-window crash): never run the animated diff while Home is
     // off-window (CarPlay is the active scene). An animated apply against a collection
     // view that is not in any window is the production SIGTRAP; a non-animated apply
     // still keeps the data current for when Home reappears.
     let shouldAnimate = animated && (viewIfLoaded?.window != nil)
     dataSource.apply(snapshot, animatingDifferences: shouldAnimate)
+    if relayout { collectionView.collectionViewLayout.invalidateLayout() }
     refreshEmptyLibraryState(hasItems: totalItems > 0)
     // cassette (Forgotten Albums): the shelf may have just populated while Home
     // is visible — record the impression (per-day idempotent).
@@ -878,7 +971,8 @@ final class HomeVC: UICollectionViewController {
       // Radio) where the default order puts them. It used to set [.resume] + the
       // editor's rows, which dropped all of those until the next launch.
       let merged = Self.homeSections(keepingEditable: newOrder)
-      sharedHome.orderedVisibleSections = merged
+      // One Home: the cloud orders Home; this only changes the phone's stand-in.
+      sharedHome.standInSections = merged
       if let accountInfo = appDelegate.storage.settings.accounts.active {
         appDelegate.storage.settings.accounts.updateSetting(accountInfo) { accountSettings in
           accountSettings.homeSections = merged
@@ -919,6 +1013,11 @@ final class HomeVC: UICollectionViewController {
     didSelectItemAt indexPath: IndexPath
   ) {
     guard let selectedItem = dataSource.itemIdentifier(for: indexPath) else { return }
+    // One Home: Nostalgia's mix opens its page (its picture's own tap does the same).
+    if let mixID = selectedItem.mixID {
+      if let mix = sharedHome.reachMix(id: mixID) { openMadeForYou(mix) }
+      return
+    }
     let playableContainer = selectedItem.playableContainable
 
     // cassette (Forgotten Albums): "opened from shelf" intent stamp (hot-log row
@@ -1009,8 +1108,8 @@ extension HomeVC {
     point: CGPoint
   )
     -> UIContextMenuConfiguration? {
-    guard let containable = dataSource.itemIdentifier(for: indexPath)?.playableContainable
-    else { return nil }
+    guard let item = dataSource.itemIdentifier(for: indexPath), item.mixID == nil else { return nil }
+    let containable = item.playableContainable
 
     let identifier = NSString(string: TableViewPreviewInfo(
       playableContainerIdentifier: containable.containerIdentifier,

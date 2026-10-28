@@ -238,9 +238,19 @@ public struct UserSettings: Sendable, Codable {
   }
 
   private var _playlistsSortSetting: PlaylistSortType = .defaultValue
+  /// cassette (One Home): the sort the person picked. nil: never picked, so playlists sort by
+  /// the one last played on any device. Optional so settings saved before it still decode.
+  private var _playlistsSortPicked: PlaylistSortType?
   public var playlistsSortSetting: PlaylistSortType {
-    get { _playlistsSortSetting }
-    set { _playlistsSortSetting = newValue }
+    get {
+      if let picked = _playlistsSortPicked { return picked }
+      // A sort other than the old default (A-Z) was a pick made before this was kept.
+      return _playlistsSortSetting == .name ? .lastPlayed : _playlistsSortSetting
+    }
+    set {
+      _playlistsSortSetting = newValue
+      _playlistsSortPicked = newValue
+    }
   }
 
   private var _artistsSortSetting: ArtistElementSortType = .defaultValue

@@ -174,8 +174,12 @@ public final class IntentExecutor {
     await PhoneRemoval.sendPending()
     // Mood tags for More Like Lately and the Lately mix; refreshes at most twice a day.
     await LibraryMoods.shared.refreshIfDue()
-    // The made-for-you playlists, made in the cloud: a new set for each part of the day.
-    await MadeForYouStore.shared.refreshIfDue()
+    // Home, made in the cloud (One Home), which carries the made-for-you playlists. Their own
+    // set is only asked for while no Home has ever arrived (the stand-in Home reads it).
+    await HomeStore.shared.refreshIfDue()
+    if HomeStore.shared.answer == nil {
+      await MadeForYouStore.shared.refreshIfDue()
+    }
 
     // One-time: clear artwork state poisoned by the retired synthetic paths, so the
     // backfills below can actually heal those albums instead of skipping them as

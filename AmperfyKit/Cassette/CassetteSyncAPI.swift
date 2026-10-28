@@ -1053,12 +1053,14 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     return try JSONDecoder().decode(MadeForYouFeed.self, from: data)
   }
 
-  /// This part of the day's Put something on row (GET /api/sync/put-something-on): each
-  /// activity's own playlist when the library is deep enough for it, and its stations.
-  public func getPutSomethingOn(timeZone: String) async throws -> PutSomethingOnFeed {
+  /// Home, made once in the cloud for every device (GET /api/sync/home, One Home): every row
+  /// in order with its name and what is in it, and every reaching shelf made today. `timeZone`
+  /// is the listener's: their hour picks the part of the day, their day (turning at 4 am) the
+  /// day's playlists and shelves.
+  public func getHome(timeZone: String) async throws -> HomeAnswer {
     let tz = timeZone.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "UTC"
-    let data = try await get(path: "/api/sync/put-something-on?tz=\(tz)")
-    return try JSONDecoder().decode(PutSomethingOnFeed.self, from: data)
+    let data = try await get(path: "/api/sync/home?tz=\(tz)")
+    return try JSONDecoder().decode(HomeAnswer.self, from: data)
   }
 
   /// The shared "lately" profile from every device's plays (GET /api/sync/taste-lately),
@@ -1260,6 +1262,14 @@ public final class CassetteSyncAPI: @unchecked Sendable {
   public func getPlaylist(id: String) async throws -> CassetteCloudPlaylist {
     let data = try await get(path: "/api/sync/playlists/\(id)")
     return try JSONDecoder().decode(PlaylistEnvelope.self, from: data).playlist
+  }
+
+  /// POST /api/sync/playlists/{id}/played: this playlist started playing (One Home: your
+  /// playlists sort by the one last played on any device). `playedAt` is when it started; the
+  /// cloud only ever moves the date forward.
+  public func playlistPlayed(id: String, playedAt: Date) async throws {
+    let at = ISO8601DateFormatter().string(from: playedAt)
+    _ = try await send(method: "POST", path: "/api/sync/playlists/\(id)/played", json: ["played_at": at])
   }
 
   public func createPlaylist(
@@ -1797,6 +1807,7 @@ public struct CassetteCloudPlaylistItem: Sendable, Decodable {
   public let cassetteLocalId: String
   public let mbid: String?
   public let position: Double
+  public let addedAt: String?
   public let removedAt: String?
 
   enum CodingKeys: String, CodingKey {
@@ -1804,7 +1815,19 @@ public struct CassetteCloudPlaylistItem: Sendable, Decodable {
     case cassetteLocalId = "cassette_local_id"
     case mbid
     case position
+    case addedAt = "added_at"
     case removedAt = "removed_at"
+  }
+
+  /// The cloud's order for a playlist's songs: by place, then when added, then by id (the
+  /// readers' tie-break, BUG-587), so songs saved at the same place keep one order.
+  public static func inPlaylistOrder(_ items: [CassetteCloudPlaylistItem]) -> [CassetteCloudPlaylistItem] {
+    items.filter { $0.removedAt == nil }.sorted { a, b in
+      if a.position != b.position { return a.position < b.position }
+      let addedA = a.addedAt ?? "", addedB = b.addedAt ?? ""
+      if addedA != addedB { return addedA < addedB }
+      return a.id < b.id
+    }
   }
 }
 
@@ -1820,6 +1843,8 @@ public struct CassetteCloudPlaylist: Sendable, Decodable {
   // BUNDLED preset asset, so it's local + offline; the user's own pick still wins.
   public let derivedCoverUrl: String?
   public let updatedAt: String?
+  /// When it last started playing on any device (One Home), or nil.
+  public let lastPlayedAt: String?
   public let deletedAt: String?
   public let items: [CassetteCloudPlaylistItem]?
 
@@ -1828,6 +1853,7 @@ public struct CassetteCloudPlaylist: Sendable, Decodable {
     case coverImageUrl = "cover_image_url"
     case derivedCoverUrl = "derived_cover_url"
     case updatedAt = "updated_at"
+    case lastPlayedAt = "last_played_at"
     case deletedAt = "deleted_at"
   }
 }

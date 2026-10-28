@@ -37,6 +37,9 @@ struct HomeItem: Hashable, @unchecked Sendable {
   let section: HomeSection
   let stableID: String
   var playableContainable: PlayableContainable
+  /// One Home: a made-for-you style playlist drawn among a row's records (the reaching row's
+  /// Nostalgia mix), by its id; `playableContainable` is then its first record, for its art.
+  var mixID: String? = nil
 
   static func == (lhs: HomeItem, rhs: HomeItem) -> Bool {
     lhs.section == rhs.section && lhs.stableID == rhs.stableID
@@ -89,21 +92,35 @@ class HomeManager: NSObject {
   private static let songSampleLimit = 100
   private static let libraryBackfillLimit = 60
 
-  public var orderedVisibleSections: [HomeSection]
+  /// The rows Home draws, in order: the cloud's (One Home), else the stand-in's.
+  public private(set) var orderedVisibleSections: [HomeSection]
+  /// The phone's own rows, drawn only while no cloud Home is held (Edit Home changes these).
+  public var standInSections: [HomeSection] = HomeSection.defaultValue {
+    didSet { if !cloudHome.isDrawn { orderedVisibleSections = standInSections } }
+  }
   public var data: [HomeSection: [HomeItem]] = [:]
   public var applySnapshotCB: VoidFunctionCallback?
+
+  /// One Home: the cloud's rows found on this phone, shared with CarPlay.
+  let cloudHome: CloudHome
+  /// The cloud's name for each row it sent (shout and answer), drawn as is; empty while the
+  /// stand-in draws.
+  private(set) var cloudHeadings: [HomeSection: (shout: String, answer: String)] = [:]
+  /// The reaching row's shelf on this phone, while the cloud's Home draws.
+  private(set) var reachShelf: CloudHome.Shelf?
+  /// How many of today's shelves All shelves holds; 0 hides its link.
+  private(set) var allShelvesCount = 0
+  /// Resume: the song to start the record at when the player is not already in it (the
+  /// newest play of it, on any device).
+  private(set) var resumeStartSong: Song?
+  /// Set while a recompute runs, so the CloudHome change it causes does not ask for another.
+  private var isRecomputing = false
 
   private let account: Account
   private let storage: PersistentStorage
   private let getMeta: (_ accountInfo: AccountInfo) -> MetaManager
   private let eventLogger: EventLogger
   private let player: PlayerFacade
-  /// cassette (CarPlay feel-good, Job 1.3): when true, this instance also builds
-  /// the two album-forward shelves (`.recentlyPlayedAlbums` / `.newestAlbums`)
-  /// that CarPlay Home renders. iOS Home leaves it false — its section set
-  /// (`HomeSection.defaultValue`) doesn't include them, so it neither builds nor
-  /// renders them, keeping the extra work + snapshot fan-out off the iOS path.
-  private let buildsAlbumShelves: Bool
   /// cassette (Forgotten Albums): when true, this instance builds the iOS-only
   /// "From Your Collection" anti-recency shelf (`.forgottenAlbums`). CarPlay
   /// leaves it false (its section list doesn't include it).
@@ -229,6 +246,8 @@ class HomeManager: NSObject {
       case daypart
       case beenAWhile
       case mood(key: String, hexColor: String)
+      /// One Home: Nostalgia's mix of songs from its span of years, by the shelf's id.
+      case years(id: String)
     }
 
     let kind: Kind
@@ -250,6 +269,7 @@ class HomeManager: NSObject {
       case .daypart: return "daypart"
       case .beenAWhile: return "been-a-while"
       case let .mood(key, _): return "mood:\(key)"
+      case let .years(id): return id
       }
     }
   }
@@ -272,8 +292,7 @@ class HomeManager: NSObject {
   /// Moves whenever any made-for-you playlist's songs or pictures change, and only then,
   /// so Home redraws that row only when there is something new to draw.
   var madeForYouSignature: [Int] {
-    // Put something on's playlists leave this row, so a change there redraws it too
-    [latelyMix?.generation ?? -1, otherMixesGeneration, putSomethingOnGeneration]
+    [latelyMix?.generation ?? -1, otherMixesGeneration]
   }
 
   /// The made-for-you playlists after Lately.
@@ -315,7 +334,6 @@ class HomeManager: NSObject {
     getMeta: @escaping (_ accountInfo: AccountInfo) -> MetaManager,
     eventLogger: EventLogger,
     player: PlayerFacade,
-    buildsAlbumShelves: Bool = false,
     buildsForgottenShelf: Bool = false
   ) {
     self.account = account
@@ -323,14 +341,22 @@ class HomeManager: NSObject {
     self.getMeta = getMeta
     self.eventLogger = eventLogger
     self.player = player
-    self.buildsAlbumShelves = buildsAlbumShelves
     self.buildsForgottenShelf = buildsForgottenShelf
+    self.cloudHome = CloudHome.shared(account: account, storage: storage, player: player)
     // cassette Patch 042: four-shelf IA is fixed. Legacy
     // `accountSettings.homeSections` is left on disk untouched so a
     // future rollback or re-introduction of editable shelves can
     // still decode it, but it no longer influences what renders.
+    // One Home: the cloud's order replaces this as soon as an answer is held.
     self.orderedVisibleSections = HomeSection.defaultValue
     super.init()
+    // One Home: the cloud's rows changed (a new answer, music came or went, a play started).
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleCloudHomeChanged),
+      name: CloudHome.didChange,
+      object: nil
+    )
     // Recompute Recent whenever playback transitions so the first
     // card reflects the live queue (or vanishes when the user stops
     // and the recency list still wants the next item).
@@ -454,6 +480,8 @@ class HomeManager: NSObject {
     }
     // cassette 2026-10-21: the saved stations from the cloud (a change reorders the Radio row).
     Task { @MainActor in await RadioSaved.shared.refresh() }
+    // One Home: the cloud's Home, when the one held is half an hour old (or none is).
+    Task { @MainActor in await HomeStore.shared.refreshIfDue() }
     Task { @MainActor in
       do {
         try await AutoDownloadLibrarySyncer(
@@ -585,10 +613,22 @@ class HomeManager: NSObject {
     // Suppress the per-builder snapshot callbacks and fire exactly one apply for
     // the whole rebuild (via defer, so it still fires if a builder bails early).
     isBatchingSnapshot = true
+    isRecomputing = true
     defer {
       isBatchingSnapshot = false
+      isRecomputing = false
       applySnapshotCB?()
     }
+    // One Home (founder, 2026-10-28): the cloud's rows, in its order and under its names,
+    // whenever an answer is held and the phone holds some of it. Everything below is the
+    // phone's own Home, which only stands in until then.
+    cloudHome.refresh()
+    if applyCloudHome() { return }
+    orderedVisibleSections = standInSections
+    cloudHeadings = [:]
+    reachShelf = nil
+    allShelvesCount = 0
+    resumeStartSong = nil
     let songs = sampledSongs()
     albumScores = scoreContainers(from: songs) { $0.album }
     artistScores = scoreContainers(from: songs) { $0.artist }
@@ -608,12 +648,6 @@ class HomeManager: NSObject {
     // blend iOS lacked).
     let shelfInput = buildShelfInput()
     updateArtistsViaEngine(shelfInput)
-    // cassette (Job 1.3): CarPlay-only album-forward shelves. Gated so iOS
-    // neither computes nor snapshots them.
-    if buildsAlbumShelves {
-      updateRecentlyPlayedAlbums()
-      updateNewestAlbums()
-    }
     // cassette (Forgotten Albums): iOS-only anti-recency shelf, now engine-backed.
     if buildsForgottenShelf {
       updateAlbumsViaEngine(shelfInput)
@@ -667,6 +701,111 @@ class HomeManager: NSObject {
   private static func artistKey(of album: Album) -> String {
     let key = ListeningShelves.normalizedArtistName(album.artist?.name ?? "")
     return key.isEmpty ? album.id : key
+  }
+
+  // MARK: - One Home (the cloud's rows)
+
+  /// Lays out the cloud's Home (CloudHome): its rows in its order and under its names, each
+  /// with what the phone holds of it; a row the phone can't fill is left out. The cloud has
+  /// already kept each record to one row, so nothing here trims one row against another.
+  /// Returns false when there is nothing of it to draw: the phone's own rows stand in.
+  private func applyCloudHome() -> Bool {
+    guard cloudHome.isDrawn else { return false }
+    let isOnPhone = makeOnPhoneCheck()
+    var sections = [HomeSection]()
+    var headings = [HomeSection: (shout: String, answer: String)]()
+    data = [:]
+    reachShelf = nil
+    allShelvesCount = 0
+    resumeLine = nil
+    resumeStartSong = nil
+    var mixes = [MadeForYouMix]()
+    for row in cloudHome.drawnRows where !sections.contains(row.section) {
+      sections.append(row.section)
+      headings[row.section] = (row.shout, row.answer)
+      switch row.section {
+      case .moodDoors:
+        mixes = row.mixes
+      case .reach:
+        guard let shelf = row.shelf else { continue }
+        reachShelf = shelf
+        data[.reach] = Self.reachItems(shelf)
+      case .allShelves:
+        allShelvesCount = row.shelfCount
+      default:
+        data[row.section] = row.items.map {
+          HomeItem(section: row.section, stableID: Self.stableID(for: $0), playableContainable: $0)
+        }
+      }
+      if row.section == .resume, let container = row.items.first {
+        resumeStartSong = row.song
+        resumeLine = ResumeLine(
+          stableID: Self.stableID(for: container),
+          text: cloudResumeLine(for: container, song: row.song, isOnPhone: isOnPhone)
+        )
+      }
+    }
+    applyCloudMixes(mixes)
+    orderedVisibleSections = sections
+    cloudHeadings = headings
+    return true
+  }
+
+  /// The made-for-you row's playlists from the cloud's Home (Lately first), kept as Home's
+  /// Lately mix and other mixes, which the row, the playlist pages and the car read.
+  private func applyCloudMixes(_ mixes: [MadeForYouMix]) {
+    mixesFromCloud = true
+    // the stand-in lays its own set out afresh if it ever draws again
+    appliedFeedSignature = nil
+    latelyMixKey = nil
+    otherMixesKey = nil
+    let lately = mixes.first { $0.kind == .lately }
+    latelyDescription = lately?.subtitle
+    if let lately {
+      publishLatelyMix(lately.songs)
+    } else if latelyMix != nil {
+      latelyMix = nil
+      latelyMixGeneration += 1
+    }
+    setOtherMixes(mixes.filter { $0.kind != .lately })
+  }
+
+  /// The reaching row's tiles: Deep dive's one record (its big card), else Nostalgia's mix
+  /// first and the shelf's records after it.
+  private static func reachItems(_ shelf: CloudHome.Shelf) -> [HomeItem] {
+    if shelf.isDeepDive {
+      return shelf.albums.prefix(1).map {
+        HomeItem(section: .reach, stableID: stableID(for: $0), playableContainable: $0)
+      }
+    }
+    var items = [HomeItem]()
+    if let mix = shelf.mix, let art = mix.leadAlbums.first ?? shelf.albums.first {
+      items.append(HomeItem(section: .reach, stableID: "mix-\(mix.id)", playableContainable: art, mixID: mix.id))
+    }
+    items += shelf.albums.prefix(shelfCarouselCap).map {
+      HomeItem(section: .reach, stableID: stableID(for: $0), playableContainable: $0)
+    }
+    return items
+  }
+
+  /// The reaching row's Nostalgia mix, by its id.
+  func reachMix(id: String) -> MadeForYouMix? {
+    reachShelf?.mix.flatMap { $0.id == id ? $0 : nil }
+  }
+
+  /// Resume's second line: the song playing now when it belongs to the card's record, else
+  /// the song the cloud says was played last, else the record's latest played song here.
+  private func cloudResumeLine(
+    for container: PlayableContainable,
+    song: Song?,
+    isOnPhone: OnPhoneCheck
+  )
+    -> String? {
+    if let playing = player.currentMusicItem?.asSong, Self.song(playing, belongsTo: container) {
+      return playing.title
+    }
+    if let song { return song.title }
+    return latestPlayableSongTitle(in: container, isOnPhone: isOnPhone) ?? container.subtitle
   }
 
   // MARK: - Play scoring (Home Shelves v1 foundation)
@@ -947,6 +1086,11 @@ class HomeManager: NSObject {
   /// here (a partly synced playlist stays, and lists only its songs on the phone).
   /// The id sets are resolved once per call, not per item. Always true in Server Mode.
   private func makeOnPhoneCheck() -> OnPhoneCheck {
+    Self.makeOnPhoneCheck(storage: storage)
+  }
+
+  /// The same, for CloudHome.
+  static func makeOnPhoneCheck(storage: PersistentStorage) -> OnPhoneCheck {
     guard CassetteLibraryFilterProvider.shared.isOnDeviceOnly else {
       return OnPhoneCheck(owned: nil)
     }
@@ -960,7 +1104,7 @@ class HomeManager: NSObject {
 
   /// The owned-id sets for one pass, callable on a Home item (`isOnPhone(album)`) and on a
   /// song. `owned` nil is Server Mode, where everything counts.
-  private struct OnPhoneCheck {
+  struct OnPhoneCheck {
     let owned: (albumIds: Set<String>, artistIds: Set<String>, trackIds: Set<String>)?
 
     func callAsFunction(_ container: PlayableContainable) -> Bool {
@@ -1031,7 +1175,6 @@ class HomeManager: NSObject {
     // The made-for-you playlists come from the cloud (MadeForYouStore), the same set every
     // device plays; the phone's own recipe only stands in when it holds none for this moment.
     let fromCloud = applyMadeForYouFeed(now: now, isOnPhone: isOnPhone)
-    updatePutSomethingOn(now: now, isOnPhone: isOnPhone)
     updateLatelyShelves(lately, now: now, isOnPhone: isOnPhone)
     if !fromCloud {
       updateMadeForYouMixes(songPlays: songPlays, lately: lately, now: now, isOnPhone: isOnPhone)
@@ -1244,6 +1387,16 @@ class HomeManager: NSObject {
   /// The first four distinct albums of the mix, in mix order, preferring those whose cover
   /// is on disk, then filling with any.
   private func leadAlbums(for songs: [AbstractPlayable]) -> [Album] {
+    Self.leadAlbums(for: songs, storage: storage, account: account)
+  }
+
+  /// The same, for CloudHome.
+  static func leadAlbums(
+    for songs: [AbstractPlayable],
+    storage: PersistentStorage,
+    account: Account
+  )
+    -> [Album] {
     let setting = storage.settings.accounts.getSetting(account.info).read.artworkDisplayPreference
     var seen = Set<String>()
     var distinct = [Album]()
@@ -1521,6 +1674,11 @@ class HomeManager: NSObject {
   /// cassette_local_id -> the song on this phone, newest download first when an id repeats.
   /// The cloud's playlists name songs by cassette_local_id.
   private func songIDsByLocalID() -> [String: String] {
+    Self.songIDsByLocalID(storage: storage)
+  }
+
+  /// The same, for CloudHome.
+  static func songIDsByLocalID(storage: PersistentStorage) -> [String: String] {
     var songIDByLocalID = [String: String]()
     for row in (try? DeviceOwnershipManager(context: storage.main.context).fetchAll()) ?? [] {
       let localID: String? = row.cassetteLocalId
@@ -1528,122 +1686,6 @@ class HomeManager: NSObject {
       songIDByLocalID[localID] = songID
     }
     return songIDByLocalID
-  }
-
-  // MARK: - Put something on
-
-  /// cassette 2026-10-26: one Put something on tile (PutSomethingOnFeed): the person's own
-  /// playlist when the phone holds enough of it, else the first of the activity's stations the
-  /// hub holds.
-  struct PutSomethingOnTile {
-    enum Answer {
-      /// `coverVariant`: the drawn cover of a made-for-you mood playlist for the day, else nil.
-      case playlist(songs: [AbstractPlayable], coverVariant: String?)
-      /// The station that answers (`info` is the cloud's word on it), and every one of the
-      /// activity's stations the hub holds, in order, so Next tunes along them.
-      case station(Radio, all: [Radio], info: PutSomethingOnFeed.Station)
-    }
-
-    /// "focus", "rainy-day", ...
-    let key: String
-    let title: String
-    let hexColor: String
-    /// The made-for-you playlist this tile stands for ("mood:focus"), or nil.
-    let mixId: String?
-    let answer: Answer
-
-    /// What a tile plays, for telling a changed row from the same one.
-    fileprivate var signature: String {
-      switch answer {
-      case let .playlist(songs, cover): return "\(key)|\(cover ?? "")|" + songs.map(\.id).joined(separator: ",")
-      case let .station(radio, all, info): return "\(key)|\(radio.id)|\(info.show ?? "")|" + all.map(\.id).joined(separator: ",")
-      }
-    }
-  }
-
-  /// The Put something on row, in the cloud's order. Empty: the row is not shown.
-  private(set) var putSomethingOnTiles: [PutSomethingOnTile] = []
-  /// Moves only when a tile changes, so Home redraws the row only then.
-  private(set) var putSomethingOnGeneration = 0
-  /// What the row was last laid out from: the cloud's day, part of the day and revision, the
-  /// songs on the phone and the hub's stations. The same again keeps the tiles as they are.
-  private var appliedPutSomethingOnSignature: String?
-
-  /// The made-for-you playlists Put something on shows ("mood:focus"): that row leaves them
-  /// out, so a playlist shows once on Home.
-  var putSomethingOnMixIDs: Set<String> {
-    Set(putSomethingOnTiles.compactMap(\.mixId))
-  }
-
-  /// The made-for-you row's playlists: all of them, less those Put something on shows.
-  var madeForYouRowMixes: [MadeForYouMix] {
-    let shownAbove = putSomethingOnMixIDs
-    return madeForYouMixes.filter { !shownAbove.contains($0.id) }
-  }
-
-  /// Lays out the cloud's Put something on row for this moment, and asks for a fresher one
-  /// when it is due. An activity plays its own playlist when 15 of its songs are on the phone
-  /// (the made-for-you rule), else the first of its stations the hub holds; with neither it is
-  /// left out.
-  private func updatePutSomethingOn(now: Date, isOnPhone: OnPhoneCheck) {
-    let store = PutSomethingOnStore.shared
-    Task { await store.refreshIfDue(now: now) }
-    let radios = storage.main.library.getRadios(for: account)
-    guard let feed = store.feed(for: now) else {
-      appliedPutSomethingOnSignature = nil
-      setPutSomethingOnTiles([])
-      return
-    }
-    let signature = "\(feed.day)|\(feed.slot)|\(store.revision)|\(isOnPhone.owned?.trackIds.count ?? -1)|\(radios.count)"
-    guard signature != appliedPutSomethingOnSignature else { return }
-    appliedPutSomethingOnSignature = signature
-
-    let songIDByLocalID = songIDsByLocalID()
-    let wanted = Set(feed.activities.flatMap { ($0.playlist?.songs ?? []).compactMap { songIDByLocalID[$0] } })
-    let songsByID = storage.main.library.getSongsByID(for: account, ids: wanted)
-    let radioByURL = Dictionary(
-      radios.map { (RadioCatalog.normalize($0.url), $0) },
-      uniquingKeysWith: { first, _ in first }
-    )
-    var tiles = [PutSomethingOnTile]()
-    for activity in feed.activities {
-      if let playlist = activity.playlist {
-        let songs: [AbstractPlayable] = playlist.songs
-          .compactMap { songIDByLocalID[$0].flatMap { songsByID[$0] } }
-          .filter {
-            isOnPhone.contains($0) && !$0.playableManagedObject.isDeleted
-              && $0.playableManagedObject.managedObjectContext != nil
-          }
-        if songs.count >= ListeningShelves.madeMixMinSongs {
-          tiles.append(PutSomethingOnTile(
-            key: activity.key,
-            title: activity.title,
-            hexColor: activity.color,
-            mixId: activity.mixId,
-            answer: .playlist(songs: songs, coverVariant: playlist.cover?.variant)
-          ))
-          continue
-        }
-      }
-      let held = activity.stations.compactMap { station in
-        radioByURL[RadioCatalog.normalize(station.streamUrl)].map { (station, $0) }
-      }
-      guard let lead = held.first else { continue }
-      tiles.append(PutSomethingOnTile(
-        key: activity.key,
-        title: activity.title,
-        hexColor: activity.color,
-        mixId: activity.mixId,
-        answer: .station(lead.1, all: held.map(\.1), info: lead.0)
-      ))
-    }
-    setPutSomethingOnTiles(tiles)
-  }
-
-  private func setPutSomethingOnTiles(_ tiles: [PutSomethingOnTile]) {
-    guard tiles.map(\.signature) != putSomethingOnTiles.map(\.signature) else { return }
-    putSomethingOnTiles = tiles
-    putSomethingOnGeneration += 1
   }
 
   /// Store the made-for-you playlists after Lately; the generation moves only when one
@@ -1933,49 +1975,6 @@ class HomeManager: NSObject {
     notifySnapshot()
   }
 
-  /// cassette (Job 1.3): "Recently Played Albums" — albums actually played
-  /// (`album.lastTimePlayed` via `Album.playedViaContext()`), most-recent first.
-  /// Played-only (no backfill) so the title stays honest; the CarPlay empty-shelf
-  /// guard hides it when there are no album plays yet. CarPlay-only — built only
-  /// when `buildsAlbumShelves` is set (see `recomputeAllShelves`).
-  func updateRecentlyPlayedAlbums() {
-    let played = albumScores.values
-      .filter { $0.container.lastTimePlayed != nil }
-      .sorted {
-        ($0.container.lastTimePlayed ?? .distantPast) >
-          ($1.container.lastTimePlayed ?? .distantPast)
-      }
-      .prefix(Self.shelfCarouselCap)
-    data[.recentlyPlayedAlbums] = played.map {
-      HomeItem(
-        section: .recentlyPlayedAlbums,
-        stableID: Self.stableID(for: $0.container),
-        playableContainable: $0.container
-      )
-    }
-    notifySnapshot()
-  }
-
-  /// cassette (Job 1.3): "Newest Albums" — albums by recency-of-addition
-  /// (`album.addedDate` ~ `ShelfScore.newestAdded`), newest first, filled to
-  /// target from the stable at-large list so it isn't sparse. CarPlay-only.
-  func updateNewestAlbums() {
-    let rankedByAdded = albumScores
-      .sorted {
-        ($0.value.score.newestAdded ?? .distantPast) >
-          ($1.value.score.newestAdded ?? .distantPast)
-      }
-      .map { $0.key }
-    data[.newestAlbums] = filledShelf(
-      section: .newestAlbums,
-      rankedIDs: rankedByAdded,
-      containerForID: { albumScores[$0]?.container },
-      atLargeMOs: albumsAllFetch?.fetchedObjects as? [AlbumMO],
-      wrap: { Album(managedObject: $0) }
-    )
-    notifySnapshot()
-  }
-
   /// cassette (Forgotten Albums): the anti-recency shelf — owned albums the user
   /// has drifted from or never explored. iOS-only (`buildsForgottenShelf`). Draws
   /// from three pools, forgotten-purchase-weighted (the deep pool at launch):
@@ -2173,6 +2172,13 @@ class HomeManager: NSObject {
 
   @objc
   private func handleRadioSavedChanged() {
+    scheduleRecompute()
+  }
+
+  /// The cloud's rows changed outside a recompute (a new answer, music came or went).
+  @objc
+  private func handleCloudHomeChanged() {
+    guard !isRecomputing else { return }
     scheduleRecompute()
   }
 }

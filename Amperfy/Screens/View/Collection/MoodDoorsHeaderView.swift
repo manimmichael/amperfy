@@ -45,6 +45,8 @@ final class MoodDoorsHeaderView: UICollectionReusableView {
   func configure(
     parentViewController: UIViewController,
     mixes: [HomeManager.MadeForYouMix],
+    shout: String,
+    answer: String?,
     onOpen: @escaping (HomeManager.MadeForYouMix) -> ()
   ) {
     self.parentViewController = parentViewController
@@ -53,7 +55,7 @@ final class MoodDoorsHeaderView: UICollectionReusableView {
     hostingController?.view.removeFromSuperview()
     hostingController?.removeFromParent()
 
-    let row = MoodDoorRow(mixes: mixes, onOpen: onOpen)
+    let row = MoodDoorRow(mixes: mixes, shout: shout, answer: answer, onOpen: onOpen)
     let hosting = UIHostingController(rootView: row)
     hostingController = hosting
 

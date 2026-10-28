@@ -59,7 +59,9 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   var activeAccountInfo: AccountInfo!
   var activeAccount: Account!
   var accountNotificationHandler: AccountNotificationHandler?
-  var sharedHome: HomeManager?
+  /// One Home: the cloud's Home rows found on the phone, the same instance the phone's Home
+  /// draws from.
+  var cloudHome: CloudHome?
 
   /// The player mode the now-playing button row was last built for. The button
   /// SET depends only on the mode (music: shuffle+repeat; podcast: repeat+rate),
@@ -279,21 +281,21 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
       return
     }
     activeAccount = appDelegate.storage.main.library.getAccount(info: accountInfo)
-    sharedHome = HomeManager(
+    // One Home: the car draws the cloud's Home from the instance the phone's Home reads (no
+    // Home of its own any more), and redraws when its rows change.
+    cloudHome = CloudHome.shared(
       account: activeAccount,
       storage: appDelegate.storage,
-      getMeta: appDelegate.getMeta,
-      eventLogger: appDelegate.eventLogger,
-      player: appDelegate.player,
-      // cassette (Job 1.3): CarPlay Home is album-forward — build the two album
-      // shelves this instance renders. iOS's HomeManager leaves this default-false,
-      // so iOS Home is untouched.
-      buildsAlbumShelves: true
+      player: appDelegate.player
     )
-    sharedHome?.applySnapshotCB = { [weak self] in
-      guard let self else { return }
-      updateHomeSections()
-    }
+    appDelegate.notificationHandler.register(
+      self,
+      selector: #selector(cloudHomeChanged),
+      name: CloudHome.didChange,
+      object: nil
+    )
+    cloudHome?.refresh()
+    Task { @MainActor in await HomeStore.shared.refreshIfDue() }
     interfaceController?.setRootTemplate(
       rootBarTemplate,
       animated: false,
@@ -365,8 +367,8 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
   /// artwork while no car is attached (CPS-7); the Home rows and artwork index (CPS-4); the
   /// playlist detail; every browse fetch controller and page.
   private func endSession() {
-    sharedHome?.applySnapshotCB = nil
-    sharedHome = nil
+    appDelegate.notificationHandler.remove(self, name: CloudHome.didChange, object: nil)
+    cloudHome = nil
     session = SessionState()
     // The rows on the Home tab belong to the session just ended; an empty Home in the next
     // one would otherwise early-out and leave them on screen.
@@ -450,9 +452,10 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     /// signature (the Made for You list reuses them).
     var moodCovers: [String: [UIImage]] = [:]
     var moodSignature: String?
-    /// The time-of-day row's title as last rendered, so a title-only change gets through the
-    /// early-out (Weekday Evenings becomes Weekday Nights with the same albums).
-    var aroundTitle: String?
+    /// The rows' order and names as last rendered, so a change of name alone gets through the
+    /// early-out (Weekday Evenings becomes Weekday Nights with the same albums; the reaching
+    /// row turns from one shelf to another).
+    var homeLayout: String?
     /// The door mix being fetched (one at a time), and whether something else played since
     /// the tap, in which case its result is dropped.
     var doorLoad: UUID?
@@ -682,11 +685,18 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     updateHomeSections()
   }
 
-  /// phone-taste: new mood tags or a new lately profile. Home recomputes (debounced), which
-  /// rebuilds the Lately mix and, through the signature, the Lately tile.
+  /// phone-taste: new mood tags or a new lately profile. One Home: the car's rows come from
+  /// the cloud, which already read them; just look again.
   @objc
   private func libraryMoodsChanged() {
-    sharedHome?.refreshListeningShelves()
+    cloudHome?.refresh()
+  }
+
+  /// One Home: the cloud's rows on the phone changed (a new answer, music came or went,
+  /// something started playing).
+  @objc
+  private func cloudHomeChanged() {
+    updateHomeSections()
   }
 
   @objc
@@ -694,7 +704,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     os_log("CarPlay: OfflineModeChanged", log: self.log, type: .info)
     guard let templates = interfaceController?.templates else { return }
 
-    sharedHome?.createFetchController()
+    cloudHome?.refresh()
 
     if let root = interfaceController?.rootTemplate as? CPTabBarTemplate,
        root.selectedTemplate == homeTab {

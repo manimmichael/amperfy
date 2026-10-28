@@ -355,7 +355,6 @@ public enum CassetteCloudPlaylistBridge {
         }
         guard let playlist else { continue }
         playlist.name = remote.name
-        playlist.updateChangeDate()
         // cassette (cover unification): the user's own pick wins; else the server's
         // deterministic preset (rendered from the bundled asset — local + offline);
         // else the same preset derived here, so a response without it never clears it.
@@ -369,8 +368,7 @@ public enum CassetteCloudPlaylistBridge {
         // Rebuild items from resolved songs.
         playlist.removeAllItems()
         var itemIds: [String] = []
-        let items = (remote.items ?? []).filter { $0.removedAt == nil }
-          .sorted { $0.position < $1.position }
+        let items = CassetteCloudPlaylistItem.inPlaylistOrder(remote.items ?? [])
         for item in items {
           let ownership = DeviceOwnershipManager(context: asyncCompanion.context)
           let owned =
@@ -384,8 +382,10 @@ public enum CassetteCloudPlaylistBridge {
         }
         playlist.remoteSongCount = items.count
         storeItemIds(itemIds, for: remote.id)
+        foldCloudDates(remote, into: playlist)
       }
     }
+    await sendPendingPlays()
     os_log(
       "Cloud playlists: synced %d playlists",
       log: log,
@@ -421,8 +421,7 @@ public enum CassetteCloudPlaylistBridge {
       storeDescription(remote.description, for: remote.id)
       playlistAsync.removeAllItems()
       var itemIds: [String] = []
-      let items = (remote.items ?? []).filter { $0.removedAt == nil }
-        .sorted { $0.position < $1.position }
+      let items = CassetteCloudPlaylistItem.inPlaylistOrder(remote.items ?? [])
       for item in items {
         let ownership = DeviceOwnershipManager(context: asyncCompanion.context)
         let owned =
@@ -436,6 +435,59 @@ public enum CassetteCloudPlaylistBridge {
       }
       playlistAsync.remoteSongCount = items.count
       storeItemIds(itemIds, for: remote.id)
+      foldCloudDates(remote, into: playlistAsync)
+    }
+  }
+
+  /// The cloud's dates, written last (setting a name or the songs stamps the change date
+  /// with now). The change date is the cloud's last edit (BUG-588: a sync used to stamp
+  /// every playlist with the sync's time, so "Last changed" sorted by name). The last-played
+  /// date is the later of this phone's and the cloud's (One Home: played on any device), so
+  /// it never moves backwards.
+  nonisolated private static func foldCloudDates(_ remote: CassetteCloudPlaylist, into playlist: Playlist) {
+    if let edited = CassetteISODate.parse(remote.updatedAt) {
+      playlist.changeDate = edited
+    }
+    if let played = CassetteISODate.parse(remote.lastPlayedAt),
+       played > (playlist.lastTimePlayed ?? .distantPast) {
+      playlist.lastTimePlayed = played
+    }
+  }
+
+  // MARK: - Played (One Home)
+
+  nonisolated private static let pendingPlaysKey = "cassette.cloudPlaylistPlayedPending"
+
+  /// A playlist started playing on this phone: tell the cloud, so every device lists the
+  /// playlist last played first (POST /api/sync/playlists/{id}/played). Offline, the start is
+  /// kept and sent with the next one or the next playlist sync, carrying when it happened.
+  public static func reportPlayed(playlistId: String, at: Date) {
+    guard UUID(uuidString: playlistId) != nil else { return }
+    var pending = UserDefaults.standard.dictionary(forKey: pendingPlaysKey) as? [String: Double] ?? [:]
+    pending[playlistId.lowercased()] = max(pending[playlistId.lowercased()] ?? 0, at.timeIntervalSince1970)
+    UserDefaults.standard.set(pending, forKey: pendingPlaysKey)
+    Task { await sendPendingPlays() }
+  }
+
+  private static var isSendingPlays = false
+
+  private static func sendPendingPlays() async {
+    guard isCloudAvailable, !isSendingPlays else { return }
+    isSendingPlays = true
+    defer { isSendingPlays = false }
+    let pending = UserDefaults.standard.dictionary(forKey: pendingPlaysKey) as? [String: Double] ?? [:]
+    for (id, at) in pending {
+      do {
+        try await CassetteSyncAPI.shared.playlistPlayed(id: id, playedAt: Date(timeIntervalSince1970: at))
+      } catch CassetteSyncError.http(404) {
+        // the playlist is gone from the cloud: nothing to keep
+      } catch {
+        continue
+      }
+      var left = UserDefaults.standard.dictionary(forKey: pendingPlaysKey) as? [String: Double] ?? [:]
+      // a later start of the same playlist while this one was in flight stays to be sent
+      if left[id] == at { left[id] = nil }
+      UserDefaults.standard.set(left, forKey: pendingPlaysKey)
     }
   }
 
@@ -487,9 +539,7 @@ public enum CassetteCloudPlaylistBridge {
       playlistId: playlist.id,
       ops: ops
     )
-    if let items = updated.items?.filter({ $0.removedAt == nil }).sorted(by: {
-      $0.position < $1.position
-    }) {
+    if let items = updated.items.map(CassetteCloudPlaylistItem.inPlaylistOrder) {
       storeItemIds(items.map(\.id), for: playlist.id)
     } else {
       storeItemIds(ids, for: playlist.id)
@@ -501,8 +551,7 @@ public enum CassetteCloudPlaylistBridge {
     var ids = storedItemIds(for: playlist.id)
     if index < 0 || index >= ids.count {
       let remote = try await CassetteSyncAPI.shared.getPlaylist(id: playlist.id)
-      ids = (remote.items ?? []).filter { $0.removedAt == nil }
-        .sorted { $0.position < $1.position }.map(\.id)
+      ids = CassetteCloudPlaylistItem.inPlaylistOrder(remote.items ?? []).map(\.id)
       storeItemIds(ids, for: playlist.id)
       guard index >= 0, index < ids.count else { return }
     }
@@ -521,8 +570,7 @@ public enum CassetteCloudPlaylistBridge {
     let playables = playlist.playables
     if ids.count != playables.count {
       let remote = try await CassetteSyncAPI.shared.getPlaylist(id: playlist.id)
-      ids = (remote.items ?? []).filter { $0.removedAt == nil }
-        .sorted { $0.position < $1.position }.map(\.id)
+      ids = CassetteCloudPlaylistItem.inPlaylistOrder(remote.items ?? []).map(\.id)
     }
     guard ids.count == playables.count, !ids.isEmpty else { return }
     let base = Double(Date().timeIntervalSince1970 * 1000)

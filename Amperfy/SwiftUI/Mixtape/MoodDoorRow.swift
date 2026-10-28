@@ -30,6 +30,9 @@ import UIKit
 struct MoodDoorRow: View {
   /// HomeManager's made-for-you playlists, in row order. Empty: the row is not shown.
   let mixes: [HomeManager.MadeForYouMix]
+  /// The row's name in two voices (One Home: the cloud's, "PLAYLISTS made for you").
+  var shout = "PLAYLISTS"
+  var answer: String? = "made for you"
   /// Opens a playlist's page.
   let onOpen: (HomeManager.MadeForYouMix) -> ()
 
@@ -39,7 +42,7 @@ struct MoodDoorRow: View {
   var body: some View {
     VStack(alignment: .leading, spacing: CassetteHeading.bottomSpacing) {
       // The same two-voice heading, gutter and air as the UIKit rows around it.
-      CassetteHeadingText(shout: "PLAYLISTS", answer: "made for you")
+      CassetteHeadingText(shout: shout, answer: answer)
         .padding(.horizontal, CassetteHeading.sideInset)
         .padding(.top, CassetteHeading.topSpacing)
 

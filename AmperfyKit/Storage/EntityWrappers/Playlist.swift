@@ -552,8 +552,14 @@ extension Playlist: PlayableContainable {
   }
 
   public func playedViaContext() {
-    lastTimePlayed = Date()
+    let now = Date()
+    lastTimePlayed = now
     playCount += 1
+    // cassette (One Home): tell the cloud, so every device lists the playlist last played
+    // first. Player queues (no id) and smart playlists are not the person's playlists.
+    let id = self.id
+    guard !id.isEmpty, !isSmartPlaylist else { return }
+    Task { @MainActor in CassetteCloudPlaylistBridge.reportPlayed(playlistId: id, at: now) }
   }
 
   public var containerIdentifier: PlayableContainerIdentifier { PlayableContainerIdentifier(

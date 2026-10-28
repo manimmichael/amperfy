@@ -463,4 +463,17 @@ enum OneTapPlay {
     Haptics.light.vibrate(isHapticsEnabled: delegate.storage.settings.user.isHapticsEnabled)
     return true
   }
+
+  /// Plays `containable` from `song` when the phone can play it there, else as `play` does.
+  /// One Home: Resume picks a record up at the song it was on, on whichever device.
+  @discardableResult
+  static func play(_ containable: PlayableContainable, startingAt song: AbstractPlayable?) -> Bool {
+    let list = playables(of: containable)
+    guard let song, !(containable is Artist),
+          let index = list.firstIndex(where: { $0.id == song.id }), index > 0
+    else { return play(containable) }
+    delegate.player.play(context: PlayContext(containable: containable, index: index, playables: list))
+    Haptics.light.vibrate(isHapticsEnabled: delegate.storage.settings.user.isHapticsEnabled)
+    return true
+  }
 }
