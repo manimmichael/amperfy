@@ -8,10 +8,14 @@
 //  in Swift: whatever the site's pages become, this screen shows.
 //
 //  - Our screen, our back button: the page is Apple's web engine (WKWebView) inside an
-//    ordinary pushed screen. The web view says "CassetteApp/1" in its user agent, and the
+//    ordinary pushed screen. The web view says "CassetteApp/2" in its user agent, and the
 //    site then hides its own menus, footer and breadcrumb (apps/cassette/src/lib/
-//    app-surface.ts) and turns its in-page song previews off, so the phone's player keeps
-//    the sound.
+//    app-surface.ts).
+//  - Previews (the founder, 2026-10-29, Q11): an album's song previews play here with the
+//    video on screen, in the page's own player. A preview starting tells this screen
+//    ("preview-playing"), which pauses the phone's music; leaving the page, locking the
+//    phone or starting the phone's music stops the preview. ("CassetteApp/1" builds can't
+//    hand the sound over, so the site leaves previews off for them.)
 //  - Signed in: the first request goes through the site's /api/app-session with the phone's
 //    sign-in, which answers with a site session for this web view only (never Safari's) and
 //    a redirect to the page. Until that route is deployed, the page opens signed out.
@@ -29,7 +33,7 @@ import WebKit
 // MARK: - CassetteWebPageVC
 
 @MainActor
-final class CassetteWebPageVC: UIViewController, WKNavigationDelegate, WKUIDelegate {
+final class CassetteWebPageVC: UIViewController, WKNavigationDelegate, WKUIDelegate, MusicPlayable {
   static var base: String {
     #if DEBUG
       // A debug build can read a local web server: SIMCTL_CHILD_CASSETTE_RADIO_BASE=…
@@ -60,13 +64,16 @@ final class CassetteWebPageVC: UIViewController, WKNavigationDelegate, WKUIDeleg
     self.placeholder = placeholder
     let config = WKWebViewConfiguration()
     config.websiteDataStore = .default()
-    config.applicationNameForUserAgent = "CassetteApp/1"
+    config.applicationNameForUserAgent = "CassetteApp/2"
     config.allowsInlineMediaPlayback = true
     config.mediaTypesRequiringUserActionForPlayback = .all
+    // the preview's video stays in the page, never floating over the rest of the app
+    config.allowsPictureInPictureMediaPlayback = false
     webView = WKWebView(frame: .zero, configuration: config)
     super.init(nibName: nil, bundle: nil)
     navigationItem.title = title
     navigationItem.largeTitleDisplayMode = .never
+    webView.configuration.userContentController.add(PageMessages(self), name: "cassette")
   }
 
   @available(*, unavailable)
@@ -124,6 +131,14 @@ final class CassetteWebPageVC: UIViewController, WKNavigationDelegate, WKUIDeleg
       }
     }
 
+    appDelegate.player.addNotifier(notifier: self)
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(Self.hushPreview),
+      name: UIApplication.willResignActiveNotification,
+      object: nil
+    )
+
     loadSignedIn()
   }
 
@@ -131,6 +146,38 @@ final class CassetteWebPageVC: UIViewController, WKNavigationDelegate, WKUIDeleg
     super.viewIsAppearing(animated)
     extendSafeAreaToAccountForMiniPlayer()
   }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    hushPreview()
+  }
+
+  // MARK: Previews
+
+  /// The page said a preview started (lib/app-surface tellApp): the phone's music pauses.
+  fileprivate func pageSaid(_ body: Any) {
+    guard (body as? [String: Any])?["type"] as? String == "preview-playing" else { return }
+    if appDelegate.player.isPlaying { appDelegate.player.pause() }
+  }
+
+  /// Stops the page's preview: leaving the page, locking the phone, the phone's music starting.
+  @objc
+  private func hushPreview() {
+    webView.pauseAllMediaPlayback(completionHandler: nil)
+  }
+
+  // MARK: MusicPlayable
+
+  func didStartPlaying() { hushPreview() }
+  func didStartPlayingFromBeginning() { hushPreview() }
+  func didPause() {}
+  func didStopPlaying() {}
+  func didElapsedTimeChange() {}
+  func didPlaylistChange() {}
+  func didArtworkChange() {}
+  func didShuffleChange() {}
+  func didRepeatChange() {}
+  func didPlaybackRateChange() {}
 
   private var pageURL: URL? { URL(string: Self.base + path) }
 
@@ -254,6 +301,24 @@ final class CassetteWebPageVC: UIViewController, WKNavigationDelegate, WKUIDeleg
       }
     }
     return nil
+  }
+}
+
+// MARK: - PageMessages
+
+/// The page's messages to the app, without the web view's content controller (which keeps what it is
+/// handed) keeping the screen alive.
+@MainActor
+private final class PageMessages: NSObject, WKScriptMessageHandler {
+  private weak var page: CassetteWebPageVC?
+
+  init(_ page: CassetteWebPageVC) { self.page = page }
+
+  func userContentController(
+    _ userContentController: WKUserContentController,
+    didReceive message: WKScriptMessage
+  ) {
+    page?.pageSaid(message.body)
   }
 }
 
