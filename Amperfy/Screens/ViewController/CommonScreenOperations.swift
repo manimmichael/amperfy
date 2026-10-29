@@ -156,7 +156,7 @@ extension UIViewController {
     // (AppDelegate.logoutAccount) with a confirmation. Last, and apart.
     if let activeAccountInfo = appDelegate.storage.settings.accounts.active {
       let logoutAction = UIAction(
-        title: "Log Out",
+        title: "Sign Out",
         image: CassetteIcon.signOut.uiImage,
         attributes: .destructive,
         handler: { [weak self] _ in

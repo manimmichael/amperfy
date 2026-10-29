@@ -185,8 +185,8 @@ class DirectoriesVC: MultiSourceTableViewController {
 
   lazy var emptyContentState = ListEmptyState(empty: .cassetteEmpty(
     image: .folder,
-    title: "No Directories or Songs",
-    body: "Your directories and songs will appear here."
+    title: "Nothing here yet",
+    body: nil
   ))
 
   func refreshHeaderView() {

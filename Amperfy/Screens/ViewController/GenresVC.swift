@@ -136,8 +136,8 @@ class GenresVC: SingleFetchedResultsTableViewController<GenreMO> {
 
   lazy var emptyContentState = ListEmptyState(empty: .cassetteEmpty(
     image: .genre,
-    title: "No Genres",
-    body: "Your genres will appear here."
+    title: "No genres yet",
+    body: nil
   ))
 
   override func viewWillAppear(_ animated: Bool) {

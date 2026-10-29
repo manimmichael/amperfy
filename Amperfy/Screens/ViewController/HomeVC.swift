@@ -289,7 +289,7 @@ final class HomeVC: UICollectionViewController {
   /// below it while it is up. Resume stays: a single line does not cover it.
   private func updateSyncBannerPresentation(animated: Bool) {
     // The same name the avatar menu, Settings and the Mac page show (an IP pairing falls back
-    // to the hostname the hub reported, then to "your Mac").
+    // to the hostname the hub reported, then to "your computer").
     let hubName = CassetteSyncStatus.displayHubName(
       serverUrl: appDelegate.storage.settings.accounts.activeSetting.read.loginCredentials?.serverUrl
     )
@@ -924,21 +924,10 @@ final class HomeVC: UICollectionViewController {
     contentUnavailableConfiguration = hasItems ? nil : Self.emptyLibraryConfig
   }
 
-  /// cassette Patch 036: copy updated for the three-shelf IA — only
-  /// shows when Resume, Your Playlists, and Recently Added are all
-  /// empty (fresh install, no library, no listening history).
-  private static let emptyLibraryConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = UIImage(systemName: "music.note")
-    config.text = "Add music to your Cassette Player to start listening"
-    config.secondaryText = "Once your Cassette Player syncs tracks, they'll show up here."
-    config.textProperties.font = UIFont.cassette(.sectionTitle)
-    config.textProperties.color = CassetteTheme.UIColors.ink
-    config.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
-    config.secondaryTextProperties.color = CassetteTheme.UIColors.ink2
-    config.imageProperties.tintColor = CassetteTheme.UIColors.ink3
-    return config
-  }()
+  /// cassette Patch 036: only shows when Resume, Your Playlists, and Recently Added are all
+  /// empty (fresh install, no library, no listening history). The lists' own empty line, from
+  /// the shared empty state (I-W3).
+  private static var emptyLibraryConfig: UIContentUnavailableConfiguration { .cassetteOnDeviceEmpty }
 
   @objc
   private func refreshOfflineMode() {

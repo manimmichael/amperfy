@@ -225,7 +225,7 @@ public class IntentManager {
       guard let account = self.getActiveAccountCallback() else {
         failure(NSError.error(
           code: .missingErrorCode,
-          failureReason: "You are not yet logged in."
+          failureReason: "You aren't signed in yet."
         ))
         return
       }
@@ -336,7 +336,7 @@ public class IntentManager {
       guard let account = self.getActiveAccountCallback() else {
         failure(NSError.error(
           code: .missingErrorCode,
-          failureReason: "You are not yet logged in."
+          failureReason: "You aren't signed in yet."
         ))
         return
       }
@@ -422,7 +422,7 @@ public class IntentManager {
       guard let account = self.getActiveAccountCallback() else {
         failure(NSError.error(
           code: .missingErrorCode,
-          failureReason: "You are not yet logged in."
+          failureReason: "You aren't signed in yet."
         ))
         return
       }

@@ -86,7 +86,7 @@ struct PlaybackSettingsView: View {
               }
             }
           },
-          footer: "Sets the quality downloaded to this device. Your Mac always keeps the original, full resolution files."
+          footer: "Sets the quality downloaded to this phone. Your computer always keeps the original files."
         )
 
         if isServerModeOn {

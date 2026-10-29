@@ -178,8 +178,8 @@ class PlaylistsVC: SingleSnapshotFetchedResultsTableViewController<PlaylistMO> {
 
   lazy var emptyContentState = ListEmptyState(empty: .cassetteEmpty(
     image: .playlist,
-    title: "No Playlists",
-    body: "Your playlists will appear here."
+    title: "No playlists yet",
+    body: nil
   ))
 
   func change(sortType: PlaylistSortType) {

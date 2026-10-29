@@ -145,7 +145,7 @@ struct SettingsView: View {
     // MARK: iOS root
 
     /// A paired Cassette hub: a hub address, and the `cassette-*` login pairing mints (the
-    /// AccountSettingsView test), so a generic Subsonic server is never called "your Mac".
+    /// AccountSettingsView test), so a generic Subsonic server is never called "your computer".
     private var isCassetteHub: Bool {
       let credentials = appDelegate.storage.settings.accounts.activeSetting.read.loginCredentials
       guard credentials?.serverUrl != nil else { return false }
@@ -177,7 +177,7 @@ struct SettingsView: View {
           HubRow(model: devices)
           ResyncRow(model: devices)
         } header: {
-          SettingsHead(shout: "YOUR MAC", answer: devices.macState.answer)
+          SettingsHead(shout: "YOUR COMPUTER", answer: devices.macState.answer)
         }
       }
 
@@ -320,7 +320,7 @@ struct SettingsView: View {
 
   // MARK: - AccountCardRow
 
-  /// The account card: photo (else the chosen disc or silhouette), name, "Email, log out".
+  /// The account card: photo (else the chosen disc or silhouette), name, "Email, sign out".
   private struct AccountCardRow: View {
     @State
     private var name = "Your account"
@@ -353,7 +353,7 @@ struct SettingsView: View {
               .font(.cassette(.sectionTitle))
               .foregroundStyle(Color.cassette(.textPrimary))
               .lineLimit(1)
-            Text("Email, log out")
+            Text("Email, sign out")
               .font(.cassette(.caption))
               .foregroundStyle(Color.cassette(.textSecondary))
               .lineLimit(1)

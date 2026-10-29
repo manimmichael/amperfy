@@ -193,7 +193,7 @@ struct StorageSettingsView: View {
               SecondaryText(completeCacheSize.description)
             }
           }
-        }, footer: "Choose what syncs to this phone in Cassette Player on your computer.", header: "On this phone")
+        }, footer: "Choose what syncs to this phone in Cassette on your computer.", header: "On this phone")
 
         if !onPhoneAlbums.isEmpty {
           SettingsSection(content: {

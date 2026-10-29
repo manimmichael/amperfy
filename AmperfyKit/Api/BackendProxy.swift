@@ -77,7 +77,7 @@ public enum AuthenticationError: LocalizedError {
     var ret = ""
     switch self {
     case .notAbleToLogin:
-      ret = "Not able to login, please check credentials!"
+      ret = "Couldn't sign in. Check your user name and password."
     case .invalidUrl:
       ret = "Server URL is invalid!"
     case let .requestStatusError(message: message):

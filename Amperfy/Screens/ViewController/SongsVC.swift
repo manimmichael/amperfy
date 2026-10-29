@@ -133,8 +133,8 @@ class SongsVC: SingleFetchedResultsTableViewController<SongMO> {
   lazy var emptyContentState = ListEmptyState(
     empty: .cassetteEmpty(
       image: .musicalNotes,
-      title: "No Songs",
-      body: "Your songs will appear here."
+      title: "No songs yet",
+      body: nil
     ),
     followsOnDeviceFilter: true
   )

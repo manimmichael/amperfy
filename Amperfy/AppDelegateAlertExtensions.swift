@@ -64,8 +64,8 @@ extension AppDelegate {
     // The person's Cassette account, never the `cassette-*` machine login the hub mints.
     let name = CassetteSyncAPI.accountName ?? CassetteSyncAPI.accountEmail
     let alert = UIAlertController(
-      title: name.map { "Log out of \($0)?" } ?? "Log out?",
-      message: "Your playlists, likes and listening history stay in your account. What should happen to the music on this phone?",
+      title: name.map { "Sign out of \($0)?" } ?? "Sign out?",
+      message: "Your playlists and listening history stay in your account. What should happen to the music on this phone?",
       preferredStyle: .alert
     )
     let keep = UIAlertAction(title: "Keep Music on This Phone", style: .default) { _ in

@@ -772,7 +772,7 @@ final class RadioStationCell: UITableViewCell {
 // MARK: - RadiosVC
 
 class RadiosVC: UITableViewController, UISearchResultsUpdating {
-  override var sceneTitle: String? { "Radios" }
+  override var sceneTitle: String? { "Radio" }
   static let savedSectionTitle = "Your stations"
 
   private let account: Account
@@ -908,20 +908,15 @@ class RadiosVC: UITableViewController, UISearchResultsUpdating {
 
   private func updateContentUnavailable() {
     if sections.isEmpty {
-      contentUnavailableConfiguration = query
-        .isEmpty ? emptyContentConfig : UIContentUnavailableConfiguration.search()
+      contentUnavailableConfiguration = query.isEmpty
+        ? emptyContentConfig : UIContentUnavailableConfiguration.cassetteNoResults(body: nil)
     } else {
       contentUnavailableConfiguration = nil
     }
   }
 
-  private lazy var emptyContentConfig: UIContentUnavailableConfiguration = {
-    var config = UIContentUnavailableConfiguration.empty()
-    config.image = .radio
-    config.text = "No stations"
-    config.secondaryText = "Pull down to try again."
-    return config
-  }()
+  private lazy var emptyContentConfig: UIContentUnavailableConfiguration =
+    .cassetteEmpty(image: .radio, title: "No stations yet", body: nil)
 
   private func updateFromRemote() {
     guard appDelegate.storage.settings.user.isOnlineMode else { return }
@@ -1227,7 +1222,7 @@ extension UIColor {
 
 // MARK: - RadioShelf
 
-/// The order behind the Home "Radios" shelf. What this person tunes to comes
+/// The order behind the Home "Radio" shelf. What this person tunes to comes
 /// first (recency and play count on the station itself), then stations whose
 /// genres match what they have been PLAYING lately (the last 30 days, recent plays
 /// weighted up), with the genres they own as a smaller background signal, then live

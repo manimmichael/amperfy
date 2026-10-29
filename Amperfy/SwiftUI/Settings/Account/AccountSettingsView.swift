@@ -145,7 +145,7 @@ struct AccountSettingsView: View {
                 Alert(
                   title: Text("Resync Library"),
                   message: Text(
-                    "This reads your library again from Cassette Player on your computer. The music on this phone stays.\n\nResync now?"
+                    "This reads your library again from your computer. The music on this phone stays.\n\nResync now?"
                   ),
                   primaryButton: .destructive(Text("Resync")) {
                     resyncLibrary(accountInfo: activeAccountInfo)
@@ -157,14 +157,14 @@ struct AccountSettingsView: View {
           }
 
           SettingsSection {
-            SettingsButtonRow(title: "Log Out", actionType: .destructive) {
+            SettingsButtonRow(title: "Sign Out", actionType: .destructive) {
               appDelegate.presentLogoutChoice(for: activeAccountInfo)
             }
           }
         } else {
-          // User is not logged in yet
+          // Not signed in yet
           SettingsSection {
-            SecondaryText("You aren't logged in yet.")
+            SecondaryText("You aren't signed in yet.")
           }
         }
       }

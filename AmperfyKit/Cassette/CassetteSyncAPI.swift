@@ -199,9 +199,10 @@ public enum CassetteSyncStatus {
   }
 
   /// The hub's name when there is none to show (a bare-IP pairing the cloud has not named
-  /// yet). The one fallback Home's line ("your Mac" mid-sentence), the avatar menu, Settings
-  /// and the Mac page all use, as the mock writes it.
-  public static let fallbackHubName = "Your Mac"
+  /// yet). The one fallback Home's line ("your computer" mid-sentence), the avatar menu,
+  /// Settings and the computer's page all use. Never "Mac" as the general word (I-W1): the
+  /// phone can be paired to any computer.
+  public static let fallbackHubName = "Your computer"
 
   /// The hub's name for display: from the paired LAN address, else from the hostname the
   /// hub last reported to the cloud (a bare IP in the address carries no name). Every

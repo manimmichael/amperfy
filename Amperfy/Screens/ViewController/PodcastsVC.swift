@@ -135,14 +135,14 @@ class PodcastsVC: MultiSourceTableViewController {
 
   lazy var emptyPodcastState = ListEmptyState(empty: .cassetteEmpty(
     image: .podcast,
-    title: "No Podcasts",
-    body: "Your podcasts will appear here."
+    title: "No podcasts yet",
+    body: nil
   ))
 
   lazy var emptyEpisodeState = ListEmptyState(empty: .cassetteEmpty(
     image: .podcastEpisode,
-    title: "No Podcast Episodes",
-    body: "Your podcast episodes will appear here."
+    title: "No episodes yet",
+    body: nil
   ))
 
   override func viewWillAppear(_ animated: Bool) {

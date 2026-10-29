@@ -120,7 +120,7 @@ import SwiftUI
         Button("Cancel", role: .cancel) {}
       } message: { _ in
         // The album menu's confirm, word for word (EntityPreviewVC).
-        Text("It stays on your Mac.")
+        Text("It stays on your computer.")
       }
       .onAppear {
         model.pageAppeared()

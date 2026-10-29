@@ -238,13 +238,8 @@ final class AllShelvesVC: UITableViewController {
   private func reload() {
     shelves = cloudHome.shelves
     tableView.reloadData()
-    contentUnavailableConfiguration = shelves.isEmpty ? {
-      var config = UIContentUnavailableConfiguration.empty()
-      config.text = "No shelves today"
-      config.textProperties.font = UIFont.cassette(.sectionTitle)
-      config.textProperties.color = CassetteTheme.UIColors.ink
-      return config
-    }() : nil
+    contentUnavailableConfiguration = shelves.isEmpty
+      ? UIContentUnavailableConfiguration.cassetteEmpty(image: nil, title: "No shelves today", body: nil) : nil
   }
 
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -475,14 +470,9 @@ final class ShelfVC: UICollectionViewController {
     title = shelf.map { [$0.shout, $0.answer].filter { !$0.isEmpty }.joined(separator: " ") } ?? "Shelf"
     items = (shelf?.mix.map { [Item.mix($0.id)] } ?? []) + (shelf?.albums.map { Item.album($0.id) } ?? [])
     collectionView.reloadData()
-    contentUnavailableConfiguration = shelf == nil ? {
-      var config = UIContentUnavailableConfiguration.empty()
-      config.text = "That shelf isn't in today's"
-      config.secondaryText = "Shelves are made fresh each day."
-      config.textProperties.font = UIFont.cassette(.sectionTitle)
-      config.textProperties.color = CassetteTheme.UIColors.ink
-      return config
-    }() : nil
+    contentUnavailableConfiguration = shelf == nil
+      ? UIContentUnavailableConfiguration.cassetteEmpty(image: nil, title: "That shelf isn't in today's", body: nil)
+      : nil
   }
 
   private func album(_ id: String) -> Album? {

@@ -85,7 +85,7 @@ public enum LibraryDisplayType: Int, CaseIterable, Sendable, Codable {
     case .recentAlbums:
       return "Recently Played Albums"
     case .radios:
-      return "Radios"
+      return "Radio"
     }
   }
 

@@ -520,16 +520,13 @@ extension UIContentUnavailableConfiguration {
     return config
   }
 
-  /// The on-device library is empty: nothing has synced to this phone yet. The hub
-  /// (Cassette Player on the person's computer) is the source of truth and the phone
-  /// mirrors what they chose to sync there; nothing is added on the web.
+  /// The on-device library is empty: nothing has synced to this phone yet. The computer is
+  /// the source of truth and the phone mirrors what was chosen to sync there; nothing is added
+  /// on the web. The title alone (phone-taste: no explainer copy; I-W3, one line for "nothing
+  /// synced yet" on Home and in the lists).
   @MainActor
   static var cassetteOnDeviceEmpty: UIContentUnavailableConfiguration {
-    cassetteEmpty(
-      image: .musicalNotes,
-      title: "No music on this phone yet",
-      body: "Choose what syncs to this phone in Cassette Player on your computer. It arrives here while both are on the same Wi-Fi."
-    )
+    cassetteEmpty(image: .musicalNotes, title: "Nothing on this phone yet", body: nil)
   }
 
   /// A search of the on-device library found nothing. The title alone (phone-taste: no

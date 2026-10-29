@@ -128,7 +128,7 @@ public enum HomeSection: Int, Sendable, CaseIterable, Codable {
     case .lastTimePlayedPlaylists: return "Recently Played Playlists"
     case .newestPodcastEpisodes: return "Newest Podcast Episodes"
     case .podcasts: return "Podcasts"
-    case .radios: return "Radios"
+    case .radios: return "Radio"
     case .randomArtists: return "Random Artists"
     case .randomGenres: return "Random Genres"
     case .randomSongs: return "Random Songs"

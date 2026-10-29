@@ -123,7 +123,7 @@ import SwiftUI
                 .uiImage(size: .row)
             )
             .renderingMode(.template)
-            Text("Your Mac")
+            Text("Your computer")
               .cassetteText(.kicker)
           }
           .foregroundStyle(Color.cassette(.textSecondary))
@@ -208,7 +208,7 @@ import SwiftUI
     private var shelf: some View {
       if !model.newOnMac.isEmpty {
         VStack(alignment: .leading, spacing: 0) {
-          CassetteHeadingText(shout: "NEW ON YOUR MAC", answer: "lately", answerColor: tint.textColor)
+          CassetteHeadingText(shout: "NEW IN YOUR LIBRARY", answer: "lately", answerColor: tint.textColor)
             .padding(.horizontal, CassetteHeading.sideInset)
             .padding(.bottom, CassetteHeading.bottomSpacing)
           ScrollView(.horizontal, showsIndicators: false) {

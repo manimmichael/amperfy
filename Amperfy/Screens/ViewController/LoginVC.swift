@@ -208,11 +208,9 @@ class LoginVC: UIViewController {
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         let msg: String
         if code == 404 {
-          msg =
-            "No Cassette Player found on your account. " +
-            "Open Cassette Player on your computer and complete setup first."
+          msg = "No computer found on your account. Open Cassette on your computer and finish setting it up first."
         } else {
-          msg = "Couldn't fetch your Cassette Player info. Try again."
+          msg = "Couldn't find your computer. Try again."
         }
         DispatchQueue.main.async { self.showErrorMsg(message: msg) }
         return
@@ -299,7 +297,7 @@ class LoginVC: UIViewController {
           mainScene.replaceMainRootViewController(vc: syncVC)
         }
       } catch {
-        let msg = "Couldn't connect to your Cassette Player. Make sure your phone and computer " +
+        let msg = "Couldn't reach your computer. Make sure your phone and computer " +
           "are on the same Wi-Fi, then try again."
         self.showErrorMsg(message: msg)
       }
@@ -429,9 +427,9 @@ class LoginVC: UIViewController {
     config.image = .login
     config.imagePadding = 20.0
     // Patch 027: plain title — see cassetteSignInButton for rationale.
-    config.title = "Login"
+    config.title = "Sign In"
     let button = UIButton(configuration: config)
-    button.accessibilityLabel = "Login"
+    button.accessibilityLabel = "Sign In"
     button.addTarget(self, action: #selector(Self.loginPressed), for: .touchUpInside)
     button.preferredBehavioralStyle = .pad
     // cassette Patch 052 (Phase G): see cassetteSignInButton for rationale.
@@ -733,7 +731,7 @@ class LoginVC: UIViewController {
         if error is AuthenticationError {
           self.showErrorMsg(message: error.localizedDescription)
         } else {
-          self.showErrorMsg(message: "Not able to login!")
+          self.showErrorMsg(message: "Couldn't sign in. Try again.")
         }
         self.appDelegate.resetMeta(accountInfo)
       }
@@ -741,7 +739,7 @@ class LoginVC: UIViewController {
   }
 
   func showErrorMsg(message: String) {
-    let alert = UIAlertController(title: "Login failed", message: message, preferredStyle: .alert)
+    let alert = UIAlertController(title: "Couldn't sign in", message: message, preferredStyle: .alert)
     alert.addAction(UIAlertAction(title: "OK", style: .default))
     present(alert, animated: true, completion: nil)
   }

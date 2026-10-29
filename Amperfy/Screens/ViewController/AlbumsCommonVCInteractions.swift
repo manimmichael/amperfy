@@ -204,8 +204,8 @@ class AlbumsCommonVCInteractions {
   lazy var emptyContentState = ListEmptyState(
     empty: .cassetteEmpty(
       image: .album,
-      title: "No " + filterTitle,
-      body: "Your " + filterTitle.lowercased() + " will appear here."
+      title: "No " + filterTitle.lowercased() + " yet",
+      body: nil
     ),
     followsOnDeviceFilter: true
   )

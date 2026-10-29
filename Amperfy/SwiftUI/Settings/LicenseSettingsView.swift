@@ -563,7 +563,7 @@ struct AboutSettingsView: View {
         // Masthead: wordmark + version, centered.
         SettingsSection {
           VStack(spacing: CassetteTheme.Spacing.xs) {
-            Text("Cassette Player")
+            Text("Cassette")
               .font(.cassette(.heroTitle))
               .foregroundColor(CassetteTheme.Colors.ink)
             Text("Version \(AppDelegate.version) (Build \(AppDelegate.buildNumber))")

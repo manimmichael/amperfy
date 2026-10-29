@@ -70,8 +70,8 @@ class IndexesVC: SingleFetchedResultsTableViewController<DirectoryMO> {
 
   lazy var emptyContentState = ListEmptyState(empty: .cassetteEmpty(
     image: .folder,
-    title: "No Directories",
-    body: "Your directories will appear here."
+    title: "No directories yet",
+    body: nil
   ))
 
   override func viewWillAppear(_ animated: Bool) {

@@ -254,7 +254,7 @@ public class EventLogger {
     case "Toggle Favorite":
       return "Couldn't update your favorite. Try again in a moment."
     default:
-      return "We couldn't reach your Cassette Player. Try again in a moment."
+      return "Your computer isn't answering. Try again in a moment."
     }
   }
 
