@@ -1951,6 +1951,52 @@ public class LibraryStorage: PlayableFileCachable {
     return radios ?? [Radio]()
   }
 
+  /// cassette 2026-10-29 (BUG-617): the phone's own records of the stations on Cassette's dial (see
+  /// `Radio.dialIdPrefix`), made, brought up to date, or retired to match `stations`, the dial as the
+  /// app holds it now. One fetch; true when a record changed, so the caller saves.
+  public func matchDialRadios(account: Account, stations: [DialStation]) -> Bool {
+    let fetchRequest: NSFetchRequest<RadioMO> = RadioMO.fetchRequest()
+    fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+      getFetchPredicate(forAccount: account),
+      NSPredicate(format: "%K BEGINSWITH %@", #keyPath(RadioMO.id), Radio.dialIdPrefix),
+    ])
+    var changed = false
+    var byId: [String: Radio] = [:]
+    for radio in ((try? context.fetch(fetchRequest)) ?? []).map({ Radio(managedObject: $0) }) {
+      if byId[radio.id] == nil {
+        byId[radio.id] = radio
+      } else if radio.remoteStatus != .deleted {
+        radio.remoteStatus = .deleted
+        changed = true
+      }
+    }
+    var wanted = Set<String>()
+    for station in stations {
+      let id = Radio.dialIdPrefix + station.slug
+      guard wanted.insert(id).inserted else { continue }
+      let radio: Radio
+      if let known = byId[id] {
+        radio = known
+      } else {
+        radio = createRadio(account: account)
+        radio.id = id
+        changed = true
+      }
+      if radio.title != station.name { radio.title = station.name; changed = true }
+      if radio.url != station.streamUrl { radio.url = station.streamUrl; changed = true }
+      if radio.managedObject.siteUrl != station.siteUrl {
+        radio.managedObject.siteUrl = station.siteUrl
+        changed = true
+      }
+      if radio.remoteStatus != .available { radio.remoteStatus = .available; changed = true }
+    }
+    for (id, radio) in byId where !wanted.contains(id) && radio.remoteStatus != .deleted {
+      radio.remoteStatus = .deleted
+      changed = true
+    }
+    return changed
+  }
+
   public func getRadio(for account: Account, id: String) -> Radio? {
     let fetchRequest: NSFetchRequest<RadioMO> = RadioMO.fetchRequest()
     fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [

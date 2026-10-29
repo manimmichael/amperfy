@@ -787,7 +787,8 @@ class SubsonicLibrarySyncer: CommonLibrarySyncer, LibrarySyncer {
     let response = try await subsonicServerApi.requestRadios()
     try await storage.async.perform { asyncCompanion in
       let accountAsync = asyncCompanion.library.getAccount(managedObjectId: self.accountObjectId)
-      let oldRadios = Set(asyncCompanion.library.getRadios(for: accountAsync))
+      // cassette 2026-10-29 (BUG-617): the phone's own dial records aren't the computer's to retire.
+      let oldRadios = Set(asyncCompanion.library.getRadios(for: accountAsync).filter { !$0.isOnDial })
 
       let idParserDelegate = SsIDsParserDelegate(performanceMonitor: self.performanceMonitor)
       try self.parse(

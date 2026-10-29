@@ -165,7 +165,7 @@ final class CloudHome: NSObject {
       return
     }
     let isOnPhone = HomeManager.makeOnPhoneCheck(storage: storage)
-    let radios = storage.main.library.getRadios(for: account)
+    let radios = RadioDial.radios(for: account, storage: storage)
     let signature = "\(store.revision)|\(isOnPhone.owned?.trackIds.count ?? -1)|\(isOnPhone.owned?.albumIds.count ?? -1)|\(radios.count)"
     if signature != foundFrom || found == nil {
       found = find(answer, isOnPhone: isOnPhone, radios: radios)
@@ -364,8 +364,8 @@ final class CloudHome: NSObject {
     return shelf.albums.count + (shelf.mix == nil ? 0 : 1) >= 2
   }
 
-  /// The hub's stations for the cloud's slugs, in its order: each slug's stream on the dial
-  /// (RadioCatalog), matched to the station the hub holds.
+  /// The stations for the cloud's slugs, in its order: each slug's stream on the dial
+  /// (RadioCatalog), matched to the record that plays it (RadioDial).
   private func stations(_ slugs: [String], radios: [Radio]) -> [Radio] {
     let byURL = Dictionary(
       radios.map { (RadioCatalog.normalize($0.url), $0) },

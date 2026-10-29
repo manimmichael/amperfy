@@ -66,4 +66,30 @@ public class Radio: AbstractPlayable, Identifyable {
     // See also RadioMO.excludeServerDeleteRadiosFetchPredicate()
     remoteStatus == .available
   }
+
+  /// cassette 2026-10-29 (BUG-617): the phone keeps its own record of every station on Cassette's
+  /// dial, so the whole dial plays without the computer holding a station (a station plays from its
+  /// own stream). Their ids start with this, then the station's registry slug; the computer's station
+  /// sync leaves them alone (LibraryStorage.matchDialRadios).
+  public static let dialIdPrefix = "cassette-dial:"
+
+  /// One of the phone's own dial records, not a station the computer holds.
+  public var isOnDial: Bool { id.hasPrefix(Self.dialIdPrefix) }
+}
+
+// MARK: - DialStation
+
+/// A station on Cassette's dial as the app holds it, for LibraryStorage.matchDialRadios.
+public struct DialStation: Sendable {
+  public let slug: String
+  public let name: String
+  public let streamUrl: String
+  public let siteUrl: String?
+
+  public init(slug: String, name: String, streamUrl: String, siteUrl: String?) {
+    self.slug = slug
+    self.name = name
+    self.streamUrl = streamUrl
+    self.siteUrl = siteUrl
+  }
 }

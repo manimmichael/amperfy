@@ -1798,13 +1798,14 @@ class HomeManager: NSObject {
   /// present); we just rank by `container.lastTimePlayed`. Backfill (fill-to-N) is
   /// unchanged so the shelf never renders empty — an artist that only appears via
   /// alphabetical backfill is there by library membership, not "surfaced" by a play.
-  // cassette 2026-10-13: the Radio shelf. The stations the hub holds, the saved ones
+  // cassette 2026-10-13: the Radio shelf. The stations on the dial (the whole registry since
+  // 2026-10-29, RadioDial), the saved ones
   // first (2026-10-21), the rest ranked by what this person tunes to (play count + recency on the station itself),
   // then by how well a station's genres match the genres they OWN, then live
   // stations for breadth, capped per network. No network, no model; the
   // registry rides inside the app (RadiosVC.swift). Batched like the rest.
   func updateRadios() {
-    let radios = storage.main.library.getRadios(for: account)
+    let radios = RadioDial.radios(for: account, storage: storage)
     guard !radios.isEmpty else {
       data[.radios] = []
       return

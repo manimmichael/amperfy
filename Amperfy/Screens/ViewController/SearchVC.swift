@@ -27,7 +27,8 @@ import UIKit
 
 /// The Search table's sections, top to bottom. phone-taste (approved mock, Screens.tsx
 /// SearchResultsScreen): one top result to play at once, then SONGS, ALBUMS, ARTISTS and
-/// PLAYLISTS. Recently Searched shows only before anyone types.
+/// PLAYLISTS. Recently Searched shows only before anyone types. STATIONS (2026-10-29, Q17 in
+/// docs/CASSETTE_APP_AUDIT.md): the radio dial's stations, as the Mac's search finds them.
 public enum SearchSection: Int, CaseIterable {
   case History
   case Top
@@ -35,6 +36,7 @@ public enum SearchSection: Int, CaseIterable {
   case Album
   case Artist
   case Playlist
+  case Station
 
   /// The section's shout heading (none for the top card).
   var shout: String {
@@ -45,6 +47,7 @@ public enum SearchSection: Int, CaseIterable {
     case .Album: return "ALBUMS"
     case .Artist: return "ARTISTS"
     case .Playlist: return "PLAYLISTS"
+    case .Station: return "STATIONS"
     }
   }
 }
@@ -59,6 +62,8 @@ enum SearchRow: Hashable, Sendable {
   case entity(NSManagedObjectID)
   case albumShelf
   case artistShelf
+  /// A station on the radio dial, by its record's id (RadioDial).
+  case station(String)
 }
 
 // MARK: - SearchDiffableDataSource
@@ -156,6 +161,8 @@ class SearchVC: BasicTableViewController {
   fileprivate var albums: [Album] = []
   fileprivate var playlists: [Playlist] = []
   fileprivate var songs: [Song] = []
+  /// The dial's stations that match, the best few (the radio's own search goes through all of them).
+  fileprivate var stations: [RadioRow] = []
   private var topResult: SearchTopResult?
   /// The query the shown results were found for (the top card lights its letters).
   private var currentQuery = ""
@@ -183,6 +190,8 @@ class SearchVC: BasicTableViewController {
   ))
   private var accountObjectId: NSManagedObjectID?
   private let account: Account
+  /// How many stations Search shows; the radio's own search lists every match.
+  private static let stationLimit = 5
 
   init(account: Account) {
     self.account = account
@@ -235,6 +244,10 @@ class SearchVC: BasicTableViewController {
       playlists.map { .entity($0.managedObject.objectID) },
       toSection: SearchSection.Playlist.rawValue
     )
+    snapshot.appendItems(
+      stations.map { .station($0.radio.id) },
+      toSection: SearchSection.Station.rawValue
+    )
     let previous = dataSource.snapshot()
     let reloads = rebuilt.filter { previous.indexOfItem($0) != nil }
     if !reloads.isEmpty {
@@ -252,6 +265,7 @@ class SearchVC: BasicTableViewController {
       SearchTopResultCell.self,
       forCellReuseIdentifier: SearchTopResultCell.reuseIdentifier
     )
+    tableView.register(RadioStationCell.self, forCellReuseIdentifier: RadioStationCell.reuseId)
     tableView.register(
       AlbumCarouselTableCell.self,
       forCellReuseIdentifier: AlbumCarouselTableCell.reuseIdentifier
@@ -301,7 +315,7 @@ class SearchVC: BasicTableViewController {
       case let .history(item): return item.searchedPlayableContainable
       case let .song(song): return song
       case let .playlist(playlist): return playlist
-      case .top, .albumShelf, .artistShelf, .none: return nil
+      case .top, .albumShelf, .artistShelf, .station, .none: return nil
       }
     }
     playContextAtIndexPathCallback = { [weak self] indexPath in
@@ -314,7 +328,7 @@ class SearchVC: BasicTableViewController {
         return PlayContext(containable: song)
       case let .playlist(playlist):
         return Self.onPhonePlayContext(playlist)
-      case .top, .albumShelf, .artistShelf, .none:
+      case .top, .albumShelf, .artistShelf, .station, .none:
         return nil
       }
     }
@@ -460,6 +474,7 @@ class SearchVC: BasicTableViewController {
     case top(SearchTopResult)
     case albumShelf
     case artistShelf
+    case station(RadioRow)
   }
 
   private func resolvedRow(at indexPath: IndexPath) -> ResolvedRow? {
@@ -477,6 +492,8 @@ class SearchVC: BasicTableViewController {
       return .albumShelf
     case .artistShelf:
       return .artistShelf
+    case let .station(id):
+      return stations.first { $0.radio.id == id }.map { .station($0) }
     case let .entity(objectID):
       switch SearchSection(rawValue: indexPath.section) {
       case .History:
@@ -583,7 +600,7 @@ class SearchVC: BasicTableViewController {
       }
     case let .song(song):
       completionHandler(SwipeActionContext(containable: song))
-    case .top, .albumShelf, .artistShelf, .none:
+    case .top, .albumShelf, .artistShelf, .station, .none:
       completionHandler(nil)
     }
   }
@@ -650,6 +667,16 @@ class SearchVC: BasicTableViewController {
         theme: appDelegate.storage.settings.accounts.getSetting(account.info).read.themePreference
       ) { [weak self] artist in self?.open(artist) }
       return cell
+    case let .station(id):
+      let cell = tableView.dequeueReusableCell(
+        withIdentifier: RadioStationCell.reuseId,
+        for: indexPath
+      ) as! RadioStationCell
+      guard let row = stations.first(where: { $0.radio.id == id }) else { return cell }
+      let current = appDelegate.player.isPlaying ? appDelegate.player.currentlyPlaying as? Radio : nil
+      cell.configure(row: row, playing: current?.id == row.radio.id)
+      cell.onPlayTapped = { [weak self] in self?.play(row.radio) }
+      return cell
     case .entity:
       switch resolve(row, at: indexPath) {
       case let .history(history):
@@ -704,6 +731,7 @@ class SearchVC: BasicTableViewController {
     case .Album: shows = isSearchActive && !albums.isEmpty
     case .Artist: shows = isSearchActive && !artists.isEmpty
     case .Playlist: shows = isSearchActive && !playlists.isEmpty
+    case .Station: shows = isSearchActive && !stations.isEmpty
     }
     return shows ? CassetteHeading.tableHeaderHeight : 0
   }
@@ -770,6 +798,8 @@ class SearchVC: BasicTableViewController {
       return SearchArtistShelfCell.rowHeight
     case .playlist:
       return PlaylistTableCell.rowHeight
+    case .station:
+      return UITableView.automaticDimension
     case .none:
       return 0.0
     }
@@ -799,10 +829,42 @@ class SearchVC: BasicTableViewController {
     case let .song(song):
       let _ = appDelegate.storage.main.library.createOrUpdateSearchHistory(container: song)
       appDelegate.storage.main.library.saveContext()
+    case let .station(row):
+      // A station opens its page, as on the dial; one the registry doesn't know plays.
+      if let info = row.info {
+        navigationController?.pushViewController(
+          RadioStationVC(account: account, station: info),
+          animated: true
+        )
+      } else {
+        play(row.radio)
+      }
     case .albumShelf, .artistShelf, .none:
       break
     }
     tableView.deselectRow(at: indexPath, animated: true)
+  }
+
+  /// A station keeps the dial's own long-press menu (Play, Save, its places).
+  override func tableView(
+    _ tableView: UITableView,
+    contextMenuConfigurationForRowAt indexPath: IndexPath,
+    point: CGPoint
+  )
+    -> UIContextMenuConfiguration? {
+    guard case let .station(row)? = resolvedRow(at: indexPath) else {
+      return super.tableView(tableView, contextMenuConfigurationForRowAt: indexPath, point: point)
+    }
+    return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+      MainActor.assumeIsolated { RadioDial.menu(for: row) { self?.play(row.radio) } }
+    }
+  }
+
+  /// A station, then the stations like it, as its page plays it.
+  private func play(_ radio: Radio) {
+    let dial = RadioDial.radios(for: account, storage: appDelegate.storage)
+    appDelegate.player.play(context: RadioDial.playContext(for: radio, in: dial))
+    updateDataSource(animated: false)
   }
 
   /// Opens an album page and records it in the search history.
@@ -897,7 +959,7 @@ class SearchVC: BasicTableViewController {
             knownCounts: knownCounts
           )
         }
-        self.applySearchResult(searchResult, for: searchText)
+        self.applySearchResult(searchResult, for: searchText, withStations: true)
       } catch {
         self.appDelegate.eventLogger.report(topic: "Local Search", error: error, isBackground: true)
         self.updateContentUnavailable()
@@ -965,7 +1027,7 @@ class SearchVC: BasicTableViewController {
           )
           return result
         }
-        self.applySearchResult(searchResult, for: searchText)
+        self.applySearchResult(searchResult, for: searchText, withStations: false)
       } catch {
         self.appDelegate.eventLogger.report(topic: "Local Search", error: error, isBackground: true)
         self.updateContentUnavailable()
@@ -979,6 +1041,7 @@ class SearchVC: BasicTableViewController {
       albums = []
       playlists = []
       songs = []
+      stations = []
       topResult = nil
       updateDataSource(animated: false)
       updateContentUnavailable()
@@ -986,8 +1049,13 @@ class SearchVC: BasicTableViewController {
     }
   }
 
-  /// Shows a finished search pass, unless the field has moved on since it started.
-  private func applySearchResult(_ searchResult: SearchResultObjectContainer, for searchText: String) {
+  /// Shows a finished search pass, unless the field has moved on since it started. Stations show
+  /// beside the music, but not in Downloaded (a station is never on the phone).
+  private func applySearchResult(
+    _ searchResult: SearchResultObjectContainer,
+    for searchText: String,
+    withStations: Bool
+  ) {
     guard searchText == searchController.searchBar.text else { return }
     let context = appDelegate.storage.main.context
     isSearchActive = true
@@ -1016,6 +1084,11 @@ class SearchVC: BasicTableViewController {
     songs = searchResult.songsIDs
       .compactMap { (try? context.existingObject(with: $0)) as? SongMO }
       .map { Song(managedObject: $0) }
+    stations = withStations ? RadioDial.rows(
+      matching: searchText,
+      in: RadioDial.radios(for: account, storage: appDelegate.storage),
+      limit: Self.stationLimit
+    ) : []
     topResult = resolveTop(searchResult.top)
     updateDataSource(animated: false)
     updateContentUnavailable()
@@ -1068,7 +1141,8 @@ class SearchVC: BasicTableViewController {
       relayoutStartView()
     }
     if isSearchActive {
-      if topResult == nil, artists.isEmpty, albums.isEmpty, playlists.isEmpty, songs.isEmpty {
+      if topResult == nil, artists.isEmpty, albums.isEmpty, playlists.isEmpty, songs.isEmpty,
+         stations.isEmpty {
         // cassette Layer 3 Phase 3.2: in on-device-only mode search is scoped to
         // owned items.
         contentUnavailableConfiguration = CassetteLibraryFilterProvider.shared.isOnDeviceOnly ?

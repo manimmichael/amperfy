@@ -90,7 +90,7 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate, MusicPlayabl
 
   private let account: Account
   private let station: RadioCatalogStation
-  /// The hub's copy of this station (what Play plays); nil when the hub does not hold it.
+  /// The record Play plays (RadioDial).
   private var radio: Radio?
 
   private let scrollView = UIScrollView()
@@ -166,7 +166,7 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate, MusicPlayabl
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .backgroundColor
-    radio = hubRadio(for: station)
+    radio = dialRadio(for: station)
 
     glow.isUserInteractionEnabled = false
     view.addSubview(glow)
@@ -271,12 +271,14 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate, MusicPlayabl
     glow.frame = CGRect(x: 0, y: -offset, width: view.bounds.width, height: height + max(0, -offset))
   }
 
-  // MARK: Hub
+  // MARK: Dial
 
-  private func hubRadio(for station: RadioCatalogStation) -> Radio? {
-    let key = RadioCatalog.normalize(station.streamUrl)
-    return appDelegate.storage.main.library.getRadios(for: account)
-      .first { RadioCatalog.normalize($0.url) == key }
+  /// The whole dial as the player's records (RadioDial, BUG-617), read once for the page: every
+  /// station plays, whether or not the computer holds it.
+  private lazy var dial = RadioDial.radios(for: account, storage: appDelegate.storage)
+
+  private func dialRadio(for station: RadioCatalogStation) -> Radio? {
+    RadioDial.radio(for: station, in: dial)
   }
 
   // MARK: Hero
@@ -316,15 +318,6 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate, MusicPlayabl
       }
     }, for: .primaryActionTriggered)
     playPill.isEnabled = radio != nil
-    if radio == nil {
-      // The hub does not hold this station yet, so there is nothing to tune to here.
-      playPill.configuration?.attributedTitle = AttributedString(NSAttributedString.cassette(
-        "Not on your Mac",
-        .pill,
-        color: .cassette(.textOnFill)
-      ))
-      playPill.configuration?.image = nil
-    }
     savePill.configuration?.background.backgroundColor = .clear
     savePill.configuration?.background.strokeColor = UIColor.cassette(.textPrimary).withAlphaComponent(0.35)
     savePill.configuration?.background.strokeWidth = 1.5
@@ -448,10 +441,10 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate, MusicPlayabl
 
   // MARK: Playing
 
-  /// This station, then the similar stations the hub holds, so Next moves to one like it.
+  /// This station, then the similar stations, so Next moves to one like it.
   private func play() {
     guard let radio else { return }
-    let neighbours = similar.compactMap { hubRadio(for: $0) }
+    let neighbours = similar.compactMap { dialRadio(for: $0) }
     appDelegate.player.play(context: PlayContext(
       name: station.name,
       index: 0,
@@ -461,8 +454,8 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate, MusicPlayabl
   }
 
   fileprivate func play(similar s: RadioCatalogStation) {
-    guard let hub = hubRadio(for: s) else { return }
-    appDelegate.player.play(context: PlayContext(name: s.name, index: 0, playables: [hub]))
+    guard let radio = dialRadio(for: s) else { return }
+    appDelegate.player.play(context: PlayContext(name: s.name, index: 0, playables: [radio]))
   }
 
   // MARK: Headings
@@ -852,7 +845,7 @@ extension RadioStationVC: UICollectionViewDataSource, UICollectionViewDelegate {
     ) as! RadioShelfCell
     let s = similar[indexPath.item]
     cell.display(station: s)
-    cell.showsPlayButton = hubRadio(for: s) != nil
+    cell.showsPlayButton = dialRadio(for: s) != nil
     cell.onPlayTapped = { [weak self] in self?.play(similar: s) }
     return cell
   }
