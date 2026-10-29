@@ -38,8 +38,8 @@ public enum CassetteKitTokens {
     public static let textSecondary: UInt32 = 0x5A4E40
     public static let textTertiary: UInt32 = 0x6B5F51
     public static let textOnFill: UInt32 = 0xF3EADB
-    public static let fillSelected: UInt32 = 0x15110E
-    public static let fillHover: UInt32 = 0x000000
+    public static let fillSelected: UInt32 = 0x2E241C
+    public static let fillHover: UInt32 = 0x15110E
     public static let accentProgress: UInt32 = 0xCC6A2A
     public static let accentAnswer: UInt32 = 0xA05321
     public static let danger: UInt32 = 0xB2462F
@@ -215,6 +215,7 @@ public enum CassetteKitTokens {
       public static let ink: UInt32 = 0xEFE7DA
       public static let wash: CGFloat = 0.07
       public static let track: CGFloat = 0.12
+      public static let fill: UInt32 = 0xEFE7DA
       public static let fillHover: UInt32 = 0xFFFFFF
       public static let danger: UInt32 = 0xF2666F
     }
@@ -227,7 +228,8 @@ public enum CassetteKitTokens {
       public static let ink3: CGFloat = 0.62
       public static let wash: CGFloat = 0.06
       public static let track: CGFloat = 0.12
-      public static let fillHover: UInt32 = 0x000000
+      public static let fill: UInt32 = 0x2E241C
+      public static let fillHover: UInt32 = 0x15110E
       public static let danger: UInt32 = 0xB3261E
     }
     public enum InkStep {
