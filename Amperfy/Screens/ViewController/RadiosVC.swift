@@ -493,7 +493,7 @@ struct RadioRow {
 final class RadioStationCell: UITableViewCell {
   static let reuseId = "RadioStationCell"
 
-  private let art = UIImageView()
+  private let art = StationArtView()
   private let initials = UILabel()
   private let nameLabel = UILabel()
   private let kickerLabel = UILabel()
@@ -516,7 +516,6 @@ final class RadioStationCell: UITableViewCell {
 
     art.contentMode = .scaleAspectFill
     art.clipsToBounds = true
-    art.layer.cornerRadius = CassetteTheme.Radius.md
     art.backgroundColor = CassetteTheme.UIColors.bg3
     art.layer.borderWidth = 1
     art.layer.borderColor = CassetteTheme.UIColors.ink4.cgColor
@@ -992,6 +991,34 @@ class RadiosVC: UITableViewController, UISearchResultsUpdating {
   }
 }
 
+// MARK: - StationArtView
+
+/// A station's own mark (its logo, its word art or its tile), wherever it stands for the station:
+/// the radio list, Home's Radio row, stations like it, the station's page and the mark over Now
+/// Playing's title. Its corner is the station shape at whatever size it is laid out
+/// (CassetteRadius.station, from the shared kit), so a station never reads as an album (the
+/// founder, 2026-10-29). What a station is playing (a show's picture, a record) is a cover, never
+/// this.
+final class StationArtView: UIImageView {
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    clipsToBounds = true
+    layer.cornerCurve = .continuous
+  }
+
+  convenience init() {
+    self.init(frame: .zero)
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    layer.cornerRadius = CassetteRadius.station(side: bounds.width)
+  }
+}
+
 // MARK: - RadioTile
 
 /// A station without a logo gets a label, not a blank: its accent blended into
@@ -1191,12 +1218,14 @@ enum RadioShelf {
 /// Founder, 2026-10-21: a station with no logo showed two initials on its colour mixed half
 /// into the chassis ("the radio covers look gross"). It now gets the car's word picture, its
 /// colour running into the dark with its name in our type (CarPlayStyle.phoneWordArt), and
-/// the card takes the album tiles' shape (their corner, no outline), so the row reads like
-/// the shelves around it.
+/// the card takes the album tiles' size, with no outline.
+///
+/// Founder, 2026-10-29: its corner is the station's own, the squircle the Mac draws
+/// (StationArtView, from the shared kit), so a Radio row never reads as albums.
 final class RadioShelfCell: UICollectionViewCell {
   // `typeName` comes from the kit's NSObject extension ("RadioShelfCell").
 
-  private let art = UIImageView()
+  private let art = StationArtView()
   private let initials = UILabel()
   private let nameLabel = UILabel()
   private let kickerLabel = UILabel()
@@ -1211,7 +1240,6 @@ final class RadioShelfCell: UICollectionViewCell {
     super.init(frame: frame)
     art.contentMode = .scaleAspectFill
     art.clipsToBounds = true
-    art.layer.cornerRadius = CassetteRadius.artworkTile
     art.backgroundColor = CassetteTheme.UIColors.bg3
 
     initials.font = UIFont.cassette(.sectionTitle)

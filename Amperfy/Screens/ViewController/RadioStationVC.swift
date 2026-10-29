@@ -97,7 +97,7 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate, MusicPlayabl
   private let lighter = DetailCoverLighter()
   private var tint: CoverTint = .neutral
 
-  private let art = UIImageView()
+  private let art = StationArtView()
   private let nameLabel = UILabel()
   private let kickerLabel = UILabel()
   private let playPill = LibraryElementDetailTableHeaderView.makePlayPill()
@@ -277,7 +277,6 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate, MusicPlayabl
     let hero = UIView()
     art.contentMode = .scaleAspectFill
     art.clipsToBounds = true
-    art.layer.cornerRadius = CassetteRadius.small
     art.layer.cornerCurve = .continuous
     art.backgroundColor = RadioTile.fill(accent: station.accent)
     art.accessibilityIgnoresInvertColors = true

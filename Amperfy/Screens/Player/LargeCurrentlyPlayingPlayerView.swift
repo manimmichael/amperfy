@@ -440,12 +440,11 @@ class LargeCurrentlyPlayingPlayerView: UIView, UIGestureRecognizerDelegate {
   /// It floats in the room under the artwork, pinned just above the title stack rather
   /// than inside it, so the song and artist stay exactly where they sit for a record
   /// (founder: "without pushing the titles down"). Hidden for everything but a station.
-  private let stationMark = UIImageView()
+  private let stationMark = StationArtView()
   private let stationLabel = UILabel()
   private lazy var stationRow: UIStackView = {
     stationMark.contentMode = .scaleAspectFill
     stationMark.clipsToBounds = true
-    stationMark.layer.cornerRadius = 4
     stationMark.layer.cornerCurve = .continuous
     stationMark.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([

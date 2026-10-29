@@ -139,6 +139,16 @@ public enum CassetteRadius {
   public static let iconTile: CGFloat = 9
   /// The Now Playing cover.
   public static let playerArtwork: CGFloat = 8
+
+  /// A station's own mark (its logo or its word art), wherever it stands for the station: rounded at
+  /// a share of its side, the app icon's shape, so a station never reads as an album (the founder,
+  /// 2026-10-29, after the Mac's 10-22 call). The share is the shared kit's (tokens.json
+  /// `shape.station`, generated into CassetteKitTokens.swift), the first thing this app reads from
+  /// it. What a station is playing (a show's picture, a record) keeps a cover's corners. Use with
+  /// `cornerCurve = .continuous`.
+  public static func station(side: CGFloat) -> CGFloat {
+    side * CassetteKitTokens.Shape.station
+  }
 }
 
 // MARK: - CassetteOpacity
