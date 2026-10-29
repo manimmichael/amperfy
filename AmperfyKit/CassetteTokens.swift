@@ -43,8 +43,8 @@ public enum CassetteColorRole: CaseIterable, Sendable {
   /// Subtitles, metadata, secondary icons, back-button titles.
   case textSecondary
   /// The quietest readable text: track numbers, footers, unselected tab labels.
-  /// Note: at #6E6050 this is under 4.5:1 on the page (audit A11Y-3). Whether to lighten
-  /// it or fold it into `textSecondary` (as the web did) is the founder's palette call.
+  /// #9C8D70 since 2026-10-29 (the founder: "make too faint text go away"): 4.6:1 or better on
+  /// every dark surface, where #6E6050 read 2.5 to 3.0:1 (audit A11Y-3, Q19).
   case textTertiary
   /// Text and icons sitting on `fillSelected` or on `accentProgress`.
   case textOnFill

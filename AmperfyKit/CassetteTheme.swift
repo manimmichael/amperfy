@@ -56,7 +56,7 @@ public enum CassetteTheme {
 
     public static let ink = UIColor.cassetteHex(0xEDE4D0)
     public static let ink2 = UIColor.cassetteHex(0xA89878)
-    public static let ink3 = UIColor.cassetteHex(0x6E6050)
+    public static let ink3 = UIColor.cassetteHex(0x9C8D70) // lifted 2026-10-29 to read 4.6:1 on every dark surface (Q19)
     public static let ink4 = UIColor.cassetteHex(0x3E3628)
 
     public static let orange = UIColor.cassetteHex(0xE87830)

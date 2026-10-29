@@ -14,12 +14,13 @@ public enum CassetteKitTokens {
     public static let hairline: UInt32 = 0x3E3628 // ink4
     public static let textPrimary: UInt32 = 0xEDE4D0 // ink
     public static let textSecondary: UInt32 = 0xA89878 // ink2
-    public static let textTertiary: UInt32 = 0x6E6050 // ink3
+    public static let textTertiary: UInt32 = 0x9C8D70 // ink3
     public static let textOnFill: UInt32 = 0x1C1914 // bg
     public static let fillSelected: UInt32 = 0xEDE4D0 // ink
     public static let fillHover: UInt32 = 0xFFFFFF // web only: a selected fill pointed at
     public static let accentProgress: UInt32 = 0xE87830 // orange
     public static let accentAnswer: UInt32 = 0xE87830 // orange
+    public static let accentText: UInt32 = 0xE87830 // orange
     public static let danger: UInt32 = 0xB84830 // rust
     public static let success: UInt32 = 0x48987A // sage
     public static let warning: UInt32 = 0xD4A020 // amber
@@ -42,6 +43,7 @@ public enum CassetteKitTokens {
     public static let fillHover: UInt32 = 0x15110E
     public static let accentProgress: UInt32 = 0xCC6A2A
     public static let accentAnswer: UInt32 = 0xA05321
+    public static let accentText: UInt32 = 0xA05321
     public static let danger: UInt32 = 0xB2462F
     public static let success: UInt32 = 0x37745D
     public static let warning: UInt32 = 0x836314
