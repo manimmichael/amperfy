@@ -41,13 +41,13 @@ public enum SwipeActionType: Int, CaseIterable, Sendable, Codable {
   public var displayName: String {
     switch self {
     case .insertUserQueue:
-      return "Insert User Queue"
+      return "Play Next"
     case .appendUserQueue:
-      return "Append User Queue"
+      return "Add to Queue"
     case .insertContextQueue:
-      return "Insert Context Queue"
+      return "Play After This Song"
     case .appendContextQueue:
-      return "Append Context Queue"
+      return "Add After These Songs"
     case .download:
       return "Download"
     case .removeFromCache:
@@ -183,15 +183,14 @@ public struct SwipeActionSettings: Sendable, Codable {
   public static var defaultSettings: SwipeActionSettings {
     SwipeActionSettings(
       leading: [
-        .appendContextQueue,
-        .insertContextQueue,
-
+        // the founder, 2026-10-29: the two queue verbs every menu uses, Play Next and Add to Queue;
+        // Amperfy's context-queue pair is gone from the swipes
+        .insertUserQueue,
       ], trailing: [
         // cassette §B: podcast-queue swipe actions removed (podcasts aren't a
         // Cassette feature). The Swipe customization screen is also gone; these
-        // hardcoded defaults are what every install gets.
+        // hardcoded defaults are what every install gets (Settings.swipeActionSettings).
         .appendUserQueue,
-        .insertUserQueue,
         .download,
       ]
     )

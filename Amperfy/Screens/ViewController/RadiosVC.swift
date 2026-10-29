@@ -993,8 +993,37 @@ class RadiosVC: UITableViewController, UISearchResultsUpdating {
           MainActor.assumeIsolated { RadioSaved.shared.toggle(slug) }
         })
       }
+      if let info = row.info {
+        let places = MainActor.assumeIsolated { StationPlaces.actions(for: info) }
+        if !places.isEmpty { actions.append(UIMenu(options: .displayInline, children: places)) }
+      }
       return UIMenu(children: actions)
     }
+  }
+}
+
+// MARK: - StationPlaces
+
+/// A station's own places, for its menus: its website and where to support it, the same lines as the
+/// Mac's station menu (apps/cassette/src/app/desk/station-menu.ts). The founder, 2026-10-29: "easy to
+/// access but out of the way"; a station's about text stays hidden ("if they want to read about it, they
+/// can go to the internet").
+@MainActor
+enum StationPlaces {
+  static func actions(for station: RadioCatalogStation) -> [UIAction] {
+    var out: [UIAction] = []
+    if let home = station.homepage, let url = URL(string: home) {
+      let host = url.host()?.replacingOccurrences(of: #"^www\."#, with: "", options: .regularExpression)
+      out.append(UIAction(title: host.map { "Go to \($0)" } ?? "Go to Website", image: .followLink) { _ in
+        UIApplication.shared.open(url)
+      })
+    }
+    if let support = station.supportUrl, let url = URL(string: support) {
+      out.append(UIAction(title: "Support \(station.name)", image: .followLink) { _ in
+        UIApplication.shared.open(url)
+      })
+    }
+    return out
   }
 }
 

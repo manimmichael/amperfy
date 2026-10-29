@@ -172,8 +172,13 @@ class EntityPreviewActionBuilder {
     if isDeleteOnServer {
       elementHandlingActions.append(createDeleteOnServerAction())
     }
-    if isGoToSiteUrl, let url = (entityContainer as? AbstractPlayable)?.asRadio?.siteURL {
-      elementHandlingActions.append(createGoToSiteUrl(url: url))
+    if isGoToSiteUrl, let radio = (entityContainer as? AbstractPlayable)?.asRadio {
+      // a station the dial knows gets the dial's places (its site and where to support it, StationPlaces)
+      if let info = RadioCatalog.shared.station(forStreamUrl: radio.url) {
+        elementHandlingActions.append(contentsOf: StationPlaces.actions(for: info))
+      } else if let url = radio.siteURL {
+        elementHandlingActions.append(createGoToSiteUrl(url: url))
+      }
     }
     if !elementHandlingActions.isEmpty {
       menuActions.append(UIMenu(options: .displayInline, children: elementHandlingActions))
@@ -320,7 +325,7 @@ class EntityPreviewActionBuilder {
     isPodcastQueue = false
     isAddToPlaylist = false
     isDeleteOnServer = false
-    isGoToSiteUrl = radio.siteURL != nil
+    isGoToSiteUrl = radio.siteURL != nil || RadioCatalog.shared.station(forStreamUrl: radio.url) != nil
     isShowPodcastDetails = false
     isShowSongDetails = false
   }
@@ -588,21 +593,16 @@ class EntityPreviewActionBuilder {
     }
   }
 
+  /// The two queue verbs, in the words the made-for-you page and the Mac's menus use (the founder,
+  /// 2026-10-29): Play Next (the front of Up Next) and Add to Queue (its end). Amperfy's four context and
+  /// user queue items ("Insert Context Queue" and the rest, under "Music Queue") fold into these two.
   private func createMusicQueueAction() -> UIMenuElement {
-    UIMenu(title: "Music Queue", image: .listBullet, children: [
-      UIAction(title: "Insert Context Queue", image: .contextQueueInsert) { action in
-        guard !self.entityPlayables.isEmpty else { return }
-        self.appDelegate.player.insertContextQueue(playables: self.entityPlayables)
-      },
-      UIAction(title: "Append Context Queue", image: .contextQueueAppend) { action in
-        guard !self.entityPlayables.isEmpty else { return }
-        self.appDelegate.player.appendContextQueue(playables: self.entityPlayables)
-      },
-      UIAction(title: "Insert User Queue", image: .userQueueInsert) { action in
+    UIMenu(options: .displayInline, children: [
+      UIAction(title: "Play Next", image: .userQueueInsert) { action in
         guard !self.entityPlayables.isEmpty else { return }
         self.appDelegate.player.insertUserQueue(playables: self.entityPlayables)
       },
-      UIAction(title: "Append User Queue", image: .userQueueAppend) { action in
+      UIAction(title: "Add to Queue", image: .userQueueAppend) { action in
         guard !self.entityPlayables.isEmpty else { return }
         self.appDelegate.player.appendUserQueue(playables: self.entityPlayables)
       },

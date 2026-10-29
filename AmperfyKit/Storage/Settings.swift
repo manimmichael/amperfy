@@ -266,8 +266,10 @@ public struct UserSettings: Sendable, Codable {
   }
 
   private var _swipeActionSettings: SwipeActionSettings = .defaultSettings
+  /// Always the defaults: the screen that changed them is gone, so a value saved by an older install
+  /// (Amperfy's context-queue swipes) must not outlive it.
   public var swipeActionSettings: SwipeActionSettings {
-    get { _swipeActionSettings }
+    get { .defaultSettings }
     set { _swipeActionSettings = newValue }
   }
 

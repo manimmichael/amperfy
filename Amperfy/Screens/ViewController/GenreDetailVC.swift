@@ -361,17 +361,12 @@ class GenreDetailVC: MultiSourceTableViewController {
     }
     var actions: [UIMenuElement] = [
       UIMenu(options: .displayInline, children: playActions),
-      UIMenu(title: "Music Queue", image: .listBullet, children: [
-        UIAction(title: "Insert Context Queue", image: .contextQueueInsert) { _ in
-          self.withListedSongs { self.appDelegate.player.insertContextQueue(playables: $0) }
-        },
-        UIAction(title: "Append Context Queue", image: .contextQueueAppend) { _ in
-          self.withListedSongs { self.appDelegate.player.appendContextQueue(playables: $0) }
-        },
-        UIAction(title: "Insert User Queue", image: .userQueueInsert) { _ in
+      // the two queue verbs, as in every other menu (EntityPreviewVC.createMusicQueueAction)
+      UIMenu(options: .displayInline, children: [
+        UIAction(title: "Play Next", image: .userQueueInsert) { _ in
           self.withListedSongs { self.appDelegate.player.insertUserQueue(playables: $0) }
         },
-        UIAction(title: "Append User Queue", image: .userQueueAppend) { _ in
+        UIAction(title: "Add to Queue", image: .userQueueAppend) { _ in
           self.withListedSongs { self.appDelegate.player.appendUserQueue(playables: $0) }
         },
       ]),

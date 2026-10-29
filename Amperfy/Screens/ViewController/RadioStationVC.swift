@@ -4,7 +4,9 @@
 //
 //  Cassette (founder, 2026-10-21): a radio station's page. Tap a station on the dial or
 //  in Home's Radio row and land here: Play and Save up top, then what's on air, what it
-//  just played (where the station publishes its list), about, and stations like it.
+//  just played (where the station publishes its list), and stations like it. Its website and
+//  where to support it are in the "…" menu (StationPlaces); its about text stays hidden (the
+//  founder, 2026-10-29: people don't come to read about a station).
 //
 //  The web's /radio/<slug> shows the same things from the same route
 //  (GET /api/radio/station/<slug>, apps/cassette/src/lib/radio/station-page.ts). The page
@@ -145,6 +147,13 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate, MusicPlayabl
     navigationItem.compactAppearance = clearBar
     navigationItem.scrollEdgeAppearance = clearBar
     navigationItem.compactScrollEdgeAppearance = clearBar
+    // "…": the station's website and where to support it, out of the way (StationPlaces)
+    let places = StationPlaces.actions(for: station)
+    if !places.isEmpty {
+      let more = UIBarButtonItem.createOptionsBarButton()
+      more.menu = UIMenu(children: places)
+      navigationItem.rightBarButtonItem = more
+    }
   }
 
   @available(*, unavailable)
@@ -190,7 +199,6 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate, MusicPlayabl
     onAirBlock.spacing = 12
     onAirBlock.isHidden = true
     stack.addArrangedSubview(onAirBlock)
-    stack.addArrangedSubview(buildAbout())
     similarBlock.axis = .vertical
     stack.addArrangedSubview(similarBlock)
 
@@ -502,107 +510,6 @@ final class RadioStationVC: UIViewController, UIScrollViewDelegate, MusicPlayabl
     label.textColor = color
     label.numberOfLines = lines
     return label
-  }
-
-  // MARK: About
-
-  private func buildAbout() -> UIView {
-    let block = UIStackView()
-    block.axis = .vertical
-    block.addArrangedSubview(heading("About"))
-
-    let body = UIStackView()
-    body.axis = .vertical
-    body.spacing = 14
-    body.addArrangedSubview(Self.label(
-      station.description,
-      font: .cassette(.body),
-      color: .cassette(.textSecondary),
-      lines: 0
-    ))
-    if let about = station.about {
-      // The longer story waits behind More, as Apple's own pages fold a long description.
-      let more = UIStackView()
-      more.axis = .vertical
-      more.spacing = 14
-      more.isHidden = true
-      for paragraph in about.text.components(separatedBy: "\n\n") where !paragraph.isEmpty {
-        more.addArrangedSubview(Self.label(paragraph, font: .cassette(.body), color: .cassette(.textSecondary), lines: 0))
-      }
-      let credit = UIButton(configuration: .plain())
-      credit.configuration?.contentInsets = .zero
-      credit.configuration?.attributedTitle = AttributedString(NSAttributedString.cassette(
-        "From \(about.source)\(about.license.map { ", \($0)" } ?? "")",
-        .caption,
-        color: .cassette(.textTertiary)
-      ))
-      credit.contentHorizontalAlignment = .leading
-      credit.addAction(UIAction { _ in Self.open(about.url) }, for: .primaryActionTriggered)
-      more.addArrangedSubview(credit)
-
-      let reveal = UIButton(configuration: .plain())
-      reveal.configuration?.contentInsets = .zero
-      reveal.configuration?.attributedTitle = AttributedString(NSAttributedString.cassette(
-        "More",
-        .metadata,
-        color: .cassette(.textPrimary)
-      ))
-      reveal.contentHorizontalAlignment = .leading
-      reveal.addAction(UIAction { [weak reveal, weak more] _ in
-        more?.isHidden = false
-        reveal?.isHidden = true
-      }, for: .primaryActionTriggered)
-      body.addArrangedSubview(reveal)
-      body.addArrangedSubview(more)
-    }
-
-    // The line under the name already says the network and where it's from.
-    var facts: [(String, String)] = [("On air", station.isLive ? "Real shows and hosts" : "One sound, around the clock")]
-    if !station.genres.isEmpty { facts.append(("Plays", station.genres.joined(separator: ", "))) }
-    for (key, value) in facts {
-      let k = Self.label(key.uppercased(), font: .cassette(.metadata), color: .cassette(.textTertiary))
-      k.setContentHuggingPriority(.required, for: .horizontal)
-      k.widthAnchor.constraint(equalToConstant: 76).isActive = true
-      let v = Self.label(value, font: .cassette(.body), color: .cassette(.textSecondary), lines: 0)
-      let row = UIStackView(arrangedSubviews: [k, v])
-      row.axis = .horizontal
-      row.alignment = .firstBaseline
-      row.spacing = 12
-      body.addArrangedSubview(row)
-    }
-
-    var links: [UIView] = []
-    if let home = station.homepage { links.append(linkButton("Website", url: home)) }
-    if let support = station.supportUrl { links.append(linkButton("Support \(station.name)", url: support)) }
-    if !links.isEmpty {
-      let row = UIStackView(arrangedSubviews: links + [UIView()])
-      row.axis = .horizontal
-      row.spacing = 20
-      body.addArrangedSubview(row)
-    }
-    block.addArrangedSubview(inset(body))
-    return block
-  }
-
-  private func linkButton(_ title: String, url: String) -> UIButton {
-    let button = UIButton(configuration: .plain())
-    button.configuration?.contentInsets = .zero
-    button.configuration?.image = CassetteIcon.openExternal.uiImage(size: .small)
-    button.configuration?.imagePlacement = .trailing
-    button.configuration?.imagePadding = 4
-    button.configuration?.baseForegroundColor = .cassette(.textPrimary)
-    button.configuration?.attributedTitle = AttributedString(NSAttributedString.cassette(
-      title,
-      .metadata,
-      color: .cassette(.textPrimary)
-    ))
-    button.addAction(UIAction { _ in Self.open(url) }, for: .primaryActionTriggered)
-    return button
-  }
-
-  private static func open(_ url: String) {
-    guard let url = URL(string: url) else { return }
-    UIApplication.shared.open(url)
   }
 
   // MARK: Similar
