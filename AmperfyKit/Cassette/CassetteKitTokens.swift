@@ -238,9 +238,11 @@ public enum CassetteKitTokens {
       public static let ink4: CGFloat = 0.38
     }
     public enum Radius {
-      public static let control: CGFloat = 3
+      public static let small: CGFloat = 3
       public static let card: CGFloat = 5
       public static let cover: CGFloat = 2
+      public static let area: CGFloat = 24
+      public static let pill: CGFloat = 999
     }
     public struct TypeRole: Sendable { public let face: String; public let weight: Int; public let minSize: CGFloat; public let maxSize: CGFloat; public let line: CGFloat; public let trackEm: CGFloat; public let upper: Bool }
     public enum Roles {
@@ -250,7 +252,8 @@ public enum CassetteKitTokens {
       public static let body = TypeRole(face: "New York", weight: 400, minSize: 17, maxSize: 17, line: 1.5, trackEm: 0, upper: false)
       public static let caption = TypeRole(face: "New York", weight: 400, minSize: 15, maxSize: 15, line: 1.45, trackEm: 0, upper: false)
       public static let label = TypeRole(face: "DM Mono", weight: 500, minSize: 11, maxSize: 11, line: 1.3, trackEm: 0.16, upper: true)
-      public static let button = TypeRole(face: "DM Mono", weight: 500, minSize: 12, maxSize: 12, line: 1, trackEm: 0.2, upper: true)
+      public static let button = TypeRole(face: "Barlow Condensed", weight: 700, minSize: 16, maxSize: 16, line: 1.05, trackEm: 0.08125, upper: true)
+      public static let link = TypeRole(face: "DM Mono", weight: 500, minSize: 12, maxSize: 12, line: 1, trackEm: 0.16, upper: true)
       public static let meta = TypeRole(face: "DM Mono", weight: 500, minSize: 11, maxSize: 11, line: 1.3, trackEm: 0.08, upper: false)
     }
   }
