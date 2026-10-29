@@ -800,6 +800,34 @@ public final class CassetteSyncAPI: @unchecked Sendable {
     return t > 0 ? Date(timeIntervalSince1970: t) : nil
   }
 
+  /// Signing out signs out of Cassette (BUG-619): the phone forgets the sign-in and everything it kept for
+  /// the person, so the next sign-in, theirs or someone else's, starts clean. The device's own state stays:
+  /// its install id and diagnostics choice, the cover fixes it has made, the public station list, and the
+  /// music, which the sign-out question decides on its own.
+  nonisolated public static func forgetAccount() {
+    let defaults = UserDefaults.standard
+    let keys = [
+      PersistentStorage.UserDefaultsKey.CassetteBearerToken.rawValue,
+      accountNameKey, accountEmailKey, accountImageKey, accountAvatarPresetKey,
+      sidecarPortKey, macSummaryKey, macSummaryFetchedAtKey, downloadQualityKey,
+      CassetteLibraryFilterProvider.serverModeDefaultsKey,
+      "cassette.isBetaTester", "cassette.lastSyncAt", "cassette.cloudPlaylistPlayedPending",
+      "cassette.libraryMoods.lastFetchAt", "cassette.libraryMoods.format", "cassette.libraryMoods.formatTriedAt",
+      "cassette.radio.saved.v1",
+    ]
+    for key in keys { defaults.removeObject(forKey: key) }
+    // each playlist's cloud ids, cover and description
+    let perPlaylist = ["cassette.cloudPlaylistItemIds.", "cassette.cloudPlaylistDescription.", "cassette.cloudPlaylistCoverUrl.", "cassette.playlistCoverMaterializedUrl."]
+    for key in defaults.dictionaryRepresentation().keys where perPlaylist.contains(where: { key.hasPrefix($0) }) {
+      defaults.removeObject(forKey: key)
+    }
+    // the kept Home and the made-for-you and listening files drawn from the person's library
+    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    for folder in ["CassetteHome", "CassetteMoods"] {
+      try? FileManager.default.removeItem(at: base.appendingPathComponent(folder))
+    }
+  }
+
   /// Store the fetched account so the menu can render it without a network
   /// round-trip. A `nil`/empty name clears the stored name (so a later
   /// name removal upstream doesn't leave a stale label).

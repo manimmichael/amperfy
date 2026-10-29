@@ -24,6 +24,7 @@ import Foundation
 import NotificationBannerSwift
 import OSLog
 import UIKit
+import WebKit
 
 extension AppDelegate {
   static var mainSceneDelegate: SceneDelegate? {
@@ -80,6 +81,22 @@ extension AppDelegate {
     topView.present(alert, animated: true)
   }
 
+  /// Signing out signs out of Cassette (BUG-619): the sign-in pass and what the phone kept for the person
+  /// go (CassetteSyncAPI.forgetAccount), the saved stations with them, and the in-app web pages
+  /// (CassetteWebPageVC) forget their website session. Before this, "Log Out" showed the sign-in screen
+  /// while the phone stayed signed in underneath, and the next sign-in re-paired without asking.
+  private func forgetCassetteSignIn() {
+    storage.settings.cassetteBearerToken = nil
+    CassetteSyncAPI.forgetAccount()
+    RadioSaved.shared.forget()
+    let site = WKWebsiteDataStore.default()
+    Task { @MainActor in
+      let all = WKWebsiteDataStore.allWebsiteDataTypes()
+      let records = await site.dataRecords(ofTypes: all)
+      await site.removeData(ofTypes: all, for: records.filter { $0.displayName.hasSuffix("cassette.digital") })
+    }
+  }
+
   /// Patch 111 (5): full account teardown, extracted from AccountSettingsView
   /// so the profile menu's "Log Out" can reuse it. Stops the account's manager,
   /// drops credentials, then either switches to the next account or returns to the
@@ -124,6 +141,8 @@ extension AppDelegate {
         vc: AppStoryboard.Main.segueToMainWindow(account: newActiveAccount)
       )
     } else {
+      // Nobody is signed in now, so the phone forgets the Cassette sign-in too (BUG-619).
+      forgetCassetteSignIn()
       storage.settings.app.isLibrarySynced = false
       let loginVC = AppStoryboard.Main.segueToLogin()
       AppDelegate.mainSceneDelegate?.replaceMainRootViewController(vc: loginVC)

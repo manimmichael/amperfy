@@ -93,6 +93,17 @@ public enum CassetteCloudPlaylistBridge {
     UserDefaults.standard.stringArray(forKey: itemIdsKey(playlistId)) ?? []
   }
 
+  /// A song was moved within a playlist on this phone (PlaylistDetailVC): move its cloud item id the same
+  /// way. The stored ids run beside the playlist's songs one for one, so `updateOrder` then sends the new
+  /// order; before this it sent the order from before the move, and the page, which reloads from the cloud
+  /// whenever it appears, put the song back (BUG-616).
+  public static func moveStoredItem(playlistId: String, from: Int, to: Int) {
+    var ids = storedItemIds(for: playlistId)
+    guard from >= 0, from < ids.count, to >= 0, to < ids.count, from != to else { return }
+    ids.insert(ids.remove(at: from), at: to)
+    storeItemIds(ids, for: playlistId)
+  }
+
   /// Absolute cover URL from the last cloud sync, if any.
   nonisolated public static func storedCoverUrl(for playlistId: String) -> String? {
     guard !playlistId.isEmpty,

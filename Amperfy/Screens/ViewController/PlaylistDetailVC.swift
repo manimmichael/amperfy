@@ -58,6 +58,9 @@ class PlaylistDetailDiffableDataSource: BasicUITableViewDiffableDataSource {
     let toIndex = playlistIndex(for: destinationIndexPath)
     exectueAfterAnimation {
       self.playlist?.movePlaylistItem(fromIndex: fromIndex, to: toIndex)
+      if let id = self.playlist?.id {
+        CassetteCloudPlaylistBridge.moveStoredItem(playlistId: id, from: fromIndex, to: toIndex)
+      }
 
       guard self.appDelegate.storage.settings.user.isOnlineMode,
             let account = self.playlist.account else { return }

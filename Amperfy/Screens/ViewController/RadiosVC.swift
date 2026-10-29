@@ -219,6 +219,13 @@ final class RadioSaved {
 
   func isSaved(_ slug: String) -> Bool { slugs.contains(slug) }
 
+  /// Signed out (BUG-619): no saved stations until the next sign-in asks the cloud again.
+  func forget() {
+    lastRefresh = nil
+    pending = []
+    set([])
+  }
+
   private func set(_ next: [String]) {
     guard next != slugs else { return }
     slugs = next
